@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rapp-god — a god's-eye view of the RAPP ecosystem</title>
+<meta name="description" content="A public map of the whole RAPP ecosystem and a live drift detector. Compares each canonical source against this repo's snapshot, and compares copies that must stay identical across repos — in your browser — showing in-sync / drift.">
+<style>
+  :root{ color-scheme:light dark; --bg:#0d1117; --pan:#161b22; --bd:#30363d; --tx:#e6edf3; --mut:#8b949e; --grn:#3fb950; --amb:#d29922; --red:#f85149; --blu:#58a6ff; --vio:#a371f7; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:radial-gradient(120% 90% at 50% -10%,#15233f,var(--bg) 55%); color:var(--tx); font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap{ max-width:960px; margin:0 auto; padding:34px 20px 80px; }
+  .eye{ font-size:30px; }
+  h1{ font-size:27px; margin:6px 0 4px; letter-spacing:-.4px; }
+  .sub{ color:var(--mut); margin:0 0 22px; max-width:720px; }
+  #banner{ border-radius:14px; padding:18px 22px; margin:0 0 26px; font-size:18px; font-weight:700; border:1px solid var(--bd); background:var(--pan); }
+  #banner.ok{ background:#0f2417; border-color:#2ea04366; color:#56d364; }
+  #banner.drift{ background:#2a1d10; border-color:#d2992266; color:#e3b341; }
+  #banner.err{ background:#2a1416; border-color:#f8514966; color:#ff7b72; }
+  #banner small{ display:block; font-weight:400; font-size:13px; color:var(--mut); margin-top:4px; }
+  h2{ font-size:17px; margin:34px 0 4px; } .lede{ color:var(--mut); font-size:13.5px; margin:0 0 10px; max-width:720px; }
+  table{ width:100%; border-collapse:collapse; background:var(--pan); border:1px solid var(--bd); border-radius:12px; overflow:hidden; font-size:13.5px; }
+  th,td{ text-align:left; padding:9px 12px; border-bottom:1px solid var(--bd); vertical-align:middle; }
+  th{ color:var(--mut); font-weight:600; background:#10151c; }
+  tr:last-child td{ border-bottom:0; }
+  .mono{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .st{ font-weight:700; white-space:nowrap; } .st.ok{ color:var(--grn); } .st.drift{ color:var(--amb); } .st.err{ color:var(--red); }
+  .hash{ color:var(--mut); font:11.5px ui-monospace,Menlo,monospace; }
+  .tag{ font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:5px; vertical-align:middle; }
+  .tag.must{ background:#3a1d1d; color:#ff9a93; } .tag.watch{ background:#23304a; color:#9ec1ff; }
+  .note{ color:var(--mut); font-size:12px; margin-top:2px; }
+  a{ color:var(--blu); text-decoration:none; } a:hover{ text-decoration:underline; }
+  .map{ display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:10px; }
+  .card{ background:var(--pan); border:1px solid var(--bd); border-radius:10px; padding:11px 14px; }
+  .card b{ font-family:ui-monospace,Menlo,monospace; font-size:12.5px; } .card .r{ color:var(--mut); font-size:12px; display:block; margin-top:2px; }
+  .foot{ color:var(--mut); font-size:13px; margin-top:36px; border-top:1px solid var(--bd); padding-top:18px; }
+  code{ background:#010409; border:1px solid var(--bd); border-radius:5px; padding:1px 6px; font:12.5px ui-monospace,Menlo,monospace; }
+</style>
+</head><body><div class="wrap">
+
+<div class="eye">👁️</div>
+<h1>rapp-god</h1>
+<p class="sub">A <b>god's-eye view</b> of the RAPP ecosystem — a public map of every repo, and a live <b>drift detector</b>.
+It can't fix drift; it makes drift <em>impossible to miss</em>. Every check below runs right here in your browser,
+against the live repos, the moment you open the page.</p>
+
+<div id="banner">⏳ surveying the ecosystem…</div>
+
+<h2>Lens A — canonical integrity</h2>
+<p class="lede">Each canonical source vs. the snapshot this repo mirrored. Answers: <b>has a canonical file moved since we last trusted it?</b></p>
+<table><thead><tr><th>Component</th><th>File</th><th>Status</th><th>canonical → snapshot (sha256)</th></tr></thead><tbody id="rowsA"></tbody></table>
+
+<h2>Lens B — cross-repo drift</h2>
+<p class="lede">Copies that are supposed to be byte-identical across two repos, compared live. Answers: <b>did the same thing fork into two truths?</b>
+<span class="tag must">must match</span> = a real divergence to fix. <span class="tag watch">watch</span> = two homes; a human decides if that's intended.</p>
+<table><thead><tr><th>What</th><th>Side A</th><th>Side B</th><th>Status</th></tr></thead><tbody id="rowsB"></tbody></table>
+
+<h2>The map — which repo houses which part</h2>
+<div class="map" id="map"></div>
+
+<div class="foot" id="foot">
+  <b>How it works.</b> Lens A fetches each canonical file (raw.githubusercontent.com) and this repo's snapshot, hashes both (SHA-256), compares.
+  Lens B fetches two live files that must agree and compares their hashes. <b>In sync</b> = identical; <b>drift</b> = they differ.
+  Re-sync the snapshots with <code>bash sync.sh</code>; fix cross-repo drift at the source. A GitHub Action (<code>god-drift</code>)
+  runs the same checks on a schedule, so drift is caught even when no one's looking. Globally readable via GitHub Pages + raw.githubusercontent.com.
+</div>
+
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const short=h=>h?h.slice(0,10):'—';
+async function sha256(buf){ const d=await crypto.subtle.digest('SHA-256', buf); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+async function grab(url){ const r=await fetch(url,{cache:'no-store'}); if(!r.ok) throw new Error(r.status); return r.arrayBuffer(); }
+
+(async () => {
+  let m;
+  try { m = await (await fetch('manifest.json',{cache:'no-store'})).json(); }
+  catch(e){ $('banner').className='err'; $('banner').textContent='Could not load manifest.json'; return; }
+
+  $('map').innerHTML = (m.map||[]).map(x=>`<div class="card"><a href="${x.url}"><b>${x.repo}</b></a><span class="r">${x.role}</span></div>`).join('');
+
+  // Lens A — integrity
+  const rowsA=$('rowsA');
+  for(const c of (m.tracked||[])) for(const f of (c.files||[])){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="mono">${c.component}</td><td class="mono">${f.path}</td><td class="st">…</td><td class="hash">…</td>`;
+    rowsA.appendChild(tr);
+    (async()=>{ const st=tr.children[2], hc=tr.children[3];
+      try{ const [cb,sb]=await Promise.all([grab(f.canonical),grab(f.snapshot)]); const [ch,sh]=await Promise.all([sha256(cb),sha256(sb)]);
+        if(ch===sh){ st.className='st ok'; st.textContent='✅ in sync'; } else { st.className='st drift'; st.textContent='⚠️ drift'; }
+        hc.innerHTML=`<a href="${f.canonical}">${short(ch)}</a> → ${short(sh)}`;
+      }catch(e){ st.className='st err'; st.textContent='⚠️ error'; hc.textContent='fetch failed ('+e.message+')'; } })();
+  }
+
+  // Lens B — cross-repo pairs
+  const rowsB=$('rowsB');
+  for(const p of (m.pairs||[])){
+    const tr=document.createElement('tr');
+    const tag = p.expect==='identical' ? '<span class="tag must">must match</span>' : '<span class="tag watch">watch</span>';
+    tr.innerHTML=`<td><div class="mono">${p.name} ${tag}</div><div class="note">${p.note||''}</div></td>`+
+                 `<td class="hash"><a href="${p.a.url}">${p.a.label}</a><br><span data-ah>…</span></td>`+
+                 `<td class="hash"><a href="${p.b.url}">${p.b.label}</a><br><span data-bh>…</span></td>`+
+                 `<td class="st">…</td>`;
+    rowsB.appendChild(tr);
+    (async()=>{ const ah=tr.querySelector('[data-ah]'), bh=tr.querySelector('[data-bh]'), st=tr.children[3];
+      try{ const [ab,bb]=await Promise.all([grab(p.a.url),grab(p.b.url)]); const [a,b]=await Promise.all([sha256(ab),sha256(bb)]);
+        ah.textContent=short(a); bh.textContent=short(b);
+        if(a===b){ st.className='st ok'; st.textContent='✅ identical'; }
+        else if(p.expect==='identical'){ st.className='st drift'; st.textContent='⚠️ DRIFT'; }
+        else { st.className='st drift'; st.textContent='⚠️ differ'; }
+      }catch(e){ st.className='st err'; st.textContent='⚠️ error'; if(!ah.textContent||ah.textContent==='…')ah.textContent='—'; bh.textContent='('+e.message+')'; } })();
+  }
+
+  // banner — poll until every status cell resolves
+  const iv=setInterval(()=>{
+    const sts=[...document.querySelectorAll('.st')];
+    const pend=sts.filter(s=>s.textContent==='…').length, tot=sts.length;
+    if(pend>0){ $('banner').innerHTML='⏳ checking… ('+(tot-pend)+'/'+tot+')'; return; }
+    clearInterval(iv);
+    const drift=sts.filter(s=>s.classList.contains('drift')).length;
+    const err=sts.filter(s=>s.classList.contains('err')).length;
+    const ok=sts.filter(s=>s.classList.contains('ok')).length;
+    const b=$('banner');
+    if(drift===0 && err===0){ b.className='ok'; b.innerHTML='✅ ecosystem in sync<small>'+ok+' checks pass — every canonical source matches, every cross-repo copy agrees.</small>'; }
+    else { b.className='drift'; b.innerHTML='⚠️ '+drift+' drift'+(drift===1?'':'s')+' detected'+(err?(' · '+err+' unreachable'):'')+
+      '<small>'+ok+' in sync. A god\'s-eye view only helps if you act on it — see the rows below.</small>'; }
+  }, 250);
+})();
+</script>
+</body></html>
