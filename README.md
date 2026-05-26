@@ -1,71 +1,89 @@
 # 👁️ rapp-god
 
-**A god's-eye view of the [RAPP](https://github.com/kody-w/RAPP) ecosystem** — a public map of every repo,
-and a live **drift detector**. It owns no spec and fixes no drift; its one job is to make drift
-**impossible to miss**.
+**The registry of the RAPP "god" — and every version of every part it's made of.**
 
-**Live dashboard:** <https://kody-w.github.io/rapp-god/>
+[RAR](https://github.com/kody-w/RAR) is a registry of agents. **rapp-god is a registry of the whole
+ecosystem**: the kernel, the installer, the spec, the codec, the seed agents — every load-bearing
+part. And for each part it keeps **every version** it has ever seen, as an immutable,
+content-addressed frame. Nothing is ever deleted.
 
-> Mental model: the ecosystem is many repos, but some truths are supposed to be *one* truth — the
-> neighborhood spec, the `BasicAgent` base class, the constitution. The moment a copy of one of those
-> forks, the whole thing quietly rots. rapp-god watches every place a truth is duplicated and shows
-> you, at a glance, whether they still agree.
+**Live:** <https://kody-w.github.io/rapp-god/> · **Badge:** ![rapp-god](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fkody-w%2Frapp-god%2Fmain%2Fapi%2Fv1%2Fbadge.json)
 
-## Two lenses
+## The idea
 
-**Lens A — canonical integrity.** For each canonical source (the spec, the sealed codec, the kite
-mark, the doorman, the SDK, the string tools), rapp-god keeps a `snapshot/` and compares it live to
-the canonical repo. *Has a canonical file moved since we last trusted it?*
+- **Every version is a load-bearing fallback.** Each distinct version of a part lives forever at its
+  own raw URL (`versions/<part>/<sha8>`). If a canonical source breaks, vanishes, or ships a bad
+  update, you pin to any prior frame and keep going. Not just the current version — *all* of them.
+- **Update detection, never coercion.** When your copy's hash differs from the grail's current
+  version, that's just *an update waiting*. You see it; you decide. Stay on your frame indefinitely
+  if it's the one that works.
+- **It observes; it never fixes.** A fork doesn't get auto-reconciled — a drifted copy might be the
+  better one. rapp-god shows you *exactly what drifted* (hash + inline diff) and leaves the call to you.
+- **Fully static.** No server. The dashboard reads `registry.json`; everything is served globally
+  over `raw.githubusercontent.com`.
 
-**Lens B — cross-repo drift.** Some files must stay **byte-identical across two repos**. rapp-god
-fetches both live and compares. `must match` = a real divergence to fix. `watch` = the same name
-lives in two homes and a human decides whether that's intended.
+## What it found on day one
 
-The dashboard runs both **in your browser** — fetch the live files, SHA-256 both sides, compare — so
-the page is the proof, computed fresh every time you open it.
+| | |
+|---|---|
+| parts tracked | **20** |
+| versions held (fallback frames) | **75** |
+| `install.sh` versions archived | **24** (full git history) |
+| `brainstem.py` (kernel) versions | **25** |
+| forked across repos | **8** |
+| frozen kernel (`brainstem.py`, `VERSION`) | ✅ holding — grail == RAPP |
 
-## What it caught on day one
+The kernel discipline is holding; the installer scripts, both memory agents, RAR's `basic_agent`
+copy, and the neighborhood spec have forked. All of it was invisible before.
 
-rapp-god's first survey found the ecosystem already drifting — silently, invisibly, until now:
+## The static API — built entirely on raw.githubusercontent.com
 
-| Pair | Verdict |
-|------|---------|
-| `NEIGHBORHOOD_PROTOCOL.md` — RAPP vs canonical spec repo | ⚠️ **drift** (`9b15ced` ≠ `787d585`) |
-| `basic_agent.py` — RAPP brainstem vs RAR `@rapp` | ⚠️ **drift** (`701488b` ≠ `641fd31`) |
-| `CONSTITUTION.md` — RAPP vs RAR | ⚠️ differ (two homes — your call) |
-| `CONSTITUTION.md` — RAPP root vs its bundled brainstem | ⚠️ differ (internal dup) |
+No backend. Fetch these from anywhere:
 
-That table is the entire argument for this repo. None of it was visible before.
+| Endpoint | What |
+|---|---|
+| [`registry.json`](https://raw.githubusercontent.com/kody-w/rapp-god/main/registry.json) | the full index — every part, every version, which source is on which version, raw fallback URLs |
+| [`api/v1/status.json`](https://raw.githubusercontent.com/kody-w/rapp-god/main/api/v1/status.json) | the latest verdict (summary + per-part drift) |
+| [`api/v1/badge.json`](https://raw.githubusercontent.com/kody-w/rapp-god/main/api/v1/badge.json) | shields.io endpoint badge |
+| `versions/<part>/<sha8>` | **the fallback** — any version's exact bytes, immutable, pinnable forever |
 
-## Run it yourself
-
+**Check for an update** (stay or take it — your call):
 ```bash
-bash check.sh   # both lenses, against the live repos; exits non-zero on must-match drift (the CI signal)
-bash sync.sh    # re-pull every canonical into snapshot/ and refresh the manifest hashes (fixes Lens A)
+GRAIL=$(curl -s https://raw.githubusercontent.com/kody-w/rapp-god/main/registry.json \
+  | jq -r '.parts[]|select(.name=="install.sh").grail_sha8')
+MINE=$(shasum -a256 install.sh | cut -c1-12)
+[ "$GRAIL" = "$MINE" ] && echo "up to date" || echo "an update is waiting (grail $GRAIL)"
 ```
 
-`check.sh` is what CI (`.github/workflows/god-drift.yml`) runs on every push and on a schedule, so
-drift is caught even when no one is looking. **A red badge means the ecosystem has unreconciled
-drift — that's the canary working, not a broken build.** Make it green by reconciling the source
-(or, if a divergence is intentional, downgrade that pair from `must match` to `watch` in
-`manifest.json`).
+**Pin a fallback** — fetch one exact, immutable version:
+```bash
+curl -O https://raw.githubusercontent.com/kody-w/rapp-god/main/versions/install.sh/<sha8>.sh
+```
 
-`sync.sh` only refreshes Lens A (this repo's own snapshots). Lens B drift is fixed at the source —
-rapp-god is an index, not an editor.
+## Build it
 
-## The map
+Like RAR: `manifest.json` is the hand-authored input, `build_god.py` is the only build step,
+`registry.json` is generated (never hand-edited).
 
-`manifest.json` carries the full ecosystem map (every repo + role), rendered on the dashboard. RAPP —
-the platform and the prior "god" repo — is exposed down to its sub-components (the brainstem, the
-swarm, the installer, the pages, the specs) so the god's eye sees inside it too.
+```bash
+python3 build_god.py        # fetch every source + git history, capture new frames, regenerate the registry + API
+python3 build_god.py --no-net   # regenerate from already-captured frames only
+```
 
-## How it's wired
+`manifest.json` lists the **parts** — each with a `grail` (the source of truth) and its `mirrors`,
+plus `"history": true` to archive the grail's full git history, and `"kind"`:
+- **`observe`** (default) — record drift, never fail CI. The drifted copy might be the keeper.
+- **`enforce`** — fail CI on drift. Opt-in, per part, only once you've decided it must never differ.
 
-- **`manifest.json`** — `tracked` (Lens A: canonical → snapshot, with sizes + hashes), `pairs`
-  (Lens B: the cross-repo copies that must agree), and `map` (the whole ecosystem).
-- **`snapshot/`** — the mirrored canonical files, readable globally via raw.githubusercontent.com.
-- **`index.html`** — the zero-dependency dashboard (GitHub Pages).
-- **`check.sh` / `sync.sh`** — the same checks on the command line, and the re-sync.
-- **`.github/workflows/god-drift.yml`** — the scheduled signal.
+CI (`.github/workflows/god-build.yml`) runs `build_god.py` on every push and every 6h, commits any
+new frames + registry changes (and *only* when something actually changed), and **stays green** —
+drift is published, never enforced.
 
-Part of the RAPP ecosystem — see the [map repo](https://github.com/kody-w/rapp-map). MIT © Kody Wildfeuer.
+## The grail pattern
+
+RAPP's own canon calls the frozen kernel "the v0.6.0 **grail**," and instances "fetch from grail."
+`rapp-installer` is that grail; RAPP mirrors it (its `test_plant.sh` literally `diff`s planted files
+against `raw.githubusercontent.com/kody-w/rapp-installer/main`). rapp-god generalizes that private
+grail-diff into a **public, global, per-file, every-version** registry.
+
+Part of the RAPP ecosystem — see the [map](https://github.com/kody-w/rapp-map). MIT © Kody Wildfeuer.

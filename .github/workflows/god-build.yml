@@ -1,0 +1,36 @@
+name: god-build
+# The only build step. Captures any new version frames, regenerates the registry + static API,
+# and commits ONLY when something actually changed. Observe-only: stays green (build_god.py exits
+# nonzero only if a part marked "enforce" has drifted).
+on:
+  push:
+    branches: [ main ]
+    paths: [ "manifest.json", "build_god.py", ".github/workflows/god-build.yml" ]
+  schedule:
+    - cron: '17 */6 * * *'   # every 6 hours
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: god-build
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture versions + rebuild registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 build_god.py
+      - name: Commit new frames + registry (only if changed)
+        run: |
+          git config user.name "rapp-god"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A versions registry.json api
+          if git diff --cached --quiet; then
+            echo "no new frames, no drift change — nothing to commit"
+          else
+            git commit -m "rapp-god: capture frames + refresh registry [skip ci]"
+            git push
+          fi
