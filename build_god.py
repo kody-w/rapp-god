@@ -210,6 +210,7 @@ def main():
         "schema": "rapp-god-registry/1.0",
         "name": "rapp-god",
         "tagline": "the registry of the RAPP god and every version of every part it is made of",
+        "release": manifest.get("release"),
         "generated": NOW,
         "self": RAW_SELF,
         "dashboard": "https://kody-w.github.io/rapp-god/",
