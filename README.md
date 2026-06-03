@@ -24,6 +24,13 @@ content-addressed frame. Nothing is ever deleted.
 
 ## What it found on day one
 
+> **Historical snapshot (day one, 2026-05).** These are the original first-run numbers, frozen here
+> as a record. They are *not* live — the registry has grown since. For the current counts, see the
+> badge at the top of this README or
+> [`api/v1/status.json`](https://raw.githubusercontent.com/kody-w/rapp-god/main/api/v1/status.json)
+> (at the time of writing: **55** parts · **151** versions · **9** forked, with `brainstem.py` at
+> **40** archived versions).
+
 | | |
 |---|---|
 | parts tracked | **20** |
