@@ -1,11 +1,11 @@
 # The RAPP Ecosystem — Full End-to-End Spec
 
-> **Schema:** `rapp-ecosystem-spec/1.0` · **Version:** `1.1.1` · **Canonical source:** `kody-w/RAPP`
+> **Schema:** `rapp-ecosystem-spec/1.0` · **Version:** `1.2.0` · **Canonical source:** `kody-w/RAPP`
 >
 > **This document is the human render of a machine spec.** The source of truth is [`specs/ecosystem-spec.json`](./ecosystem-spec.json) (`rapp-ecosystem-spec/1.0`). This Markdown is published **byte-identical** to two independent grail repos —
 > [`kody-w/rapp-god`](https://raw.githubusercontent.com/kody-w/rapp-god/main/api/v1/ecosystem-spec.json) and
 > [`kody-w/rapp-map`](https://raw.githubusercontent.com/kody-w/rapp-map/main/ecosystem-spec.json) — and rendered for a non-technical reader at the [RAPP-Bible](https://kody-w.github.io/RAPP-Bible/#specs).
-> Divergence between the two mirrors **is** drift; the agent's `verify` action sha256-compares them. This doc is **version-pinned to the JSON** (`1.1.1`) — if the JSON bumps, this bumps with it, in the same commit.
+> Divergence between the two mirrors **is** drift; the agent's `verify` action sha256-compares them. This doc is **version-pinned to the JSON** (`1.2.0`) — if the JSON bumps, this bumps with it, in the same commit.
 >
 > **Authority order** (when docs disagree, the higher wins): `MASTER_PLAN.md` → `CONSTITUTION.md` → spec-docs (`SPEC`/`skill`/`ECOSYSTEM`/`NEIGHBORHOOD_PROTOCOL`/`OSI`/`ESTATE_SPEC`) → vault (`Decisions`/`Architecture`) → code. This document is a spec-doc; it does not outrank the plan or the law.
 
@@ -360,4 +360,4 @@ The discipline is the point: this document, the machine JSON, the two mirror rep
 
 ---
 
-*This document is the human render of `specs/ecosystem-spec.json` (`rapp-ecosystem-spec/1.0`, version `1.1.1`). Published byte-identical to `kody-w/rapp-god` and `kody-w/rapp-map`; rendered for humans at the RAPP-Bible. Generated from the swarm-verified coverage audit (`verify-god-agent-coverage`) + `ECOSYSTEM_MAP.md` + `ECOSYSTEM.md` + `OSI.md` + the agent's embedded `ECOSYSTEM_PARTS`. To regenerate, summon the `ecosystem-sync` swarm.*
+*This document is the human render of `specs/ecosystem-spec.json` (`rapp-ecosystem-spec/1.0`, version `1.2.0`). Published byte-identical to `kody-w/rapp-god` and `kody-w/rapp-map`; rendered for humans at the RAPP-Bible. Generated from the swarm-verified coverage audit (`verify-god-agent-coverage`) + `ECOSYSTEM_MAP.md` + `ECOSYSTEM.md` + `OSI.md` + the agent's embedded `ECOSYSTEM_PARTS`. To regenerate, summon the `ecosystem-sync` swarm.*
