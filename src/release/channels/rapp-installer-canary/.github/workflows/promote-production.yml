@@ -1,0 +1,118 @@
+name: "Promote to Production"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Production version to release (e.g. 0.5.5). Leave blank to auto-detect from canary VERSION."
+        required: false
+        type: string
+      confirm:
+        description: "Type PROMOTE to confirm production release"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm promotion
+        if: inputs.confirm != 'PROMOTE'
+        run: |
+          echo "::error::You must type PROMOTE to confirm. Got: '${{ inputs.confirm }}'"
+          exit 1
+
+      - name: Determine version
+        id: version
+        run: |
+          CANARY_VERSION=$(cat rapp_brainstem/VERSION | tr -d '[:space:]')
+          if [ -n "${{ inputs.version }}" ]; then
+            PROD_VERSION="${{ inputs.version }}"
+          else
+            # Strip canary suffix: 0.5.5-canary.20260401 -> 0.5.5
+            PROD_VERSION=$(echo "$CANARY_VERSION" | sed 's/-canary\..*//')
+          fi
+          echo "version=$PROD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Canary: $CANARY_VERSION -> Production: $PROD_VERSION"
+
+      - name: Check canary soak time
+        run: |
+          # Get the last commit date on this repo
+          LAST_COMMIT=$(gh api repos/kody-w/rapp-installer-canary/commits/main --jq '.commit.committer.date')
+          LAST_EPOCH=$(date -d "$LAST_COMMIT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$LAST_COMMIT" +%s)
+          NOW_EPOCH=$(date +%s)
+          HOURS_AGO=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
+          echo "Last canary update: $LAST_COMMIT ($HOURS_AGO hours ago)"
+          if [ "$HOURS_AGO" -lt 24 ]; then
+            echo "::warning::Canary has only been soaking for ${HOURS_AGO}h (minimum 24h recommended)"
+          else
+            echo "Soak time OK: ${HOURS_AGO}h"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_TOKEN }}
+
+  test:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Gate 1 static checks
+        run: |
+          bash -n install.sh
+          bash tests/test_installer.sh
+          pip install -r rapp_brainstem/requirements.txt pytest
+          cd rapp_brainstem && python -m pytest test_local_agents.py -v
+
+      - name: Run Gate 2 dep check
+        run: |
+          pip install -r rapp_brainstem/requirements.txt
+          python -c "import flask, flask_cors, requests, dotenv"
+
+  promote:
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set production version
+        run: |
+          echo "${{ needs.validate.outputs.version }}" > rapp_brainstem/VERSION
+          echo "Production version: ${{ needs.validate.outputs.version }}"
+
+      - name: Push to production repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add production https://x-access-token:${{ secrets.PIPELINE_TOKEN }}@github.com/kody-w/rapp-installer.git
+          git add rapp_brainstem/VERSION
+          git commit -m "release: v${{ needs.validate.outputs.version }}"
+          git tag "v${{ needs.validate.outputs.version }}"
+          git push production HEAD:main --force
+          git push production "v${{ needs.validate.outputs.version }}"
+          echo "Released v${{ needs.validate.outputs.version }} to production"
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_TOKEN }}
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "v${{ needs.validate.outputs.version }}" \
+            --repo kody-w/rapp-installer \
+            --title "v${{ needs.validate.outputs.version }}" \
+            --notes "Promoted from canary. See [canary repo](https://github.com/kody-w/rapp-installer-canary) for change history." \
+            --latest
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_TOKEN }}

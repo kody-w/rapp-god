@@ -1,0 +1,1491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modular Synth — Patch Cables in Your Browser</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0a0a10; color: #e8edff;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    user-select: none; -webkit-user-select: none;
+  }
+  #rack {
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at top, #1a1a26 0%, #08080e 70%),
+      repeating-linear-gradient(0deg, transparent 0 40px, rgba(0,0,0,0.15) 40px 41px);
+    overflow: hidden;
+  }
+  #rack::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0 1px, transparent 1px 8px);
+    pointer-events: none;
+  }
+  #cables {
+    position: absolute; inset: 0;
+    pointer-events: none; z-index: 50;
+  }
+  .module {
+    position: absolute;
+    background: linear-gradient(180deg, #1e1f2e 0%, #14141f 100%);
+    border: 1px solid #2a2c3d;
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
+    color: #cfd6f0;
+    z-index: 10;
+    min-width: 130px;
+  }
+  .module.dragging { z-index: 100; box-shadow: 0 12px 36px rgba(0,0,0,0.7); }
+  .mod-header {
+    background: linear-gradient(180deg, #2a2c44 0%, #1e2034 100%);
+    color: #fff;
+    padding: 6px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    cursor: move;
+    border-radius: 5px 5px 0 0;
+    border-bottom: 1px solid #383a52;
+    text-transform: uppercase;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .mod-header .badge {
+    font-size: 8px;
+    color: #8a93b8;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+  }
+  .mod-body {
+    padding: 8px 10px 10px;
+    display: flex; flex-direction: column;
+    gap: 6px;
+  }
+  .knob-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(45px, 1fr));
+    gap: 6px;
+  }
+  .knob {
+    display: flex; flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .knob-dial {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #4a4d6a 0%, #1e2034 75%);
+    border: 1px solid #383a52;
+    position: relative;
+    cursor: ns-resize;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.4);
+  }
+  /* Knob indicator is added as a child element so we can rotate it precisely. */
+  .knob-label {
+    font-size: 8px;
+    color: #8a93b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .ports {
+    display: flex; flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .port {
+    display: flex; flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    cursor: pointer;
+    flex: 1;
+    min-width: 30px;
+  }
+  .port-jack {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #2a2c44 0%, #050608 70%);
+    border: 2px solid #444;
+    box-shadow: inset 0 0 4px rgba(0,0,0,0.9);
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .port[data-type="audio-out"] .port-jack,
+  .port[data-type="audio-in"] .port-jack { border-color: #b04040; }
+  .port[data-type="cv-out"] .port-jack,
+  .port[data-type="cv-in"] .port-jack { border-color: #4a78c8; }
+  .port[data-type="gate-in"] .port-jack { border-color: #c8a040; }
+  .port.connected .port-jack {
+    background: radial-gradient(circle at 30% 30%, #6a6c84 0%, #1a1c28 70%);
+  }
+  .port:hover .port-jack { transform: scale(1.15); border-color: #fff; }
+  .port-label {
+    font-size: 7px;
+    color: #6c7396;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 1.1;
+    text-align: center;
+  }
+  #toolbar {
+    position: fixed; top: 12px; left: 12px;
+    display: flex; gap: 8px; align-items: center;
+    z-index: 200;
+    background: rgba(20,22,40,0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #2a2c3d;
+    padding: 8px 12px;
+    border-radius: 6px;
+  }
+  #toolbar button {
+    background: linear-gradient(180deg, #2a2c44 0%, #1a1c2e 100%);
+    border: 1px solid #383a52;
+    color: #cfd6f0;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  #toolbar button:hover { background: #3a3c5a; color: #fff; }
+  #toolbar label {
+    font-size: 9px; color: #8a93b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex; align-items: center;
+    gap: 6px;
+  }
+  #toolbar input[type=range] {
+    width: 90px; accent-color: #ffd166;
+  }
+  #title {
+    position: fixed; top: 12px; right: 12px;
+    z-index: 200;
+    font-size: 10px;
+    color: #6c7396;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    background: rgba(20,22,40,0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #2a2c3d;
+    padding: 8px 12px;
+    border-radius: 6px;
+  }
+  #title b { color: #ffd166; letter-spacing: 2px; }
+  #keyboard {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 110px;
+    display: flex; justify-content: center;
+    background: linear-gradient(180deg, #18192a 0%, #0a0a10 100%);
+    border-top: 2px solid #2a2c3d;
+    z-index: 150;
+    padding: 8px 0;
+  }
+  #keys-wrap { position: relative; height: 100%; }
+  .key-w {
+    width: 36px; height: 100%;
+    background: linear-gradient(180deg, #f0f0f0 0%, #cfcfd6 100%);
+    border: 1px solid #2a2c3d;
+    border-radius: 0 0 4px 4px;
+    display: inline-block;
+    margin-right: -1px;
+    cursor: pointer;
+    position: relative;
+    box-shadow: inset 0 -4px 6px rgba(0,0,0,0.15);
+  }
+  .key-w.active {
+    background: linear-gradient(180deg, #ffd166 0%, #d4a13b 100%);
+    box-shadow: inset 0 -4px 6px rgba(0,0,0,0.3);
+  }
+  .key-b {
+    width: 22px; height: 65%;
+    background: linear-gradient(180deg, #2a2c3d 0%, #0a0a10 100%);
+    border: 1px solid #000;
+    border-radius: 0 0 3px 3px;
+    position: absolute;
+    top: 0;
+    cursor: pointer;
+    z-index: 2;
+    box-shadow: inset 0 -3px 4px rgba(255,255,255,0.05);
+  }
+  .key-b.active {
+    background: linear-gradient(180deg, #c8a040 0%, #6a5020 100%);
+  }
+  .key-label {
+    position: absolute; bottom: 4px; left: 0; right: 0;
+    text-align: center;
+    font-size: 9px;
+    color: #6c7396;
+  }
+  .key-w .key-label { color: #6c7396; }
+  .key-b .key-label { color: #888; }
+  #overlay {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(5,5,10,0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 1000;
+    cursor: pointer;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #overlay h1 {
+    font-size: 36px;
+    color: #ffd166;
+    letter-spacing: 4px;
+    text-shadow: 0 0 30px rgba(255,209,102,0.5);
+  }
+  #overlay p {
+    color: #8a93b8;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+  }
+  #overlay .pulse {
+    margin-top: 12px;
+    padding: 14px 36px;
+    border: 2px solid #ffd166;
+    border-radius: 4px;
+    color: #ffd166;
+    font-weight: 700;
+    letter-spacing: 2px;
+    animation: pulse 1.4s ease-in-out infinite;
+    font-size: 14px;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,209,102,0.6); }
+    50% { box-shadow: 0 0 0 24px rgba(255,209,102,0); }
+  }
+  #toast {
+    position: fixed; bottom: 130px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20,22,40,0.9);
+    border: 1px solid #ffd166;
+    color: #ffd166;
+    padding: 8px 16px;
+    font-size: 11px;
+    border-radius: 4px;
+    z-index: 300;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s;
+    letter-spacing: 1px;
+  }
+  #toast.show { opacity: 1; }
+  .legend {
+    position: fixed; bottom: 120px; left: 12px;
+    z-index: 200;
+    display: flex; gap: 14px;
+    background: rgba(20,22,40,0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid #2a2c3d;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 9px;
+    color: #8a93b8;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; }
+  .legend i.audio { background: #e85a5a; box-shadow: 0 0 8px #e85a5a; }
+  .legend i.cv { background: #5a8de8; box-shadow: 0 0 8px #5a8de8; }
+</style>
+</head>
+<body>
+
+<div id="rack">
+  <svg id="cables" width="100%" height="100%"></svg>
+</div>
+
+<div id="toolbar">
+  <button id="btn-default">Load Default</button>
+  <button id="btn-save">Save Patch</button>
+  <button id="btn-clear">Clear Cables</button>
+  <label>Master <input type="range" id="master" min="0" max="1" step="0.01" value="0.6"></label>
+</div>
+
+<div id="title"><b>MODULAR</b> · learnwithkody</div>
+
+<div class="legend">
+  <span><i class="audio"></i>Audio</span>
+  <span><i class="cv"></i>CV / Gate</span>
+  <span>· drag header to move · click jack to patch · right-click cable to remove</span>
+</div>
+
+<div id="keyboard">
+  <div id="keys-wrap"></div>
+</div>
+
+<div id="toast"></div>
+
+<div id="overlay">
+  <h1>MODULAR SYNTH</h1>
+  <p>Patch cables · Web Audio · 8 modules</p>
+  <div class="pulse">CLICK TO POWER ON</div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Web Audio bootstrap ----------
+  let ctx = null;
+  let master = null;
+  let masterGain = null;
+
+  // ---------- State ----------
+  const modules = {}; // id -> {id, kind, x, y, el, audio:{...}, knobs:{...}}
+  const ports = {};   // portId -> {moduleId, name, kind, type}
+  const cables = [];  // {id, fromPort, toPort, color, gainNode?}
+  let nextId = 1;
+  const id = (p) => p + (nextId++);
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const cablesSvg = document.getElementById('cables');
+  const rack = document.getElementById('rack');
+  const toast = document.getElementById('toast');
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove('show'), 1600);
+  }
+
+  // ---------- Module factories ----------
+
+  // Each module returns audio nodes + helper to set CV.
+  // We use a "cvBus" per CV input: a GainNode summing CV signals (audio-rate).
+  // For frequency CV, an internal node sums (baseFreq + cvVolts*scale) → param.
+  // We use ConstantSource for base values and GainNodes for sums.
+
+  function makeBaseConstant(value) {
+    const n = ctx.createConstantSource();
+    n.offset.value = value;
+    n.start();
+    return n;
+  }
+
+  function makeVCO(wave) {
+    // Outputs an OscillatorNode driven via frequency CV.
+    const osc = ctx.createOscillator();
+    osc.type = wave;
+    osc.frequency.value = 0; // we'll drive via CV summation
+    // CV input: a Gain node that mixes constant base + external CVs (1V/oct convention scaled)
+    const baseFreqConst = makeBaseConstant(220); // Hz baseline (knob)
+    const cvSum = ctx.createGain(); // accumulates CV (volts * 100 scale)
+    cvSum.gain.value = 1;
+    // Connect base + cv sum to osc.frequency
+    baseFreqConst.connect(osc.frequency);
+    cvSum.connect(osc.frequency);
+    // Output gain so we can attach to multiple
+    const out = ctx.createGain();
+    out.gain.value = 0.4;
+    osc.connect(out);
+    osc.start();
+    return {
+      oscNode: osc,
+      output: out,
+      cvFreqIn: cvSum, // connect cables here
+      baseFreq: baseFreqConst,
+      setBaseFreq: (hz) => { baseFreqConst.offset.setTargetAtTime(hz, ctx.currentTime, 0.005); },
+      setWave: (w) => { osc.type = w; }
+    };
+  }
+
+  function makeMixer(numIns) {
+    const out = ctx.createGain();
+    out.gain.value = 0.7;
+    const inputs = [];
+    for (let i = 0; i < numIns; i++) {
+      const g = ctx.createGain();
+      g.gain.value = 1.0 / numIns; // unity-ish
+      g.connect(out);
+      inputs.push(g);
+    }
+    return { inputs, output: out };
+  }
+
+  function makeVCF() {
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 0; // driven via CV
+    filter.Q.value = 5;
+    const baseCutoff = makeBaseConstant(800);
+    const cvSum = ctx.createGain();
+    cvSum.gain.value = 1;
+    baseCutoff.connect(filter.frequency);
+    cvSum.connect(filter.frequency);
+    return {
+      filter,
+      input: filter,
+      output: filter,
+      cutoffCvIn: cvSum,
+      baseCutoff,
+      setBaseCutoff: (hz) => { baseCutoff.offset.setTargetAtTime(hz, ctx.currentTime, 0.01); },
+      setQ: (q) => { filter.Q.setTargetAtTime(q, ctx.currentTime, 0.01); }
+    };
+  }
+
+  function makeADSR() {
+    // Output is a constant source whose offset we automate on gate.
+    // Gate input: just any signal — we treat as digital trigger via global gate handler.
+    const env = ctx.createConstantSource();
+    env.offset.value = 0;
+    env.start();
+    const out = ctx.createGain();
+    out.gain.value = 1;
+    env.connect(out);
+    return {
+      envNode: env,
+      output: out,
+      trigger: (gateOn, params) => {
+        const t = ctx.currentTime;
+        const a = Math.max(0.001, params.attack);
+        const d = Math.max(0.001, params.decay);
+        const s = params.sustain;
+        const r = Math.max(0.001, params.release);
+        env.offset.cancelScheduledValues(t);
+        if (gateOn) {
+          const cur = env.offset.value;
+          env.offset.setValueAtTime(cur, t);
+          env.offset.linearRampToValueAtTime(1, t + a);
+          env.offset.linearRampToValueAtTime(s, t + a + d);
+        } else {
+          const cur = env.offset.value;
+          env.offset.setValueAtTime(cur, t);
+          env.offset.linearRampToValueAtTime(0, t + r);
+        }
+      }
+    };
+  }
+
+  function makeVCA() {
+    // Audio in, audio out, CV input modulates gain.
+    const vca = ctx.createGain();
+    vca.gain.value = 0; // start silent — driven by CV
+    const cvSum = ctx.createGain();
+    cvSum.gain.value = 1;
+    cvSum.connect(vca.gain);
+    return {
+      input: vca,
+      output: vca,
+      cvIn: cvSum
+    };
+  }
+
+  function makeLFO() {
+    const sine = ctx.createOscillator();
+    sine.type = 'sine';
+    sine.frequency.value = 2;
+    const saw = ctx.createOscillator();
+    saw.type = 'sawtooth';
+    saw.frequency.value = 2;
+    const sineOut = ctx.createGain();
+    sineOut.gain.value = 200; // CV scale (modulation depth)
+    const sawOut = ctx.createGain();
+    sawOut.gain.value = 200;
+    sine.connect(sineOut);
+    saw.connect(sawOut);
+    sine.start(); saw.start();
+    return {
+      sine, saw,
+      sineOut, sawOut,
+      setRate: (hz) => {
+        sine.frequency.setTargetAtTime(hz, ctx.currentTime, 0.01);
+        saw.frequency.setTargetAtTime(hz, ctx.currentTime, 0.01);
+      }
+    };
+  }
+
+  function makeOutput() {
+    const inL = ctx.createGain();
+    const inR = ctx.createGain();
+    const merger = ctx.createChannelMerger(2);
+    inL.connect(merger, 0, 0);
+    inR.connect(merger, 0, 1);
+    // Also accept mono into both
+    return { inL, inR, merger };
+  }
+
+  // ---------- DOM module rendering ----------
+
+  function makeKnob(label, opts, onChange) {
+    // opts: {min, max, value, format}
+    const wrap = document.createElement('div');
+    wrap.className = 'knob';
+    const dial = document.createElement('div');
+    dial.className = 'knob-dial';
+    const lbl = document.createElement('div');
+    lbl.className = 'knob-label';
+    lbl.textContent = label;
+    wrap.appendChild(dial);
+    wrap.appendChild(lbl);
+
+    let value = opts.value;
+    const min = opts.min, max = opts.max;
+    function setValue(v, fire = true) {
+      v = Math.max(min, Math.min(max, v));
+      value = v;
+      const norm = (v - min) / (max - min);
+      const angle = -135 + norm * 270;
+      dial.style.setProperty('--angle', angle + 'deg');
+      dial.querySelector ? null : null;
+      // We use after pseudo with rotation via inline style on element via custom property
+      // But ::after can't read custom prop easily; so we inject style.
+      dial.style.transform = ''; // dial itself doesn't rotate, the indicator does
+      // Use a child to rotate? simpler: rotate via shadow on after — we set element style attribute
+      dial._angle = angle;
+      // Re-apply via inline style on after using a hack: we set transform on dial via ::after — instead we use a child indicator
+      indicator.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+      if (fire) onChange(v);
+    }
+
+    // Add explicit indicator element instead of ::after so we can control rotation precisely
+    const indicator = document.createElement('div');
+    indicator.style.cssText = 'position:absolute;top:3px;left:50%;width:2px;height:10px;background:#ffd166;border-radius:1px;transform-origin:50% 14px;transform:translateX(-50%) rotate(0deg);box-shadow:0 0 4px #ffd166;pointer-events:none;';
+    dial.appendChild(indicator);
+    // Hide ::after by overriding (we keep CSS rule but our indicator is on top — cosmetic dup is fine)
+
+    let dragging = false, startY = 0, startVal = 0;
+    dial.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      dragging = true;
+      startY = e.clientY;
+      startVal = value;
+      document.body.style.cursor = 'ns-resize';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const dy = startY - e.clientY;
+      const range = max - min;
+      const sensitivity = e.shiftKey ? 0.0005 : 0.005;
+      const newVal = startVal + dy * range * sensitivity;
+      setValue(newVal);
+    });
+    window.addEventListener('mouseup', () => {
+      if (dragging) { dragging = false; document.body.style.cursor = ''; }
+    });
+    dial.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      setValue(opts.value);
+    });
+
+    setValue(value, false);
+
+    return { wrap, setValue, getValue: () => value };
+  }
+
+  function makePort(moduleId, name, type) {
+    // type: 'audio-in', 'audio-out', 'cv-in', 'cv-out', 'gate-in'
+    const portId = id('p');
+    const wrap = document.createElement('div');
+    wrap.className = 'port';
+    wrap.dataset.type = type;
+    wrap.dataset.portId = portId;
+    const jack = document.createElement('div');
+    jack.className = 'port-jack';
+    const lbl = document.createElement('div');
+    lbl.className = 'port-label';
+    lbl.textContent = name;
+    wrap.appendChild(jack);
+    wrap.appendChild(lbl);
+    ports[portId] = { id: portId, moduleId, name, type, el: wrap, jackEl: jack };
+    return wrap;
+  }
+
+  // Module template definitions
+  const ModuleSpecs = {
+    vco: {
+      title: (m) => 'VCO ' + (m.label || ''),
+      build: (m) => {
+        const wave = m.wave || 'sawtooth';
+        m.audio = makeVCO(wave);
+        m.knobs.freq = { min: 30, max: 2000, value: m.freq || 220 };
+        m.knobs.detune = { min: -50, max: 50, value: m.detune || 0 };
+      },
+      render: (m, body) => {
+        const knobRow = document.createElement('div');
+        knobRow.className = 'knob-row';
+        const k1 = makeKnob('FREQ', m.knobs.freq, (v) => {
+          m.knobs.freq.value = v;
+          m.audio.setBaseFreq(v);
+        });
+        const k2 = makeKnob('DETUNE', m.knobs.detune, (v) => {
+          m.knobs.detune.value = v;
+          m.audio.oscNode.detune.setTargetAtTime(v, ctx.currentTime, 0.01);
+        });
+        knobRow.appendChild(k1.wrap); knobRow.appendChild(k2.wrap);
+        body.appendChild(knobRow);
+        const ports = document.createElement('div'); ports.className = 'ports';
+        m.audio.oscNode.detune.value = m.knobs.detune.value;
+        m._cvPort = makePort(m.id, 'CV', 'cv-in');
+        m._outPort = makePort(m.id, 'OUT', 'audio-out');
+        ports.appendChild(m._cvPort);
+        ports.appendChild(m._outPort);
+        body.appendChild(ports);
+        m.portMap = { cv: m._cvPort.dataset.portId, out: m._outPort.dataset.portId };
+      },
+      portNode: (m, portName) => {
+        if (portName === 'cv') return m.audio.cvFreqIn;
+        if (portName === 'out') return m.audio.output;
+      }
+    },
+    mixer: {
+      title: () => 'MIXER',
+      build: (m) => {
+        m.audio = makeMixer(4);
+        m.knobs.in1 = { min: 0, max: 1, value: 0.5 };
+        m.knobs.in2 = { min: 0, max: 1, value: 0.5 };
+        m.knobs.in3 = { min: 0, max: 1, value: 0 };
+        m.knobs.in4 = { min: 0, max: 1, value: 0 };
+      },
+      render: (m, body) => {
+        const knobRow = document.createElement('div'); knobRow.className = 'knob-row';
+        ['in1', 'in2', 'in3', 'in4'].forEach((key, i) => {
+          const k = makeKnob(key.toUpperCase(), m.knobs[key], (v) => {
+            m.knobs[key].value = v;
+            m.audio.inputs[i].gain.setTargetAtTime(v, ctx.currentTime, 0.005);
+          });
+          knobRow.appendChild(k.wrap);
+        });
+        body.appendChild(knobRow);
+        const ports = document.createElement('div'); ports.className = 'ports';
+        m._inPorts = [];
+        for (let i = 0; i < 4; i++) {
+          const p = makePort(m.id, 'IN' + (i + 1), 'audio-in');
+          m._inPorts.push(p);
+          ports.appendChild(p);
+        }
+        m._outPort = makePort(m.id, 'OUT', 'audio-out');
+        ports.appendChild(m._outPort);
+        body.appendChild(ports);
+        m.portMap = {
+          in1: m._inPorts[0].dataset.portId,
+          in2: m._inPorts[1].dataset.portId,
+          in3: m._inPorts[2].dataset.portId,
+          in4: m._inPorts[3].dataset.portId,
+          out: m._outPort.dataset.portId
+        };
+        // Apply initial knob values to gains
+        for (let i = 0; i < 4; i++) m.audio.inputs[i].gain.value = m.knobs['in' + (i + 1)].value;
+      },
+      portNode: (m, portName) => {
+        if (portName === 'out') return m.audio.output;
+        const idx = parseInt(portName.slice(2)) - 1;
+        return m.audio.inputs[idx];
+      }
+    },
+    vcf: {
+      title: () => 'VCF (LP)',
+      build: (m) => {
+        m.audio = makeVCF();
+        m.knobs.cutoff = { min: 50, max: 8000, value: m.cutoff || 800 };
+        m.knobs.q = { min: 0.1, max: 20, value: m.q || 5 };
+      },
+      render: (m, body) => {
+        const knobRow = document.createElement('div'); knobRow.className = 'knob-row';
+        const k1 = makeKnob('CUTOFF', m.knobs.cutoff, (v) => {
+          m.knobs.cutoff.value = v;
+          m.audio.setBaseCutoff(v);
+        });
+        const k2 = makeKnob('RESO', m.knobs.q, (v) => {
+          m.knobs.q.value = v;
+          m.audio.setQ(v);
+        });
+        knobRow.appendChild(k1.wrap); knobRow.appendChild(k2.wrap);
+        body.appendChild(knobRow);
+        const ports = document.createElement('div'); ports.className = 'ports';
+        m._inPort = makePort(m.id, 'IN', 'audio-in');
+        m._cvPort = makePort(m.id, 'CUT CV', 'cv-in');
+        m._outPort = makePort(m.id, 'OUT', 'audio-out');
+        ports.appendChild(m._inPort);
+        ports.appendChild(m._cvPort);
+        ports.appendChild(m._outPort);
+        body.appendChild(ports);
+        m.portMap = {
+          in: m._inPort.dataset.portId,
+          cv: m._cvPort.dataset.portId,
+          out: m._outPort.dataset.portId
+        };
+        m.audio.setBaseCutoff(m.knobs.cutoff.value);
+        m.audio.setQ(m.knobs.q.value);
+      },
+      portNode: (m, portName) => {
+        if (portName === 'in') return m.audio.input;
+        if (portName === 'cv') return m.audio.cutoffCvIn;
+        if (portName === 'out') return m.audio.output;
+      }
+    },
+    adsr: {
+      title: () => 'ADSR ENV',
+      build: (m) => {
+        m.audio = makeADSR();
+        m.knobs.attack = { min: 0.001, max: 2, value: m.attack || 0.01 };
+        m.knobs.decay = { min: 0.01, max: 2, value: m.decay || 0.2 };
+        m.knobs.sustain = { min: 0, max: 1, value: m.sustain != null ? m.sustain : 0.7 };
+        m.knobs.release = { min: 0.01, max: 4, value: m.release || 0.4 };
+      },
+      render: (m, body) => {
+        const knobRow = document.createElement('div'); knobRow.className = 'knob-row';
+        ['attack', 'decay', 'sustain', 'release'].forEach((key) => {
+          const k = makeKnob(key.slice(0, 3).toUpperCase(), m.knobs[key], (v) => {
+            m.knobs[key].value = v;
+          });
+          knobRow.appendChild(k.wrap);
+        });
+        body.appendChild(knobRow);
+        const ports = document.createElement('div'); ports.className = 'ports';
+        m._gatePort = makePort(m.id, 'GATE', 'gate-in');
+        m._outPort = makePort(m.id, 'ENV', 'cv-out');
+        ports.appendChild(m._gatePort);
+        ports.appendChild(m._outPort);
+        body.appendChild(ports);
+        m.portMap = { gate: m._gatePort.dataset.portId, out: m._outPort.dataset.portId };
+      },
+      portNode: (m, portName) => {
+        if (portName === 'out') return m.audio.output;
+        if (portName === 'gate') return null; // logical
+      }
+    },
+    vca: {
+      title: () => 'VCA',
+      build: (m) => {
+        m.audio = makeVCA();
+        m.knobs.bias = { min: 0, max: 1, value: m.bias || 0 };
+      },
+      render: (m, body) => {
+        const knobRow = document.createElement('div'); knobRow.className = 'knob-row';
+        const k1 = makeKnob('BIAS', m.knobs.bias, (v) => {
+          m.knobs.bias.value = v;
+          m.audio.input.gain.setTargetAtTime(v, ctx.currentTime, 0.005);
+        });
+        knobRow.appendChild(k1.wrap);
+        body.appendChild(knobRow);
+        const ports = document.createElement('div'); ports.className = 'ports';
+        m._inPort = makePort(m.id, 'IN', 'audio-in');
+        m._cvPort = makePort(m.id, 'CV', 'cv-in');
+        m._outPort = makePort(m.id, 'OUT', 'audio-out');
+        ports.appendChild(m._inPort);
+        ports.appendChild(m._cvPort);
+        ports.appendChild(m._outPort);
+        body.appendChild(ports);
+        m.portMap = {
+          in: m._inPort.dataset.portId,
+          cv: m._cvPort.dataset.portId,
+          out: m._outPort.dataset.portId
+        };
+      },
+      portNode: (m, portName) => {
+        if (portName === 'in') return m.audio.input;
+        if (portName === 'cv') return m.audio.cvIn;
+        if (portName === 'out') return m.audio.output;
+      }
+    },
+    lfo: {
+      title: () => 'LFO',
+      build: (m) => {
+        m.audio = makeLFO();
+        m.knobs.rate = { min: 0.1, max: 20, value: m.rate || 2 };
+        m.knobs.depth = { min: 0, max: 2000, value: m.depth || 400 };
+      },
+      render: (m, body) => {
+        const knobRow = document.createElement('div'); knobRow.className = 'knob-row';
+        const k1 = makeKnob('RATE', m.knobs.rate, (v) => {
+          m.knobs.rate.value = v;
+          m.audio.setRate(v);
+        });
+        const k2 = makeKnob('DEPTH', m.knobs.depth, (v) => {
+          m.knobs.depth.value = v;
+          m.audio.sineOut.gain.setTargetAtTime(v, ctx.currentTime, 0.005);
+          m.audio.sawOut.gain.setTargetAtTime(v, ctx.currentTime, 0.005);
+        });
+        knobRow.appendChild(k1.wrap); knobRow.appendChild(k2.wrap);
+        body.appendChild(knobRow);
+        const ports = document.createElement('div'); ports.className = 'ports';
+        m._sinPort = makePort(m.id, 'SINE', 'cv-out');
+        m._sawPort = makePort(m.id, 'SAW', 'cv-out');
+        ports.appendChild(m._sinPort);
+        ports.appendChild(m._sawPort);
+        body.appendChild(ports);
+        m.portMap = {
+          sine: m._sinPort.dataset.portId,
+          saw: m._sawPort.dataset.portId
+        };
+        m.audio.sineOut.gain.value = m.knobs.depth.value;
+        m.audio.sawOut.gain.value = m.knobs.depth.value;
+        m.audio.setRate(m.knobs.rate.value);
+      },
+      portNode: (m, portName) => {
+        if (portName === 'sine') return m.audio.sineOut;
+        if (portName === 'saw') return m.audio.sawOut;
+      }
+    },
+    output: {
+      title: () => 'OUTPUT',
+      build: (m) => {
+        m.audio = makeOutput();
+        m.audio.merger.connect(masterGain);
+      },
+      render: (m, body) => {
+        const info = document.createElement('div');
+        info.style.cssText = 'font-size:9px;color:#8a93b8;text-align:center;padding:4px 0;letter-spacing:1px;';
+        info.textContent = '→ SPEAKER';
+        body.appendChild(info);
+        const ports = document.createElement('div'); ports.className = 'ports';
+        m._lPort = makePort(m.id, 'L', 'audio-in');
+        m._rPort = makePort(m.id, 'R', 'audio-in');
+        ports.appendChild(m._lPort);
+        ports.appendChild(m._rPort);
+        body.appendChild(ports);
+        m.portMap = { L: m._lPort.dataset.portId, R: m._rPort.dataset.portId };
+      },
+      portNode: (m, portName) => {
+        if (portName === 'L') return m.audio.inL;
+        if (portName === 'R') return m.audio.inR;
+      }
+    }
+  };
+
+  function createModule(spec) {
+    // spec: {kind, x, y, label?, ...options}
+    const m = {
+      id: id('m'),
+      kind: spec.kind,
+      x: spec.x, y: spec.y,
+      label: spec.label,
+      knobs: {},
+      portMap: {}
+    };
+    Object.assign(m, spec); // copy custom defaults
+    const def = ModuleSpecs[spec.kind];
+    def.build(m);
+
+    const el = document.createElement('div');
+    el.className = 'module';
+    el.style.left = m.x + 'px';
+    el.style.top = m.y + 'px';
+    const header = document.createElement('div');
+    header.className = 'mod-header';
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = def.title(m);
+    const badgeSpan = document.createElement('span');
+    badgeSpan.className = 'badge';
+    badgeSpan.textContent = m.kind;
+    header.appendChild(titleSpan);
+    header.appendChild(badgeSpan);
+    el.appendChild(header);
+    const body = document.createElement('div');
+    body.className = 'mod-body';
+    el.appendChild(body);
+    def.render(m, body);
+    rack.appendChild(el);
+    m.el = el;
+
+    // Drag header
+    let dragging = false, ox = 0, oy = 0;
+    header.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      ox = e.clientX - m.x;
+      oy = e.clientY - m.y;
+      el.classList.add('dragging');
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      m.x = Math.max(0, e.clientX - ox);
+      m.y = Math.max(0, e.clientY - oy);
+      el.style.left = m.x + 'px';
+      el.style.top = m.y + 'px';
+      renderCables();
+    });
+    window.addEventListener('mouseup', () => {
+      if (dragging) { dragging = false; el.classList.remove('dragging'); }
+    });
+
+    modules[m.id] = m;
+    return m;
+  }
+
+  // ---------- Cable system ----------
+
+  let pendingPort = null; // {portId, x, y, type} for in-progress drag
+
+  function getPortCenter(portId) {
+    const p = ports[portId];
+    if (!p) return { x: 0, y: 0 };
+    const r = p.jackEl.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  function isCompatible(a, b) {
+    if (!a || !b) return false;
+    if (a.moduleId === b.moduleId) return false;
+    // One must be output, one input
+    const aOut = a.type.endsWith('-out');
+    const bOut = b.type.endsWith('-out');
+    if (aOut === bOut) return false;
+    // Type check: audio<->audio OK, cv<->cv OK, gate-in accepts cv-out (any)
+    const aBase = a.type.replace(/-(in|out)$/, '');
+    const bBase = b.type.replace(/-(in|out)$/, '');
+    if (aBase === bBase) return true;
+    // gate-in accepts cv-out (manual gate isn't wired through Web Audio anyway)
+    if ((a.type === 'gate-in' && b.type === 'cv-out') || (b.type === 'gate-in' && a.type === 'cv-out')) return true;
+    return false;
+  }
+
+  function connectAudio(fromPort, toPort) {
+    const fromMod = modules[fromPort.moduleId];
+    const toMod = modules[toPort.moduleId];
+    const fromDef = ModuleSpecs[fromMod.kind];
+    const toDef = ModuleSpecs[toMod.kind];
+    // Find port name from portMap
+    const fromName = Object.keys(fromMod.portMap).find(k => fromMod.portMap[k] === fromPort.id);
+    const toName = Object.keys(toMod.portMap).find(k => toMod.portMap[k] === toPort.id);
+    const fromNode = fromDef.portNode(fromMod, fromName);
+    const toNode = toDef.portNode(toMod, toName);
+    if (!fromNode || !toNode) return null;
+    try {
+      fromNode.connect(toNode);
+    } catch (e) { console.warn('connect error', e); return null; }
+    return { fromNode, toNode };
+  }
+
+  function disconnectAudio(cable) {
+    if (cable.fromNode && cable.toNode) {
+      try { cable.fromNode.disconnect(cable.toNode); } catch (e) { /*ignore*/ }
+    }
+  }
+
+  function addCable(fromPortId, toPortId) {
+    const a = ports[fromPortId];
+    const b = ports[toPortId];
+    if (!a || !b) return;
+    // Ensure from = output, to = input
+    let fromP = a, toP = b;
+    if (a.type.endsWith('-in')) { fromP = b; toP = a; }
+    if (!isCompatible(fromP, toP)) return;
+    // Avoid duplicate
+    if (cables.some(c => c.fromPortId === fromP.id && c.toPortId === toP.id)) return;
+
+    const audio = connectAudio(fromP, toP);
+    const isAudio = fromP.type === 'audio-out';
+    const cable = {
+      id: id('c'),
+      fromPortId: fromP.id,
+      toPortId: toP.id,
+      color: isAudio ? '#e85a5a' : '#5a8de8',
+      glow: isAudio ? 'rgba(232,90,90,0.7)' : 'rgba(90,141,232,0.7)',
+      fromNode: audio ? audio.fromNode : null,
+      toNode: audio ? audio.toNode : null,
+      pathEl: null
+    };
+    cables.push(cable);
+    fromP.el.classList.add('connected');
+    toP.el.classList.add('connected');
+    renderCables();
+    return cable;
+  }
+
+  function removeCable(cable) {
+    disconnectAudio(cable);
+    const i = cables.indexOf(cable);
+    if (i >= 0) cables.splice(i, 1);
+    if (cable.pathEl && cable.pathEl.parentNode) cable.pathEl.parentNode.removeChild(cable.pathEl);
+    // Update port connected state
+    const stillFrom = cables.some(c => c.fromPortId === cable.fromPortId);
+    const stillTo = cables.some(c => c.toPortId === cable.toPortId);
+    if (!stillFrom) ports[cable.fromPortId]?.el.classList.remove('connected');
+    if (!stillTo) ports[cable.toPortId]?.el.classList.remove('connected');
+  }
+
+  function renderCables() {
+    while (cablesSvg.firstChild) cablesSvg.removeChild(cablesSvg.firstChild);
+    cables.forEach(c => {
+      const a = getPortCenter(c.fromPortId);
+      const b = getPortCenter(c.toPortId);
+      const dx = b.x - a.x;
+      const dy = Math.abs(b.y - a.y);
+      const sag = Math.min(80 + dy * 0.3, 200);
+      const cy1 = a.y + sag;
+      const cy2 = b.y + sag;
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', `M ${a.x} ${a.y} C ${a.x} ${cy1}, ${b.x} ${cy2}, ${b.x} ${b.y}`);
+      path.setAttribute('stroke', c.color);
+      path.setAttribute('stroke-width', '4');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('opacity', '0.92');
+      path.style.filter = `drop-shadow(0 0 4px ${c.glow})`;
+      path.style.pointerEvents = 'stroke';
+      path.style.cursor = 'pointer';
+      path.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        removeCable(c);
+        renderCables();
+      });
+      // shadow path
+      const shadow = document.createElementNS(SVG_NS, 'path');
+      shadow.setAttribute('d', path.getAttribute('d'));
+      shadow.setAttribute('stroke', '#000');
+      shadow.setAttribute('stroke-width', '6');
+      shadow.setAttribute('stroke-linecap', 'round');
+      shadow.setAttribute('fill', 'none');
+      shadow.setAttribute('opacity', '0.5');
+      cablesSvg.appendChild(shadow);
+      cablesSvg.appendChild(path);
+      c.pathEl = path;
+    });
+    // Pending cable
+    if (pendingPort && pendingMouse) {
+      const a = getPortCenter(pendingPort);
+      const b = pendingMouse;
+      const sag = 100;
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', `M ${a.x} ${a.y} C ${a.x} ${a.y + sag}, ${b.x} ${b.y + sag}, ${b.x} ${b.y}`);
+      const isAudio = ports[pendingPort].type.startsWith('audio');
+      const isGate = ports[pendingPort].type === 'gate-in';
+      const col = isAudio ? '#e85a5a' : (isGate ? '#c8a040' : '#5a8de8');
+      path.setAttribute('stroke', col);
+      path.setAttribute('stroke-width', '3');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('opacity', '0.7');
+      path.setAttribute('stroke-dasharray', '6 6');
+      cablesSvg.appendChild(path);
+    }
+  }
+
+  let pendingMouse = null;
+
+  // Cable interaction handlers (delegated)
+  rack.addEventListener('mousedown', (e) => {
+    const portEl = e.target.closest('.port');
+    if (!portEl) return;
+    e.stopPropagation();
+    e.preventDefault();
+    pendingPort = portEl.dataset.portId;
+    pendingMouse = { x: e.clientX, y: e.clientY };
+    renderCables();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!pendingPort) return;
+    pendingMouse = { x: e.clientX, y: e.clientY };
+    renderCables();
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (!pendingPort) return;
+    const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+    const portEl = targetEl ? targetEl.closest('.port') : null;
+    if (portEl && portEl.dataset.portId !== pendingPort) {
+      addCable(pendingPort, portEl.dataset.portId);
+    }
+    pendingPort = null;
+    pendingMouse = null;
+    renderCables();
+  });
+
+  // ---------- Animation: cable thickness reflects signal ----------
+  let analysers = new Map(); // cableId -> analyser
+
+  function getCableLevel(cable) {
+    let a = analysers.get(cable.id);
+    if (!a && cable.fromNode) {
+      try {
+        a = ctx.createAnalyser();
+        a.fftSize = 64;
+        cable.fromNode.connect(a);
+        analysers.set(cable.id, a);
+      } catch (e) { return 0; }
+    }
+    if (!a) return 0;
+    const buf = new Uint8Array(a.fftSize);
+    a.getByteTimeDomainData(buf);
+    let max = 0;
+    for (let i = 0; i < buf.length; i++) {
+      max = Math.max(max, Math.abs(buf[i] - 128));
+    }
+    return max / 128;
+  }
+
+  function animate() {
+    cables.forEach(c => {
+      if (!c.pathEl) return;
+      const lvl = getCableLevel(c);
+      const w = 3 + lvl * 4;
+      c.pathEl.setAttribute('stroke-width', w.toFixed(2));
+      const op = (0.6 + lvl * 0.4).toFixed(2);
+      c.pathEl.setAttribute('opacity', op);
+    });
+    requestAnimationFrame(animate);
+  }
+
+  // ---------- Keyboard ----------
+
+  // 2 octaves: C4 to B5
+  const NOTE_OFFSETS = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
+  const BLACK_OFFSETS = [1, 3, 6, 8, 10]; // C# D# F# G# A#
+  const KEYMAP = {
+    // Octave 1 (C4–B4)
+    'z': 0, 's': 1, 'x': 2, 'd': 3, 'c': 4, 'v': 5, 'g': 6,
+    'b': 7, 'h': 8, 'n': 9, 'j': 10, 'm': 11,
+    // Octave 2 (C5–B5)
+    ',': 12, 'l': 13, '.': 14, ';': 15, '/': 16
+  };
+
+  // ASDFGHJ as black keys (top row), ZXCVBNM as white per spec.
+  // Per spec: bottom (Z X C V B N M , .) = whites, top (A S D F G H J) = blacks.
+  // Whites C D E F G A B C D = z x c v b n m , .
+  // Blacks C# D# F# G# A# C# D# = a s d f g h j (over corresponding whites)
+  const WHITE_KEYS = ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.'];
+  const BLACK_KEYS_MAP = { 'a': 1, 's': 3, 'd': 6, 'f': 8, 'g': 10, 'h': 13, 'j': 15 };
+  // Build semitone map
+  const KEY_SEMI = {};
+  WHITE_KEYS.forEach((k, i) => { KEY_SEMI[k] = NOTE_OFFSETS[i % 7] + Math.floor(i / 7) * 12; });
+  Object.entries(BLACK_KEYS_MAP).forEach(([k, semi]) => { KEY_SEMI[k] = semi; });
+
+  // Render on-screen keyboard
+  const keysWrap = document.getElementById('keys-wrap');
+  function buildKeyboard() {
+    keysWrap.innerHTML = '';
+    // Whites first
+    WHITE_KEYS.forEach((k, i) => {
+      const w = document.createElement('div');
+      w.className = 'key-w';
+      w.dataset.key = k;
+      const lbl = document.createElement('div');
+      lbl.className = 'key-label';
+      lbl.textContent = k.toUpperCase();
+      w.appendChild(lbl);
+      keysWrap.appendChild(w);
+      w.addEventListener('mousedown', (e) => { e.preventDefault(); pressKey(k); });
+      w.addEventListener('mouseup', () => releaseKey(k));
+      w.addEventListener('mouseleave', () => releaseKey(k));
+    });
+    // Blacks: positioned absolutely between whites
+    // semitone position to white index
+    const blackPositions = {
+      'a': 0.7, 's': 1.7, 'd': 3.7, 'f': 4.7, 'g': 5.7,
+      'h': 7.7, 'j': 8.7
+    };
+    const wWhite = 36;
+    Object.entries(blackPositions).forEach(([k, pos]) => {
+      const b = document.createElement('div');
+      b.className = 'key-b';
+      b.dataset.key = k;
+      b.style.left = (pos * wWhite - 11) + 'px';
+      const lbl = document.createElement('div');
+      lbl.className = 'key-label';
+      lbl.textContent = k.toUpperCase();
+      b.appendChild(lbl);
+      keysWrap.appendChild(b);
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); pressKey(k); });
+      b.addEventListener('mouseup', () => releaseKey(k));
+      b.addEventListener('mouseleave', () => releaseKey(k));
+    });
+  }
+
+  // Global gate logic
+  // Multiple notes: take last pressed (mono synth)
+  const heldKeys = new Set();
+  let currentNoteSemi = null;
+
+  // Pitch CV: a ConstantSource we drive to set frequency CV across all VCO inputs.
+  // We add this node to every VCO's cvFreqIn via an internal helper "global pitch bus".
+  // Patches still work — this is an *additional* automatic source unless user disconnects.
+  // Actually, simpler: for each pressed key we directly set baseFreq on all VCOs.
+  // Cleaner: maintain a "pitch CV" ConstantSource, and connect it to all VCO frequency CV inputs.
+  // But that duplicates with cables. Trade-off: we'll set baseFreq directly so user patches aren't impacted.
+
+  function semiToFreq(semi) {
+    // C4 = MIDI 60 = 261.63 Hz. semi 0 = C4.
+    return 261.63 * Math.pow(2, semi / 12);
+  }
+
+  function pressKey(k) {
+    if (!(k in KEY_SEMI)) return;
+    if (heldKeys.has(k)) return;
+    heldKeys.add(k);
+    currentNoteSemi = KEY_SEMI[k];
+    const f = semiToFreq(currentNoteSemi);
+    // Update all VCO base frequencies
+    Object.values(modules).forEach(m => {
+      if (m.kind === 'vco') {
+        // Preserve the knob's relative tuning factor
+        const ratio = m.knobs.freq.value / 220;
+        m.audio.setBaseFreq(f * ratio);
+      }
+    });
+    // Trigger gate on all ADSRs
+    Object.values(modules).forEach(m => {
+      if (m.kind === 'adsr') {
+        m.audio.trigger(true, {
+          attack: m.knobs.attack.value,
+          decay: m.knobs.decay.value,
+          sustain: m.knobs.sustain.value,
+          release: m.knobs.release.value
+        });
+      }
+    });
+    // Visual
+    const el = keysWrap.querySelector(`[data-key="${k}"]`);
+    if (el) el.classList.add('active');
+  }
+  function releaseKey(k) {
+    if (!heldKeys.has(k)) return;
+    heldKeys.delete(k);
+    const el = keysWrap.querySelector(`[data-key="${k}"]`);
+    if (el) el.classList.remove('active');
+    if (heldKeys.size === 0) {
+      // Release all ADSRs
+      Object.values(modules).forEach(m => {
+        if (m.kind === 'adsr') {
+          m.audio.trigger(false, {
+            attack: m.knobs.attack.value,
+            decay: m.knobs.decay.value,
+            sustain: m.knobs.sustain.value,
+            release: m.knobs.release.value
+          });
+        }
+      });
+    } else {
+      // Pick another held key
+      const last = Array.from(heldKeys).pop();
+      currentNoteSemi = KEY_SEMI[last];
+      const f = semiToFreq(currentNoteSemi);
+      Object.values(modules).forEach(m => {
+        if (m.kind === 'vco') {
+          const ratio = m.knobs.freq.value / 220;
+          m.audio.setBaseFreq(f * ratio);
+        }
+      });
+    }
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (e.key && e.key.toLowerCase() in KEY_SEMI) {
+      e.preventDefault();
+      pressKey(e.key.toLowerCase());
+    } else if (e.key in KEY_SEMI) {
+      e.preventDefault();
+      pressKey(e.key);
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key && e.key.toLowerCase() in KEY_SEMI) {
+      releaseKey(e.key.toLowerCase());
+    } else if (e.key in KEY_SEMI) {
+      releaseKey(e.key);
+    }
+  });
+
+  // ---------- Default patch ----------
+
+  function clearAll() {
+    cables.slice().forEach(removeCable);
+    Object.values(modules).forEach(m => {
+      if (m.audio) {
+        try {
+          if (m.audio.oscNode) m.audio.oscNode.stop();
+          if (m.audio.envNode) m.audio.envNode.stop();
+          if (m.audio.sine) m.audio.sine.stop();
+          if (m.audio.saw) m.audio.saw.stop();
+          if (m.audio.baseFreq) m.audio.baseFreq.stop();
+          if (m.audio.baseCutoff) m.audio.baseCutoff.stop();
+        } catch (e) { /*ignore*/ }
+      }
+      if (m.el && m.el.parentNode) m.el.parentNode.removeChild(m.el);
+    });
+    Object.keys(modules).forEach(k => delete modules[k]);
+    Object.keys(ports).forEach(k => delete ports[k]);
+    analysers.clear();
+  }
+
+  function loadDefault() {
+    clearAll();
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    // Layout
+    const vco1 = createModule({ kind: 'vco', label: '1', wave: 'sawtooth', x: 80, y: 90, freq: 110, detune: -7 });
+    const vco2 = createModule({ kind: 'vco', label: '2', wave: 'square', x: 80, y: 240, freq: 110, detune: 7 });
+    const mixer = createModule({ kind: 'mixer', x: 280, y: 90 });
+    const vcf = createModule({ kind: 'vcf', x: 470, y: 90, cutoff: 1200, q: 8 });
+    const lfo = createModule({ kind: 'lfo', x: 470, y: 260, rate: 0.6, depth: 800 });
+    const adsr = createModule({ kind: 'adsr', x: 670, y: 260, attack: 0.01, decay: 0.25, sustain: 0.6, release: 0.5 });
+    const vca = createModule({ kind: 'vca', x: 670, y: 90 });
+    const out = createModule({ kind: 'output', x: 870, y: 90 });
+
+    // Fix mixer init (in1, in2 should be active)
+    mixer.audio.inputs[0].gain.value = 0.5;
+    mixer.audio.inputs[1].gain.value = 0.5;
+
+    // Wait one frame so DOM is laid out for cable positions
+    requestAnimationFrame(() => {
+      // VCO1 → mixer in1
+      addCable(vco1.portMap.out, mixer.portMap.in1);
+      // VCO2 → mixer in2
+      addCable(vco2.portMap.out, mixer.portMap.in2);
+      // mixer out → VCF in
+      addCable(mixer.portMap.out, vcf.portMap.in);
+      // VCF out → VCA in
+      addCable(vcf.portMap.out, vca.portMap.in);
+      // ADSR env → VCA cv
+      addCable(adsr.portMap.out, vca.portMap.cv);
+      // LFO sine → VCF cutoff CV
+      addCable(lfo.portMap.sine, vcf.portMap.cv);
+      // VCA out → output L & R
+      addCable(vca.portMap.out, out.portMap.L);
+      addCable(vca.portMap.out, out.portMap.R);
+      renderCables();
+      showToast('Default patch loaded');
+    });
+  }
+
+  // ---------- Save/Load patch ----------
+  function serialize() {
+    const data = {
+      modules: Object.values(modules).map(m => ({
+        id: m.id,
+        kind: m.kind,
+        label: m.label,
+        wave: m.audio && m.audio.oscNode ? m.audio.oscNode.type : undefined,
+        x: m.x, y: m.y,
+        knobs: Object.fromEntries(Object.entries(m.knobs).map(([k, v]) => [k, v.value]))
+      })),
+      cables: cables.map(c => ({
+        from: { moduleId: ports[c.fromPortId].moduleId, port: Object.keys(modules[ports[c.fromPortId].moduleId].portMap).find(k => modules[ports[c.fromPortId].moduleId].portMap[k] === c.fromPortId) },
+        to:   { moduleId: ports[c.toPortId].moduleId,   port: Object.keys(modules[ports[c.toPortId].moduleId].portMap).find(k => modules[ports[c.toPortId].moduleId].portMap[k] === c.toPortId) }
+      }))
+    };
+    return data;
+  }
+
+  function deserialize(data) {
+    clearAll();
+    const oldToNew = {};
+    data.modules.forEach(m => {
+      const newM = createModule({
+        kind: m.kind,
+        label: m.label,
+        wave: m.wave,
+        x: m.x, y: m.y,
+        ...(m.knobs || {})
+      });
+      // Apply knobs
+      if (m.knobs) {
+        Object.entries(m.knobs).forEach(([k, v]) => {
+          if (newM.knobs[k]) {
+            newM.knobs[k].value = v;
+          }
+        });
+      }
+      // Re-render the body to re-apply knob visuals (simpler: nuke and rebuild)
+      // Actually knobs are wired at render-time with closures — simpler to just call setBase/setQ etc.
+      if (m.kind === 'vco') {
+        newM.audio.setBaseFreq(newM.knobs.freq.value);
+        newM.audio.oscNode.detune.value = newM.knobs.detune.value;
+      }
+      if (m.kind === 'vcf') {
+        newM.audio.setBaseCutoff(newM.knobs.cutoff.value);
+        newM.audio.setQ(newM.knobs.q.value);
+      }
+      if (m.kind === 'lfo') {
+        newM.audio.setRate(newM.knobs.rate.value);
+        newM.audio.sineOut.gain.value = newM.knobs.depth.value;
+        newM.audio.sawOut.gain.value = newM.knobs.depth.value;
+      }
+      if (m.kind === 'mixer') {
+        ['in1', 'in2', 'in3', 'in4'].forEach((k, i) => {
+          newM.audio.inputs[i].gain.value = newM.knobs[k].value;
+        });
+      }
+      if (m.kind === 'vca') {
+        newM.audio.input.gain.value = newM.knobs.bias.value;
+      }
+      oldToNew[m.id] = newM.id;
+    });
+    requestAnimationFrame(() => {
+      data.cables.forEach(c => {
+        const fm = modules[oldToNew[c.from.moduleId]];
+        const tm = modules[oldToNew[c.to.moduleId]];
+        if (!fm || !tm) return;
+        const fpid = fm.portMap[c.from.port];
+        const tpid = tm.portMap[c.to.port];
+        if (fpid && tpid) addCable(fpid, tpid);
+      });
+      renderCables();
+    });
+  }
+
+  function savePatch() {
+    const data = serialize();
+    try {
+      const json = JSON.stringify(data);
+      const b64 = btoa(unescape(encodeURIComponent(json)));
+      location.hash = b64;
+      navigator.clipboard?.writeText(location.href).catch(() => {});
+      showToast('Patch saved to URL (and clipboard)');
+    } catch (e) {
+      showToast('Save failed');
+    }
+  }
+
+  function tryLoadFromHash() {
+    if (!location.hash || location.hash.length < 4) return false;
+    try {
+      const b64 = location.hash.slice(1);
+      const json = decodeURIComponent(escape(atob(b64)));
+      const data = JSON.parse(json);
+      deserialize(data);
+      showToast('Patch loaded from URL');
+      return true;
+    } catch (e) {
+      console.warn('hash load failed', e);
+      return false;
+    }
+  }
+
+  // ---------- Boot ----------
+  function powerOn() {
+    if (ctx) return;
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      alert('Web Audio not available');
+      return;
+    }
+    masterGain = ctx.createGain();
+    masterGain.gain.value = 0.6;
+    masterGain.connect(ctx.destination);
+    document.getElementById('master').addEventListener('input', (e) => {
+      masterGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.01);
+    });
+
+    buildKeyboard();
+    if (!tryLoadFromHash()) loadDefault();
+    animate();
+
+    document.getElementById('overlay').style.display = 'none';
+    document.getElementById('btn-default').addEventListener('click', loadDefault);
+    document.getElementById('btn-save').addEventListener('click', savePatch);
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      cables.slice().forEach(removeCable);
+      renderCables();
+      showToast('Cables cleared');
+    });
+  }
+
+  document.getElementById('overlay').addEventListener('click', powerOn);
+
+  window.addEventListener('resize', () => renderCables());
+
+})();
+</script>
+</body>
+</html>

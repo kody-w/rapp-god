@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Internet From Scratch — BGP & TCP</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#05070d;color:#cfe;font:12px/1.4 'SF Mono', Menlo, Consolas, monospace;overflow:hidden}
+  #wrap{position:fixed;inset:0;display:grid;grid-template-columns:1fr 320px;grid-template-rows:1fr 160px}
+  #stage{position:relative;background:radial-gradient(ellipse at center,#0a1426 0%, #03050a 70%);grid-row:1/3;border-right:1px solid #142}
+  canvas{display:block;width:100%;height:100%}
+  #side{grid-column:2;grid-row:1;overflow:auto;padding:10px;background:#070b14;border-bottom:1px solid #142}
+  #throughput{grid-column:2;grid-row:2;background:#070b14;position:relative}
+  #throughput canvas{position:absolute;inset:0}
+  #ctrls{position:absolute;top:10px;left:10px;display:flex;flex-wrap:wrap;gap:6px;z-index:10}
+  button{background:#0d1726;border:1px solid #1c3550;color:#9ed;padding:5px 10px;cursor:pointer;font:inherit;border-radius:3px}
+  button:hover{background:#152338;border-color:#2a5a87;color:#fff}
+  button.active{background:#1a3a52;border-color:#4af;color:#fff;box-shadow:0 0 8px #4af3}
+  h3{margin:6px 0 4px;color:#7df;font-size:11px;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid #1a2c44;padding-bottom:2px}
+  .log{font-size:11px;color:#9bd;max-height:140px;overflow:auto;background:#03070e;padding:4px 6px;border-radius:2px}
+  .log div{opacity:.85;padding:1px 0}
+  .log .new{color:#fff;background:#1c3550;animation:fade 2s forwards}
+  @keyframes fade{from{background:#1c3550}to{background:transparent}}
+  .pathline{font-weight:bold;color:#fc6;word-break:break-all}
+  .stat{display:flex;justify-content:space-between;color:#8ad}
+  .stat span:last-child{color:#fff}
+  #title{position:absolute;top:10px;right:340px;color:#4af;font-size:11px;letter-spacing:1px;opacity:.7;z-index:10;pointer-events:none}
+  #help{position:absolute;bottom:10px;left:10px;font-size:10px;color:#68a;background:#03070e8a;padding:5px 8px;border-radius:3px;max-width:480px;z-index:10}
+  kbd{background:#152338;border:1px solid #2a5a87;border-radius:2px;padding:1px 4px;color:#9ed;font-size:10px}
+  #throughput .label{position:absolute;top:4px;left:6px;color:#7df;font-size:10px;z-index:2;letter-spacing:.5px}
+  #throughput .yaxis{position:absolute;top:0;right:4px;font-size:9px;color:#578}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="net"></canvas>
+    <div id="ctrls">
+      <button id="bMode">Mode: BGP</button>
+      <button id="bTool">Tool: Select</button>
+      <button id="bFail">Random Failures: OFF</button>
+      <button id="bReset">Reset</button>
+    </div>
+    <div id="title">INTERNET FROM SCRATCH · 50 AS · BGP4 + TCP/AIMD</div>
+    <div id="help">
+      <b>BGP mode:</b> Click an AS, then another AS to compute & animate a path. Click a link to cut/restore it (or use Cut tool).
+      <b>TCP mode:</b> Click an AS to spawn 100 flows. Watch links saturate & throughput collapse on failure.
+    </div>
+  </div>
+  <div id="side">
+    <h3>Status</h3>
+    <div class="stat"><span>Mode</span><span id="sMode">BGP</span></div>
+    <div class="stat"><span>ASes</span><span id="sAS">0</span></div>
+    <div class="stat"><span>Active Links</span><span id="sLinks">0</span></div>
+    <div class="stat"><span>Convergence</span><span id="sConv">stable</span></div>
+    <div class="stat"><span>BGP Updates</span><span id="sUpd">0</span></div>
+    <div class="stat"><span>Active Flows</span><span id="sFlows">0</span></div>
+    <h3>Selected Path</h3>
+    <div id="sPath" class="pathline">—</div>
+    <h3>Route / Event Log</h3>
+    <div id="log" class="log"></div>
+  </div>
+  <div id="throughput">
+    <div class="label">NETWORK THROUGHPUT (Mb/s)</div>
+    <div class="yaxis" id="yax"></div>
+    <canvas id="tput"></canvas>
+  </div>
+</div>
+<script>
+"use strict";
+
+// ==================== Globals ====================
+const C = document.getElementById('net');
+const X = C.getContext('2d');
+const TC = document.getElementById('tput');
+const TX = TC.getContext('2d');
+const Log = document.getElementById('log');
+let W=0,H=0,TW=0,TH=0;
+function resize(){
+  const r=C.getBoundingClientRect(); W=C.width=r.width*devicePixelRatio; H=C.height=r.height*devicePixelRatio;
+  X.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  const tr=TC.getBoundingClientRect(); TW=TC.width=tr.width*devicePixelRatio; TH=TC.height=tr.height*devicePixelRatio;
+  TX.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+window.addEventListener('resize',resize);
+
+// ==================== Topology ====================
+let AS=[];        // {id,tier,x,y,vx,vy,peers:Set, rt:Map<dest, nextHop>, paths:Map<dest, AS-path[]>}
+let LINKS=[];     // {a,b,up,cap,load,id}
+let LinkMap=new Map(); // "a-b" -> link
+
+function genTopology(){
+  AS=[]; LINKS=[]; LinkMap.clear();
+  let id=0;
+  // Tier 1: 3 backbones
+  const cx=C.clientWidth/2, cy=C.clientHeight/2;
+  for(let i=0;i<3;i++){
+    const a=Math.PI*2*i/3 - Math.PI/2;
+    AS.push(mk(id++,1, cx+Math.cos(a)*120, cy+Math.sin(a)*120));
+  }
+  // Tier 2: 8 regional ISPs
+  for(let i=0;i<8;i++){
+    const a=Math.PI*2*i/8;
+    AS.push(mk(id++,2, cx+Math.cos(a)*260, cy+Math.sin(a)*260));
+  }
+  // Tier 3: ~40 leaf
+  for(let i=0;i<40;i++){
+    const a=Math.random()*Math.PI*2;
+    const r=340+Math.random()*120;
+    AS.push(mk(id++,3, cx+Math.cos(a)*r, cy+Math.sin(a)*r));
+  }
+  // Links: tier1 fully meshed
+  for(let i=0;i<3;i++)for(let j=i+1;j<3;j++) link(i,j, 10000);
+  // tier2 -> two tier1s + a sibling or two
+  for(let i=3;i<11;i++){
+    const t1a=Math.floor(Math.random()*3);
+    let t1b=Math.floor(Math.random()*3); while(t1b===t1a) t1b=Math.floor(Math.random()*3);
+    link(i,t1a,2500); link(i,t1b,2500);
+    // sibling tier2
+    const sib = 3 + ((i-3)+1+Math.floor(Math.random()*3))%8;
+    if(sib!==i) link(i,sib,1500);
+  }
+  // tier3 -> 1-2 tier2s
+  for(let i=11;i<AS.length;i++){
+    // pick by closest-ish: random + distance bias
+    const cand=[];
+    for(let j=3;j<11;j++) cand.push([j, dist(AS[i],AS[j]) + Math.random()*100]);
+    cand.sort((a,b)=>a[1]-b[1]);
+    link(i,cand[0][0], 500);
+    if(Math.random()<0.55) link(i,cand[1][0], 500);
+  }
+}
+
+function mk(id,tier,x,y){
+  return {id,tier,x,y,vx:0,vy:0, peers:new Set(), rt:new Map(), paths:new Map()};
+}
+function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return Math.hypot(dx,dy);}
+
+function link(a,b,cap){
+  if(a===b) return;
+  const k = a<b? a+'-'+b : b+'-'+a;
+  if(LinkMap.has(k)) return;
+  const L={a:Math.min(a,b),b:Math.max(a,b),up:true,cap,load:0,id:LINKS.length, packets:[]};
+  LINKS.push(L); LinkMap.set(k,L);
+  AS[a].peers.add(b); AS[b].peers.add(a);
+}
+
+// ==================== Force layout ====================
+function relax(steps){
+  for(let s=0;s<steps;s++){
+    for(let i=0;i<AS.length;i++){
+      const A=AS[i]; A.vx*=0.85; A.vy*=0.85;
+      for(let j=0;j<AS.length;j++) if(i!==j){
+        const B=AS[j]; const dx=A.x-B.x, dy=A.y-B.y; const d2=dx*dx+dy*dy+0.01;
+        const f= 1500/d2;
+        A.vx += dx*f; A.vy += dy*f;
+      }
+    }
+    for(const L of LINKS){
+      if(!L.up) continue;
+      const A=AS[L.a], B=AS[L.b];
+      const dx=B.x-A.x, dy=B.y-A.y; const d=Math.hypot(dx,dy)||1;
+      const target = L.cap>5000? 130 : L.cap>1500? 110 : 80;
+      const f=(d-target)*0.02;
+      A.vx += dx/d*f; A.vy += dy/d*f;
+      B.vx -= dx/d*f; B.vy -= dy/d*f;
+    }
+    const cx=C.clientWidth/2, cy=C.clientHeight/2;
+    for(const A of AS){
+      // gentle center pull
+      A.vx += (cx-A.x)*0.001; A.vy += (cy-A.y)*0.001;
+      A.x += A.vx*0.5; A.y += A.vy*0.5;
+      // soft bounds
+      const m=30; if(A.x<m)A.x=m; if(A.y<m)A.y=m;
+      if(A.x>C.clientWidth-m) A.x=C.clientWidth-m;
+      if(A.y>C.clientHeight-m) A.y=C.clientHeight-m;
+    }
+  }
+}
+
+// ==================== BGP ====================
+// Compute routing tables: BFS from each AS for shortest AS-path; tie-break by lower next-hop AS#.
+let convergeQueue=[]; // ASes that need to (re)compute
+let convergeMessages=[]; // {from,to,startTime,duration} animated
+let bgpUpdates=0;
+
+function computeAllRoutes(){
+  for(const A of AS){ A.rt.clear(); A.paths.clear(); }
+  for(const A of AS) bfsRoutes(A);
+}
+
+function bfsRoutes(src){
+  src.rt.clear(); src.paths.clear();
+  const visited = new Map(); // dest -> {via, hops, path}
+  visited.set(src.id, {via:null, hops:0, path:[src.id]});
+  let frontier=[src.id];
+  while(frontier.length){
+    const next=[];
+    // sort by AS# for determinism (BGP tie break)
+    frontier.sort((a,b)=>a-b);
+    for(const u of frontier){
+      const cur=visited.get(u);
+      const peers=[...AS[u].peers].sort((a,b)=>a-b);
+      for(const p of peers){
+        const L=getLink(u,p); if(!L||!L.up) continue;
+        if(visited.has(p)) continue;
+        const path=[...cur.path, p];
+        visited.set(p, {via:cur.path[1]??p, hops:cur.hops+1, path});
+        next.push(p);
+      }
+    }
+    frontier=next;
+  }
+  for(const [dest,info] of visited){
+    if(dest===src.id) continue;
+    src.rt.set(dest, info.path[1]);
+    src.paths.set(dest, info.path);
+  }
+}
+
+function getLink(a,b){
+  const k = a<b? a+'-'+b : b+'-'+a;
+  return LinkMap.get(k);
+}
+
+// "Convergence" propagation animation: when a link is cut, schedule waves of UPDATE messages.
+function triggerConvergence(linkChanged){
+  const A=AS[linkChanged.a], B=AS[linkChanged.b];
+  const seeds=new Set([A.id,B.id]);
+  for(const sid of seeds) enqueueUpdate(sid, 0);
+  logEvent(`LINK ${linkChanged.up?'RESTORED':'DOWN'}: AS${A.id}↔AS${B.id}`);
+  setConv('converging');
+}
+
+function enqueueUpdate(asId, delay){
+  convergeQueue.push({asId, time: performance.now()+delay});
+}
+
+function processConvergence(now){
+  // process due
+  let processed=0;
+  let movedNodes=new Set();
+  while(convergeQueue.length && convergeQueue[0].time<=now){
+    convergeQueue.sort((a,b)=>a.time-b.time);
+    const job=convergeQueue.shift();
+    const A=AS[job.asId];
+    bfsRoutes(A);
+    bgpUpdates++;
+    movedNodes.add(A.id);
+    // propagate to peers (simulating BGP UPDATE)
+    for(const p of A.peers){
+      const L=getLink(A.id,p); if(!L||!L.up) continue;
+      // Animate update message
+      convergeMessages.push({from:A.id, to:p, t0:now, dur:600+Math.random()*200});
+      // schedule peer to recompute
+      convergeQueue.push({asId:p, time: now + 700 + Math.random()*200});
+    }
+    processed++;
+    if(processed>5) break; // throttle per-frame
+  }
+  // dedup convergeQueue: if same AS scheduled multiple times within window, drop dups
+  const seen=new Set(), kept=[];
+  for(const j of convergeQueue){ const k=j.asId+'|'+Math.floor(j.time/300); if(!seen.has(k)){seen.add(k);kept.push(j);} }
+  convergeQueue=kept;
+  // expire messages
+  convergeMessages = convergeMessages.filter(m => now - m.t0 < m.dur+50);
+  if(!convergeQueue.length && !convergeMessages.length) setConv('stable');
+  document.getElementById('sUpd').textContent=bgpUpdates;
+}
+
+function setConv(s){ document.getElementById('sConv').textContent=s; }
+
+// ==================== UI / interaction ====================
+let mode='BGP'; // 'BGP' or 'TCP'
+let tool='select'; // 'select' or 'cut'
+let randomFails=false;
+let lastFail=0;
+
+let pickFrom=null, pickTo=null, pickPath=null;
+let packets=[]; // animated routed packets {path, idx, t}
+
+function logEvent(msg){
+  const d=document.createElement('div');
+  d.className='new';
+  d.textContent='['+(new Date()).toLocaleTimeString().split(' ')[0]+'] '+msg;
+  Log.prepend(d);
+  while(Log.children.length>40) Log.removeChild(Log.lastChild);
+}
+
+C.addEventListener('click', e=>{
+  const r=C.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  // first try link
+  const L=hitLink(mx,my);
+  if(tool==='cut' || (L && distToLine(mx,my,L)<6 && !hitNode(mx,my))){
+    if(L){
+      L.up = !L.up;
+      // when down, drop flows that traverse it
+      if(!L.up){
+        flows = flows.filter(f => !f.path.some((n,i)=> i<f.path.length-1 && getLink(n,f.path[i+1])===L));
+      }
+      computeAllRoutes(); // rapid local re-route, then animate convergence
+      triggerConvergence(L);
+      return;
+    }
+  }
+  const N=hitNode(mx,my);
+  if(N){
+    if(mode==='BGP'){
+      if(!pickFrom){ pickFrom=N; pickTo=null; pickPath=null; updatePathUI(); }
+      else if(!pickTo){
+        pickTo=N;
+        const path = pickFrom.paths.get(pickTo.id);
+        if(path){
+          pickPath=path;
+          packets.push({path, idx:0, t:performance.now()});
+          logEvent(`ROUTE AS${pickFrom.id}→AS${pickTo.id}: ${path.map(n=>'AS'+n).join('→')}`);
+        } else {
+          pickPath=null;
+          logEvent(`UNREACHABLE: AS${pickFrom.id}→AS${pickTo.id}`);
+        }
+        updatePathUI();
+        // reset for next
+        setTimeout(()=>{ pickFrom=null; pickTo=null; updatePathUI(); }, 2500);
+      }
+    } else {
+      // TCP: spawn 100 flows from N to random destinations
+      spawnFlows(N, 100);
+      logEvent(`TCP: 100 flows from AS${N.id}`);
+    }
+  }
+});
+
+function hitNode(mx,my){
+  for(const A of AS){
+    const r=nodeR(A);
+    if((mx-A.x)**2+(my-A.y)**2 < r*r) return A;
+  }
+  return null;
+}
+function nodeR(A){ return A.tier===1?14: A.tier===2?9: 5; }
+function hitLink(mx,my){
+  let best=null, bd=999;
+  for(const L of LINKS){
+    const d=distToLine(mx,my,L);
+    if(d<8 && d<bd){ best=L; bd=d; }
+  }
+  return best;
+}
+function distToLine(mx,my,L){
+  const A=AS[L.a],B=AS[L.b];
+  const dx=B.x-A.x, dy=B.y-A.y; const len2=dx*dx+dy*dy;
+  if(!len2) return Math.hypot(mx-A.x,my-A.y);
+  let t=((mx-A.x)*dx+(my-A.y)*dy)/len2; t=Math.max(0,Math.min(1,t));
+  const px=A.x+t*dx, py=A.y+t*dy;
+  return Math.hypot(mx-px,my-py);
+}
+
+function updatePathUI(){
+  const el=document.getElementById('sPath');
+  if(pickPath) el.textContent=pickPath.map(n=>'AS'+n).join(' → ');
+  else if(pickFrom && !pickTo) el.textContent='From AS'+pickFrom.id+' — pick destination';
+  else el.textContent='—';
+}
+
+// Buttons
+document.getElementById('bMode').onclick=()=>{
+  mode = mode==='BGP'?'TCP':'BGP';
+  document.getElementById('bMode').textContent='Mode: '+mode;
+  document.getElementById('sMode').textContent=mode;
+  document.getElementById('bMode').classList.toggle('active', mode==='TCP');
+  pickFrom=null; pickTo=null; pickPath=null; updatePathUI();
+  if(mode==='BGP'){ flows=[]; tputHist=[]; }
+};
+document.getElementById('bTool').onclick=()=>{
+  tool = tool==='select'?'cut':'select';
+  const b=document.getElementById('bTool');
+  b.textContent='Tool: '+(tool==='cut'?'Cut Link':'Select');
+  b.classList.toggle('active', tool==='cut');
+};
+document.getElementById('bFail').onclick=()=>{
+  randomFails=!randomFails;
+  const b=document.getElementById('bFail');
+  b.textContent='Random Failures: '+(randomFails?'ON':'OFF');
+  b.classList.toggle('active', randomFails);
+};
+document.getElementById('bReset').onclick=()=>{
+  init();
+};
+
+// ==================== TCP ====================
+let flows=[]; // {src,dst,path,rate,maxSeen,active,lastAck, lossCool}
+let tputHist=[]; // throughput samples
+const TPUT_MAX_SAMPLES = 600;
+
+function spawnFlows(src, n){
+  for(let i=0;i<n;i++){
+    let dst=AS[Math.floor(Math.random()*AS.length)];
+    let tries=0;
+    while((dst.id===src.id || !src.paths.get(dst.id)) && tries<10){
+      dst=AS[Math.floor(Math.random()*AS.length)]; tries++;
+    }
+    const path = src.paths.get(dst.id);
+    if(!path) continue;
+    flows.push({
+      src:src.id, dst:dst.id, path,
+      rate: 0.1, // Mb/s starting (slow start-ish)
+      lossCool: 0
+    });
+  }
+}
+
+function tcpStep(dt){
+  // Reset link loads
+  for(const L of LINKS) L.load=0;
+  // Aggregate offered load on each link
+  for(const f of flows){
+    for(let i=0;i<f.path.length-1;i++){
+      const L=getLink(f.path[i],f.path[i+1]);
+      if(!L||!L.up){ f.rate=Math.max(0.05,f.rate*0.5); f.lossCool=0.3; break; }
+      L.load += f.rate;
+    }
+  }
+  // Decide which flows experience loss: if link load > capacity, drop probability = (load-cap)/load
+  // For each flow on a saturated link, halve rate (multiplicative decrease)
+  for(const f of flows){
+    let lost=false;
+    for(let i=0;i<f.path.length-1;i++){
+      const L=getLink(f.path[i],f.path[i+1]); if(!L||!L.up){lost=true;break;}
+      if(L.load > L.cap){
+        const p = (L.load - L.cap)/L.load;
+        if(Math.random() < p*Math.min(1, dt*4)) { lost=true; break; }
+      }
+    }
+    if(lost){
+      f.rate = Math.max(0.05, f.rate*0.5);
+      f.lossCool = 0.5;
+    } else {
+      // additive increase: ~ +1 / RTT each ack. Approximate RTT by hops*20ms.
+      f.lossCool = Math.max(0, f.lossCool - dt);
+      if(f.lossCool===0){
+        const rtt = Math.max(0.04, f.path.length*0.02);
+        f.rate += dt / rtt * 0.8;
+      }
+    }
+    // Cap individual flow rate to keep things bounded
+    if(f.rate > 50) f.rate=50;
+  }
+  // GC: kill flows that are very slow & old (just to refresh)
+  // (We keep them - users like to see them persist)
+  // Compute total throughput (delivered = min(load, cap) per link, but for graph use sum of flow rates that aren't on dead links)
+  let total=0;
+  for(const f of flows){
+    let ok=true;
+    for(let i=0;i<f.path.length-1;i++){const L=getLink(f.path[i],f.path[i+1]);if(!L||!L.up){ok=false;break;}}
+    if(ok) total += f.rate;
+  }
+  tputHist.push(total);
+  if(tputHist.length>TPUT_MAX_SAMPLES) tputHist.shift();
+  // Also record link "color" smoothing
+  for(const L of LINKS){
+    L.cong = Math.min(1, L.load / L.cap);
+    L.smoothCong = (L.smoothCong||0)*0.85 + L.cong*0.15;
+    L.smoothLoad = (L.smoothLoad||0)*0.85 + L.load*0.15;
+  }
+  document.getElementById('sFlows').textContent=flows.length;
+}
+
+// ==================== Drawing ====================
+function nodeColor(A){
+  if(A===pickFrom||A===pickTo) return '#ffd34a';
+  if(pickPath && pickPath.includes(A.id)) return '#fc6';
+  if(A.tier===1) return '#5af';
+  if(A.tier===2) return '#7df';
+  return '#9bd';
+}
+
+function draw(now){
+  X.clearRect(0,0,W,H);
+  // Draw links
+  for(const L of LINKS){
+    const A=AS[L.a],B=AS[L.b];
+    if(!L.up){
+      X.strokeStyle='#3a1818';
+      X.setLineDash([4,4]);
+      X.lineWidth=1;
+      X.beginPath(); X.moveTo(A.x,A.y); X.lineTo(B.x,B.y); X.stroke();
+      X.setLineDash([]);
+      continue;
+    }
+    let col,wid;
+    if(mode==='TCP'){
+      const c=L.smoothCong||0;
+      // green -> yellow -> red
+      const r=Math.floor(80 + c*175);
+      const g=Math.floor(220 - c*180);
+      const b=Math.floor(120 - c*110);
+      col=`rgb(${r},${g},${b})`;
+      wid = 1 + Math.min(8, (L.smoothLoad||0)/L.cap*5);
+    } else {
+      col = L.cap>5000? '#3a6b9a' : L.cap>1500? '#2a5878' : '#1c3955';
+      wid = L.cap>5000? 2.2 : L.cap>1500? 1.5 : 1;
+      if(pickPath){
+        for(let i=0;i<pickPath.length-1;i++){
+          if((pickPath[i]===L.a && pickPath[i+1]===L.b)||(pickPath[i]===L.b && pickPath[i+1]===L.a)){
+            col='#ffb84a'; wid=Math.max(wid,2.5);
+          }
+        }
+      }
+    }
+    X.strokeStyle=col; X.lineWidth=wid;
+    X.beginPath(); X.moveTo(A.x,A.y); X.lineTo(B.x,B.y); X.stroke();
+  }
+
+  // BGP convergence ripples
+  for(const m of convergeMessages){
+    const A=AS[m.from], B=AS[m.to];
+    const t = Math.min(1, (now-m.t0)/m.dur);
+    const x=A.x + (B.x-A.x)*t;
+    const y=A.y + (B.y-A.y)*t;
+    X.fillStyle = `rgba(255,90,90,${1-t})`;
+    X.beginPath(); X.arc(x,y,3,0,Math.PI*2); X.fill();
+    X.strokeStyle = `rgba(255,90,90,${(1-t)*0.4})`;
+    X.lineWidth=1;
+    X.beginPath(); X.arc(x,y,5+t*8,0,Math.PI*2); X.stroke();
+  }
+
+  // Animated routed packet (BGP demo)
+  packets = packets.filter(p=>{
+    const speed=420; // px/sec per hop ish
+    const elapsed = (now-p.t)/1000;
+    const totalSegs = p.path.length-1;
+    let segIdx = Math.floor(elapsed*2.5);
+    if(segIdx>=totalSegs) return false;
+    const tInSeg = (elapsed*2.5)-segIdx;
+    const A=AS[p.path[segIdx]], B=AS[p.path[segIdx+1]];
+    const x=A.x+(B.x-A.x)*tInSeg, y=A.y+(B.y-A.y)*tInSeg;
+    X.fillStyle='#fff'; X.beginPath(); X.arc(x,y,4,0,Math.PI*2); X.fill();
+    X.fillStyle='#ffb84a'; X.beginPath(); X.arc(x,y,2,0,Math.PI*2); X.fill();
+    return true;
+  });
+
+  // Draw nodes
+  for(const A of AS){
+    const r=nodeR(A);
+    X.fillStyle = '#0a1426';
+    X.beginPath(); X.arc(A.x,A.y,r+1.5,0,Math.PI*2); X.fill();
+    X.fillStyle = nodeColor(A);
+    X.beginPath(); X.arc(A.x,A.y,r,0,Math.PI*2); X.fill();
+    if(A.tier===1){
+      X.strokeStyle='#9cf';X.lineWidth=1.5;
+      X.beginPath(); X.arc(A.x,A.y,r+3,0,Math.PI*2); X.stroke();
+    }
+    // label
+    if(A.tier<=2 || (A===pickFrom||A===pickTo)){
+      X.fillStyle = A.tier===1?'#000':'#021';
+      X.font = 'bold '+(A.tier===1?10:9)+'px monospace';
+      X.textAlign='center'; X.textBaseline='middle';
+      X.fillText('AS'+A.id, A.x, A.y+0.5);
+    }
+  }
+
+  // Throughput graph
+  if(mode==='TCP' || tputHist.length){
+    drawThroughput();
+  } else {
+    TX.fillStyle='#070b14'; TX.fillRect(0,0,TC.clientWidth,TC.clientHeight);
+    TX.fillStyle='#345'; TX.font='10px monospace';
+    TX.fillText('Switch to TCP mode to see throughput.', 10, TC.clientHeight/2);
+  }
+}
+
+function drawThroughput(){
+  const w=TC.clientWidth, h=TC.clientHeight;
+  TX.fillStyle='#070b14'; TX.fillRect(0,0,w,h);
+  // Find max
+  let max=10;
+  for(const v of tputHist) if(v>max) max=v;
+  // Grid
+  TX.strokeStyle='#16243a'; TX.lineWidth=1;
+  for(let i=1;i<5;i++){
+    const y=h*i/5;
+    TX.beginPath(); TX.moveTo(0,y); TX.lineTo(w,y); TX.stroke();
+  }
+  // Line
+  TX.strokeStyle='#5af'; TX.lineWidth=1.5;
+  TX.beginPath();
+  for(let i=0;i<tputHist.length;i++){
+    const x = w * i/TPUT_MAX_SAMPLES;
+    const y = h - (tputHist[i]/max)*(h-12) - 4;
+    if(i===0) TX.moveTo(x,y); else TX.lineTo(x,y);
+  }
+  TX.stroke();
+  // Fill
+  TX.lineTo(w*tputHist.length/TPUT_MAX_SAMPLES, h);
+  TX.lineTo(0,h); TX.closePath();
+  TX.fillStyle='rgba(85,170,255,0.12)'; TX.fill();
+  // Y label
+  document.getElementById('yax').textContent = Math.round(max)+' Mb/s';
+  // Current
+  if(tputHist.length){
+    const cur = tputHist[tputHist.length-1];
+    TX.fillStyle='#fff'; TX.font='bold 11px monospace'; TX.textAlign='right';
+    TX.fillText(cur.toFixed(1)+' Mb/s', w-6, h-6);
+  }
+}
+
+// ==================== Main loop ====================
+let lastT=performance.now();
+function loop(now){
+  const dt=Math.min(0.1, (now-lastT)/1000); lastT=now;
+  // Continued mild relaxation
+  relax(1);
+  // BGP convergence
+  processConvergence(now);
+  // Random failures
+  if(randomFails && now-lastFail>3000){
+    lastFail=now;
+    // pick a random up link, but avoid orphaning leaves persistently
+    const upLinks=LINKS.filter(L=>L.up);
+    const downLinks=LINKS.filter(L=>!L.up);
+    // restore some old failures occasionally
+    if(downLinks.length>3 && Math.random()<0.4){
+      const L=downLinks[Math.floor(Math.random()*downLinks.length)];
+      L.up=true; computeAllRoutes(); triggerConvergence(L);
+    } else if(upLinks.length){
+      const L=upLinks[Math.floor(Math.random()*upLinks.length)];
+      L.up=false;
+      flows = flows.filter(f => !f.path.some((n,i)=> i<f.path.length-1 && getLink(n,f.path[i+1])===L));
+      computeAllRoutes(); triggerConvergence(L);
+    }
+  }
+  // TCP step
+  if(mode==='TCP'){ tcpStep(dt); }
+  // Re-route flows whose path is broken
+  if(mode==='TCP'){
+    for(const f of flows){
+      let broken=false;
+      for(let i=0;i<f.path.length-1;i++){const L=getLink(f.path[i],f.path[i+1]);if(!L||!L.up){broken=true;break;}}
+      if(broken){
+        const np = AS[f.src].paths.get(f.dst);
+        if(np){ f.path=np; f.rate=Math.max(0.1, f.rate*0.5);}
+      }
+    }
+    flows = flows.filter(f=>{
+      for(let i=0;i<f.path.length-1;i++){const L=getLink(f.path[i],f.path[i+1]);if(!L||!L.up) return false;}
+      return true;
+    });
+  }
+  draw(now);
+  requestAnimationFrame(loop);
+}
+
+// ==================== Init ====================
+function init(){
+  resize();
+  genTopology();
+  // Initial layout
+  for(let i=0;i<200;i++) relax(1);
+  computeAllRoutes();
+  packets=[]; flows=[]; tputHist=[]; convergeQueue=[]; convergeMessages=[]; bgpUpdates=0;
+  pickFrom=pickTo=pickPath=null;
+  randomFails=false; document.getElementById('bFail').textContent='Random Failures: OFF';
+  document.getElementById('bFail').classList.remove('active');
+  document.getElementById('sAS').textContent=AS.length;
+  document.getElementById('sLinks').textContent=LINKS.filter(L=>L.up).length;
+  setConv('stable');
+  Log.innerHTML='';
+  logEvent(`Generated topology: ${AS.length} ASes, ${LINKS.length} links (3 tier-1 / 8 tier-2 / ${AS.length-11} tier-3)`);
+  updatePathUI();
+}
+window.addEventListener('load', ()=>{
+  resize();
+  init();
+  requestAnimationFrame(loop);
+});
+
+// Update active link count periodically
+setInterval(()=>{
+  document.getElementById('sLinks').textContent=LINKS.filter(L=>L.up).length+' / '+LINKS.length;
+}, 500);
+</script>
+</body>
+</html>

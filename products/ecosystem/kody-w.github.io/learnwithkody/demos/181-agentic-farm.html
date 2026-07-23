@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dappleberry Farm — Round 18 · Agentic Story Engine</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;padding:0;background:#1a1208;color:#fff7e0;font-family:'Georgia',serif;overflow:hidden;height:100%;}
+  #stage{position:fixed;inset:0;}
+  canvas{display:block;}
+  .panel{position:fixed;background:rgba(40,26,14,0.82);border:1px solid #d49a3a;color:#fff3d4;
+    padding:8px 11px;border-radius:7px;font-size:12px;line-height:1.4;letter-spacing:0.25px;
+    box-shadow:0 0 12px rgba(212,154,58,0.18) inset, 0 4px 14px rgba(0,0,0,0.4);}
+  #hud{top:10px;left:10px;max-width:340px;}
+  #hud b{color:#ffd87a;}
+  #hud .area{font-size:13px;color:#ffe8a6;}
+  #chyron{bottom:14px;left:50%;transform:translateX(-50%);max-width:780px;text-align:center;
+    font-style:italic;color:#fff3c0;background:rgba(20,12,4,0.75);font-size:13px;}
+  #brain{top:10px;right:10px;max-width:280px;font-family:'Courier New',monospace;font-size:11px;
+    background:rgba(20,12,4,0.86);border-color:#e6b25a;}
+  #brain h4{margin:0 0 6px 0;color:#ffe48a;font-family:'Georgia',serif;letter-spacing:0.6px;font-size:13px;}
+  #brain .row{margin:2px 0;}
+  #brain .lab{color:#f6c870;}
+  #brain .ic{display:inline-block;width:14px;}
+  #brain.animal{border-color:#a6d97a;}
+  #brain.animal h4{color:#cdee9c;}
+  #counters{top:10px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;
+    font-size:12px;display:flex;gap:14px;background:rgba(28,18,8,0.78);}
+  #counters span b{color:#ffd87a;}
+  #map{bottom:14px;right:10px;width:178px;height:178px;background:rgba(18,10,4,0.86);
+    border:1px solid #c98a36;border-radius:6px;padding:4px;}
+  #map canvas{width:170px;height:170px;border-radius:3px;}
+  #map .lbl{position:absolute;left:6px;top:5px;font-size:10px;color:#ffd87a;letter-spacing:0.6px;}
+  #relations{bottom:200px;right:10px;width:178px;background:rgba(18,10,4,0.86);border:1px solid #a07238;
+    border-radius:6px;padding:6px 8px;font-size:10px;color:#f1d18c;font-family:'Courier New',monospace;}
+  #relations h5{margin:0 0 4px 0;color:#ffd87a;font-family:'Georgia',serif;font-size:11px;letter-spacing:0.5px;}
+  #relations .pair{margin:1px 0;}
+  #cred{bottom:14px;left:10px;font-size:10px;color:#a07a3a;letter-spacing:0.4px;
+    background:rgba(20,12,4,0.5);padding:4px 8px;border-radius:4px;}
+  .fade-in{animation:fade .6s ease-in;}
+  @keyframes fade{from{opacity:0;}to{opacity:1;}}
+</style>
+</head>
+<body>
+<!-- ROUND18_AGENT v1 -->
+<div id="stage"></div>
+<div id="hud" class="panel">
+  <div class="area" id="hudArea">AREA 1 OF 5: BARN</div>
+  <div id="hudSub">Day 1 · Sunrise · Wilbur mucking stalls</div>
+  <div id="hudCam" style="color:#d8b870;font-size:11px;margin-top:3px;">cam: barn-wide</div>
+</div>
+<div id="counters" class="panel">
+  <span>🥚 EGGS <b id="cEggs">0</b></span>
+  <span>🍎 BUSHELS <b id="cBush">0</b></span>
+  <span>🥛 GALLONS <b id="cMilk">0</b></span>
+  <span>📅 DAY <b id="cDay">1</b></span>
+</div>
+<div id="brain" class="panel">
+  <h4 id="bName">— · —</h4>
+  <div class="row"><span class="lab">GOAL:</span> <span id="bGoal">—</span></div>
+  <div class="row"><span class="lab">NEED:</span> <span id="bNeed">—</span></div>
+  <div class="row"><span class="lab">HAVE:</span> <span id="bHave">—</span></div>
+  <div class="row"><span class="lab">PLAN:</span> <span id="bPlan">—</span></div>
+  <div class="row"><span class="lab">STEP:</span> <span id="bStep">—</span></div>
+  <div class="row"><span class="lab">MOOD:</span> <span id="bMood">—</span></div>
+</div>
+<div id="map">
+  <span class="lbl">FARM MAP</span>
+  <canvas id="mapCv" width="340" height="340"></canvas>
+</div>
+<div id="relations">
+  <h5>HERD TIES</h5>
+  <div id="relList"></div>
+</div>
+<div id="chyron" class="panel" style="display:none;"></div>
+<div id="cred">DAPPLEBERRY FARM · ROUND18 · agentic story engine</div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+"use strict";
+(function(){
+  if(typeof THREE==="undefined"){
+    document.body.innerHTML+='<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#ffd87a;font-size:14px;">three.js failed to load</div>';
+    return;
+  }
+
+  // ---------------- storage ----------------
+  const SKEY="dappleberry_farm_v1";
+  let store={day:1,eggs:0,bushels:0,milk:0,goalsMet:0,
+    schedules:{},habits:{},relations:{},lastSeed:0};
+  try{ const raw=localStorage.getItem(SKEY); if(raw){ store=Object.assign(store,JSON.parse(raw)); } }catch(e){}
+  const saveStore=()=>{ try{ localStorage.setItem(SKEY,JSON.stringify(store)); }catch(e){} };
+
+  // ---------------- three.js scene ----------------
+  const stage=document.getElementById("stage");
+  const W=()=>window.innerWidth, H=()=>window.innerHeight;
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(W(),H());
+  renderer.shadowMap.enabled=false;
+  stage.appendChild(renderer.domElement);
+
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x88c4e6);
+  scene.fog=new THREE.Fog(0x9bd1ee,80,260);
+
+  const camera=new THREE.PerspectiveCamera(48,W()/H(),0.5,500);
+  camera.position.set(0,18,40); camera.lookAt(0,2,0);
+
+  // disposable trackers
+  const disposables=[];
+  const trackGeo=g=>{ disposables.push(g); return g; };
+  const trackMat=m=>{ disposables.push(m); return m; };
+
+  // lights
+  const sun=new THREE.DirectionalLight(0xfff1c2,0.95);
+  sun.position.set(40,80,30); scene.add(sun);
+  const amb=new THREE.HemisphereLight(0xfff4d6,0.6,0x6a8a4a);
+  scene.add(amb);
+  const sunLow=new THREE.DirectionalLight(0xffd29a,0.35);
+  sunLow.position.set(-30,15,-10); scene.add(sunLow);
+
+  // ---------------- area definitions ----------------
+  // 5 areas distributed on a flat farm map (x,z plane)
+  const AREAS=[
+    {id:0,name:"BARN",          color:0xb87a3a, x:-55, z:-25, r:24, palette:{ground:0x9aa46a,accent:0xb87a3a,sky:0x9bd1ee}},
+    {id:1,name:"EAST FIELD",    color:0xe6c64a, x: 55, z:-30, r:30, palette:{ground:0xc8b25a,accent:0xe6c64a,sky:0xa6dcf2}},
+    {id:2,name:"ORCHARD",       color:0x6fa84a, x: 55, z: 35, r:26, palette:{ground:0x6e9550,accent:0xc94834,sky:0x9ecde7}},
+    {id:3,name:"POND",          color:0x4a8db8, x:-25, z: 45, r:22, palette:{ground:0x7ca065,accent:0x4a8db8,sky:0xb0e0f4}},
+    {id:4,name:"FARMHOUSE",     color:0xd6a06a, x:-58, z: 22, r:18, palette:{ground:0x9aa46a,accent:0xd6a06a,sky:0xb8d8ec}}
+  ];
+
+  // ---------------- ground & roads ----------------
+  const groundGeo=trackGeo(new THREE.PlaneGeometry(260,220,1,1));
+  const groundMat=trackMat(new THREE.MeshLambertMaterial({color:0x9aa46a}));
+  const ground=new THREE.Mesh(groundGeo,groundMat);
+  ground.rotation.x=-Math.PI/2; ground.position.y=0;
+  scene.add(ground);
+
+  // dirt path connecting areas (a soft rounded band)
+  function addPath(x1,z1,x2,z2,w){
+    const dx=x2-x1, dz=z2-z1; const len=Math.hypot(dx,dz);
+    const g=trackGeo(new THREE.PlaneGeometry(w,len));
+    const m=trackMat(new THREE.MeshLambertMaterial({color:0xb89860}));
+    const p=new THREE.Mesh(g,m);
+    p.position.set((x1+x2)/2,0.02,(z1+z2)/2);
+    p.rotation.x=-Math.PI/2;
+    p.rotation.z=-Math.atan2(dx,dz);
+    scene.add(p);
+  }
+  // central crossroads
+  addPath(AREAS[0].x,AREAS[0].z,AREAS[1].x,AREAS[1].z,3);
+  addPath(AREAS[1].x,AREAS[1].z,AREAS[2].x,AREAS[2].z,3);
+  addPath(AREAS[2].x,AREAS[2].z,AREAS[3].x,AREAS[3].z,3);
+  addPath(AREAS[3].x,AREAS[3].z,AREAS[4].x,AREAS[4].z,3);
+  addPath(AREAS[4].x,AREAS[4].z,AREAS[0].x,AREAS[0].z,3);
+
+  // fences along path edges (low posts)
+  const fencePostGeo=trackGeo(new THREE.BoxGeometry(0.3,1.4,0.3));
+  const fenceRailGeo=trackGeo(new THREE.BoxGeometry(4,0.15,0.1));
+  const fenceMat=trackMat(new THREE.MeshLambertMaterial({color:0x8a5a32}));
+  function addFenceLine(x1,z1,x2,z2){
+    const dx=x2-x1, dz=z2-z1; const len=Math.hypot(dx,dz);
+    const segs=Math.floor(len/4);
+    const ang=Math.atan2(dx,dz);
+    for(let i=0;i<segs;i++){
+      const t=i/segs;
+      const px=x1+dx*t, pz=z1+dz*t;
+      const post=new THREE.Mesh(fencePostGeo,fenceMat);
+      post.position.set(px,0.7,pz);
+      scene.add(post);
+      if(i<segs-1){
+        const rail=new THREE.Mesh(fenceRailGeo,fenceMat);
+        rail.position.set(px+dx/segs/2,0.85,pz+dz/segs/2);
+        rail.rotation.y=ang+Math.PI/2;
+        scene.add(rail);
+      }
+    }
+  }
+
+  // ---------------- area builders ----------------
+  // BARN
+  function buildBarn(){
+    const root=new THREE.Group(); root.position.set(AREAS[0].x,0,AREAS[0].z);
+    // big red barn
+    const barnBase=new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(16,8,11)),
+      trackMat(new THREE.MeshLambertMaterial({color:0xb83a2c})));
+    barnBase.position.y=4; root.add(barnBase);
+    // roof
+    const roof=new THREE.Mesh(
+      trackGeo(new THREE.CylinderGeometry(0.5,7,11,3,1,false)),
+      trackMat(new THREE.MeshLambertMaterial({color:0x6a3624})));
+    roof.position.y=10; roof.rotation.z=Math.PI/2; roof.rotation.y=Math.PI/2;
+    root.add(roof);
+    // big door
+    const door=new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(4,5,0.3)),
+      trackMat(new THREE.MeshLambertMaterial({color:0x4a1e16})));
+    door.position.set(0,2.5,5.6); root.add(door);
+    // hay loft window
+    const window1=new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(2,1.5,0.3)),
+      trackMat(new THREE.MeshLambertMaterial({color:0x2a160e})));
+    window1.position.set(0,7,5.6); root.add(window1);
+    // hay bales outside
+    const hayMat=trackMat(new THREE.MeshLambertMaterial({color:0xe2c45a}));
+    const hayGeo=trackGeo(new THREE.BoxGeometry(2,1.4,1.4));
+    for(let i=0;i<4;i++){
+      const bale=new THREE.Mesh(hayGeo,hayMat);
+      bale.position.set(-7+(i%2)*1.5,0.7,7.5+Math.floor(i/2)*1.5);
+      root.add(bale);
+    }
+    // feed bins
+    const binMat=trackMat(new THREE.MeshLambertMaterial({color:0x6a4a30}));
+    for(let i=0;i<3;i++){
+      const bin=new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.7,0.8,1.4,8)),binMat);
+      bin.position.set(8,0.7,-2+i*1.8); root.add(bin);
+    }
+    // milking parlor (small lean-to)
+    const parl=new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(6,3,4)),
+      trackMat(new THREE.MeshLambertMaterial({color:0xd4b070})));
+    parl.position.set(11,1.5,3); root.add(parl);
+    // stalls (suggested by posts inside the side)
+    return root;
+  }
+
+  // EAST FIELD
+  function buildEastField(){
+    const root=new THREE.Group(); root.position.set(AREAS[1].x,0,AREAS[1].z);
+    // corn rows
+    const cornMat=trackMat(new THREE.MeshLambertMaterial({color:0xd9b840}));
+    const stemMat=trackMat(new THREE.MeshLambertMaterial({color:0x6a8a3a}));
+    const stalkGeo=trackGeo(new THREE.BoxGeometry(0.3,2.4,0.3));
+    const tasselGeo=trackGeo(new THREE.BoxGeometry(0.5,0.6,0.5));
+    for(let row=-7;row<=7;row++){
+      for(let col=-10;col<=10;col+=2){
+        if(Math.abs(row)>6 || Math.abs(col)>9) continue;
+        const stalk=new THREE.Mesh(stalkGeo,stemMat);
+        stalk.position.set(col*1.2,1.2,row*1.5);
+        root.add(stalk);
+        const t=new THREE.Mesh(tasselGeo,cornMat);
+        t.position.set(col*1.2,2.6,row*1.5);
+        root.add(t);
+      }
+    }
+    // scarecrow
+    const sc=new THREE.Group();
+    const pole=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.2,3.5,0.2)),trackMat(new THREE.MeshLambertMaterial({color:0x6a4a2a})));
+    pole.position.y=1.75; sc.add(pole);
+    const cross=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2,0.15,0.15)),trackMat(new THREE.MeshLambertMaterial({color:0x6a4a2a})));
+    cross.position.y=2.5; sc.add(cross);
+    const head=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.5,10,8)),trackMat(new THREE.MeshLambertMaterial({color:0xe6c884})));
+    head.position.y=3.3; sc.add(head);
+    const hat=new THREE.Mesh(trackGeo(new THREE.ConeGeometry(0.7,0.6,12)),trackMat(new THREE.MeshLambertMaterial({color:0x4a3a24})));
+    hat.position.y=3.85; sc.add(hat);
+    sc.position.set(0,0,0); root.add(sc);
+    // irrigation pipe
+    const pipe=new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.18,0.18,22,8)),trackMat(new THREE.MeshLambertMaterial({color:0x9a9a9a})));
+    pipe.rotation.z=Math.PI/2; pipe.position.set(0,0.4,-12); root.add(pipe);
+    // picnic blanket
+    const blanket=new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(3.4,3.4)),trackMat(new THREE.MeshLambertMaterial({color:0xc9444a,side:THREE.DoubleSide})));
+    blanket.rotation.x=-Math.PI/2; blanket.position.set(-12,0.04,12); root.add(blanket);
+    return root;
+  }
+
+  // ORCHARD
+  function buildOrchard(){
+    const root=new THREE.Group(); root.position.set(AREAS[2].x,0,AREAS[2].z);
+    const trunkMat=trackMat(new THREE.MeshLambertMaterial({color:0x6a3a20}));
+    const leafApple=trackMat(new THREE.MeshLambertMaterial({color:0x4e8a3e}));
+    const leafPear=trackMat(new THREE.MeshLambertMaterial({color:0x6da854}));
+    const fruitApple=trackMat(new THREE.MeshLambertMaterial({color:0xc23a2a}));
+    const trunkGeo=trackGeo(new THREE.CylinderGeometry(0.35,0.45,3,8));
+    const leafGeo=trackGeo(new THREE.SphereGeometry(2.2,10,8));
+    const fruitGeo=trackGeo(new THREE.SphereGeometry(0.18,6,5));
+    for(let i=0;i<14;i++){
+      const t=new THREE.Group();
+      const tr=new THREE.Mesh(trunkGeo,trunkMat); tr.position.y=1.5; t.add(tr);
+      const isPear=i>=10;
+      const leaves=new THREE.Mesh(leafGeo,isPear?leafPear:leafApple);
+      leaves.position.y=4; t.add(leaves);
+      if(!isPear){
+        for(let j=0;j<7;j++){
+          const f=new THREE.Mesh(fruitGeo,fruitApple);
+          const a=Math.random()*Math.PI*2, r=1.5+Math.random()*0.6;
+          f.position.set(Math.cos(a)*r,4+Math.sin(j)*0.7,Math.sin(a)*r);
+          t.add(f);
+        }
+      }
+      const r=10+Math.random()*8;
+      const a=(i/14)*Math.PI*2;
+      t.position.set(Math.cos(a)*r,0,Math.sin(a)*r);
+      root.add(t);
+    }
+    // ladder
+    const ladderG=new THREE.Group();
+    const railGeo=trackGeo(new THREE.BoxGeometry(0.1,4,0.1));
+    const rungGeo=trackGeo(new THREE.BoxGeometry(1.2,0.08,0.08));
+    const ladMat=trackMat(new THREE.MeshLambertMaterial({color:0xb88848}));
+    const rL=new THREE.Mesh(railGeo,ladMat); rL.position.set(-0.6,2,0); ladderG.add(rL);
+    const rR=new THREE.Mesh(railGeo,ladMat); rR.position.set(0.6,2,0); ladderG.add(rR);
+    for(let i=0;i<5;i++){
+      const rg=new THREE.Mesh(rungGeo,ladMat); rg.position.y=0.5+i*0.7; ladderG.add(rg);
+    }
+    ladderG.position.set(8,0,4); ladderG.rotation.z=0.18;
+    root.add(ladderG);
+    // basket pile
+    const basketMat=trackMat(new THREE.MeshLambertMaterial({color:0x8a5a30}));
+    for(let i=0;i<3;i++){
+      const b=new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.7,0.6,0.7,10)),basketMat);
+      b.position.set(7+i*0.5,0.35+i*0.05,5+i*0.4);
+      root.add(b);
+    }
+    // beehives
+    const hiveMat=trackMat(new THREE.MeshLambertMaterial({color:0xd9a14a}));
+    for(let i=0;i<2;i++){
+      const h=new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.55,0.55,1.2,12)),hiveMat);
+      h.position.set(-12+i*1.5,0.6,-12); root.add(h);
+    }
+    return root;
+  }
+
+  // POND + DUCK CORRAL
+  function buildPond(){
+    const root=new THREE.Group(); root.position.set(AREAS[3].x,0,AREAS[3].z);
+    const pond=new THREE.Mesh(
+      trackGeo(new THREE.CircleGeometry(11,32)),
+      trackMat(new THREE.MeshLambertMaterial({color:0x4a8db8})));
+    pond.rotation.x=-Math.PI/2; pond.position.y=0.05; root.add(pond);
+    // ripple ring
+    const ring=new THREE.Mesh(
+      trackGeo(new THREE.RingGeometry(7,7.4,32)),
+      trackMat(new THREE.MeshBasicMaterial({color:0x9ad0e2,transparent:true,opacity:0.6,side:THREE.DoubleSide})));
+    ring.rotation.x=-Math.PI/2; ring.position.y=0.07; root.add(ring);
+    // cattails around the rim
+    const stemMat=trackMat(new THREE.MeshLambertMaterial({color:0x4a6a30}));
+    const headMat=trackMat(new THREE.MeshLambertMaterial({color:0x6a3a18}));
+    const stemGeo=trackGeo(new THREE.CylinderGeometry(0.04,0.04,1.2,5));
+    const headGeo=trackGeo(new THREE.CylinderGeometry(0.12,0.12,0.5,6));
+    for(let i=0;i<26;i++){
+      const a=(i/26)*Math.PI*2;
+      const stem=new THREE.Mesh(stemGeo,stemMat);
+      stem.position.set(Math.cos(a)*11.6,0.6,Math.sin(a)*11.6);
+      root.add(stem);
+      const head=new THREE.Mesh(headGeo,headMat);
+      head.position.set(Math.cos(a)*11.6,1.4,Math.sin(a)*11.6);
+      root.add(head);
+    }
+    // dock
+    const dock=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.6,0.25,5)),trackMat(new THREE.MeshLambertMaterial({color:0x8a5a32})));
+    dock.position.set(0,0.3,-10); root.add(dock);
+    // weeping willow
+    const willowTrunk=new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.4,0.6,4,8)),trackMat(new THREE.MeshLambertMaterial({color:0x6a3a20})));
+    willowTrunk.position.set(-11,2,-2); root.add(willowTrunk);
+    const willowLeaves=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(3.4,12,8)),trackMat(new THREE.MeshLambertMaterial({color:0x9ac46a})));
+    willowLeaves.position.set(-11,5,-2); willowLeaves.scale.set(1,0.6,1); root.add(willowLeaves);
+    // duck corral fence (small enclosure)
+    const corralFenceMat=trackMat(new THREE.MeshLambertMaterial({color:0xa07242}));
+    for(let i=0;i<8;i++){
+      const a=(i/8)*Math.PI*2;
+      const post=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.2,0.7,0.2)),corralFenceMat);
+      post.position.set(13+Math.cos(a)*2,0.35,8+Math.sin(a)*2);
+      root.add(post);
+    }
+    // store the ring for animation
+    root.userData.ring=ring;
+    return root;
+  }
+
+  // FARMHOUSE
+  function buildFarmhouse(){
+    const root=new THREE.Group(); root.position.set(AREAS[4].x,0,AREAS[4].z);
+    const house=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(8,5,7)),trackMat(new THREE.MeshLambertMaterial({color:0xe6c89a})));
+    house.position.y=2.5; root.add(house);
+    // roof
+    const roof=new THREE.Mesh(trackGeo(new THREE.ConeGeometry(6.4,3.2,4)),trackMat(new THREE.MeshLambertMaterial({color:0x8a4a30})));
+    roof.position.y=6.6; roof.rotation.y=Math.PI/4; root.add(roof);
+    // door
+    const door=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.2,2.4,0.15)),trackMat(new THREE.MeshLambertMaterial({color:0x6a3a18})));
+    door.position.set(0,1.2,3.55); root.add(door);
+    // window
+    const win=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.4,1.2,0.15)),trackMat(new THREE.MeshLambertMaterial({color:0xfff3a8})));
+    win.position.set(-2.3,3.2,3.55); root.add(win);
+    // porch
+    const porch=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(8,0.25,2.2)),trackMat(new THREE.MeshLambertMaterial({color:0xb88a52})));
+    porch.position.set(0,0.13,4.6); root.add(porch);
+    // mailbox
+    const post=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.15,1.2,0.15)),trackMat(new THREE.MeshLambertMaterial({color:0x6a3a18})));
+    post.position.set(7,0.6,5); root.add(post);
+    const box=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.6,0.4,0.9)),trackMat(new THREE.MeshLambertMaterial({color:0x4a6aa8})));
+    box.position.set(7,1.4,5); root.add(box);
+    // vegetable garden
+    const gardenMat=trackMat(new THREE.MeshLambertMaterial({color:0x6a4a2a}));
+    const vegMat=trackMat(new THREE.MeshLambertMaterial({color:0x7aa84e}));
+    const bedG=trackGeo(new THREE.BoxGeometry(4,0.3,3));
+    const bed=new THREE.Mesh(bedG,gardenMat); bed.position.set(-7,0.15,0); root.add(bed);
+    for(let i=0;i<8;i++){
+      const veg=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.25,6,5)),vegMat);
+      veg.position.set(-8+(i%4)*0.6,0.55,-1+Math.floor(i/4)*0.8);
+      root.add(veg);
+    }
+    return root;
+  }
+
+  scene.add(buildBarn());
+  scene.add(buildEastField());
+  scene.add(buildOrchard());
+  const pondGroup=buildPond(); scene.add(pondGroup);
+  scene.add(buildFarmhouse());
+
+  // fence between key areas (loose)
+  addFenceLine(AREAS[0].x+10,AREAS[0].z+8,AREAS[1].x-15,AREAS[1].z-5);
+  addFenceLine(AREAS[1].x+15,AREAS[1].z+15,AREAS[2].x-10,AREAS[2].z-15);
+
+  // ---------------- entity factories ----------------
+  function makePerson(color,hat){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.7,1.1,0.4)),trackMat(new THREE.MeshLambertMaterial({color:color})));
+    body.position.y=0.85; g.add(body);
+    const head=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.28,10,8)),trackMat(new THREE.MeshLambertMaterial({color:0xe6c08a})));
+    head.position.y=1.7; g.add(head);
+    if(hat){
+      const h=new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.4,0.45,0.18,12)),trackMat(new THREE.MeshLambertMaterial({color:hat})));
+      h.position.y=2.0; g.add(h);
+    }
+    // legs
+    const legGeo=trackGeo(new THREE.BoxGeometry(0.22,0.7,0.22));
+    const legMat=trackMat(new THREE.MeshLambertMaterial({color:0x4a3a24}));
+    const lL=new THREE.Mesh(legGeo,legMat); lL.position.set(-0.2,0.35,0); g.add(lL);
+    const lR=new THREE.Mesh(legGeo,legMat); lR.position.set(0.2,0.35,0); g.add(lR);
+    g.userData.legs=[lL,lR];
+    return g;
+  }
+  function makeCow(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.6,0.85,0.85)),trackMat(new THREE.MeshLambertMaterial({color:0xffffff})));
+    body.position.y=0.9; g.add(body);
+    // black spots
+    for(let i=0;i<4;i++){
+      const s=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.18,6,5)),trackMat(new THREE.MeshLambertMaterial({color:0x222222})));
+      s.position.set(-0.6+Math.random()*1.2,1.05+Math.random()*0.1,0.36+Math.random()*0.05*(Math.random()<0.5?-1:1));
+      g.add(s);
+    }
+    // head
+    const head=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.55,0.55,0.55)),trackMat(new THREE.MeshLambertMaterial({color:0xffffff})));
+    head.position.set(0.95,0.95,0); g.add(head);
+    // muzzle
+    const muz=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.3,0.25,0.35)),trackMat(new THREE.MeshLambertMaterial({color:0xf2c0a8})));
+    muz.position.set(1.25,0.85,0); g.add(muz);
+    // legs
+    const legGeo=trackGeo(new THREE.BoxGeometry(0.18,0.5,0.18));
+    const legMat=trackMat(new THREE.MeshLambertMaterial({color:0xffffff}));
+    const offsets=[[-0.55,0.36],[0.55,0.36],[-0.55,-0.36],[0.55,-0.36]];
+    g.userData.legs=[];
+    for(const [x,z] of offsets){
+      const l=new THREE.Mesh(legGeo,legMat); l.position.set(x,0.25,z); g.add(l);
+      g.userData.legs.push(l);
+    }
+    return g;
+  }
+  function makeChicken(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.32,8,6)),trackMat(new THREE.MeshLambertMaterial({color:0xfff4d6})));
+    body.position.y=0.45; g.add(body);
+    const head=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.18,8,6)),trackMat(new THREE.MeshLambertMaterial({color:0xfff4d6})));
+    head.position.set(0.28,0.7,0); g.add(head);
+    const comb=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.15,0.12,0.06)),trackMat(new THREE.MeshLambertMaterial({color:0xc23a2a})));
+    comb.position.set(0.28,0.85,0); g.add(comb);
+    const beak=new THREE.Mesh(trackGeo(new THREE.ConeGeometry(0.06,0.14,5)),trackMat(new THREE.MeshLambertMaterial({color:0xe9a648})));
+    beak.position.set(0.42,0.7,0); beak.rotation.z=-Math.PI/2; g.add(beak);
+    const legGeo=trackGeo(new THREE.BoxGeometry(0.05,0.22,0.05));
+    const legMat=trackMat(new THREE.MeshLambertMaterial({color:0xc99248}));
+    const lL=new THREE.Mesh(legGeo,legMat); lL.position.set(0,0.11,-0.1); g.add(lL);
+    const lR=new THREE.Mesh(legGeo,legMat); lR.position.set(0,0.11,0.1); g.add(lR);
+    g.userData.legs=[lL,lR];
+    return g;
+  }
+  function makeSheep(){
+    const g=new THREE.Group();
+    const wool=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.55,10,8)),trackMat(new THREE.MeshLambertMaterial({color:0xf5f0e8})));
+    wool.position.y=0.7; g.add(wool);
+    const head=new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.22,8,6)),trackMat(new THREE.MeshLambertMaterial({color:0x3a2618})));
+    head.position.set(0.55,0.7,0); g.add(head);
+    const legGeo=trackGeo(new THREE.BoxGeometry(0.12,0.4,0.12));
+    const legMat=trackMat(new THREE.MeshLambertMaterial({color:0x3a2618}));
+    const offsets=[[-0.3,0.25],[0.3,0.25],[-0.3,-0.25],[0.3,-0.25]];
+    g.userData.legs=[];
+    for(const [x,z] of offsets){
+      const l=new THREE.Mesh(legGeo,legMat); l.position.set(x,0.2,z); g.add(l);
+      g.userData.legs.push(l);
+    }
+    return g;
+  }
+  function makeHorse(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.8,1.0,0.7)),trackMat(new THREE.MeshLambertMaterial({color:0x8a4a24})));
+    body.position.y=1.2; g.add(body);
+    const head=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.5,0.55,0.45)),trackMat(new THREE.MeshLambertMaterial({color:0x8a4a24})));
+    head.position.set(1.05,1.45,0); g.add(head);
+    const muz=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.25,0.3,0.3)),trackMat(new THREE.MeshLambertMaterial({color:0x6a3618})));
+    muz.position.set(1.4,1.3,0); g.add(muz);
+    // mane
+    const mane=new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.8,0.25,0.5)),trackMat(new THREE.MeshLambertMaterial({color:0x3a2010})));
+    mane.position.set(0.55,1.75,0); g.add(mane);
+    const legGeo=trackGeo(new THREE.BoxGeometry(0.18,0.7,0.18));
+    const legMat=trackMat(new THREE.MeshLambertMaterial({color:0x6a3618}));
+    const offsets=[[-0.7,0.28],[0.7,0.28],[-0.7,-0.28],[0.7,-0.28]];
+    g.userData.legs=[];
+    for(const [x,z] of offsets){
+      const l=new THREE.Mesh(legGeo,legMat); l.position.set(x,0.35,z); g.add(l);
+      g.userData.legs.push(l);
+    }
+    return g;
+  }
+
+  // ---------------- agents ----------------
+  // farmhands (4)
+  const FARMHANDS=[
+    {name:"Old Henrietta Dappleberry",role:"Owner",hatColor:0xc24a3a,bodyColor:0x6a3a8a,
+     goal:"Bake apple pie",need:"6 fresh apples + sugar",have:"Recipe & memories",
+     plan:"Greet sunrise → Walk garden → Collect apples → Roll dough → Bake pie",homeArea:4},
+    {name:"Wilbur",role:"Ranch Hand",hatColor:0x6a4a2a,bodyColor:0x4a6a3a,
+     goal:"Muck stalls + bring cows in",need:"Pitchfork & herding stick",have:"Strong back & coffee",
+     plan:"Open barn → Muck 4 stalls → Walk to east field → Whistle herd → Lead back",homeArea:0},
+    {name:"Rosa",role:"Ranch Hand",hatColor:0xd9a04a,bodyColor:0xc4604a,
+     goal:"Bring eggs in + feed chickens",need:"Egg basket + corn pail",have:"Steady hands",
+     plan:"Fill pail → Walk to coop → Scatter corn → Gather eggs → Carry to kitchen",homeArea:0},
+    {name:"Felix",role:"Junior Hand",hatColor:0x8a6a48,bodyColor:0x4a8aa8,
+     goal:"Pick 2 bushels of apples",need:"Ladder + 2 baskets",have:"Eager spirit, ladder set",
+     plan:"Walk to orchard → Place ladder → Climb tree → Fill basket × 2",homeArea:2}
+  ];
+  // 24 animals
+  const ANIMALS=[
+    // 10 cows
+    {name:"Daisy",         species:"Cow",     goal:"Graze east field",       homeArea:1},
+    {name:"Bess",          species:"Cow",     goal:"Drink at pond",          homeArea:3},
+    {name:"Marigold",      species:"Cow",     goal:"Scratch on fence",       homeArea:0},
+    {name:"Penelope",      species:"Cow",     goal:"Lay down in shade",      homeArea:2},
+    {name:"Doreen",        species:"Cow",     goal:"Check feed bin",         homeArea:0},
+    {name:"Esmerelda",     species:"Cow",     goal:"Chew cud",               homeArea:1},
+    {name:"Henrietta-cow", species:"Cow",     goal:"Stand near owner",       homeArea:4},
+    {name:"Buttercup",     species:"Cow",     goal:"Follow herd",            homeArea:1},
+    {name:"Petunia",       species:"Cow",     goal:"Graze near fence",       homeArea:1},
+    {name:"Clover",        species:"Cow",     goal:"Nap in sunbeam",         homeArea:0},
+    // 8 chickens
+    {name:"Hattie",        species:"Chicken", goal:"Lay an egg",             homeArea:0},
+    {name:"Mabel",         species:"Chicken", goal:"Peck the rooster",       homeArea:0},
+    {name:"Captain",       species:"Chicken", goal:"Crow at sunrise",        homeArea:0,rooster:true},
+    {name:"Bess-chick",    species:"Chicken", goal:"Bug-hunt",               homeArea:4},
+    {name:"Pearl",         species:"Chicken", goal:"Dust-bath",              homeArea:0},
+    {name:"Ruby",          species:"Chicken", goal:"Peck corn",              homeArea:1},
+    {name:"Plum",          species:"Chicken", goal:"Roost in barn",          homeArea:0},
+    {name:"Sapphire",      species:"Chicken", goal:"Hide her egg",           homeArea:2},
+    // 4 sheep
+    {name:"Fluff",         species:"Sheep",   goal:"Graze with herd",        homeArea:1},
+    {name:"Cotton",        species:"Sheep",   goal:"Sneeze loudly",          homeArea:1},
+    {name:"Cloud",         species:"Sheep",   goal:"Roll in dust",           homeArea:0},
+    {name:"Marshmallow",   species:"Sheep",   goal:"Stand on hay bale",      homeArea:0},
+    // 2 horses
+    {name:"Caspar",        species:"Horse",   goal:"Trot to fence",          homeArea:0},
+    {name:"Belladonna",    species:"Horse",   goal:"Drink at pond",          homeArea:3}
+  ];
+
+  // 30-name pool of farm tour visitors
+  const TOUR_NAMES=["Aunt Edna","Uncle Fred","Cousin Jo","Mrs. Pibble","Mr. Pibble","Tilly","Sunny","Hopkins",
+    "Granny Bea","Pip","Maeve","Ned","Lottie","Otis","Flora","Gus","Hazel","Rufus","Ada","Cy",
+    "Birdie","Wally","Tess","Kit","June","Roy","Imogen","Beau","Sadie","Theo"];
+
+  // build farmhand meshes
+  const fhMeshes=[];
+  FARMHANDS.forEach((f,i)=>{
+    const m=makePerson(f.bodyColor,f.hatColor);
+    const a=AREAS[f.homeArea];
+    m.position.set(a.x+(Math.random()-0.5)*8,0,a.z+(Math.random()-0.5)*8);
+    m.userData.agent=f;
+    m.userData.idx=i;
+    m.userData.kind="farmhand";
+    m.userData.areaIdx=f.homeArea;
+    m.userData.targetX=m.position.x;
+    m.userData.targetZ=m.position.z;
+    m.userData.step=1; m.userData.totalSteps=5;
+    m.userData.mood="Steady";
+    scene.add(m);
+    fhMeshes.push(m);
+  });
+
+  // build animal meshes
+  const anMeshes=[];
+  ANIMALS.forEach((a,i)=>{
+    let mesh;
+    if(a.species==="Cow") mesh=makeCow();
+    else if(a.species==="Chicken") mesh=makeChicken();
+    else if(a.species==="Sheep") mesh=makeSheep();
+    else mesh=makeHorse();
+    const ar=AREAS[a.homeArea];
+    mesh.position.set(ar.x+(Math.random()-0.5)*10,0,ar.z+(Math.random()-0.5)*10);
+    mesh.userData.agent=a;
+    mesh.userData.idx=i;
+    mesh.userData.kind="animal";
+    mesh.userData.areaIdx=a.homeArea;
+    mesh.userData.targetX=mesh.position.x;
+    mesh.userData.targetZ=mesh.position.z;
+    mesh.userData.step=1; mesh.userData.totalSteps=4;
+    mesh.userData.mood=({Cow:"Hungry but content",Chicken:"Curious & bouncy",Sheep:"Sleepy & soft",Horse:"Alert & eager"})[a.species];
+    mesh.userData.need=({Cow:"Sweet clover patch",Chicken:"Soft nest spot",Sheep:"Warm sunbeam",Horse:"Open pasture"})[a.species];
+    mesh.userData.have=({Cow:"Empty stomach :)",Chicken:"Soft feathers",Sheep:"Fluffy wool coat",Horse:"Strong legs"})[a.species];
+    mesh.userData.plan=`Walk to ${ar.name.toLowerCase()} → Reach goal → Linger → Return to barn`;
+    scene.add(mesh);
+    anMeshes.push(mesh);
+  });
+
+  // 80 instanced ambient farm-tour visitors (small dot people standing in clusters)
+  const tourGeo=trackGeo(new THREE.BoxGeometry(0.4,1.2,0.3));
+  const tourMat=trackMat(new THREE.MeshLambertMaterial({color:0xb88a52}));
+  const tourMesh=new THREE.InstancedMesh(tourGeo,tourMat,80);
+  scene.add(tourMesh);
+  const tourPos=[];
+  const dummy=new THREE.Object3D();
+  for(let i=0;i<80;i++){
+    // distribute among areas in clusters of ~16
+    const a=AREAS[i%5];
+    const ang=Math.random()*Math.PI*2;
+    const r=8+Math.random()*4;
+    const x=a.x+Math.cos(ang)*r;
+    const z=a.z+Math.sin(ang)*r;
+    tourPos.push({x,z,a:Math.random()*Math.PI*2,wob:Math.random()*Math.PI*2});
+    dummy.position.set(x,0.6,z);
+    dummy.rotation.y=Math.random()*Math.PI*2;
+    dummy.updateMatrix();
+    tourMesh.setMatrixAt(i,dummy.matrix);
+    // add a tiny head to each
+  }
+  tourMesh.instanceMatrix.needsUpdate=true;
+  // a head instanced mesh stacked above
+  const tourHeadGeo=trackGeo(new THREE.SphereGeometry(0.16,8,6));
+  const tourHeadMat=trackMat(new THREE.MeshLambertMaterial({color:0xe6c08a}));
+  const tourHeadMesh=new THREE.InstancedMesh(tourHeadGeo,tourHeadMat,80);
+  scene.add(tourHeadMesh);
+  for(let i=0;i<80;i++){
+    dummy.position.set(tourPos[i].x,1.4,tourPos[i].z);
+    dummy.rotation.set(0,0,0);
+    dummy.updateMatrix();
+    tourHeadMesh.setMatrixAt(i,dummy.matrix);
+  }
+  tourHeadMesh.instanceMatrix.needsUpdate=true;
+
+  // ---------------- trails ----------------
+  // soft pastel trail paths per species
+  const trailColors={Cow:0xe8d8a8,Chicken:0xdcb86a,Sheep:0xf2e8d4,Horse:0xb89868,Farmhand:0xa8c6e4};
+  const trailGroups={};
+  for(const k of Object.keys(trailColors)){
+    const g=new THREE.Group(); scene.add(g); trailGroups[k]=g;
+  }
+  const trailHistory=new Map();
+  function pushTrail(mesh,kindKey){
+    const arr=trailHistory.get(mesh)||[];
+    arr.push({x:mesh.position.x,z:mesh.position.z,t:performance.now()});
+    while(arr.length>20) arr.shift();
+    trailHistory.set(mesh,arr);
+  }
+  function rebuildTrails(){
+    for(const k of Object.keys(trailColors)){
+      const g=trailGroups[k];
+      while(g.children.length){
+        const c=g.children.pop();
+        if(c.geometry){c.geometry.dispose();}
+        if(c.material){c.material.dispose();}
+      }
+    }
+    const now=performance.now();
+    trailHistory.forEach((arr,mesh)=>{
+      const sp=mesh.userData.kind==="farmhand"?"Farmhand":mesh.userData.agent.species;
+      const col=trailColors[sp]||0xeecc88;
+      for(let i=1;i<arr.length;i++){
+        const age=(now-arr[i].t)/4000;
+        if(age>1) continue;
+        const op=Math.max(0,0.55*(1-age));
+        const dotG=new THREE.PlaneGeometry(0.45,0.45);
+        const dotM=new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:op,side:THREE.DoubleSide});
+        const dot=new THREE.Mesh(dotG,dotM);
+        dot.position.set(arr[i].x,0.06,arr[i].z);
+        dot.rotation.x=-Math.PI/2;
+        trailGroups[sp].add(dot);
+      }
+    });
+  }
+
+  // ---------------- decision diamond ----------------
+  const diamondGeo=trackGeo(new THREE.OctahedronGeometry(0.42,0));
+  const diamondMat=trackMat(new THREE.MeshBasicMaterial({color:0xffe482,transparent:true,opacity:0.85}));
+  const diamond=new THREE.Mesh(diamondGeo,diamondMat);
+  diamond.visible=false; scene.add(diamond);
+  let diamondTarget=null, diamondT0=0;
+
+  // ---------------- sparkle group ----------------
+  const sparkleGroup=new THREE.Group(); scene.add(sparkleGroup);
+  function emitSparkles(x,y,z){
+    for(let i=0;i<10;i++){
+      const g=new THREE.SphereGeometry(0.08,5,4);
+      const m=new THREE.MeshBasicMaterial({color:Math.random()<0.5?0xffe48a:0xfff8c4,transparent:true,opacity:0.95});
+      const s=new THREE.Mesh(g,m);
+      s.position.set(x,y,z);
+      const a=Math.random()*Math.PI*2;
+      s.userData.vx=Math.cos(a)*1.2;
+      s.userData.vy=1.4+Math.random()*0.8;
+      s.userData.vz=Math.sin(a)*1.2;
+      s.userData.life=performance.now();
+      sparkleGroup.add(s);
+    }
+  }
+
+  // ---------------- cameras ----------------
+  // 18 director cams
+  const CAMS=[
+    {name:"barn-wide",          area:0,pos:[-30,14,-2 ],look:[-55,3,-25]},
+    {name:"barn-door",          area:0,pos:[-55,3,-13 ],look:[-55,3,-25]},
+    {name:"hay-loft",           area:0,pos:[-50,9,-20 ],look:[-58,5,-25]},
+    {name:"milking-parlor",     area:0,pos:[-40,4,-22 ],look:[-44,1,-22]},
+    {name:"feed-bins",          area:0,pos:[-46,4,-30 ],look:[-50,1,-26]},
+    {name:"east-field-corn-row",area:1,pos:[ 38,4,-30 ],look:[ 60,2,-30]},
+    {name:"scarecrow-close",    area:1,pos:[ 50,5,-24 ],look:[ 55,2,-30]},
+    {name:"east-field-wide",    area:1,pos:[ 75,18,-15],look:[ 50,2,-30]},
+    {name:"picnic-blanket",     area:1,pos:[ 38,4,-15 ],look:[ 43,0.5,-18]},
+    {name:"orchard-ladder",     area:2,pos:[ 60,5, 32 ],look:[ 63,3, 39]},
+    {name:"orchard-wide",       area:2,pos:[ 80,16, 30],look:[ 55,4, 35]},
+    {name:"beehives",           area:2,pos:[ 40,3, 22 ],look:[ 43,1, 23]},
+    {name:"pond-duck-close",    area:3,pos:[-12,2.5,40],look:[-25,0.4,45]},
+    {name:"pond-dock",          area:3,pos:[-25,2,30 ],look:[-25,0.4,38]},
+    {name:"weeping-willow",     area:3,pos:[-32,5,40 ],look:[-36,4, 43]},
+    {name:"farmhouse-porch",    area:4,pos:[-50,2.5,28],look:[-58,1.8,22]},
+    {name:"farmhouse-garden",   area:4,pos:[-66,3,22 ],look:[-65,0.5,22]},
+    {name:"mailbox",            area:4,pos:[-50,1.5,30],look:[-51,1.3,27]}
+  ];
+  let curCam=0, camHoldTime=performance.now(), camHoldDur=4500;
+  let lastT=performance.now();
+  let panFromArea=null, panToArea=null, panT=0, panDur=2200;
+
+  // ---------------- mini-map ----------------
+  const mapCv=document.getElementById("mapCv");
+  const mapCtx=mapCv.getContext("2d");
+  function drawMap(){
+    const c=mapCtx; const W=mapCv.width,H=mapCv.height;
+    c.clearRect(0,0,W,H);
+    // bg
+    c.fillStyle="#1d1308"; c.fillRect(0,0,W,H);
+    // each area
+    for(const a of AREAS){
+      const x=W/2+a.x*1.05, y=H/2+a.z*1.05;
+      const fillCol = curArea===a.id?
+        ("#"+(a.color).toString(16).padStart(6,"0")) :
+        ("#"+((a.color>>1)&0x7f7f7f).toString(16).padStart(6,"0"));
+      c.fillStyle=fillCol;
+      c.beginPath();
+      c.arc(x,y,a.r*1.05,0,Math.PI*2);
+      c.fill();
+      if(curArea===a.id){
+        c.strokeStyle="#ffe48a"; c.lineWidth=2;
+        c.beginPath(); c.arc(x,y,a.r*1.05+2,0,Math.PI*2); c.stroke();
+      }
+      c.fillStyle="#ffe9a8"; c.font="9px Georgia";
+      c.fillText(a.name,x-c.measureText(a.name).width/2,y+3);
+    }
+    // farmhand dots
+    for(const m of fhMeshes){
+      c.fillStyle="#5cd0ff";
+      c.beginPath();
+      c.arc(W/2+m.position.x*1.05,H/2+m.position.z*1.05,3.2,0,Math.PI*2);
+      c.fill();
+    }
+    // animal dots
+    for(const m of anMeshes){
+      const sp=m.userData.agent.species;
+      c.fillStyle=sp==="Cow"?"#ffffff":sp==="Chicken"?"#ffd87a":sp==="Sheep"?"#fff0d0":"#c98a52";
+      c.beginPath();
+      c.arc(W/2+m.position.x*1.05,H/2+m.position.z*1.05,2.0,0,Math.PI*2);
+      c.fill();
+    }
+    // current camera fov triangle
+    const cm=CAMS[curCam];
+    c.strokeStyle="rgba(255,228,138,0.35)"; c.lineWidth=1;
+    c.beginPath(); c.moveTo(W/2+cm.pos[0]*1.05,H/2+cm.pos[2]*1.05);
+    const dx=cm.look[0]-cm.pos[0], dz=cm.look[2]-cm.pos[2];
+    const ang=Math.atan2(dz,dx);
+    c.lineTo(W/2+(cm.pos[0]+Math.cos(ang-0.4)*30)*1.05,H/2+(cm.pos[2]+Math.sin(ang-0.4)*30)*1.05);
+    c.lineTo(W/2+(cm.pos[0]+Math.cos(ang+0.4)*30)*1.05,H/2+(cm.pos[2]+Math.sin(ang+0.4)*30)*1.05);
+    c.closePath(); c.stroke();
+  }
+
+  // ---------------- agent decisions ----------------
+  let curArea=0;
+  function pickGoalTarget(mesh){
+    const ag=mesh.userData.agent;
+    const homeA=AREAS[mesh.userData.areaIdx];
+    let tx,tz;
+    if(mesh.userData.kind==="farmhand"){
+      // farmhands rotate between areas based on plan
+      const stepIdx=mesh.userData.step%mesh.userData.totalSteps;
+      const phaseAreas=[
+        [0,1,2,4,4],[0,0,1,2,0],[0,0,4,2,0],[0,2,2,4,0]
+      ];
+      const ai=phaseAreas[mesh.userData.idx][stepIdx]||mesh.userData.areaIdx;
+      const a=AREAS[ai];
+      tx=a.x+(Math.random()-0.5)*10;
+      tz=a.z+(Math.random()-0.5)*10;
+      mesh.userData.areaIdx=ai;
+    } else {
+      // animals: 70% stay home area, 30% wander to a relevant area
+      let ai=mesh.userData.areaIdx;
+      if(Math.random()<0.3){
+        ai=Math.floor(Math.random()*5);
+        // diamond decision
+        diamond.visible=true;
+        diamondTarget=mesh;
+        diamondT0=performance.now();
+      }
+      const a=AREAS[ai];
+      tx=a.x+(Math.random()-0.5)*12;
+      tz=a.z+(Math.random()-0.5)*12;
+      mesh.userData.areaIdx=ai;
+    }
+    mesh.userData.targetX=tx;
+    mesh.userData.targetZ=tz;
+    mesh.userData.step++;
+  }
+
+  // initial targets
+  fhMeshes.forEach(pickGoalTarget);
+  anMeshes.forEach(pickGoalTarget);
+
+  // ---------------- chyron beats ----------------
+  const chyron=document.getElementById("chyron");
+  let chyronTimer=0, chyronIdx=0;
+  const beats=[
+    `Day ${store.day} Act 1 — Sun rises. Captain crows. Wilbur opens the barn.`,
+    `Day ${store.day} Act 1 — Rosa scatters corn. Hattie & Mabel race for the kernels.`,
+    `Day ${store.day} Act 2 — Daisy + Bess find sweet clover at the east field.`,
+    `Day ${store.day} Act 2 — Felix sets the ladder. First bushel down.`,
+    `Day ${store.day} Act 2 — Belladonna trots to the pond. Caspar follows.`,
+    `Day ${store.day} Act 3 — Sapphire lays a hidden egg in the orchard grass.`,
+    `Day ${store.day} Act 3 — Old Henrietta shells out apples for the pie.`,
+    `Day ${store.day} Act 3 — The herd drifts home. Marshmallow stands proud on a hay bale.`,
+    `Day ${store.day} Coda — Lanterns flicker on. The farm settles for the night.`
+  ];
+  function showBeat(text){
+    chyron.style.display="block";
+    chyron.classList.remove("fade-in"); void chyron.offsetWidth; chyron.classList.add("fade-in");
+    chyron.textContent=text;
+  }
+
+  // ---------------- relationships graph ----------------
+  // herd ties: who-grazes-with-whom across reseeds
+  const relList=document.getElementById("relList");
+  function buildRelations(){
+    // pair animals close to each other right now
+    const pairs=[];
+    for(let i=0;i<anMeshes.length;i++){
+      for(let j=i+1;j<anMeshes.length;j++){
+        const a=anMeshes[i], b=anMeshes[j];
+        const dx=a.position.x-b.position.x, dz=a.position.z-b.position.z;
+        const d=Math.hypot(dx,dz);
+        if(d<6){ pairs.push([a.userData.agent.name,b.userData.agent.name,d]); }
+      }
+    }
+    pairs.sort((p,q)=>p[2]-q[2]);
+    const top=pairs.slice(0,5);
+    // persist habits across reseeds
+    top.forEach(p=>{
+      const k=[p[0],p[1]].sort().join(" ↔ ");
+      store.relations[k]=(store.relations[k]||0)+1;
+    });
+    return top;
+  }
+  function renderRelations(){
+    const top=buildRelations();
+    let html="";
+    top.forEach(p=>{
+      const k=[p[0],p[1]].sort().join(" ↔ ");
+      html+=`<div class="pair">• ${k.split(" ↔ ")[0].slice(0,7)} ↔ ${k.split(" ↔ ")[1].slice(0,7)} <span style="color:#a07a3a">×${store.relations[k]||1}</span></div>`;
+    });
+    if(!html) html='<div class="pair" style="color:#7a5a2a">— forming —</div>';
+    relList.innerHTML=html;
+  }
+
+  // ---------------- brain panel ----------------
+  const brainEl=document.getElementById("brain");
+  const bName=document.getElementById("bName");
+  const bGoal=document.getElementById("bGoal");
+  const bNeed=document.getElementById("bNeed");
+  const bHave=document.getElementById("bHave");
+  const bPlan=document.getElementById("bPlan");
+  const bStep=document.getElementById("bStep");
+  const bMood=document.getElementById("bMood");
+  function speciesIcon(sp){return ({Cow:"🐄",Chicken:"🐔",Sheep:"🐑",Horse:"🐎"})[sp]||"•";}
+  function updateBrain(focusMesh){
+    if(!focusMesh){ return; }
+    const ag=focusMesh.userData.agent;
+    const isAnimal=focusMesh.userData.kind==="animal";
+    brainEl.classList.toggle("animal",isAnimal);
+    const icon=isAnimal?speciesIcon(ag.species):"🧑‍🌾";
+    bName.textContent=`${icon} ${ag.name} · ${isAnimal?ag.species:ag.role}`;
+    bGoal.textContent=ag.goal;
+    bNeed.textContent=focusMesh.userData.need||ag.need||"—";
+    bHave.textContent=focusMesh.userData.have||ag.have||"—";
+    bPlan.textContent=focusMesh.userData.plan||ag.plan||"Walk → Linger → Return";
+    const stepNames=isAnimal?
+      ["Walking to gate","Reach goal spot","Lingering","Returning to barn"]:
+      ["Greet sunrise","Walk path","Reach area","Working","Returning"];
+    const idx=(focusMesh.userData.step-1)%stepNames.length;
+    bStep.textContent=`${idx+1} of ${stepNames.length} (${stepNames[idx]})`;
+    bMood.textContent=focusMesh.userData.mood||"Steady";
+  }
+
+  // ---------------- HUD ----------------
+  const hudArea=document.getElementById("hudArea");
+  const hudSub=document.getElementById("hudSub");
+  const hudCam=document.getElementById("hudCam");
+  const cEggs=document.getElementById("cEggs");
+  const cBush=document.getElementById("cBush");
+  const cMilk=document.getElementById("cMilk");
+  const cDay=document.getElementById("cDay");
+
+  cEggs.textContent=store.eggs;
+  cBush.textContent=store.bushels;
+  cMilk.textContent=store.milk;
+  cDay.textContent=store.day;
+
+  // ---------------- focus rotation ----------------
+  let focusMesh=fhMeshes[1]; // Wilbur
+  let focusTimer=performance.now();
+  const FOCUS_SWITCH=6000;
+  function nextFocus(){
+    // pick a focus near the current cam's area, alternating animal/farmhand
+    const here=AREAS[curArea];
+    const pool=[...fhMeshes,...anMeshes].filter(m=>{
+      const dx=m.position.x-here.x, dz=m.position.z-here.z;
+      return Math.hypot(dx,dz)<here.r+10;
+    });
+    if(pool.length){
+      focusMesh=pool[Math.floor(Math.random()*pool.length)];
+    } else {
+      focusMesh=anMeshes[Math.floor(Math.random()*anMeshes.length)];
+    }
+  }
+
+  // ---------------- counters logic ----------------
+  let counterTimer=performance.now();
+  function tickCounters(){
+    // Rosa near barn → eggs; Felix near orchard → bushels; Wilbur in barn → milk
+    const rosa=fhMeshes[2], felix=fhMeshes[3], wilbur=fhMeshes[1];
+    const inArea=(m,id)=>{
+      const a=AREAS[id];
+      return Math.hypot(m.position.x-a.x,m.position.z-a.z)<a.r;
+    };
+    if(inArea(rosa,0) && Math.random()<0.55){ store.eggs++; cEggs.textContent=store.eggs;
+      emitSparkles(rosa.position.x,1.2,rosa.position.z); }
+    if(inArea(felix,2) && Math.random()<0.55){ store.bushels++; cBush.textContent=store.bushels;
+      emitSparkles(felix.position.x,1.2,felix.position.z); }
+    if(inArea(wilbur,0) && Math.random()<0.4){ store.milk++; cMilk.textContent=store.milk;
+      emitSparkles(wilbur.position.x,1.2,wilbur.position.z); }
+    saveStore();
+  }
+
+  // ---------------- camera transitions ----------------
+  function nextCam(){
+    const next=(curCam+1)%CAMS.length;
+    panFromArea=CAMS[curCam].area;
+    panToArea=CAMS[next].area;
+    curCam=next;
+    panT=performance.now();
+    panDur=panFromArea===panToArea?900:2000;
+    curArea=CAMS[curCam].area;
+    const ar=AREAS[curArea];
+    const focusName=focusMesh?focusMesh.userData.agent.name:"—";
+    hudArea.textContent=`AREA ${curArea+1} OF 5: ${ar.name}`;
+    hudSub.textContent=`Day ${store.day} · ${focusName} active · 🥚${store.eggs} 🍎${store.bushels} 🥛${store.milk}`;
+    hudCam.textContent=`cam: ${CAMS[curCam].name}`;
+    nextFocus();
+  }
+
+  // ---------------- reseed ----------------
+  const RESEED_MS=10*60*1000;
+  let lastReseed=performance.now();
+  function reseed(){
+    store.day++;
+    cDay.textContent=store.day;
+    // every reseed: a chick hatches
+    const newChick={name:"Chick-"+store.day,species:"Chicken",goal:"Find mama",homeArea:0};
+    // visual bonus: fade hue on ground for a beat
+    showBeat(`Day ${store.day} dawn — A new chick hatches in the barn.`);
+    // shuffle goals slightly
+    anMeshes.forEach(m=>{ m.userData.step=1; });
+    fhMeshes.forEach(m=>{ m.userData.step=1; });
+    saveStore();
+    lastReseed=performance.now();
+  }
+
+  // ---------------- animation step ----------------
+  function moveAgent(m,dt){
+    const dx=m.userData.targetX-m.position.x;
+    const dz=m.userData.targetZ-m.position.z;
+    const d=Math.hypot(dx,dz);
+    const speed=m.userData.kind==="farmhand"?2.4:
+      (m.userData.agent.species==="Horse"?3.4:
+       m.userData.agent.species==="Chicken"?1.8:
+       m.userData.agent.species==="Sheep"?1.4:2.0);
+    if(d<1){
+      // arrived — pick new
+      pickGoalTarget(m);
+      return;
+    }
+    const nx=dx/d, nz=dz/d;
+    m.position.x+=nx*speed*dt;
+    m.position.z+=nz*speed*dt;
+    // face direction
+    m.rotation.y=Math.atan2(nx,nz);
+    // leg wobble
+    if(m.userData.legs){
+      const wob=Math.sin(performance.now()*0.008+m.userData.idx)*0.18;
+      m.userData.legs.forEach((l,i)=>{ l.position.y=(i%2===0?1:0)*0.02 + (l.geometry.parameters.height/2) + (i%2===0?wob:-wob)*0.5; });
+    }
+    pushTrail(m);
+  }
+
+  let resizeTimer=null;
+  window.addEventListener("resize",()=>{
+    if(resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer=setTimeout(()=>{
+      renderer.setSize(W(),H());
+      camera.aspect=W()/H();
+      camera.updateProjectionMatrix();
+    },80);
+  });
+
+  // ---------------- main loop ----------------
+  let runId=0, running=true;
+  let trailRebuildTimer=performance.now();
+  let mapTimer=performance.now();
+  let relTimer=performance.now();
+  let beatTimer=performance.now();
+
+  function loop(){
+    if(!running) return;
+    runId=requestAnimationFrame(loop);
+    const now=performance.now();
+    const dt=Math.min(0.05,(now-lastT)/1000);
+    lastT=now;
+
+    // move farmhands & animals
+    fhMeshes.forEach(m=>moveAgent(m,dt));
+    anMeshes.forEach(m=>moveAgent(m,dt));
+
+    // wobble tour visitors
+    for(let i=0;i<80;i++){
+      const tp=tourPos[i];
+      tp.wob+=dt*0.5;
+      const yJ=Math.sin(tp.wob)*0.05;
+      dummy.position.set(tp.x,0.6+yJ,tp.z);
+      dummy.rotation.y=tp.a+Math.sin(tp.wob*0.4)*0.15;
+      dummy.updateMatrix();
+      tourMesh.setMatrixAt(i,dummy.matrix);
+      dummy.position.set(tp.x,1.4+yJ,tp.z);
+      dummy.rotation.set(0,0,0);
+      dummy.updateMatrix();
+      tourHeadMesh.setMatrixAt(i,dummy.matrix);
+    }
+    tourMesh.instanceMatrix.needsUpdate=true;
+    tourHeadMesh.instanceMatrix.needsUpdate=true;
+
+    // ripple ring on pond
+    if(pondGroup.userData.ring){
+      const r=pondGroup.userData.ring;
+      const s=1+Math.sin(now*0.0015)*0.08;
+      r.scale.set(s,1,s);
+      r.material.opacity=0.4+Math.sin(now*0.0015)*0.15;
+    }
+
+    // diamond float
+    if(diamond.visible && diamondTarget){
+      diamond.position.set(diamondTarget.position.x,2.2+Math.sin(now*0.005)*0.18,diamondTarget.position.z);
+      diamond.rotation.y+=dt*1.6;
+      if(now-diamondT0>1800){ diamond.visible=false; diamondTarget=null; }
+    }
+
+    // sparkle fade
+    for(let i=sparkleGroup.children.length-1;i>=0;i--){
+      const s=sparkleGroup.children[i];
+      const age=(now-s.userData.life)/1000;
+      if(age>1.2){
+        sparkleGroup.remove(s);
+        if(s.geometry) s.geometry.dispose();
+        if(s.material) s.material.dispose();
+        continue;
+      }
+      s.position.x+=s.userData.vx*dt;
+      s.position.y+=s.userData.vy*dt - 1.6*dt*age;
+      s.position.z+=s.userData.vz*dt;
+      s.material.opacity=Math.max(0,1-age/1.2);
+    }
+
+    // proximity sparkles when two animals are very close (interaction)
+    if(Math.random()<0.06){
+      for(let i=0;i<anMeshes.length;i++){
+        for(let j=i+1;j<anMeshes.length;j++){
+          const a=anMeshes[i], b=anMeshes[j];
+          const d=Math.hypot(a.position.x-b.position.x,a.position.z-b.position.z);
+          if(d<2.2){
+            emitSparkles((a.position.x+b.position.x)/2,1.2,(a.position.z+b.position.z)/2);
+            i=anMeshes.length; break;
+          }
+        }
+      }
+    }
+
+    // camera transitions
+    if(now-camHoldTime>camHoldDur){
+      nextCam();
+      camHoldTime=now;
+      camHoldDur=4500+Math.random()*4000;
+    }
+    // pan from prev to curr cam
+    const cm=CAMS[curCam];
+    const prev=CAMS[(curCam-1+CAMS.length)%CAMS.length];
+    const t=Math.min(1,(now-panT)/panDur);
+    const ease=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    camera.position.x=prev.pos[0]+(cm.pos[0]-prev.pos[0])*ease;
+    camera.position.y=prev.pos[1]+(cm.pos[1]-prev.pos[1])*ease;
+    camera.position.z=prev.pos[2]+(cm.pos[2]-prev.pos[2])*ease;
+    const lx=prev.look[0]+(cm.look[0]-prev.look[0])*ease;
+    const ly=prev.look[1]+(cm.look[1]-prev.look[1])*ease;
+    const lz=prev.look[2]+(cm.look[2]-prev.look[2])*ease;
+    camera.lookAt(lx,ly,lz);
+
+    // focus rotation
+    if(now-focusTimer>FOCUS_SWITCH){
+      nextFocus();
+      focusTimer=now;
+    }
+    updateBrain(focusMesh);
+
+    // counters tick
+    if(now-counterTimer>4500){
+      tickCounters();
+      counterTimer=now;
+    }
+
+    // trails rebuild
+    if(now-trailRebuildTimer>250){
+      rebuildTrails();
+      trailRebuildTimer=now;
+    }
+
+    // map redraw
+    if(now-mapTimer>180){
+      drawMap();
+      mapTimer=now;
+    }
+
+    // relations
+    if(now-relTimer>2500){
+      renderRelations();
+      relTimer=now;
+    }
+
+    // chyron beats
+    if(now-beatTimer>9000){
+      const text=beats[chyronIdx%beats.length].replace(/Day \d+/,`Day ${store.day}`);
+      showBeat(text);
+      chyronIdx++;
+      beatTimer=now;
+    }
+
+    // reseed
+    if(now-lastReseed>RESEED_MS){
+      reseed();
+    }
+
+    renderer.render(scene,camera);
+  }
+  loop();
+
+  // ---------------- cleanup hook ----------------
+  function dispose(){
+    running=false;
+    cancelAnimationFrame(runId);
+    // dispose tracked geometries & materials
+    disposables.forEach(d=>{ try{ d.dispose && d.dispose(); }catch(e){} });
+    // walk scene tree & dispose any leftover
+    scene.traverse(o=>{
+      if(o.geometry){ try{ o.geometry.dispose(); }catch(e){} }
+      if(o.material){
+        if(Array.isArray(o.material)) o.material.forEach(m=>{try{m.dispose();}catch(e){}});
+        else try{ o.material.dispose(); }catch(e){}
+      }
+    });
+    // dispose instanced
+    try{ tourMesh.dispose(); }catch(e){}
+    try{ tourHeadMesh.dispose(); }catch(e){}
+    renderer.dispose();
+    if(renderer.domElement && renderer.domElement.parentNode){
+      renderer.domElement.parentNode.removeChild(renderer.domElement);
+    }
+    saveStore();
+  }
+  window.addEventListener("beforeunload",dispose);
+  window.addEventListener("pagehide",dispose);
+
+  // splash chyron
+  showBeat(`Day ${store.day} — Welcome to Dappleberry Farm. The animals & the farmhands all have plans of their own.`);
+
+})();
+</script>
+</body>
+</html>

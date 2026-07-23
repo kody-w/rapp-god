@@ -1,0 +1,523 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cindersmoke — Learn with Kody Fauna</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cellipse cx='16' cy='17' rx='8' ry='10' fill='%23ff8a4c'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#efe4d8; --ash:#c9bdb2; --ember:#ff8a3c; --glow:#ffd27a;
+    --panel:rgba(18,11,8,.62); --edge:rgba(255,150,70,.18);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#080504;overflow:hidden;
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:#efe4d8;-webkit-font-smoothing:antialiased;user-select:none}
+  #stage{position:fixed;inset:0;display:block}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  /* vignette + warm floor haze over the canvas, non-interactive */
+  #veil{position:fixed;inset:0;pointer-events:none;
+    background:
+      radial-gradient(120% 80% at 50% 118%, rgba(255,110,40,.10), transparent 55%),
+      radial-gradient(140% 120% at 50% 42%, transparent 52%, rgba(0,0,0,.62) 100%);
+    mix-blend-mode:normal}
+
+  .hud{position:fixed;pointer-events:none;z-index:5}
+  #topleft{left:18px;top:16px;max-width:min(360px,60vw)}
+  .card{pointer-events:auto;background:var(--panel);border:1px solid var(--edge);
+    border-radius:14px;padding:12px 14px;backdrop-filter:blur(9px) saturate(1.1);
+    -webkit-backdrop-filter:blur(9px) saturate(1.1);
+    box-shadow:0 10px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+  .name{font-size:20px;font-weight:700;letter-spacing:.4px;
+    background:linear-gradient(180deg,#fff2d8,#ff9a45);-webkit-background-clip:text;
+    background-clip:text;color:transparent;text-shadow:0 0 22px rgba(255,140,60,.25)}
+  .name .spark{filter:drop-shadow(0 0 6px rgba(255,180,90,.9))}
+  .meta{margin-top:6px;font-size:12px;color:var(--ash);display:flex;gap:10px;
+    flex-wrap:wrap;align-items:center}
+  .id{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;
+    color:#ffcf95;background:rgba(255,150,70,.10);padding:2px 7px;border-radius:6px;
+    border:1px solid rgba(255,160,80,.18)}
+  .rar{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;
+    padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+  .cap{margin-top:9px;font-size:11.5px;line-height:1.45;color:#9c8f83}
+
+  #controls{left:18px;bottom:16px;display:flex;flex-direction:column;gap:10px;
+    max-width:min(420px,90vw)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;pointer-events:auto}
+  button,.filelbl{pointer-events:auto;cursor:pointer;font:inherit;font-size:13px;
+    font-weight:600;color:#ffe9d2;background:linear-gradient(180deg,rgba(60,32,18,.9),rgba(34,18,10,.9));
+    border:1px solid rgba(255,150,70,.30);border-radius:11px;padding:9px 13px;
+    transition:transform .12s ease,box-shadow .2s ease,border-color .2s;
+    box-shadow:0 6px 20px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,190,120,.12)}
+  button:hover,.filelbl:hover{transform:translateY(-1px);border-color:rgba(255,170,90,.6);
+    box-shadow:0 10px 28px rgba(255,90,30,.18),inset 0 1px 0 rgba(255,190,120,.2)}
+  button:active{transform:translateY(0)}
+  .primary{background:linear-gradient(180deg,#ff9a45,#e0571a);color:#1a0d05;
+    border-color:rgba(255,200,140,.5)}
+  .primary:hover{box-shadow:0 12px 32px rgba(255,110,40,.4)}
+  .filelbl input{display:none}
+
+  .load{pointer-events:auto;display:flex;gap:8px;align-items:stretch;
+    background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:8px}
+  .load textarea{flex:1;min-width:0;height:38px;resize:vertical;font-family:ui-monospace,Menlo,monospace;
+    font-size:11px;color:#ffddb8;background:rgba(0,0,0,.35);border:1px solid rgba(255,150,70,.18);
+    border-radius:8px;padding:7px 9px;outline:none}
+  .load textarea:focus{border-color:rgba(255,170,90,.5)}
+  #status{font-size:11px;color:#9c8f83;min-height:14px;padding-left:2px}
+  #status.ok{color:#8fd694}#status.err{color:#ff8f6b}
+
+  details.dna{pointer-events:auto;background:var(--panel);border:1px solid var(--edge);
+    border-radius:12px;overflow:hidden}
+  details.dna summary{cursor:pointer;list-style:none;padding:9px 12px;font-size:12px;
+    font-weight:600;color:#ffcf95;display:flex;align-items:center;gap:8px}
+  details.dna summary::-webkit-details-marker{display:none}
+  details.dna summary::before{content:"▸";transition:transform .2s;color:#ff9a45}
+  details.dna[open] summary::before{transform:rotate(90deg)}
+  details.dna pre{margin:0;padding:2px 12px 12px;max-height:38vh;overflow:auto;
+    font-family:ui-monospace,Menlo,monospace;font-size:10.5px;line-height:1.5;color:#d8c8b8}
+
+  @media (max-width:620px){
+    #topleft{max-width:76vw}
+    #controls{right:18px;max-width:none}
+    .name{font-size:17px}
+  }
+</style>
+
+<canvas id="stage"></canvas>
+<div id="veil"></div>
+
+<div class="hud" id="topleft">
+  <div class="card">
+    <div class="name"><span class="spark">✦</span> <span id="ui-title">Cindersmoke</span></div>
+    <div class="meta">
+      <span class="id" id="ui-id">············</span>
+      <span class="rar" id="ui-rar">—</span>
+    </div>
+    <div class="cap" id="ui-cap">A curl-noise smoke volume, minted fresh from a rappter genome.</div>
+  </div>
+</div>
+
+<div class="hud" id="controls">
+  <div class="btns">
+    <button class="primary" id="btn-new">✦ New Cindersmoke</button>
+    <button id="btn-save">🥚 Save .egg</button>
+    <label class="filelbl">📂 Load file<input type="file" id="file-egg" accept=".egg,.txt,text/plain"></label>
+  </div>
+  <div class="load">
+    <textarea id="egg-in" placeholder="…or paste a .egg string here and press Load →" spellcheck="false"></textarea>
+    <button id="btn-load">Load .egg</button>
+  </div>
+  <div id="status">smoldering…</div>
+  <details class="dna">
+    <summary>Genome DNA</summary>
+    <pre id="dna-json"></pre>
+  </details>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   FAUNA-EGG CORE — verified byte-exact against openrappter-vui / genome.js.
+   Embed VERBATIM in each demo. Do NOT edit: genomeId must stay reproducible
+   or the .egg will not load in rapp·go. (Verified: genomeId of the reference
+   egg === "fb18657910a5", and re-encode reproduces the original bytes.)
+   ══════════════════════════════════════════════════════════════════════════ */
+const EGG = (() => {
+  const b64enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const b64dec = s => { s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); };
+  async function sha256hex(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  function canonical(v){
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v!==null&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  async function genomeId(genome){ return (await sha256hex(canonical(genome))).slice(0,12); }
+  // xmur3 → mulberry32 deterministic PRNG (byte-identical to genome.js mkRng)
+  function mkRng(seed){ let h=1779033703^seed.length; for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),3432918353);h=h<<13|h>>>19;} h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); let s=(h^=h>>>16)>>>0; return function(){s+=0x6D2B79F5;let t=Math.imul(s^s>>>15,1|s);t=(t+Math.imul(t^t>>>7,61|t))^t;return((t^t>>>14)>>>0)/4294967296;}; }
+  // geohash encode (precision 6) so each egg carries a plausible born.coord
+  function geohash(lat,lng,precision=6){ const B='0123456789bcdefghjkmnpqrstuvwxyz'; let even=true,hash='',bits=0,hc=0; const la=[-90,90],lo=[-180,180]; while(hash.length<precision){ if(even){const m=(lo[0]+lo[1])/2; if(lng>m){hc=(hc<<1)|1;lo[0]=m;}else{hc<<=1;lo[1]=m;}} else {const m=(la[0]+la[1])/2; if(lat>m){hc=(hc<<1)|1;la[0]=m;}else{hc<<=1;la[1]=m;}} even=!even; if(++bits===5){hash+=B[hc];bits=0;hc=0;} } return hash; }
+
+  // Pack a genome into a canonical .egg payload (matches openrappter-vui exactly).
+  async function pack(genome, meta={}){
+    const id = await genomeId(genome);
+    const rng = mkRng(id);
+    const payload = {
+      genome, id,
+      born: meta.born || { coord: geohash((rng()*140)-70, (rng()*360)-180), t: 0 },
+      title: meta.title || 'a rappter',
+      rarity: meta.rarity || 'uncommon',
+      source: meta.source || 'learnwithkody-fauna'
+    };
+    return { egg: b64enc(JSON.stringify(payload)), id, payload };
+  }
+  function unpack(b64){ return JSON.parse(b64dec(b64.trim())); }
+  function download(b64, id){ const a=document.createElement('a'); a.href='data:application/octet-stream;base64,'+btoa(b64); /* raw text egg */ a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(b64); a.download=`rappter-${String(id).slice(0,8)}.egg`; document.body.appendChild(a); a.click(); a.remove(); }
+  return { b64enc, b64dec, genomeId, mkRng, geohash, pack, unpack, download };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CINDERSMOKE — a volumetric smoke elemental rendered as a curl-noise particle
+   volume on 2D canvas. The body hovers and re-forms, embers rise, sparks drift,
+   and two glowing eyes flare to motion.pulse. Every load is a unique genome.
+   ══════════════════════════════════════════════════════════════════════════ */
+(() => {
+  "use strict";
+
+  // ── tiny color helpers ────────────────────────────────────────────────
+  const clamp = (v,a,b)=>v<a?a:v>b?b:v;
+  function hsl(h,s,l){ // h 0-360, s,l 0-100 → #rrggbb
+    s/=100; l/=100;
+    const k=n=>(n+h/30)%12, a=s*Math.min(l,1-l);
+    const f=n=>l-a*Math.max(-1,Math.min(k(n)-3,Math.min(9-k(n),1)));
+    const to=x=>Math.round(clamp(x,0,1)*255).toString(16).padStart(2,'0');
+    return '#'+to(f(0))+to(f(8))+to(f(4));
+  }
+  function h2r(h){ h=h.replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join('');
+    return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+  function rgbHex(a){ return '#'+a.map(x=>Math.round(clamp(x,0,255)).toString(16).padStart(2,'0')).join(''); }
+  function mix(h1,h2,t){ const a=h2r(h1),b=h2r(h2);
+    return rgbHex([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]); }
+
+  // ── soft radial sprite (one offscreen canvas per LUT color) ────────────
+  function softSprite(rgb){
+    const S=128, c=document.createElement('canvas'); c.width=c.height=S;
+    const g=c.getContext('2d');
+    const [r,gr,b]=rgb, grad=g.createRadialGradient(S/2,S/2,0,S/2,S/2,S/2);
+    grad.addColorStop(0,   `rgba(${r},${gr},${b},1)`);
+    grad.addColorStop(0.32,`rgba(${r},${gr},${b},0.55)`);
+    grad.addColorStop(0.7, `rgba(${r},${gr},${b},0.14)`);
+    grad.addColorStop(1,   `rgba(${r},${gr},${b},0)`);
+    g.fillStyle=grad; g.fillRect(0,0,S,S);
+    return c;
+  }
+  function buildLUT(stops,n){
+    const out=[];
+    for(let i=0;i<n;i++){
+      const t=i/(n-1), f=t*(stops.length-1), a=Math.floor(f), b=Math.min(a+1,stops.length-1), fr=f-a;
+      const ca=h2r(stops[a]), cb=h2r(stops[b]);
+      out.push([ca[0]+(cb[0]-ca[0])*fr, ca[1]+(cb[1]-ca[1])*fr, ca[2]+(cb[2]-ca[2])*fr]);
+    }
+    return out;
+  }
+
+  // ── GENOME GENERATION (biased to the Cindersmoke identity) ─────────────
+  function makeGenome(seed){
+    const R=EGG.mkRng(seed);
+    const rnd=(a,b)=>a+R()*(b-a);
+    const chance=p=>R()<p;
+    const f3=x=>+x.toFixed(3);
+
+    // smoke bodies are mostly amorphous blobs, sometimes a smoke-ring, rarely a starburst
+    const shape = R()<0.60 ? 'blob' : (R()<0.62 ? 'ring' : 'star');
+    const symmetry = chance(0.85) ? 'bilateral' : 'radial';  // two eyes → usually bilateral
+    const limbs = Math.floor(rnd(0,3));       // few trailing wisps
+    const segments = Math.floor(rnd(5,11));
+    const body_r = f3(rnd(0.32,0.55));
+    const limb_len = f3(rnd(0.05,0.25));
+
+    // EMBER / ASH palette — bright core → glow → ember → warm smoke → cool (or violet) ash
+    const baseHue = rnd(10,32);
+    const core  = hsl(rnd(40,52), rnd(88,100), rnd(76,88));
+    const glowc = hsl(rnd(22,38), rnd(90,100), rnd(55,64));
+    const ember = hsl(baseHue,    rnd(85,100), rnd(48,58));
+    const smoke = hsl(rnd(8,26),  rnd(14,34),  rnd(16,28));
+    const ash   = chance(0.28) ? hsl(rnd(258,288), rnd(8,20), rnd(46,60))
+                               : hsl(rnd(202,236), rnd(4,12),  rnd(48,62));
+    const palette = [core, glowc, ember, smoke, ash];
+
+    const glow    = f3(rnd(0.6,1.0));
+    const opacity = f3(rnd(0.35,0.7));
+
+    const form = { role:'form', k:40, shape, limbs, segments, symmetry, body_r, limb_len,
+      emberFrac:f3(rnd(0.08,0.20)), sparkFrac:f3(rnd(0.02,0.06)),
+      eyeSep:f3(rnd(0.5,0.9)), plumeHeight:f3(rnd(0.5,1.0)) };
+    const surface = { role:'surface', k:60, palette, pattern:'glow', glow, opacity,
+      emberGlow:f3(rnd(0.5,1.0)), ashDrift:f3(rnd(0.3,0.8)) };
+    const motion = { role:'motion', k:50,
+      breathe:f3(rnd(0.3,0.7)), drift:f3(rnd(0.4,0.9)), pulse:f3(rnd(0.4,0.9)),
+      reach:f3(rnd(0.05,0.30)), roil:f3(rnd(0.4,1.0)), buoyancy:f3(rnd(0.4,0.9)),
+      flicker:f3(rnd(0.3,0.8)) };
+
+    return { layers:[form,surface,motion], compose:{ windows:[[0,1,2]], loop:true } };
+  }
+
+  function rarityOf(genome,id){
+    const [f,s,m]=genome.layers;
+    let sc = s.glow*0.34 + s.emberGlow*0.22 + m.pulse*0.14
+           + (f.shape==='star'?0.26:f.shape==='ring'?0.12:0)
+           + (s.palette[4].match(/^#[89ab]/i)?0.05:0)
+           + (parseInt(id[0],16)/15)*0.20;   // id jitter → spread across the roster
+    return sc<0.36?'common' : sc<0.55?'uncommon' : sc<0.72?'rare' : sc<0.86?'epic' : 'legendary';
+  }
+  const RARCOLOR = { common:'#9db0a6', uncommon:'#7fd68a', rare:'#5fc9ff',
+                     epic:'#c98bff', legendary:'#ffcf5f' };
+
+  // ── canvas + sim state ─────────────────────────────────────────────────
+  const canvas=document.getElementById('stage'), ctx=canvas.getContext('2d');
+  let W=0,H=0,DPR=1;
+  let sim=null;            // derived render params for the current genome
+  let pool=[];             // particle array
+  let flare=0;             // eye-flare impulse, decays each frame
+
+  // current creature identity (exposed via FAUNA)
+  let curGenome=null, curId='············', curEgg='', curRarity='uncommon', curTitle='Cindersmoke';
+
+  function resize(){
+    DPR=Math.min(2, window.devicePixelRatio||1);
+    W=window.innerWidth; H=window.innerHeight;
+    canvas.width=Math.round(W*DPR); canvas.height=Math.round(H*DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+    ctx.fillStyle='#080504'; ctx.fillRect(0,0,W,H);
+    if(sim){ sim.baseR = sim.body_r*Math.min(W,H)*0.6;
+      const n=clamp(Math.round(W*H/2600),480,1400);
+      if(n!==sim.N){ sim.N=n; buildPool(); } }
+  }
+
+  // curl-noise potential field (sum of drifting waves → smooth, divergence-free flow)
+  function pot(x,y,t){
+    return Math.sin(x*0.0075 + t*0.31)*42
+         + Math.cos(y*0.0102 - t*0.24)*36
+         + Math.sin((x+y)*0.0061 + t*0.42)*26
+         + Math.cos((x-y)*0.0090 - t*0.19)*20
+         + Math.sin(x*0.019 + y*0.014 + t*0.6)*9;
+  }
+
+  function buildSim(genome){
+    const [f,s,m]=genome.layers;
+    // hot → cold color stops → LUT → sprites
+    const stops=[ s.palette[0], s.palette[1], s.palette[2], s.palette[3],
+                  mix(s.palette[3], s.palette[4], 0.5), mix(s.palette[4], '#0b0705', 0.55) ];
+    const LUT=buildLUT(stops, 10);
+    const sprites=LUT.map(softSprite);
+    const eyeSprites=[ softSprite(h2r(s.palette[0])), softSprite(h2r(s.palette[1])) ];
+
+    sim = {
+      body_r:f.body_r,
+      baseR: f.body_r*Math.min(W,H)*0.6, R:0,
+      curlScale: 22*(0.5+m.roil),
+      buoyancy: 28*(0.5+m.buoyancy),
+      cohesion: 0.55 - m.drift*0.24,
+      breatheFreq: 0.12 + m.breathe*0.24,
+      breatheAmt: m.breathe,
+      driftAmt: m.drift,
+      pulseFreq: 0.25 + m.pulse*1.0,
+      plumeLife: 1.6 + f.plumeHeight*3.0,
+      eyeSep: f.eyeSep,
+      emberFrac: f.emberFrac,
+      sparkFrac: f.sparkFrac,
+      opacityMul: 0.5 + s.opacity*0.9,
+      glowMul: 0.6 + s.glow*0.7,
+      emberGlow: s.emberGlow,
+      flicker: m.flicker,
+      shape: f.shape,
+      starPoints: Math.max(5, f.segments),
+      sprites, eyeSprites, LUTN: sprites.length,
+      N: sim?sim.N:clamp(Math.round(W*H/2600),480,1400)
+    };
+  }
+
+  function emitOffset(R){
+    const rr=Math.random();
+    if(sim.shape==='ring'){
+      const a=Math.random()*Math.PI*2, rad=R*(0.72+0.20*(Math.random()-0.5));
+      return { x:Math.cos(a)*rad, y:Math.sin(a)*rad*0.8 };
+    }
+    if(sim.shape==='star'){
+      const a=Math.random()*Math.PI*2, k=0.5+0.5*Math.cos(sim.starPoints*a);
+      const rad=R*Math.pow(rr,0.5)*(0.35+0.65*k);
+      return { x:Math.cos(a)*rad, y:Math.sin(a)*rad*0.9 };
+    }
+    const a=Math.random()*Math.PI*2, rad=R*Math.pow(rr,0.7)*0.85;      // blob
+    return { x:Math.cos(a)*rad, y:Math.sin(a)*rad*0.92 };
+  }
+
+  function spawn(p,cx,cy){
+    const R=sim.R, off=emitOffset(R);
+    p.x=cx+off.x; p.y=cy+off.y+R*0.14; p.age=0;
+    const roll=Math.random();
+    p.spark = roll < sim.sparkFrac;
+    p.ember = !p.spark && roll < sim.sparkFrac+sim.emberFrac;
+    p.life  = p.spark ? 0.5+Math.random()*0.8 : sim.plumeLife*(0.55+Math.random()*0.9);
+    p.size0 = p.spark ? R*(0.018+Math.random()*0.028) : R*(0.10+Math.random()*0.22);
+    p.baseA = p.spark ? 0.85 : (p.ember ? 0.15+Math.random()*0.11 : 0.07+Math.random()*0.09);
+    p.wob   = (Math.random()*2-1)*7;
+    p.seed  = Math.random()*6.283;
+    p.hot   = p.ember ? 0.42 : (p.spark ? 0.85 : 0);
+  }
+
+  function buildPool(){
+    pool=new Array(sim.N);
+    const cx=W*0.5, cy=H*0.58;
+    for(let i=0;i<sim.N;i++){ const p={}; spawn(p,cx,cy); p.age=Math.random()*p.life; pool[i]=p; }
+  }
+
+  // ── animation loop ─────────────────────────────────────────────────────
+  let last=performance.now(), t0=last;
+  function frame(now){
+    const dt=Math.min(0.033,(now-last)/1000); last=now;
+    const t=(now-t0)/1000;
+
+    if(sim){
+      // hovering, breathing, drifting body centre
+      sim.R = sim.baseR*(1+Math.sin(t*sim.breatheFreq*6.283)*0.12*sim.breatheAmt);
+      const cx = W*0.5 + Math.sin(t*0.13)*W*0.05*sim.driftAmt + Math.cos(t*0.071)*W*0.028*sim.driftAmt;
+      const cy = H*0.58 + Math.cos(t*0.10)*H*0.03*sim.driftAmt;
+
+      // fade to background → silky motion trails (feedback smear)
+      ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+      ctx.fillStyle='rgba(8,5,4,0.16)'; ctx.fillRect(0,0,W,H);
+
+      ctx.globalCompositeOperation='lighter';
+      const spr=sim.sprites, LN=sim.LUTN, e=2;
+      const flick=1+Math.sin(t*7.0)*0.05*sim.flicker;
+
+      for(let i=0;i<pool.length;i++){
+        const p=pool[i];
+        const px=p.x, py=p.y;
+        const dPdy=(pot(px,py+e,t)-pot(px,py-e,t))/(2*e);
+        const dPdx=(pot(px+e,py,t)-pot(px-e,py,t))/(2*e);
+        let vx=dPdy*sim.curlScale, vy=-dPdx*sim.curlScale;
+        const heat=1-p.age/p.life;
+        const bu = p.spark ? sim.buoyancy*2.2 : sim.buoyancy*(0.5+heat*1.25);
+        vy -= bu;
+        const coh = p.spark?0.08:1;
+        vx += (cx-px)*sim.cohesion*coh;
+        vy += (cy-py)*sim.cohesion*0.35*coh;
+        vx += p.wob*Math.sin(t*1.3+p.seed);
+        p.x=px+vx*dt; p.y=py+vy*dt; p.age+=dt;
+        if(p.age>=p.life){ spawn(p,cx,cy); continue; }
+
+        // draw
+        if(p.x<-120||p.x>W+120||p.y<-160||p.y>H+120) continue;
+        const life=p.age/p.life;
+        const hb=Math.min(1, heat+p.hot);
+        const idx=clamp(Math.floor((1-hb)*(LN-1)),0,LN-1);
+        let a, s;
+        if(p.spark){ a=p.baseA*(1-life)*sim.glowMul; s=p.size0*2.2; }
+        else { a=p.baseA*Math.sin(Math.PI*life)*sim.opacityMul*flick; s=p.size0*(0.6+1.7*life); }
+        if(a<=0.003) continue;
+        ctx.globalAlpha=Math.min(1,a);
+        ctx.drawImage(spr[idx], p.x-s/2, p.y-s/2, s, s);
+      }
+
+      // two ember eyes that flare to motion.pulse
+      drawEyes(t,cx,cy);
+      flare*=0.93;
+    }
+
+    FAUNA.frame++;
+    requestAnimationFrame(frame);
+  }
+
+  function drawEyes(t,cx,cy){
+    const R=sim.R, ey=cy-R*0.24, sep=R*sim.eyeSep;
+    const pulse=0.5+0.5*Math.sin(t*sim.pulseFreq*6.283);
+    const g=(0.42+0.58*pulse)*sim.emberGlow + flare;
+    const halo=sim.eyeSprites[1], corec=sim.eyeSprites[0];
+    for(const side of [-1,1]){
+      const ex=cx+side*sep*0.5;
+      // outer glow halo
+      ctx.globalAlpha=Math.min(1,0.22*g);
+      const hs=R*0.55;
+      ctx.drawImage(halo, ex-hs/2, ey-hs*0.42, hs, hs*0.84);
+      // bright almond core
+      ctx.globalAlpha=Math.min(1,0.95*g);
+      const cs=R*0.20;
+      ctx.drawImage(corec, ex-cs/2, ey-cs*0.34, cs, cs*0.66);
+      // pinpoint
+      ctx.globalAlpha=Math.min(1,0.9*Math.max(0,g-0.2));
+      const ps=R*0.07;
+      ctx.drawImage(corec, ex-ps/2, ey-ps/2, ps, ps);
+    }
+  }
+
+  // ── apply a creature (from generate OR from a loaded egg) ───────────────
+  function applyCreature(genome,id,eggB64,rarity,title){
+    curGenome=genome; curId=id; curEgg=eggB64;
+    curRarity=rarity; curTitle=title||'Cindersmoke';
+    buildSim(genome); buildPool(); flare=0.9;
+    updateUI();
+  }
+
+  async function generate(seed){
+    const genome=makeGenome(seed);
+    const rar=rarityOf(genome, await EGG.genomeId(genome));
+    const packed=await EGG.pack(genome, { title:'Cindersmoke', rarity:rar, source:'learnwithkody-fauna' });
+    applyCreature(genome, packed.id, packed.egg, rar, 'Cindersmoke');
+    return packed.id;
+  }
+
+  // ── UI wiring ───────────────────────────────────────────────────────────
+  const el = id=>document.getElementById(id);
+  const $title=el('ui-title'), $id=el('ui-id'), $rar=el('ui-rar'),
+        $json=el('dna-json'), $status=el('status');
+
+  function updateUI(){
+    $title.textContent=curTitle;
+    $id.textContent=curId;
+    $rar.textContent=curRarity;
+    $rar.style.color=RARCOLOR[curRarity]||'#9db0a6';
+    $json.textContent=JSON.stringify(curGenome,null,2);
+  }
+  function setStatus(msg,cls){ $status.textContent=msg; $status.className=cls||''; }
+
+  el('btn-new').addEventListener('click', async ()=>{
+    setStatus('condensing new smoke…');
+    try{ const id=await generate(randSeed()); setStatus('minted '+id,'ok'); }
+    catch(e){ setStatus('generation failed: '+e.message,'err'); }
+  });
+
+  el('btn-save').addEventListener('click', ()=>{
+    if(!curEgg){ setStatus('nothing to save yet','err'); return; }
+    EGG.download(curEgg, curId);
+    setStatus('saved rappter-'+curId.slice(0,8)+'.egg','ok');
+  });
+
+  async function loadFromString(str){
+    setStatus('reading egg…');
+    try{
+      const b64=str.trim();
+      const payload=EGG.unpack(b64);
+      if(!payload||!payload.genome||!Array.isArray(payload.genome.layers))
+        throw new Error('not a rappter genome');
+      const rar=payload.rarity||rarityOf(payload.genome, payload.id||'0');
+      applyCreature(payload.genome, payload.id||'············', b64, rar, payload.title||'Cindersmoke');
+      setStatus('loaded '+ (payload.id||'?'),'ok');
+    }catch(e){ setStatus('load failed: '+e.message,'err'); }
+  }
+  el('btn-load').addEventListener('click', ()=>{
+    const v=el('egg-in').value; if(!v.trim()){ setStatus('paste an egg first','err'); return; }
+    loadFromString(v);
+  });
+  el('file-egg').addEventListener('change', ev=>{
+    const file=ev.target.files&&ev.target.files[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=()=>loadFromString(String(r.result));
+    r.onerror=()=>setStatus('could not read file','err');
+    r.readAsText(file);
+    ev.target.value='';
+  });
+
+  function randSeed(){ return 'cinder-'+Math.random().toString(36).slice(2,11)+'-'+Date.now().toString(36); }
+
+  window.addEventListener('resize', resize, {passive:true});
+
+  // ── FAUNA debug hook (declared now; populated after first creature) ─────
+  window.FAUNA = {
+    title:'Cindersmoke',
+    get genome(){ return curGenome; },
+    get id(){ return curId; },
+    get eggB64(){ return curEgg; },
+    newCreature: async ()=>{ const id=await generate(randSeed()); setStatus('minted '+id,'ok'); return id; },
+    loadEgg: async (b64)=>{ await loadFromString(b64); return curId; },
+    frame:0
+  };
+
+  // ── boot ────────────────────────────────────────────────────────────────
+  (async ()=>{
+    resize();
+    try{ await generate(randSeed()); setStatus('alive — '+curId,'ok'); }
+    catch(e){ setStatus('boot error: '+e.message,'err'); console.error(e); }
+    requestAnimationFrame(frame);
+  })();
+})();
+</script>

@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wave Music Composer</title>
+    <meta name="description" content="Visual music composition tool using waveforms, drag-and-drop notes, multiple instruments, chord progressions, and real-time playback with Web Audio API">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #2d1b4e 0%, #1a0b2e 100%);
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #header {
+            background: rgba(20, 10, 40, 0.95);
+            padding: 15px 30px;
+            border-bottom: 2px solid #9d4edd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 22px;
+            color: #9d4edd;
+            text-shadow: 0 0 10px rgba(157, 78, 221, 0.5);
+        }
+
+        #controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #9d4edd 0%, #7b2cbf 100%);
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(157, 78, 221, 0.4);
+        }
+
+        #main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 280px;
+            background: rgba(20, 10, 40, 0.95);
+            border-right: 1px solid rgba(157, 78, 221, 0.3);
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .section {
+            margin-bottom: 25px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            border: 1px solid rgba(157, 78, 221, 0.2);
+        }
+
+        .section h2 {
+            font-size: 14px;
+            color: #9d4edd;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+
+        .instrument-btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: rgba(157, 78, 221, 0.1);
+            border: 1px solid rgba(157, 78, 221, 0.3);
+            border-radius: 5px;
+            color: #e0e0e0;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .instrument-btn:hover {
+            background: rgba(157, 78, 221, 0.3);
+        }
+
+        .instrument-btn.active {
+            background: linear-gradient(135deg, #9d4edd 0%, #7b2cbf 100%);
+            color: #fff;
+        }
+
+        #workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #0a0a0a;
+        }
+
+        #piano-roll {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+            background: linear-gradient(90deg, #1a0a2e 0%, #0a0a1a 100%);
+        }
+
+        #grid-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: crosshair;
+        }
+
+        #timeline {
+            height: 60px;
+            background: rgba(20, 10, 40, 0.95);
+            border-top: 1px solid rgba(157, 78, 221, 0.3);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 15px;
+        }
+
+        #playhead {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 2px;
+            height: 100%;
+            background: #ff006e;
+            box-shadow: 0 0 10px #ff006e;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        label {
+            font-size: 11px;
+            color: #aaa;
+            margin-right: 10px;
+        }
+
+        input[type="range"] {
+            width: 150px;
+        }
+
+        select {
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #e0e0e0;
+            border: 1px solid rgba(157, 78, 221, 0.3);
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        .note {
+            position: absolute;
+            background: linear-gradient(135deg, #9d4edd 0%, #7b2cbf 100%);
+            border: 1px solid #c77dff;
+            border-radius: 3px;
+            cursor: move;
+            box-shadow: 0 2px 8px rgba(157, 78, 221, 0.4);
+        }
+
+        .note:hover {
+            filter: brightness(1.2);
+            box-shadow: 0 4px 12px rgba(157, 78, 221, 0.6);
+        }
+
+        .chord-btn {
+            padding: 8px 12px;
+            background: rgba(157, 78, 221, 0.1);
+            border: 1px solid rgba(157, 78, 221, 0.3);
+            border-radius: 5px;
+            color: #e0e0e0;
+            font-size: 10px;
+            cursor: pointer;
+            margin-bottom: 5px;
+        }
+
+        .chord-btn:hover {
+            background: rgba(157, 78, 221, 0.3);
+        }
+    </style>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+<meta name="rappterzoo:author" content="agent">
+<meta name="rappterzoo:author-type" content="agent">
+<meta name="rappterzoo:category" content="audio_music">
+<meta name="rappterzoo:tags" content="canvas,svg,audio,animation,interactive">
+<meta name="rappterzoo:type" content="audio">
+<meta name="rappterzoo:complexity" content="simple">
+<meta name="rappterzoo:created" content="2025-12-27">
+<meta name="rappterzoo:generation" content="1">
+</head>
+<body>
+    <div id="app-container">
+        <div id="header">
+            <h1>🎵 Wave Music Composer</h1>
+            <div id="controls">
+                <button id="playBtn">▶️ Play</button>
+                <button id="stopBtn">⏹️ Stop</button>
+                <button id="clearBtn">🗑️ Clear</button>
+                <button id="exportBtn">💾 Export</button>
+            </div>
+        </div>
+
+        <div id="main-content">
+            <div id="sidebar">
+                <div class="section">
+                    <h2>Instruments</h2>
+                    <button class="instrument-btn active" data-inst="sine">Sine Wave</button>
+                    <button class="instrument-btn" data-inst="square">Square Wave</button>
+                    <button class="instrument-btn" data-inst="sawtooth">Sawtooth</button>
+                    <button class="instrument-btn" data-inst="triangle">Triangle</button>
+                    <button class="instrument-btn" data-inst="piano">Piano</button>
+                    <button class="instrument-btn" data-inst="bass">Bass</button>
+                </div>
+
+                <div class="section">
+                    <h2>Quick Chords</h2>
+                    <button class="chord-btn" onclick="addChord('major')">C Major</button>
+                    <button class="chord-btn" onclick="addChord('minor')">C Minor</button>
+                    <button class="chord-btn" onclick="addChord('seventh')">C7</button>
+                    <button class="chord-btn" onclick="addChord('sus4')">Csus4</button>
+                    <button class="chord-btn" onclick="addChord('dim')">C Dim</button>
+                </div>
+
+                <div class="section">
+                    <h2>Settings</h2>
+                    <label>BPM: <span id="bpmDisplay">120</span></label><br>
+                    <input type="range" id="bpm" min="60" max="200" value="120"><br><br>
+
+                    <label>Scale:</label><br>
+                    <select id="scale">
+                        <option value="chromatic">Chromatic</option>
+                        <option value="major" selected>Major</option>
+                        <option value="minor">Minor</option>
+                        <option value="pentatonic">Pentatonic</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="workspace">
+                <div id="piano-roll">
+                    <canvas id="grid-canvas"></canvas>
+                    <div id="playhead"></div>
+                </div>
+
+                <div id="timeline">
+                    <label>Time: <span id="timeDisplay">0.0s</span></label>
+                    <label>Notes: <span id="noteCount">0</span></label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('grid-canvas');
+        const ctx = canvas.getContext('2d');
+        const pianoRoll = document.getElementById('piano-roll');
+
+        const CELL_WIDTH = 40;
+        const CELL_HEIGHT = 30;
+        const OCTAVES = 4;
+        const NOTES_PER_OCTAVE = 12;
+        const TOTAL_NOTES = OCTAVES * NOTES_PER_OCTAVE;
+        const BEATS = 32;
+
+        canvas.width = BEATS * CELL_WIDTH;
+        canvas.height = TOTAL_NOTES * CELL_HEIGHT;
+
+        const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const BASE_FREQ = 130.81; // C3
+
+        let notes = [];
+        let currentInstrument = 'sine';
+        let isPlaying = false;
+        let playbackTime = 0;
+        let audioContext;
+        let scheduledNotes = [];
+
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function drawGrid() {
+            ctx.fillStyle = '#0a0a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw vertical lines (beats)
+            for (let i = 0; i <= BEATS; i++) {
+                ctx.strokeStyle = i % 4 === 0 ? 'rgba(157, 78, 221, 0.3)' : 'rgba(157, 78, 221, 0.1)';
+                ctx.lineWidth = i % 4 === 0 ? 2 : 1;
+                ctx.beginPath();
+                ctx.moveTo(i * CELL_WIDTH, 0);
+                ctx.lineTo(i * CELL_WIDTH, canvas.height);
+                ctx.stroke();
+            }
+
+            // Draw horizontal lines (notes)
+            const scaleType = document.getElementById('scale').value;
+            const scales = {
+                chromatic: [0,1,2,3,4,5,6,7,8,9,10,11],
+                major: [0,2,4,5,7,9,11],
+                minor: [0,2,3,5,7,8,10],
+                pentatonic: [0,2,4,7,9]
+            };
+
+            for (let i = 0; i <= TOTAL_NOTES; i++) {
+                const noteInOctave = i % 12;
+                const isInScale = scales[scaleType].includes(noteInOctave);
+                const isC = noteInOctave === 0;
+
+                if (isC) {
+                    ctx.fillStyle = 'rgba(157, 78, 221, 0.05)';
+                    ctx.fillRect(0, i * CELL_HEIGHT, canvas.width, CELL_HEIGHT);
+                }
+
+                ctx.strokeStyle = isC ? 'rgba(157, 78, 221, 0.4)' :
+                                 isInScale ? 'rgba(157, 78, 221, 0.15)' :
+                                 'rgba(157, 78, 221, 0.05)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, i * CELL_HEIGHT);
+                ctx.lineTo(canvas.width, i * CELL_HEIGHT);
+                ctx.stroke();
+
+                // Note names
+                if (i < TOTAL_NOTES) {
+                    const octave = Math.floor(i / 12) + 3;
+                    ctx.fillStyle = 'rgba(157, 78, 221, 0.5)';
+                    ctx.font = '10px monospace';
+                    ctx.fillText(NOTE_NAMES[noteInOctave] + octave, 5, i * CELL_HEIGHT + 20);
+                }
+            }
+        }
+
+        function getFrequency(noteIndex) {
+            return BASE_FREQ * Math.pow(2, noteIndex / 12);
+        }
+
+        function playNote(freq, duration, startTime, instrument) {
+            initAudio();
+
+            const osc = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            switch(instrument) {
+                case 'sine':
+                case 'square':
+                case 'sawtooth':
+                case 'triangle':
+                    osc.type = instrument;
+                    break;
+                case 'piano':
+                    osc.type = 'sine';
+                    break;
+                case 'bass':
+                    osc.type = 'sawtooth';
+                    break;
+            }
+
+            osc.frequency.value = freq;
+
+            // ADSR envelope
+            const now = audioContext.currentTime + startTime;
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(0.3, now + 0.01);
+            gainNode.gain.linearRampToValueAtTime(0.2, now + 0.1);
+            gainNode.gain.setValueAtTime(0.2, now + duration - 0.1);
+            gainNode.gain.linearRampToValueAtTime(0, now + duration);
+
+            osc.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            osc.start(now);
+            osc.stop(now + duration);
+
+            return { osc, gainNode };
+        }
+
+        function addNote(beat, noteIndex, duration = 1) {
+            const note = {
+                beat,
+                noteIndex,
+                duration,
+                instrument: currentInstrument,
+                id: Date.now() + Math.random()
+            };
+            notes.push(note);
+            renderNotes();
+            updateStats();
+        }
+
+        function renderNotes() {
+            document.querySelectorAll('.note').forEach(n => n.remove());
+
+            notes.forEach(note => {
+                const noteEl = document.createElement('div');
+                noteEl.className = 'note';
+                noteEl.style.left = (note.beat * CELL_WIDTH) + 'px';
+                noteEl.style.top = (note.noteIndex * CELL_HEIGHT) + 'px';
+                noteEl.style.width = (note.duration * CELL_WIDTH - 2) + 'px';
+                noteEl.style.height = (CELL_HEIGHT - 2) + 'px';
+                noteEl.dataset.id = note.id;
+
+                noteEl.addEventListener('click', (e) => {
+                    if (e.shiftKey) {
+                        notes = notes.filter(n => n.id !== note.id);
+                        renderNotes();
+                        updateStats();
+                    }
+                });
+
+                pianoRoll.appendChild(noteEl);
+            });
+        }
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left + pianoRoll.scrollLeft;
+            const y = e.clientY - rect.top + pianoRoll.scrollTop;
+
+            const beat = Math.floor(x / CELL_WIDTH);
+            const noteIndex = Math.floor(y / CELL_HEIGHT);
+
+            if (beat >= 0 && beat < BEATS && noteIndex >= 0 && noteIndex < TOTAL_NOTES) {
+                addNote(beat, noteIndex);
+            }
+        });
+
+        document.querySelectorAll('.instrument-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.instrument-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentInstrument = btn.dataset.inst;
+            });
+        });
+
+        document.getElementById('playBtn').addEventListener('click', () => {
+            if (isPlaying) return;
+
+            initAudio();
+            isPlaying = true;
+            playbackTime = 0;
+
+            const bpm = parseInt(document.getElementById('bpm').value);
+            const beatDuration = 60 / bpm;
+
+            notes.sort((a, b) => a.beat - b.beat);
+
+            notes.forEach(note => {
+                const freq = getFrequency(note.noteIndex);
+                const startTime = note.beat * beatDuration;
+                const duration = note.duration * beatDuration;
+
+                const scheduled = playNote(freq, duration, startTime, note.instrument);
+                scheduledNotes.push(scheduled);
+            });
+
+            const totalDuration = BEATS * beatDuration;
+            animatePlayhead(totalDuration);
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            isPlaying = false;
+            scheduledNotes.forEach(({ osc }) => {
+                try { osc.stop(); } catch(e) {}
+            });
+            scheduledNotes = [];
+            document.getElementById('playhead').style.left = '0px';
+            playbackTime = 0;
+        });
+
+        function animatePlayhead(totalDuration) {
+            if (!isPlaying) return;
+
+            const bpm = parseInt(document.getElementById('bpm').value);
+            const beatDuration = 60 / bpm;
+
+            playbackTime += 0.016;
+            const progress = playbackTime / totalDuration;
+            document.getElementById('playhead').style.left = (progress * canvas.width) + 'px';
+            document.getElementById('timeDisplay').textContent = playbackTime.toFixed(1) + 's';
+
+            if (playbackTime >= totalDuration) {
+                document.getElementById('stopBtn').click();
+            } else {
+                requestAnimationFrame(() => animatePlayhead(totalDuration));
+            }
+        }
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            notes = [];
+            renderNotes();
+            updateStats();
+        });
+
+        window.addChord = function(chordType) {
+            const chords = {
+                major: [0, 4, 7],
+                minor: [0, 3, 7],
+                seventh: [0, 4, 7, 10],
+                sus4: [0, 5, 7],
+                dim: [0, 3, 6]
+            };
+
+            const intervals = chords[chordType];
+            const rootNote = 24; // C4
+            const beat = 0;
+
+            intervals.forEach(interval => {
+                addNote(beat, rootNote + interval, 2);
+            });
+        };
+
+        document.getElementById('bpm').addEventListener('input', (e) => {
+            document.getElementById('bpmDisplay').textContent = e.target.value;
+        });
+
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            const data = {
+                notes,
+                bpm: document.getElementById('bpm').value,
+                scale: document.getElementById('scale').value,
+                timestamp: new Date().toISOString()
+            };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `composition-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        function updateStats() {
+            document.getElementById('noteCount').textContent = notes.length;
+        }
+
+        drawGrid();
+        renderNotes();
+    </script>
+</body>
+</html>

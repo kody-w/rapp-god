@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔴 Parameters for Survival — Mars Colony Simulation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; overflow: hidden; }
+
+/* Layout */
+.game { display: grid; grid-template-columns: 280px 1fr 300px; height: 100vh; }
+
+/* Left: Parameters */
+.params { background: #0d0d0d; border-right: 1px solid #222; padding: 16px; overflow-y: auto; }
+.params h1 { font-size: 1.1em; color: #ff6347; margin-bottom: 4px; }
+.params .subtitle { font-size: 0.75em; color: #666; margin-bottom: 16px; }
+.param-group { margin: 12px 0; }
+.param-group h3 { font-size: 0.8em; color: #7b68ee; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.param { margin: 8px 0; }
+.param label { display: flex; justify-content: space-between; font-size: 0.8em; color: #aaa; margin-bottom: 4px; }
+.param label span { color: #fff; font-weight: 600; }
+.param input[type=range] { width: 100%; -webkit-appearance: none; height: 4px; background: #333; border-radius: 2px; outline: none; }
+.param input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: #7b68ee; border-radius: 50%; cursor: pointer; }
+.launch-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff; border: none; border-radius: 8px; font-size: 1em; font-weight: 700; cursor: pointer; margin-top: 16px; letter-spacing: 1px; }
+.launch-btn:hover { opacity: 0.9; }
+.launch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.brain-config { margin-top: 16px; padding: 12px; background: #111; border: 1px solid #222; border-radius: 8px; }
+.brain-config h3 { font-size: 0.8em; color: #ff6b9d; margin-bottom: 8px; }
+.brain-config .status { font-size: 0.75em; }
+.brain-config .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.brain-config .dot.on { background: #2ecc71; }
+.brain-config .dot.off { background: #e74c3c; }
+
+/* Center: 3D Globe */
+.globe-container { position: relative; background: #000; }
+#globe { width: 100%; height: 100%; }
+.hud { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; }
+.hud .sol { font-size: 3em; font-weight: 800; color: #ff6347; text-shadow: 0 0 20px rgba(255,99,71,0.5); }
+.hud .status { font-size: 1em; color: #888; }
+.hud .alive { color: #2ecc71; }
+.hud .dead { color: #e74c3c; }
+.speed-controls { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+.speed-controls button { padding: 8px 16px; background: rgba(20,20,20,0.8); border: 1px solid #333; color: #aaa; border-radius: 6px; cursor: pointer; font-size: 0.85em; }
+.speed-controls button:hover { border-color: #7b68ee; color: #fff; }
+.speed-controls button.active { background: #7b68ee44; border-color: #7b68ee; color: #7b68ee; }
+
+/* Right: Telemetry + AI Brain */
+.telemetry { background: #0d0d0d; border-left: 1px solid #222; padding: 12px; overflow-y: auto; }
+.telemetry h2 { font-size: 0.85em; color: #ff6347; text-transform: uppercase; letter-spacing: 1px; margin: 12px 0 8px; }
+.meter { margin: 6px 0; }
+.meter .head { display: flex; justify-content: space-between; font-size: 0.8em; }
+.meter .head .val { font-weight: 700; }
+.meter .bar { height: 6px; background: #222; border-radius: 3px; margin-top: 3px; overflow: hidden; }
+.meter .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.meter.critical .head .val { color: #e74c3c; }
+.meter.critical .bar-fill { background: #e74c3c !important; }
+
+.brain-panel { margin-top: 12px; }
+.brain-panel .thought { background: #111; border: 1px solid #1a1a2e; border-radius: 8px; padding: 10px; margin: 6px 0; font-size: 0.8em; }
+.brain-panel .thought .label { color: #7b68ee; font-weight: 600; font-size: 0.75em; text-transform: uppercase; margin-bottom: 4px; }
+.brain-panel .thought .text { color: #ccc; line-height: 1.4; }
+.brain-panel .neurons { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.brain-panel .neuron { padding: 3px 8px; border-radius: 12px; font-size: 0.7em; background: #1a1a1a; color: #666; border: 1px solid #222; }
+.brain-panel .neuron.firing { background: #7b68ee22; color: #7b68ee; border-color: #7b68ee; }
+
+.event-log { max-height: 200px; overflow-y: auto; font-size: 0.75em; }
+.event-log .ev { padding: 3px 0; border-bottom: 1px solid #111; }
+.event-log .ev.bad { color: #e74c3c; }
+.event-log .ev.good { color: #2ecc71; }
+.event-log .ev.warn { color: #f39c12; }
+
+@media (max-width: 900px) {
+    .game { grid-template-columns: 1fr; grid-template-rows: auto 300px auto; }
+}
+</style>
+<script src="https://unpkg.com/globe.gl@2.27.2"></script>
+</head>
+<body>
+<div class="game">
+
+<!-- LEFT: Parameters -->
+<div class="params">
+    <h1>🔴 Parameters for Survival</h1>
+    <div class="subtitle">Set your colony's starting conditions. The AI decides the rest.</div>
+
+    <div class="param-group">
+        <h3>👥 Crew</h3>
+        <div class="param">
+            <label>Crew Size <span id="v-crew">6</span></label>
+            <input type="range" id="p-crew" min="2" max="20" value="6" oninput="document.getElementById('v-crew').textContent=this.value">
+        </div>
+        <div class="param">
+            <label>Initial Morale <span id="v-morale">80%</span></label>
+            <input type="range" id="p-morale" min="20" max="100" value="80" oninput="document.getElementById('v-morale').textContent=this.value+'%'">
+        </div>
+    </div>
+
+    <div class="param-group">
+        <h3>⚡ Power</h3>
+        <div class="param">
+            <label>Solar Panels (m²) <span id="v-solar">1000</span></label>
+            <input type="range" id="p-solar" min="100" max="5000" step="100" value="1000" oninput="document.getElementById('v-solar').textContent=this.value">
+        </div>
+        <div class="param">
+            <label>Battery Storage (kWh) <span id="v-battery">500</span></label>
+            <input type="range" id="p-battery" min="100" max="2000" step="50" value="500" oninput="document.getElementById('v-battery').textContent=this.value">
+        </div>
+    </div>
+
+    <div class="param-group">
+        <h3>💧 Water</h3>
+        <div class="param">
+            <label>Water Reserves (L) <span id="v-water">2000</span></label>
+            <input type="range" id="p-water" min="500" max="10000" step="100" value="2000" oninput="document.getElementById('v-water').textContent=this.value">
+        </div>
+        <div class="param">
+            <label>Recycling Rate <span id="v-recycle">92%</span></label>
+            <input type="range" id="p-recycle" min="50" max="99" value="92" oninput="document.getElementById('v-recycle').textContent=this.value+'%'">
+        </div>
+    </div>
+
+    <div class="param-group">
+        <h3>🌱 Food</h3>
+        <div class="param">
+            <label>Food Reserves (kg) <span id="v-food">500</span></label>
+            <input type="range" id="p-food" min="100" max="5000" step="50" value="500" oninput="document.getElementById('v-food').textContent=this.value">
+        </div>
+        <div class="param">
+            <label>Growth Rate (kg/sol) <span id="v-growth">3.0</span></label>
+            <input type="range" id="p-growth" min="0.5" max="10" step="0.5" value="3" oninput="document.getElementById('v-growth').textContent=this.value">
+        </div>
+    </div>
+
+    <div class="param-group">
+        <h3>📍 Location</h3>
+        <div class="param">
+            <label>Latitude <span id="v-lat">18.7°</span></label>
+            <input type="range" id="p-lat" min="-80" max="80" value="18.7" step="0.1" oninput="document.getElementById('v-lat').textContent=this.value+'°'">
+        </div>
+    </div>
+
+    <button class="launch-btn" id="launchBtn" onclick="launchColony()">🚀 LAUNCH COLONY</button>
+
+    <div class="param-group" style="margin-top:12px; padding:10px; background:#0a0a1a; border:1px solid #7b68ee33; border-radius:8px;">
+        <h3>🖌️🦖 YOUR RAPPTER</h3>
+        <div id="rappter-card" style="margin:6px 0;">
+            <div style="font-weight:700; color:#7b68ee;">Genesis</div>
+            <div style="font-size:0.75em; color:#888;">Gen 1 | Best: Sol 0 | Runs: 0</div>
+        </div>
+        <button style="width:100%; padding:6px; margin:2px 0; background:#111; border:1px solid #333; color:#aaa; border-radius:4px; cursor:pointer; font-size:0.75em;" onclick="renameRappter()">✏️ Rename</button>
+        <button style="width:100%; padding:6px; margin:2px 0; background:#111; border:1px solid #7b68ee; color:#7b68ee; border-radius:4px; cursor:pointer; font-size:0.75em;" onclick="exportRappter()">📤 Export rappter.json</button>
+        <button style="width:100%; padding:6px; margin:2px 0; background:#111; border:1px solid #f39c12; color:#f39c12; border-radius:4px; cursor:pointer; font-size:0.75em;" onclick="importRappter()">📥 Import rappter.json</button>
+    </div>
+
+    <div class="brain-config">
+        <h3>🧠 AI Brain — OpenRappter</h3>
+        <div class="status">
+            <span class="dot off" id="brainDot"></span>
+            <span id="brainStatus">Not connected</span>
+        </div>
+        <div style="font-size:0.7em; color:#666; margin-top:6px;">
+            OpenRappter uses GitHub Copilot for AI — no model download needed. Just a GitHub account. The AI governor makes decisions each sol based on colony state.
+        </div>
+        <button style="width:100%; margin-top:8px; padding:6px; background:#111; border:1px solid #7b68ee; color:#7b68ee; border-radius:4px; cursor:pointer; font-size:0.75em;" onclick="connectBrain()">🔌 Connect Brain</button>
+    </div>
+</div>
+
+<!-- CENTER: Globe -->
+<div class="globe-container">
+    <div id="globe"></div>
+    <div class="hud">
+        <div class="sol" id="hud-sol">--</div>
+        <div class="status" id="hud-status">Set parameters and launch</div>
+    </div>
+    <div class="speed-controls">
+        <button onclick="setSpeed(0)" id="btn-pause">⏸ Pause</button>
+        <button onclick="setSpeed(500)" class="active" id="btn-1x">1x</button>
+        <button onclick="setSpeed(100)" id="btn-5x">5x</button>
+        <button onclick="setSpeed(20)" id="btn-25x">25x</button>
+        <button onclick="tickOnce()">▶ Step</button>
+        <button onclick="toggleZoom()" id="btn-zoom">🔍 Colony View</button>
+        <button onclick="zoomOrbit()">🌍 Orbit</button>
+        <button onclick="enterGroundView()" id="btn-ground">🔭 Ground Level</button>
+    </div>
+</div>
+
+<!-- RIGHT: Telemetry -->
+<div class="telemetry">
+    <h2>Colony Telemetry</h2>
+
+    <div class="meter" id="m-pop"><div class="head"><span>👥 Population</span><span class="val" id="t-pop">--</span></div><div class="bar"><div class="bar-fill" id="b-pop" style="width:0%; background:#9b59b6;"></div></div></div>
+    <div class="meter" id="m-temp"><div class="head"><span>🌡 Temperature</span><span class="val" id="t-temp">--</span></div><div class="bar"><div class="bar-fill" id="b-temp" style="width:50%; background:#e74c3c;"></div></div></div>
+    <div class="meter" id="m-power"><div class="head"><span>⚡ Power</span><span class="val" id="t-power">--</span></div><div class="bar"><div class="bar-fill" id="b-power" style="width:0%; background:#f1c40f;"></div></div></div>
+    <div class="meter" id="m-water"><div class="head"><span>💧 Water</span><span class="val" id="t-water">--</span></div><div class="bar"><div class="bar-fill" id="b-water" style="width:0%; background:#3498db;"></div></div></div>
+    <div class="meter" id="m-food"><div class="head"><span>🌱 Food</span><span class="val" id="t-food">--</span></div><div class="bar"><div class="bar-fill" id="b-food" style="width:0%; background:#2ecc71;"></div></div></div>
+    <div class="meter"><div class="head"><span>😊 Morale</span><span class="val" id="t-morale">--</span></div><div class="bar"><div class="bar-fill" id="b-morale" style="width:0%; background:#f39c12;"></div></div></div>
+    <div class="meter"><div class="head"><span>🌪 Weather</span><span class="val" id="t-weather">Clear</span></div></div>
+
+    <div class="brain-panel">
+        <h2>🧠 AI Consciousness</h2>
+        <div class="neurons" id="neuron-display">
+            <span class="neuron">solar</span>
+            <span class="neuron">thermal</span>
+            <span class="neuron">water</span>
+            <span class="neuron">food</span>
+            <span class="neuron">survival</span>
+            <span class="neuron">events</span>
+            <span class="neuron">governance</span>
+        </div>
+        <div class="thought" id="ai-thought" style="display:none;">
+            <div class="label">AI Decision</div>
+            <div class="text" id="ai-text">--</div>
+        </div>
+    </div>
+
+    <h2>📋 Event Log</h2>
+    <div class="event-log" id="event-log"></div>
+</div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// MARS BARN SIMULATION ENGINE — Pure JavaScript
+// Data Sloshing: sol N output = sol N+1 input
+// ═══════════════════════════════════════════════════════
+
+let colony = null;
+let simInterval = null;
+let speed = 500;
+let brainConnected = false;
+let globe = null;
+
+// ── Initialize Globe ──
+function initGlobe() {
+    const container = document.getElementById('globe');
+    globe = Globe()(container)
+        .globeImageUrl('https://raw.githubusercontent.com/kody-w/mars-barn/main/assets/textures/2k_mars.jpg')
+        .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
+        .atmosphereColor('#ef4444')
+        .atmosphereAltitude(0.15)
+        .pointsData([])
+        .pointAltitude(0.01)
+        .pointRadius(0.8)
+        .pointColor(() => '#2ecc71')
+        .ringsData([])
+        .ringColor(() => t => `rgba(46,204,113,${1-t})`)
+        .ringMaxRadius(3)
+        .ringPropagationSpeed(1)
+        .ringRepeatPeriod(1500);
+
+    globe.controls().autoRotate = true;
+    globe.controls().autoRotateSpeed = 0.3;
+}
+
+// ── Colony Init ──
+function launchColony() {
+    const crew = +document.getElementById('p-crew').value;
+    const morale = +document.getElementById('p-morale').value / 100;
+    const solar = +document.getElementById('p-solar').value;
+    const battery = +document.getElementById('p-battery').value;
+    const water = +document.getElementById('p-water').value;
+    const recycle = +document.getElementById('p-recycle').value / 100;
+    const food = +document.getElementById('p-food').value;
+    const growth = +document.getElementById('p-growth').value;
+    const lat = +document.getElementById('p-lat').value;
+
+    colony = {
+        sol: 0, population: crew, habitat_temp_k: 293,
+        power_kwh: battery, power_demand_kwh: crew * 30 + 50,
+        solar_panels_m2: solar, water_liters: water,
+        water_recycling_rate: recycle, food_kg: food,
+        food_growth_rate_kg_per_sol: growth, solar_longitude: 0,
+        dust_storm_active: false, morale: morale, alive: true,
+        latitude: lat, longitude: 226.2, max_pop: crew,
+        history: [],
+    };
+
+    document.getElementById('event-log').innerHTML = '';
+    document.getElementById('launchBtn').textContent = '🔄 RELAUNCH';
+
+    // Place colony on globe
+    const lng = 226.2 > 180 ? 226.2 - 360 : 226.2;
+    globe.pointsData([{ lat, lng, size: 1 }]);
+    globe.ringsData([{ lat, lng }]);
+    globe.pointOfView({ lat, lng, altitude: 2 }, 1000);
+
+    updateUI();
+    addEvent('🚀 Colony launched! ' + crew + ' colonists at lat ' + lat + '°', 'good');
+
+    if (speed > 0) startSim();
+}
+
+// ── Brainstem: evaluate needs ──
+function evaluateNeeds() {
+    const c = colony;
+    const needs = ['physics', 'events'];
+    const tempDanger = c.habitat_temp_k < 270 || c.habitat_temp_k > 310;
+    needs.push(tempDanger ? 'thermal_critical' : 'thermal');
+    const powerRatio = c.power_kwh / Math.max(c.power_demand_kwh, 1);
+    needs.push(powerRatio < 0.5 ? 'power_critical' : 'power');
+    const waterPP = c.water_liters / Math.max(c.population, 1);
+    needs.push(waterPP < 5 ? 'water_critical' : 'water');
+    const foodPP = c.food_kg / Math.max(c.population, 1);
+    needs.push(foodPP < 2 ? 'food_critical' : 'food');
+    if (c.population > 0) needs.push('survival');
+    if (c.population <= 0 && c.sol > 0) needs.push('extinction');
+    if (c.sol % 30 === 0 && c.sol > 0) needs.push('governance');
+    return needs;
+}
+
+// ── Agent: Solar ──
+function agentSolar(c) {
+    const ls = c.solar_longitude;
+    const ecc = 1 + 0.09 * Math.cos((ls - 250) * Math.PI / 180);
+    const decl = 25.19 * Math.sin(ls * Math.PI / 180);
+    const cosZ = Math.max(0.1, Math.cos(Math.abs(c.latitude - decl) * Math.PI / 180));
+    const dust = c.dust_storm_active ? 0.2 : 1.0;
+    const irr = 590 * ecc * cosZ * dust;
+    const energy = irr * c.solar_panels_m2 * 0.20 * 12 / 1000;
+    c.power_kwh = Math.round((c.power_kwh + energy) * 10) / 10;
+    c.solar_longitude = (ls + 0.5) % 360;
+    return energy < c.power_demand_kwh * 0.5 ? ['⚡ LOW POWER: ' + Math.round(energy) + ' kWh'] : [];
+}
+
+// ── Agent: Thermal (fixed) ──
+function agentThermal(c) {
+    const ls = c.solar_longitude;
+    const marsK = 210 + 20 * Math.sin(ls * Math.PI / 180);
+    const loss = (c.habitat_temp_k - marsK) * 0.02;
+    const target = 293;
+    const afterLoss = c.habitat_temp_k - loss;
+    const delta = target - afterLoss;
+    let heatPower = 0, heatK = 0;
+    if (delta > 0) {
+        heatPower = Math.min(c.power_kwh * 0.2, delta * 2, 50);
+        heatK = heatPower * 0.5;
+    } else {
+        heatK = delta * 0.3;
+    }
+    c.habitat_temp_k = Math.max(180, Math.min(320, Math.round((afterLoss + heatK) * 10) / 10));
+    c.power_kwh = Math.round((c.power_kwh - Math.max(0, heatPower)) * 10) / 10;
+    const ev = [];
+    if (c.habitat_temp_k < 270) ev.push('🥶 COLD: ' + Math.round(c.habitat_temp_k) + 'K');
+    if (c.habitat_temp_k > 310) ev.push('🔥 HOT: ' + Math.round(c.habitat_temp_k) + 'K');
+    return ev;
+}
+
+// ── Agent: Water ──
+function agentWater(c) {
+    const consumed = c.population * 3;
+    const recovered = consumed * c.water_recycling_rate;
+    c.water_liters = Math.round((c.water_liters + recovered) * 10) / 10;
+    const ev = [];
+    if (c.water_liters < c.population * 10 && c.power_kwh > 50) {
+        c.water_liters += 20; c.power_kwh -= 50;
+        ev.push('⛏ Ice mining: +20L');
+    }
+    return ev;
+}
+
+// ── Agent: Food ──
+function agentFood(c) {
+    const tf = c.habitat_temp_k < 280 ? 0.3 : c.habitat_temp_k > 305 ? 0.5 : 1;
+    const wf = c.water_liters < 100 ? 0.2 : 1;
+    const pf = c.power_kwh < 30 ? 0.5 : 1;
+    const grown = c.food_growth_rate_kg_per_sol * tf * wf * pf;
+    c.food_kg = Math.round((c.food_kg + grown) * 10) / 10;
+    c.water_liters = Math.max(0, Math.round((c.water_liters - grown * 2) * 10) / 10);
+    c.power_kwh = Math.max(0, Math.round((c.power_kwh - 10) * 10) / 10);
+    return (tf < 1 || wf < 1 || pf < 1) ? ['🌾 Crop yield reduced'] : [];
+}
+
+// ── Agent: Survival ──
+function agentSurvival(c) {
+    const ev = []; let deaths = 0, pop = c.population;
+    if (pop <= 0) { c.alive = false; return ['💀 Colony extinct']; }
+    if (c.habitat_temp_k < 250) { deaths = pop; ev.push('❄️ FREEZE: All ' + pop + ' dead'); }
+    else if (c.habitat_temp_k < 270) { const d = Math.max(1, Math.floor(pop/4)); deaths += d; ev.push('🥶 Cold: ' + d + ' died'); }
+    const wn = pop * 3;
+    if (c.water_liters < wn) { const d = Math.max(1, pop - Math.floor(c.water_liters/3)); deaths += d; ev.push('🏜 Dehydration: ' + d + ' died'); }
+    c.water_liters = Math.max(0, Math.round((c.water_liters - wn) * 10) / 10);
+    const fn = pop * 2;
+    if (c.food_kg < fn) { const d = Math.max(1, pop - Math.floor(c.food_kg/2)); deaths += d; ev.push('😫 Starvation: ' + d + ' died'); }
+    c.food_kg = Math.max(0, Math.round((c.food_kg - fn) * 10) / 10);
+    deaths = Math.min(deaths, pop); c.population -= deaths; c.alive = c.population > 0;
+    if (deaths > 0) c.morale = Math.max(0, c.morale - 0.05 * deaths);
+    else { c.morale = Math.min(1, c.morale + 0.005); if (pop > 0) ev.push('✅ All ' + c.population + ' survived'); }
+    // Birth chance
+    if (c.population >= 4 && c.morale > 0.6 && Math.random() < 0.02) { c.population++; c.max_pop = Math.max(c.max_pop, c.population); ev.push('👶 Birth!'); }
+    return ev;
+}
+
+// ── Agent: Events ──
+function agentEvents(c) {
+    const ev = [];
+    if (!c.dust_storm_active && Math.random() < 0.03) { c.dust_storm_active = true; ev.push('🌪 DUST STORM!'); }
+    if (c.dust_storm_active && Math.random() < 0.15) { c.dust_storm_active = false; ev.push('☀️ Storm cleared'); }
+    if (Math.random() < 0.02) { c.solar_panels_m2 = Math.round(c.solar_panels_m2 * 0.95); ev.push('⚠️ Panel damage'); }
+    if (Math.random() < 0.01) { c.population = Math.max(0, c.population - 1); ev.push('💥 Accident: 1 dead'); }
+    return ev;
+}
+
+// ── AI Brain — OpenRappter (RAPP Brainstem) first, Ollama fallback ──
+// OpenRappter uses GitHub Copilot for inference — just needs a GitHub account
+// No model download. No GPU. Just intelligence.
+async function askBrain(c, needs) {
+    if (!brainConnected) return null;
+    const prompt = `You are the AI governor of a Mars colony called "${colony?.name || 'Olympus Base'}". This is sol ${c.sol}.
+
+COLONY STATUS:
+- Population: ${c.population} colonists
+- Power: ${Math.round(c.power_kwh)} kWh stored
+- Water: ${Math.round(c.water_liters)} liters
+- Food: ${Math.round(c.food_kg)} kg
+- Habitat Temp: ${Math.round(c.habitat_temp_k)}K (${Math.round(c.habitat_temp_k - 273)}°C)
+- Morale: ${Math.round(c.morale * 100)}%
+- Dust Storm: ${c.dust_storm_active ? 'ACTIVE — solar reduced 80%' : 'None'}
+- Needs: ${needs.join(', ')}
+
+In ONE sentence, what should the colony prioritize this sol and why? Be specific about resource allocation.`;
+
+    // Priority 1: OpenRappter (JSON-RPC on port 18790)
+    try {
+        const r = await fetch('http://localhost:18790', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0', id: Date.now(),
+                method: 'chat.inject',
+                params: { message: prompt, sessionId: 'mars-barn' }
+            }),
+            signal: AbortSignal.timeout(15000),
+        });
+        if (r.ok) {
+            const d = await r.json();
+            return d.result?.response || d.result?.message || prompt.slice(0, 50) + '... (governor thinking)';
+        }
+    } catch {}
+
+    // Priority 2: Ollama (local model fallback)
+    try {
+        const r = await fetch('http://localhost:11434/api/generate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: 'llama3.2', prompt, stream: false }),
+            signal: AbortSignal.timeout(30000),
+        });
+        if (r.ok) { const d = await r.json(); return d.response; }
+    } catch {}
+
+    return null;
+}
+
+// ── One Sol (One Thought) ──
+async function tickSol() {
+    if (!colony || !colony.alive) return;
+    colony.sol++;
+
+    // Brainstem: evaluate needs
+    const needs = evaluateNeeds();
+    const fired = [];
+    let allEvents = [];
+
+    // Fire agents based on needs
+    const agents = [
+        { name: 'solar', triggers: ['power','power_critical','physics'], fn: agentSolar },
+        { name: 'thermal', triggers: ['thermal','thermal_critical','physics'], fn: agentThermal },
+        { name: 'water', triggers: ['water','water_critical'], fn: agentWater },
+        { name: 'food', triggers: ['food','food_critical'], fn: agentFood },
+        { name: 'survival', triggers: ['survival','extinction'], fn: agentSurvival },
+        { name: 'events', triggers: ['events'], fn: agentEvents },
+    ];
+
+    for (const agent of agents) {
+        if (agent.triggers.some(t => needs.includes(t))) {
+            const events = agent.fn(colony);
+            allEvents = allEvents.concat(events);
+            fired.push(agent.name);
+        }
+    }
+
+    // Cap power storage
+    colony.power_kwh = Math.min(colony.power_kwh, colony.solar_panels_m2 * 2);
+
+    // Ask AI brain (async, non-blocking)
+    const aiThought = await askBrain(colony, needs);
+
+    // Record history
+    colony.history.push({ sol: colony.sol, pop: colony.population, power: colony.power_kwh, water: colony.water_liters, food: colony.food_kg, temp: colony.habitat_temp_k, morale: colony.morale });
+    if (colony.history.length > 365) colony.history = colony.history.slice(-365);
+
+    // Update UI + robots
+    updateUI(fired, needs);
+    updateRobots(fired);
+    for (const e of allEvents) {
+        const cls = e.includes('died') || e.includes('dead') || e.includes('extinct') || e.includes('Accident') ? 'bad' : e.includes('survived') || e.includes('Birth') || e.includes('cleared') ? 'good' : 'warn';
+        addEvent('Sol ' + colony.sol + ': ' + e, cls);
+    }
+
+    // Show AI thought
+    if (aiThought) {
+        document.getElementById('ai-thought').style.display = 'block';
+        document.getElementById('ai-text').textContent = aiThought;
+    }
+
+    // Update globe colony marker
+    if (!colony.alive) {
+        globe.pointColor(() => '#e74c3c');
+        globe.ringsData([]);
+        if (simInterval) { clearInterval(simInterval); simInterval = null; }
+    }
+}
+
+function tickOnce() { tickSol(); }
+
+// ── UI Update ──
+function updateUI(fired = [], needs = []) {
+    if (!colony) return;
+    const c = colony;
+    document.getElementById('hud-sol').textContent = 'Sol ' + c.sol;
+    const statusEl = document.getElementById('hud-status');
+    statusEl.textContent = c.alive ? (c.dust_storm_active ? '🌪 Dust Storm' : '☀️ Clear') + ' | Pop ' + c.population : '💀 COLONY LOST — Sol ' + c.sol;
+    statusEl.className = 'status ' + (c.alive ? 'alive' : 'dead');
+
+    // Meters
+    const maxPop = Math.max(c.max_pop, 1);
+    setMeter('pop', c.population, c.population + '/' + maxPop, c.population / maxPop * 100);
+    setMeter('temp', Math.round(c.habitat_temp_k) + 'K (' + Math.round(c.habitat_temp_k - 273) + '°C)', null, Math.max(0, Math.min(100, (c.habitat_temp_k - 200) / 1.2)));
+    setMeter('power', Math.round(c.power_kwh) + ' kWh', null, Math.min(100, c.power_kwh / (c.solar_panels_m2 * 2) * 100));
+    setMeter('water', Math.round(c.water_liters) + ' L', null, Math.min(100, c.water_liters / 30));
+    setMeter('food', Math.round(c.food_kg) + ' kg', null, Math.min(100, c.food_kg / 10));
+    document.getElementById('t-morale').textContent = Math.round(c.morale * 100) + '%';
+    document.getElementById('b-morale').style.width = (c.morale * 100) + '%';
+    document.getElementById('t-weather').textContent = c.dust_storm_active ? '🌪 DUST STORM' : '☀️ Clear';
+
+    // Criticals
+    document.getElementById('m-temp').className = 'meter' + (c.habitat_temp_k < 270 || c.habitat_temp_k > 310 ? ' critical' : '');
+    document.getElementById('m-water').className = 'meter' + (c.water_liters < c.population * 10 ? ' critical' : '');
+    document.getElementById('m-food').className = 'meter' + (c.food_kg < c.population * 5 ? ' critical' : '');
+
+    // Neurons
+    document.querySelectorAll('.neuron').forEach(n => {
+        n.className = 'neuron' + (fired.includes(n.textContent) ? ' firing' : '');
+    });
+}
+
+function setMeter(id, text, _, pct) {
+    document.getElementById('t-' + id).textContent = text;
+    if (pct !== undefined) document.getElementById('b-' + id).style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+function addEvent(text, cls = '') {
+    const log = document.getElementById('event-log');
+    log.innerHTML = '<div class="ev ' + cls + '">' + text + '</div>' + log.innerHTML;
+    if (log.children.length > 100) log.removeChild(log.lastChild);
+}
+
+// ── Playback ──
+function startSim() { if (simInterval) clearInterval(simInterval); if (speed > 0) simInterval = setInterval(tickSol, speed); }
+function setSpeed(ms) {
+    speed = ms;
+    document.querySelectorAll('.speed-controls button').forEach(b => b.classList.remove('active'));
+    if (ms === 0) document.getElementById('btn-pause').classList.add('active');
+    else if (ms >= 500) document.getElementById('btn-1x').classList.add('active');
+    else if (ms >= 100) document.getElementById('btn-5x').classList.add('active');
+    else document.getElementById('btn-25x').classList.add('active');
+    if (colony) startSim();
+}
+
+// ── Brain Connection — OpenRappter first ──
+async function connectBrain() {
+    const dot = document.getElementById('brainDot');
+    const status = document.getElementById('brainStatus');
+
+    // Priority 1: OpenRappter Brainstem (GitHub Copilot — no model download)
+    try {
+        const r = await fetch('http://localhost:18790', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'status' }),
+            signal: AbortSignal.timeout(3000)
+        }).catch(() => null);
+        if (r && r.ok) {
+            dot.className = 'dot on';
+            status.textContent = '🧠 OpenRappter connected (GitHub AI)';
+            brainConnected = true;
+            return;
+        }
+    } catch {}
+
+    // Priority 2: Ollama (local model)
+    try {
+        const r = await fetch('http://localhost:11434/api/version', { signal: AbortSignal.timeout(3000) }).catch(() => null);
+        if (r && r.ok) {
+            dot.className = 'dot on';
+            status.textContent = 'Ollama connected (local)';
+            brainConnected = true;
+            return;
+        }
+    } catch {}
+
+    dot.className = 'dot off';
+    status.textContent = 'No brain — physics only';
+    status.innerHTML += '<div style="margin-top:4px;font-size:0.7em;color:#555;">Install OpenRappter:<br><code style="color:#7b68ee;">curl -fsSL kody-w.github.io/rapp-installer/install.sh | bash</code></div>';
+}
+
+// ═══════════════════════════════════════════════════════
+// EVOLUTION ENGINE — Death → Mutation → Backtest → Trade
+// Data Sloshing applied to AI evolution
+// ═══════════════════════════════════════════════════════
+
+let rappter = {
+    id: crypto.randomUUID(),
+    name: 'Genesis',
+    generation: 1,
+    lineage: [],
+    mutations: [],
+    strategy: { ice_mining_threshold: 10, heating_aggression: 0.2, food_priority: 0.5 },
+    record: [],        // win/loss per run
+    best_sol: 0,
+    total_runs: 0,
+    total_deaths: 0,
+    created: new Date().toISOString(),
+};
+
+// Strategy genes — these are what mutate
+const GENES = {
+    ice_mining_threshold: { min: 3, max: 30, step: 1, desc: 'Days of water supply before mining' },
+    heating_aggression: { min: 0.05, max: 0.5, step: 0.05, desc: 'Power fraction for heating' },
+    food_priority: { min: 0.1, max: 1.0, step: 0.1, desc: 'Water allocation to greenhouse' },
+    birth_morale_min: { min: 0.3, max: 0.9, step: 0.05, desc: 'Morale threshold for births' },
+    storm_power_reserve: { min: 0.1, max: 0.5, step: 0.05, desc: 'Power reserved during storms' },
+    expansion_pop: { min: 4, max: 15, step: 1, desc: 'Population before expansion focus' },
+};
+
+function applyStrategy(c, strat) {
+    // The strategy modifies agent behavior — the genes ARE the brain's wiring
+    // This is called each sol to adjust parameters based on the rappter's evolved strategy
+    const s = strat || rappter.strategy;
+
+    // Water agent: when to mine ice
+    if (c.water_liters < c.population * s.ice_mining_threshold && c.power_kwh > 50) {
+        c.water_liters += 20; c.power_kwh -= 50;
+        return ['⛏ Strategic ice mining (threshold: ' + s.ice_mining_threshold + 'd)'];
+    }
+    return [];
+}
+
+// ── Death Analysis — what killed the colony? ──
+function analyzeDeath(history) {
+    if (!history || history.length === 0) return { cause: 'unknown', sol: 0 };
+    const last = history[history.length - 1];
+    const cause = [];
+
+    // Find the critical resource
+    if (last.water <= 0) cause.push('dehydration');
+    if (last.food <= 0) cause.push('starvation');
+    if (last.temp < 270) cause.push('freezing');
+    if (last.temp > 310) cause.push('overheating');
+    if (last.pop <= 0) cause.push('extinction');
+
+    // Find when things started going wrong
+    let crisis_sol = last.sol;
+    for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].pop > 0 && history[i].water > 50 && history[i].food > 50) {
+            crisis_sol = history[i].sol;
+            break;
+        }
+    }
+
+    return { cause: cause.join('+') || 'unknown', sol: last.sol, crisis_sol, last };
+}
+
+// ── Mutation — evolve the strategy based on death ──
+function mutateRappter(death) {
+    const newStrat = { ...rappter.strategy };
+    const mutation = { generation: rappter.generation + 1, cause: death.cause, sol: death.sol, changes: [] };
+
+    // Targeted mutations based on cause of death
+    if (death.cause.includes('dehydration')) {
+        const oldVal = newStrat.ice_mining_threshold;
+        newStrat.ice_mining_threshold = Math.min(30, oldVal + Math.floor(Math.random() * 5) + 2);
+        mutation.changes.push(`ice_mining: ${oldVal} → ${newStrat.ice_mining_threshold} (died of thirst)`);
+    }
+    if (death.cause.includes('freezing')) {
+        const oldVal = newStrat.heating_aggression;
+        newStrat.heating_aggression = Math.min(0.5, oldVal + 0.05);
+        mutation.changes.push(`heating: ${oldVal.toFixed(2)} → ${newStrat.heating_aggression.toFixed(2)} (died of cold)`);
+    }
+    if (death.cause.includes('starvation')) {
+        const oldVal = newStrat.food_priority;
+        newStrat.food_priority = Math.min(1.0, oldVal + 0.1);
+        mutation.changes.push(`food_priority: ${oldVal.toFixed(1)} → ${newStrat.food_priority.toFixed(1)} (died of hunger)`);
+    }
+    if (death.cause.includes('overheating')) {
+        const oldVal = newStrat.heating_aggression;
+        newStrat.heating_aggression = Math.max(0.05, oldVal - 0.05);
+        mutation.changes.push(`heating: ${oldVal.toFixed(2)} → ${newStrat.heating_aggression.toFixed(2)} (died of heat)`);
+    }
+
+    // Random secondary mutation (genetic drift)
+    const genes = Object.keys(GENES);
+    const randomGene = genes[Math.floor(Math.random() * genes.length)];
+    const gene = GENES[randomGene];
+    const drift = (Math.random() - 0.5) * gene.step * 4;
+    const oldVal = newStrat[randomGene] || (gene.min + gene.max) / 2;
+    newStrat[randomGene] = Math.max(gene.min, Math.min(gene.max, oldVal + drift));
+    mutation.changes.push(`${randomGene}: ${oldVal.toFixed?.(2) || oldVal} → ${newStrat[randomGene].toFixed?.(2) || newStrat[randomGene]} (drift)`);
+
+    rappter.generation++;
+    rappter.mutations.push(mutation);
+    rappter.strategy = newStrat;
+    rappter.lineage.push({ gen: rappter.generation, cause: death.cause, died_sol: death.sol, changes: mutation.changes });
+
+    return mutation;
+}
+
+// ── Backtest — replay history with new strategy ──
+function backtest(originalHistory, newStrategy) {
+    // Clone the initial state from sol 0
+    if (!originalHistory || originalHistory.length === 0) return { survived: false, sol: 0 };
+
+    // Reconstruct initial colony from first history entry
+    const init = originalHistory[0];
+    let c = {
+        sol: 0, population: init.pop, habitat_temp_k: init.temp,
+        power_kwh: init.power, water_liters: init.water, food_kg: init.food,
+        morale: init.morale || 0.8, solar_panels_m2: colony?.solar_panels_m2 || 1000,
+        power_demand_kwh: init.pop * 30 + 50, water_recycling_rate: colony?.water_recycling_rate || 0.92,
+        food_growth_rate_kg_per_sol: colony?.food_growth_rate_kg_per_sol || 3,
+        solar_longitude: 0, dust_storm_active: false, alive: true,
+        latitude: colony?.latitude || 18.7, max_pop: init.pop,
+    };
+
+    // Replay with new strategy
+    const results = [];
+    for (let sol = 1; sol <= originalHistory.length + 50; sol++) {
+        c.sol = sol;
+        // Run same agents but with strategy modifications
+        agentSolar(c);
+
+        // Modified thermal using strategy
+        const ls = c.solar_longitude;
+        const marsK = 210 + 20 * Math.sin(ls * Math.PI / 180);
+        const loss = (c.habitat_temp_k - marsK) * 0.02;
+        const target = 293;
+        const afterLoss = c.habitat_temp_k - loss;
+        const delta = target - afterLoss;
+        const heatPower = delta > 0 ? Math.min(c.power_kwh * newStrategy.heating_aggression, delta * 2, 50) : 0;
+        c.habitat_temp_k = Math.max(180, Math.min(320, afterLoss + (delta > 0 ? heatPower * 0.5 : delta * 0.3)));
+        c.power_kwh -= Math.max(0, heatPower);
+
+        // Modified water with strategy threshold
+        const consumed = c.population * 3;
+        c.water_liters += consumed * (colony?.water_recycling_rate || 0.92);
+        if (c.water_liters < c.population * newStrategy.ice_mining_threshold && c.power_kwh > 50) {
+            c.water_liters += 20; c.power_kwh -= 50;
+        }
+
+        // Modified food with strategy priority
+        const tf = c.habitat_temp_k < 280 ? 0.3 : c.habitat_temp_k > 305 ? 0.5 : 1;
+        const wf = c.water_liters < 100 ? 0.2 : 1;
+        const grown = (colony?.food_growth_rate_kg_per_sol || 3) * tf * wf * newStrategy.food_priority;
+        c.food_kg += grown;
+        c.water_liters -= grown * 2 * newStrategy.food_priority;
+        c.power_kwh -= 10;
+
+        // Survival
+        let deaths = 0;
+        if (c.habitat_temp_k < 250) deaths = c.population;
+        else if (c.habitat_temp_k < 270) deaths = Math.max(1, Math.floor(c.population / 4));
+        const wn = c.population * 3;
+        if (c.water_liters < wn) deaths += Math.max(1, c.population - Math.floor(c.water_liters / 3));
+        c.water_liters = Math.max(0, c.water_liters - wn);
+        const fn = c.population * 2;
+        if (c.food_kg < fn) deaths += Math.max(1, c.population - Math.floor(c.food_kg / 2));
+        c.food_kg = Math.max(0, c.food_kg - fn);
+        deaths = Math.min(deaths, c.population);
+        c.population -= deaths;
+        c.alive = c.population > 0;
+
+        // Events (deterministic for backtest — use sol as seed)
+        const rng = Math.sin(sol * 12345.6789) * 0.5 + 0.5;
+        if (!c.dust_storm_active && rng < 0.03) c.dust_storm_active = true;
+        if (c.dust_storm_active && rng > 0.85) c.dust_storm_active = false;
+
+        c.power_kwh = Math.min(c.power_kwh, (colony?.solar_panels_m2 || 1000) * 2);
+
+        results.push({ sol, pop: c.population, alive: c.alive });
+        if (!c.alive) break;
+    }
+
+    const lastResult = results[results.length - 1];
+    return { survived: lastResult.alive, sol: lastResult.sol, results };
+}
+
+// ── Handle colony death → evolve ──
+function onColonyDeath() {
+    const death = analyzeDeath(colony.history);
+
+    // Record the run
+    rappter.record.push({ sol: death.sol, cause: death.cause, params: getParams(), timestamp: new Date().toISOString() });
+    rappter.total_runs++;
+    rappter.total_deaths++;
+    rappter.best_sol = Math.max(rappter.best_sol, death.sol);
+
+    // Mutate
+    const mutation = mutateRappter(death);
+
+    // Backtest
+    const bt = backtest(colony.history, rappter.strategy);
+
+    // Show evolution panel
+    showEvolution(death, mutation, bt);
+
+    addEvent(`💀 COLONY LOST at Sol ${death.sol} — Cause: ${death.cause}`, 'bad');
+    addEvent(`🧬 Mutation #${rappter.generation}: ${mutation.changes.join(', ')}`, 'warn');
+    addEvent(`🔬 Backtest: ${bt.survived ? 'SURVIVED to sol ' + bt.sol + '!' : 'Died at sol ' + bt.sol} (was: ${death.sol})`, bt.sol > death.sol ? 'good' : 'bad');
+}
+
+function showEvolution(death, mutation, bt) {
+    const aiThought = document.getElementById('ai-thought');
+    aiThought.style.display = 'block';
+    document.getElementById('ai-text').innerHTML = `
+        <div style="color:#e74c3c;">☠️ Died sol ${death.sol}: ${death.cause}</div>
+        <div style="color:#f39c12; margin:4px 0;">🧬 Gen ${rappter.generation}: ${mutation.changes.map(c => c.split('(')[0]).join(', ')}</div>
+        <div style="color:${bt.sol > death.sol ? '#2ecc71' : '#e74c3c'};">🔬 Backtest: ${bt.survived ? 'SURVIVED' : 'sol ' + bt.sol} ${bt.sol > death.sol ? '(+' + (bt.sol - death.sol) + ' sols!)' : ''}</div>
+        <div style="margin-top:6px;"><button onclick="launchColony()" style="padding:6px 12px;background:#7b68ee;border:none;color:#fff;border-radius:4px;cursor:pointer;">🚀 Relaunch with evolved AI (Gen ${rappter.generation})</button></div>
+    `;
+}
+
+function getParams() {
+    return {
+        crew: +document.getElementById('p-crew').value,
+        solar: +document.getElementById('p-solar').value,
+        water: +document.getElementById('p-water').value,
+        food: +document.getElementById('p-food').value,
+        lat: +document.getElementById('p-lat').value,
+    };
+}
+
+// ═══════════════════════════════════════════════════════
+// RAPPTER.JSON — Portable tradeable AI card
+// The Pokémon card for evolved AIs
+// ═══════════════════════════════════════════════════════
+
+function exportRappter() {
+    const card = {
+        format: 'rappter.json',
+        version: '1.0',
+        type: 'mars-barn-governor',
+        rappter: {
+            id: rappter.id,
+            name: rappter.name,
+            generation: rappter.generation,
+            strategy: rappter.strategy,
+            lineage: rappter.lineage,
+            mutations: rappter.mutations,
+            record: rappter.record,
+            best_sol: rappter.best_sol,
+            total_runs: rappter.total_runs,
+            total_deaths: rappter.total_deaths,
+            created: rappter.created,
+            exported: new Date().toISOString(),
+        },
+        verification: {
+            best_sol: rappter.best_sol,
+            generations: rappter.generation,
+            death_count: rappter.total_deaths,
+            hash: btoa(JSON.stringify(rappter.strategy)).slice(0, 16),
+        },
+        meta: {
+            platform: 'Mars Barn — Parameters for Survival',
+            engine: 'Data Sloshing v1.0 (Patent Pending)',
+            owner: 'Wildhaven AI Homes LLC',
+            sigil: '🖌️🦖',
+        }
+    };
+
+    const blob = new Blob([JSON.stringify(card, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `rappter-${rappter.name.toLowerCase()}-gen${rappter.generation}.json`;
+    a.click();
+
+    addEvent(`📤 Exported: ${rappter.name} Gen ${rappter.generation} (best: sol ${rappter.best_sol})`, 'good');
+}
+
+function importRappter() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const card = JSON.parse(ev.target.result);
+                if (card.format !== 'rappter.json') { alert('Not a valid rappter.json'); return; }
+                const r = card.rappter;
+                rappter = {
+                    id: r.id, name: r.name, generation: r.generation,
+                    lineage: r.lineage || [], mutations: r.mutations || [],
+                    strategy: r.strategy, record: r.record || [],
+                    best_sol: r.best_sol || 0, total_runs: r.total_runs || 0,
+                    total_deaths: r.total_deaths || 0, created: r.created,
+                };
+                updateRappterDisplay();
+                addEvent(`📥 Imported: ${rappter.name} Gen ${rappter.generation} (best: sol ${rappter.best_sol})`, 'good');
+            } catch (err) { alert('Invalid file: ' + err.message); }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+
+function renameRappter() {
+    const name = prompt('Name your Rappter:', rappter.name);
+    if (name) { rappter.name = name; updateRappterDisplay(); }
+}
+
+function updateRappterDisplay() {
+    const el = document.getElementById('rappter-card');
+    if (el) {
+        el.innerHTML = `
+            <div style="font-weight:700; color:#7b68ee;">${rappter.name}</div>
+            <div style="font-size:0.75em; color:#888;">Gen ${rappter.generation} | Best: Sol ${rappter.best_sol} | Runs: ${rappter.total_runs}</div>
+            <div style="font-size:0.7em; color:#666; margin-top:4px;">${Object.entries(rappter.strategy).map(([k,v]) => k.split('_')[0] + ':' + (v.toFixed ? v.toFixed(1) : v)).join(' | ')}</div>
+        `;
+    }
+}
+
+// ── Camera Controls — orbit to colony-level zoom ──
+let zoomedIn = false;
+function toggleZoom() {
+    if (!colony) return;
+    const lng = colony.longitude > 180 ? colony.longitude - 360 : colony.longitude;
+    if (!zoomedIn) {
+        globe.pointOfView({ lat: colony.latitude, lng, altitude: 0.3 }, 1500);
+        globe.controls().autoRotate = false;
+        document.getElementById('btn-zoom').textContent = '🔍 Zoom Out';
+        zoomedIn = true;
+    } else {
+        globe.pointOfView({ lat: colony.latitude, lng, altitude: 2 }, 1500);
+        globe.controls().autoRotate = true;
+        document.getElementById('btn-zoom').textContent = '🔍 Colony View';
+        zoomedIn = false;
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// GROUND VIEW — First person on Mars surface
+// Robots work. You watch through their eyes.
+// ═══════════════════════════════════════════════════════
+
+let groundMode = false;
+let groundScene3D = null;
+let groundCam = null;
+let groundRender = null;
+let groundAnimFrame = null;
+let robots = [];
+let activeRobotIdx = -1; // -1 = free camera
+const THREE = Globe.__THREE__ || window.THREE;
+
+function enterGroundView() {
+    if (!colony) return;
+    if (groundMode) { exitGroundView(); return; }
+    groundMode = true;
+    document.getElementById('btn-ground').textContent = '🌍 Exit Ground';
+
+    // Hide globe, show ground canvas
+    const container = document.getElementById('globe');
+    container.innerHTML = '';
+
+    // Build 3D scene
+    const w = container.clientWidth, h = container.clientHeight;
+    groundScene3D = new THREE.Scene();
+    groundScene3D.background = new THREE.Color(0x2a1008);
+    groundScene3D.fog = new THREE.FogExp2(0x3a1a0a, 0.008);
+
+    groundCam = new THREE.PerspectiveCamera(65, w / h, 0.1, 500);
+    groundCam.position.set(0, 8, 30);
+
+    groundRender = new THREE.WebGLRenderer({ antialias: true });
+    groundRender.setSize(w, h);
+    groundRender.setPixelRatio(window.devicePixelRatio);
+    groundRender.shadowMap.enabled = true;
+    container.appendChild(groundRender.domElement);
+
+    // Lights
+    groundScene3D.add(new THREE.AmbientLight(0x404060, 0.5));
+    const sun = new THREE.DirectionalLight(0xffeedd, 1.0);
+    sun.position.set(30, 40, 20);
+    sun.castShadow = true;
+    groundScene3D.add(sun);
+
+    // Mars terrain
+    const terrainGeo = new THREE.PlaneGeometry(300, 300, 80, 80);
+    const verts = terrainGeo.attributes.position;
+    for (let i = 0; i < verts.count; i++) {
+        verts.setZ(i, (Math.random() - 0.5) * 2 + Math.sin(verts.getX(i) * 0.05) * 1.5);
+    }
+    terrainGeo.computeVertexNormals();
+    const terrain = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ color: 0xb44a2a, roughness: 0.9, flatShading: true }));
+    terrain.rotation.x = -Math.PI / 2;
+    terrain.receiveShadow = true;
+    groundScene3D.add(terrain);
+
+    // Habitat dome
+    const dome = new THREE.Mesh(
+        new THREE.SphereGeometry(5, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0x88bbdd, roughness: 0.2, metalness: 0.6, transparent: true, opacity: 0.4 })
+    );
+    groundScene3D.add(dome);
+
+    // Solar panels
+    for (let i = 0; i < 8; i++) {
+        const panel = new THREE.Mesh(
+            new THREE.BoxGeometry(3, 0.1, 2),
+            new THREE.MeshStandardMaterial({ color: 0x2233aa, metalness: 0.7 })
+        );
+        const angle = (i / 8) * Math.PI * 2;
+        panel.position.set(Math.cos(angle) * 15, 2, Math.sin(angle) * 15);
+        panel.rotation.x = -0.3;
+        panel.rotation.y = angle;
+        panel.castShadow = true;
+        groundScene3D.add(panel);
+        // Panel stand
+        const stand = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.1, 0.1, 2),
+            new THREE.MeshStandardMaterial({ color: 0x888888 })
+        );
+        stand.position.set(panel.position.x, 1, panel.position.z);
+        groundScene3D.add(stand);
+    }
+
+    // Buildings
+    for (let i = 0; i < 6; i++) {
+        const bh = 2 + Math.random() * 4;
+        const bld = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5 + Math.random(), bh, 1.5 + Math.random()),
+            new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(0.55, 0.4, 0.25) })
+        );
+        const a = (i / 6) * Math.PI * 2 + 0.3;
+        bld.position.set(Math.cos(a) * 8, bh / 2, Math.sin(a) * 8);
+        bld.castShadow = true;
+        groundScene3D.add(bld);
+    }
+
+    // Antenna
+    const antenna = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.12, 10),
+        new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 })
+    );
+    antenna.position.set(-10, 5, -8);
+    groundScene3D.add(antenna);
+
+    // ROBOTS — one per active RAPP agent type
+    robots = [];
+    const agentTypes = ['solar', 'thermal', 'water', 'food', 'survival', 'events'];
+    const robotColors = { solar: 0xf1c40f, thermal: 0xe74c3c, water: 0x3498db, food: 0x2ecc71, survival: 0x9b59b6, events: 0xf39c12 };
+    const robotTasks = { solar: 'Checking panels', thermal: 'Regulating habitat', water: 'Mining ice', food: 'Tending greenhouse', survival: 'Medical check', events: 'Scanning horizon' };
+
+    agentTypes.forEach((type, i) => {
+        const body = new THREE.Mesh(
+            new THREE.BoxGeometry(0.6, 1.2, 0.6),
+            new THREE.MeshStandardMaterial({ color: robotColors[type], metalness: 0.5 })
+        );
+        const head = new THREE.Mesh(
+            new THREE.SphereGeometry(0.35, 8, 8),
+            new THREE.MeshStandardMaterial({ color: robotColors[type], emissive: robotColors[type], emissiveIntensity: 0.3 })
+        );
+        head.position.y = 0.9;
+
+        const eye = new THREE.Mesh(
+            new THREE.SphereGeometry(0.1, 6, 6),
+            new THREE.MeshBasicMaterial({ color: 0xffffff })
+        );
+        eye.position.set(0, 0.95, 0.3);
+
+        const group = new THREE.Group();
+        group.add(body);
+        group.add(head);
+        group.add(eye);
+
+        const angle = (i / agentTypes.length) * Math.PI * 2;
+        group.position.set(Math.cos(angle) * 12, 0.6, Math.sin(angle) * 12);
+        group.userData = { type, task: robotTasks[type], active: false, targetAngle: angle, speed: 0.01 + Math.random() * 0.01 };
+
+        groundScene3D.add(group);
+        robots.push(group);
+    });
+
+    // Stars
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(400 * 3);
+    for (let i = 0; i < 400; i++) {
+        const t = Math.random() * Math.PI * 2, p = Math.random() * Math.PI * 0.4, r = 200;
+        starPos[i*3] = r * Math.sin(p) * Math.cos(t);
+        starPos[i*3+1] = r * Math.cos(p);
+        starPos[i*3+2] = r * Math.sin(p) * Math.sin(t);
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    groundScene3D.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.4 })));
+
+    // Dust particles
+    const dustGeo = new THREE.BufferGeometry();
+    const dustPos = new Float32Array(300 * 3);
+    for (let i = 0; i < 300; i++) {
+        dustPos[i*3] = (Math.random()-0.5) * 100;
+        dustPos[i*3+1] = Math.random() * 15;
+        dustPos[i*3+2] = (Math.random()-0.5) * 100;
+    }
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+    const dustParticles = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0xb44a2a, size: 0.12, transparent: true, opacity: 0.4 }));
+    groundScene3D.add(dustParticles);
+
+    // Robot selector UI
+    showRobotSelector();
+
+    // Animate
+    let t = 0;
+    function animateGround() {
+        groundAnimFrame = requestAnimationFrame(animateGround);
+        t += 0.01;
+
+        // Move robots on their patrol paths
+        robots.forEach((robot, i) => {
+            const ud = robot.userData;
+            ud.targetAngle += ud.speed;
+            const r = ud.type === 'solar' ? 15 : ud.type === 'water' ? 20 : 10;
+            robot.position.x = Math.cos(ud.targetAngle) * r;
+            robot.position.z = Math.sin(ud.targetAngle) * r;
+            robot.lookAt(0, 0.6, 0);
+
+            // Firing animation — pulse when active
+            if (ud.active) {
+                robot.children[1].material.emissiveIntensity = 0.3 + Math.sin(t * 5) * 0.3;
+            } else {
+                robot.children[1].material.emissiveIntensity = 0.1;
+            }
+        });
+
+        // Camera
+        if (activeRobotIdx >= 0 && activeRobotIdx < robots.length) {
+            // POV — follow robot from behind
+            const r = robots[activeRobotIdx];
+            const behind = new THREE.Vector3(0, 2, -3).applyQuaternion(r.quaternion).add(r.position);
+            groundCam.position.lerp(behind, 0.05);
+            const lookTarget = r.position.clone();
+            lookTarget.y += 1;
+            groundCam.lookAt(lookTarget);
+        } else {
+            // Free orbit
+            groundCam.position.x = Math.sin(t * 0.2) * 30;
+            groundCam.position.z = Math.cos(t * 0.2) * 30;
+            groundCam.position.y = 10 + Math.sin(t * 0.3) * 3;
+            groundCam.lookAt(0, 2, 0);
+        }
+
+        // Dust drift
+        const dp = dustParticles.geometry.attributes.position;
+        for (let i = 0; i < 300; i++) {
+            dp.array[i*3] += Math.sin(t + i) * 0.03;
+            dp.array[i*3+1] += 0.01;
+            if (dp.array[i*3+1] > 15) dp.array[i*3+1] = 0;
+        }
+        dp.needsUpdate = true;
+
+        // Dust storm = more particles, less visibility
+        if (colony && colony.dust_storm_active) {
+            dustParticles.material.opacity = 0.8;
+            dustParticles.material.size = 0.25;
+            groundScene3D.fog.density = 0.02;
+        } else {
+            dustParticles.material.opacity = 0.4;
+            dustParticles.material.size = 0.12;
+            groundScene3D.fog.density = 0.008;
+        }
+
+        groundRender.render(groundScene3D, groundCam);
+    }
+    animateGround();
+}
+
+function exitGroundView() {
+    groundMode = false;
+    document.getElementById('btn-ground').textContent = '🔭 Ground Level';
+    if (groundAnimFrame) cancelAnimationFrame(groundAnimFrame);
+    if (groundRender) groundRender.dispose();
+    const container = document.getElementById('globe');
+    container.innerHTML = '';
+    hideRobotSelector();
+    initGlobe();
+    if (colony) {
+        const lng = colony.longitude > 180 ? colony.longitude - 360 : colony.longitude;
+        globe.pointsData([{ lat: colony.latitude, lng, size: 1 }]);
+        globe.ringsData([{ lat: colony.latitude, lng }]);
+    }
+}
+
+function showRobotSelector() {
+    let sel = document.getElementById('robot-selector');
+    if (!sel) {
+        sel = document.createElement('div');
+        sel.id = 'robot-selector';
+        sel.style.cssText = 'position:absolute;top:60px;left:50%;transform:translateX(-50%);display:flex;gap:4px;z-index:10;';
+        document.querySelector('.globe-container').appendChild(sel);
+    }
+    sel.innerHTML = '<button onclick="setRobotPOV(-1)" style="padding:4px 8px;background:rgba(20,20,20,0.8);border:1px solid #333;color:#aaa;border-radius:4px;cursor:pointer;font-size:0.75em;">🎥 Free Cam</button>';
+    robots.forEach((r, i) => {
+        const c = r.userData.type;
+        const colors = { solar:'#f1c40f', thermal:'#e74c3c', water:'#3498db', food:'#2ecc71', survival:'#9b59b6', events:'#f39c12' };
+        sel.innerHTML += `<button onclick="setRobotPOV(${i})" style="padding:4px 8px;background:rgba(20,20,20,0.8);border:1px solid ${colors[c]};color:${colors[c]};border-radius:4px;cursor:pointer;font-size:0.75em;">🤖 ${c}</button>`;
+    });
+}
+
+function hideRobotSelector() {
+    const sel = document.getElementById('robot-selector');
+    if (sel) sel.remove();
+}
+
+function setRobotPOV(idx) {
+    activeRobotIdx = idx;
+    if (idx >= 0) {
+        addEvent(`🤖 POV: ${robots[idx].userData.type} robot — ${robots[idx].userData.task}`, 'good');
+    } else {
+        addEvent('🎥 Free camera', '');
+    }
+}
+
+// Update robot activity when sols tick
+function updateRobots(fired) {
+    if (!groundMode) return;
+    robots.forEach(r => {
+        r.userData.active = fired.includes(r.userData.type);
+    });
+}
+
+function zoomOrbit() {
+    globe.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 2000);
+    globe.controls().autoRotate = true;
+    globe.controls().autoRotateSpeed = 0.5;
+    zoomedIn = false;
+    document.getElementById('btn-zoom').textContent = '🔍 Colony View';
+}
+
+// Override the tickSol death handler
+const _origTickSol = tickSol;
+tickSol = async function() {
+    const wasDead = colony && !colony.alive;
+    await _origTickSol();
+    if (colony && !colony.alive && !wasDead) {
+        onColonyDeath();
+    }
+    // Apply strategy each sol
+    if (colony && colony.alive) {
+        const stratEvents = applyStrategy(colony, rappter.strategy);
+        for (const e of stratEvents) addEvent('Sol ' + colony.sol + ': ' + e, 'good');
+    }
+};
+
+// Boot
+initGlobe();
+connectBrain();
+updateRappterDisplay();
+</script>
+</body>
+</html>

@@ -1,0 +1,1894 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hologram player</title>
+<script>if(new URLSearchParams(location.search).get('embed')==='1')document.documentElement.classList.add('embed')</script>
+<style>
+ *{box-sizing:border-box}
+ body{margin:0;font-family:-apple-system,system-ui,Segoe UI,sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
+ a{color:#58a6ff;text-decoration:none}a:hover{text-decoration:underline}
+ .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+ #wrap{display:flex;flex-direction:column;align-items:center;padding:20px 16px;max-width:960px;margin:0 auto}
+ #header{width:100%;display:flex;align-items:baseline;gap:12px;margin-bottom:14px}
+ #title{font-size:1.4rem;font-weight:800;margin:0}
+ #meta{color:#8b949e;font-size:12px}
+ #stage{position:relative;width:100%;max-width:480px}
+ canvas{display:block;width:100%;border-radius:14px;background:#010409;border:1px solid #30363d}
+ #canvas{cursor:grab;touch-action:pan-y pinch-zoom}
+ #canvas.dragging{cursor:grabbing}
+ #canvas:focus-visible{outline:3px solid #58a6ff;outline-offset:3px}
+ #orbit-hint{position:absolute;top:42px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;letter-spacing:.02em;color:#e6edf3;background:rgba(1,4,9,0.72);border:1px solid rgba(110,118,129,.45);padding:6px 10px;border-radius:999px;pointer-events:none;white-space:nowrap}
+ #orbit-hint.hide{opacity:0}
+ #verify{position:absolute;top:8px;right:10px;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:ui-monospace,Menlo,monospace;color:#3fb950;background:rgba(1,4,9,0.75);padding:2px 7px;border-radius:20px;pointer-events:none}
+ #verify.mismatch{color:#f0b429}
+ #embed-error{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;padding:18px;text-align:center;color:#ff9b9b;background:rgba(1,4,9,.94);font-size:13px;font-weight:700;overflow-wrap:anywhere;overflow:auto}
+ #embed-error[hidden]{display:none}
+ #view-controls{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;align-items:flex-end}
+ #view-controls .dpad{display:grid;grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px);gap:3px}
+ #view-controls .zoom{display:flex;flex-direction:column;gap:4px}
+ #view-controls button{width:44px;height:44px;padding:0;border-color:rgba(110,118,129,.65);background:rgba(13,17,23,.88);font-size:17px;font-weight:700}
+ #view-controls button:hover,#view-controls button:focus-visible{background:#30363d;border-color:#58a6ff}
+ #view-up{grid-column:2;grid-row:1} #view-left{grid-column:1;grid-row:2} #view-reset{grid-column:2;grid-row:2}
+ #view-right{grid-column:3;grid-row:2} #view-down{grid-column:2;grid-row:3}
+ #controls{width:100%;max-width:480px;margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+ button{font:inherit;font-size:12px;cursor:pointer;background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:7px;padding:5px 12px}
+ button:hover{background:#30363d}
+ button:disabled{opacity:.45;cursor:default}
+ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #58a6ff;outline-offset:2px}
+ button.primary{background:#238636;border-color:#238636;color:#fff}
+ button.primary:hover{filter:brightness(1.1)}
+ .button-link{display:inline-block;font-size:12px;background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:7px;padding:5px 12px}
+ .button-link:hover{background:#30363d;text-decoration:none}
+ .button-link:focus-visible{outline:3px solid #58a6ff;outline-offset:2px}
+ #load-row{width:100%;max-width:480px;margin-top:10px;display:flex;gap:6px}
+ #load-row input{flex:1;background:#010409;border:1px solid #30363d;border-radius:7px;color:#e6edf3;padding:5px 9px;font:inherit;font-size:12px}
+ #info-row{width:100%;max-width:480px;margin-top:8px;font-size:11px;color:#8b949e;display:flex;gap:14px;flex-wrap:wrap}
+ #title,#i-title,#i-author,#i-id{min-width:0;max-width:100%;overflow-wrap:anywhere}
+ #player-status{width:100%;max-width:480px;min-height:18px;margin-top:6px;font-size:11px;color:#8b949e;overflow-wrap:anywhere}
+ #player-status.err{color:#f85149}
+ #json-area{width:100%;max-width:480px;margin-top:12px}
+ #json-area textarea{width:100%;min-height:120px;background:#010409;border:1px solid #30363d;border-radius:8px;color:#e6edf3;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:11px;resize:vertical}
+ #json-area .row{display:flex;gap:6px;margin-top:5px}
+ #qr-wrap{margin-top:10px;width:100%;max-width:480px;text-align:center}
+ canvas.qr{border-radius:8px;background:#fff;image-rendering:pixelated;display:inline-block}
+ #qr-link{word-break:break-all;font-size:10.5px;color:#8b949e;margin-top:4px}
+ #share-fallback{width:100%;max-width:480px;margin-top:8px}
+ #share-fallback[hidden]{display:none}
+ #share-fallback label{display:block;font-size:11px;color:#8b949e;margin-bottom:4px}
+ #share-url{width:100%;background:#010409;border:1px solid #30363d;border-radius:7px;color:#e6edf3;padding:7px 9px;font:12px ui-monospace,Menlo,monospace}
+ .err{color:#f85149}
+ @media(min-width:700px){
+  #wrap{flex-direction:row;align-items:flex-start;gap:24px;flex-wrap:wrap}
+  #header{grid-column:1/-1;width:100%}
+  #stage,#controls,#load-row,#info-row,#json-area,#qr-wrap{max-width:340px}
+ }
+ html.embed,html.embed body{width:100%;height:100%;min-height:0;overflow:hidden}
+ html.embed #wrap{display:block;width:100%;height:100%;max-width:none;padding:0}
+ html.embed #header,html.embed #workbench{display:none!important}
+ html.embed #stage{width:100%;height:100%;max-width:none}
+ html.embed #canvas{width:100%;height:100%;border:0;border-radius:0}
+ @media(max-width:420px){
+  #verify{top:7px;right:7px}
+  #orbit-hint{top:40px}
+ }
+ @media(max-width:600px){
+  #load-row input,#json-area textarea,#share-url{font-size:16px}
+ }
+ @media(pointer:coarse){
+  #controls button,.button-link,#load-row button,#json-area button{min-height:44px}
+ }
+ @media(max-width:420px) and (max-height:220px){
+  #view-controls .dpad{display:none}
+  #view-controls .zoom{flex-direction:row}
+ }
+ @media(max-width:180px),(max-height:140px){
+  #view-controls,#orbit-hint{display:none}
+ }
+</style></head><body>
+<main id="wrap">
+ <div id="header">
+  <h1 id="title">🌀 hologram</h1>
+  <span id="meta" class="mono"></span>
+ </div>
+
+ <div id="stage">
+  <canvas id="canvas" width="480" height="480" tabindex="0" role="img" aria-label="Interactive 3D organism. Use arrow keys to orbit, plus and minus to zoom, and Home to reset the view."></canvas>
+  <div id="orbit-hint">drag or use controls</div>
+  <div id="verify" style="display:none"></div>
+  <div id="embed-error" role="alert" aria-live="assertive" aria-atomic="true" hidden></div>
+  <div id="view-controls" role="group" aria-label="Organism view controls">
+   <div class="dpad">
+    <button id="view-up" data-view="up" aria-label="Orbit up">↑</button>
+    <button id="view-left" data-view="left" aria-label="Orbit left">←</button>
+    <button id="view-reset" data-view="reset" aria-label="Reset view">⌂</button>
+    <button id="view-right" data-view="right" aria-label="Orbit right">→</button>
+    <button id="view-down" data-view="down" aria-label="Orbit down">↓</button>
+   </div>
+   <div class="zoom">
+    <button data-view="zoom-in" aria-label="Zoom in">+</button>
+    <button data-view="zoom-out" aria-label="Zoom out">−</button>
+    <button id="motion-toggle" aria-label="Pause motion" aria-pressed="false">Ⅱ</button>
+   </div>
+  </div>
+ </div>
+
+ <div id="workbench" style="display:flex;flex-direction:column;gap:0;flex:1;min-width:240px">
+  <div id="controls">
+  <button id="btn-dl" disabled>↓ download .egg</button>
+  <button id="btn-link" disabled>copy link</button>
+  <button id="btn-share" disabled>share</button>
+  <button id="btn-qr" disabled aria-controls="qr-wrap" aria-expanded="false">QR</button>
+    <a class="button-link" id="keep-link" aria-disabled="true" tabindex="-1">Keep in Field Journal · loading…</a>
+    <a class="button-link" href="index.html">gallery →</a>
+  </div>
+  <div id="load-row">
+   <input id="cart-url" aria-label="Cartridge URL or JSON" placeholder="cartridge URL or paste JSON…">
+   <button class="primary" id="btn-load">load</button>
+  </div>
+  <div id="info-row">
+   <span id="i-title"></span>
+   <span id="i-author"></span>
+   <span id="i-id" class="mono"></span>
+  </div>
+  <div id="player-status" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="json-area">
+   <textarea id="cart-json" aria-label="Cartridge JSON" spellcheck="false" placeholder="paste hologram-cartridge/1.0 JSON here…"></textarea>
+   <div class="row">
+    <button id="btn-apply">apply JSON</button>
+    <input type="file" id="file-in" accept=".egg,.json,application/json" style="display:none">
+    <button id="btn-file">open file…</button>
+   </div>
+  </div>
+  <div id="qr-wrap" style="display:none">
+   <canvas class="qr" id="qr"></canvas>
+   <div id="qr-link" class="mono"></div>
+  </div>
+  <div id="share-fallback" hidden>
+   <label for="share-url">Share link — copy manually</label>
+   <input id="share-url" readonly>
+  </div>
+ </div>
+</main>
+
+<script type="module">
+/* ── Software-3D renderer ─────────────────────────────────────────────────── */
+const TAU = Math.PI * 2;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const fract = v => v - Math.floor(v);
+const DEFAULT_PALETTE = ['#4488ff', '#2255cc'];
+const PALETTE_CACHE = new WeakMap();
+
+const V3 = {
+  add: (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }),
+  sub: (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }),
+  scale: (a, s) => ({ x: a.x * s, y: a.y * s, z: a.z * s }),
+  dot: (a, b) => a.x * b.x + a.y * b.y + a.z * b.z,
+  cross: (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x }),
+  len: a => Math.hypot(a.x, a.y, a.z),
+  norm(a) { const l = Math.hypot(a.x, a.y, a.z) || 1; return { x: a.x / l, y: a.y / l, z: a.z / l }; },
+  mid: pts => V3.scale(pts.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y, z: acc.z + p.z }), { x: 0, y: 0, z: 0 }), 1 / Math.max(pts.length, 1))
+};
+
+function vec(x, y, z) { return { x, y, z }; }
+function rotX(p, a) { const c = Math.cos(a), s = Math.sin(a); return { x: p.x, y: p.y * c - p.z * s, z: p.y * s + p.z * c }; }
+function rotY(p, a) { const c = Math.cos(a), s = Math.sin(a); return { x: p.x * c + p.z * s, y: p.y, z: -p.x * s + p.z * c }; }
+function rotZ(p, a) { const c = Math.cos(a), s = Math.sin(a); return { x: p.x * c - p.y * s, y: p.x * s + p.y * c, z: p.z }; }
+function transformPoint(p, tf) {
+  let q = { x: p.x * tf.scale.x, y: p.y * tf.scale.y, z: p.z * tf.scale.z };
+  q = rotX(q, tf.rot.x); q = rotY(q, tf.rot.y); q = rotZ(q, tf.rot.z);
+  return V3.add(q, tf.pos);
+}
+function hexA(hex, a) {
+  const c = parseHex(hex);
+  return `rgba(${c.r},${c.g},${c.b},${a.toFixed(3)})`;
+}
+function parseHex(hex) {
+  if (!hex || hex[0] !== '#') return { r: 68, g: 136, b: 255 };
+  const s = hex.length === 4 ? '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3] : hex;
+  return { r: parseInt(s.slice(1, 3), 16), g: parseInt(s.slice(3, 5), 16), b: parseInt(s.slice(5, 7), 16) };
+}
+function colorCss(c, a = 1) {
+  return `rgba(${clamp(Math.round(c.r), 0, 255)},${clamp(Math.round(c.g), 0, 255)},${clamp(Math.round(c.b), 0, 255)},${clamp(a, 0, 1).toFixed(3)})`;
+}
+function mixColor(a, b, t) {
+  return { r: lerp(a.r, b.r, t), g: lerp(a.g, b.g, t), b: lerp(a.b, b.b, t) };
+}
+function scaleColor(c, s) {
+  return { r: clamp(c.r * s, 0, 255), g: clamp(c.g * s, 0, 255), b: clamp(c.b * s, 0, 255) };
+}
+function paletteSample(palette, t) {
+  const source = palette && palette.length ? palette : DEFAULT_PALETTE;
+  let list = PALETTE_CACHE.get(source);
+  if (!list) {
+    list = source.map(parseHex);
+    PALETTE_CACHE.set(source, list);
+  }
+  if (list.length === 1) return list[0];
+  const x = clamp(t, 0, 1) * (list.length - 1);
+  const i = Math.floor(x), f = x - i;
+  return mixColor(list[i], list[Math.min(i + 1, list.length - 1)], f);
+}
+function patternSample(pattern, palette, u, v, w, pulse, part = 'body') {
+  if (part === 'eye') return { color: { r: 255, g: 244, b: 200 }, emissive: 1.15 };
+  const base = paletteSample(palette, fract(u * 0.35 + 0.5));
+  const alt = paletteSample(palette, fract(v * 0.35 + 0.5));
+  const hi = paletteSample(palette, fract(w * 0.35 + 0.5));
+  if (part === 'limb') {
+    const t = 0.45 + 0.35 * Math.sin(u * 4.5 + v * 2.2);
+    return { color: mixColor(base, alt, t), emissive: pattern === 'glow' ? 0.22 + pulse * 0.15 : 0.05 };
+  }
+  if (part === 'spike') return { color: mixColor(hi, { r: 255, g: 255, b: 255 }, 0.08 + pulse * 0.08), emissive: 0.15 + (pattern === 'glow' ? 0.25 + pulse * 0.2 : 0) };
+  switch (pattern) {
+    case 'stripe': {
+      const band = 0.5 + 0.5 * Math.sin(u * 8 + v * 3);
+      return { color: mixColor(base, alt, band), emissive: 0.08 };
+    }
+    case 'spot': {
+      const n = Math.sin(u * 8.1 + v * 6.2 + w * 5.7);
+      return { color: n > 0.45 ? mixColor(hi, { r: 255, g: 255, b: 255 }, 0.18) : base, emissive: n > 0.7 ? 0.18 : 0.06 };
+    }
+    case 'glow':
+      return { color: mixColor(base, { r: 255, g: 255, b: 255 }, 0.15 + 0.15 * pulse), emissive: 0.34 + pulse * 0.34 };
+    default:
+      return { color: mixColor(base, hi, 0.15), emissive: 0.04 };
+  }
+}
+function pushFace(faces, pts, fill, alpha) { faces.push({ pts, fill, alpha }); }
+function pushQuad(faces, a, b, c, d, fill, alpha) {
+  pushFace(faces, [a, b, c], fill, alpha);
+  pushFace(faces, [a, c, d], fill, alpha);
+}
+function addBox(faces, center, sx, sy, sz, fill, alpha = 1, tf = null) {
+  const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+  let pts = [vec(-hx, -hy, -hz), vec(hx, -hy, -hz), vec(hx, hy, -hz), vec(-hx, hy, -hz), vec(-hx, -hy, hz), vec(hx, -hy, hz), vec(hx, hy, hz), vec(-hx, hy, hz)].map(p => V3.add(p, center));
+  if (tf) pts = pts.map(p => transformPoint(p, tf));
+  [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [4, 0, 3, 7]].forEach(q => pushQuad(faces, pts[q[0]], pts[q[3]], pts[q[2]], pts[q[1]], fill, alpha));
+}
+function addSphere(faces, center, rx, ry, rz, latSteps, lonSteps, fillFn, alpha = 1, tf = null) {
+  const latN = Math.max(4, latSteps), lonN = Math.max(6, lonSteps);
+  const P = (la, lo) => {
+    const a = -Math.PI / 2 + la * Math.PI, b = lo * TAU;
+    const c = Math.cos(a);
+    return { p: vec(center.x + Math.cos(b) * c * rx, center.y + Math.sin(a) * ry, center.z + Math.sin(b) * c * rz), u: Math.cos(b) * c, v: Math.sin(a), w: Math.sin(b) * c };
+  };
+  for (let i = 0; i < latN; i++) {
+    for (let j = 0; j < lonN; j++) {
+      const p00 = P(i / latN, j / lonN), p01 = P(i / latN, (j + 1) / lonN), p10 = P((i + 1) / latN, j / lonN), p11 = P((i + 1) / latN, (j + 1) / lonN);
+      const pts = [p00.p, p01.p, p11.p, p10.p].map(p => tf ? transformPoint(p, tf) : p);
+      const fill = fillFn((p00.u + p01.u + p10.u + p11.u) / 4, (p00.v + p01.v + p10.v + p11.v) / 4, (p00.w + p01.w + p10.w + p11.w) / 4);
+      pushQuad(faces, pts[0], pts[3], pts[2], pts[1], fill, alpha);
+    }
+  }
+}
+function addStarBody(faces, center, size, latSteps, lonSteps, spikes, fillFn, alpha = 1, tf = null) {
+  const latN = Math.max(5, latSteps), lonN = Math.max(7, lonSteps), freq = Math.max(4, spikes);
+  const P = (la, lo) => {
+    const a = -Math.PI / 2 + la * Math.PI, b = lo * TAU, c = Math.cos(a);
+    const spike = 1 + 0.28 * Math.max(0, Math.sin(b * freq) * Math.pow(c, 0.65)) + 0.1 * Math.sin((a + Math.PI / 2) * Math.max(3, Math.round(freq / 2)));
+    return { p: vec(center.x + Math.cos(b) * c * size * 0.85 * spike, center.y + Math.sin(a) * size * 0.72 * (1 + 0.08 * Math.cos(b * freq * 0.5)), center.z + Math.sin(b) * c * size * 0.85 * spike), u: Math.cos(b) * c * spike, v: Math.sin(a), w: Math.sin(b) * c * spike };
+  };
+  for (let i = 0; i < latN; i++) {
+    for (let j = 0; j < lonN; j++) {
+      const p00 = P(i / latN, j / lonN), p01 = P(i / latN, (j + 1) / lonN), p10 = P((i + 1) / latN, j / lonN), p11 = P((i + 1) / latN, (j + 1) / lonN);
+      const pts = [p00.p, p01.p, p11.p, p10.p].map(p => tf ? transformPoint(p, tf) : p);
+      const fill = fillFn((p00.u + p01.u + p10.u + p11.u) / 4, (p00.v + p01.v + p10.v + p11.v) / 4, (p00.w + p01.w + p10.w + p11.w) / 4);
+      pushQuad(faces, pts[0], pts[3], pts[2], pts[1], fill, alpha);
+    }
+  }
+}
+function addTorus(faces, center, majorR, minorR, segU, segV, fillFn, alpha = 1, tf = null) {
+  const su = Math.max(8, segU), sv = Math.max(6, segV);
+  const P = (u, v) => {
+    const a = u * TAU, b = v * TAU, ring = majorR + Math.cos(b) * minorR;
+    return { p: vec(center.x + Math.cos(a) * ring, center.y + Math.sin(b) * minorR, center.z + Math.sin(a) * ring), u: Math.cos(a), v: Math.sin(b), w: Math.sin(a) };
+  };
+  for (let i = 0; i < su; i++) {
+    for (let j = 0; j < sv; j++) {
+      const p00 = P(i / su, j / sv), p01 = P(i / su, (j + 1) / sv), p10 = P((i + 1) / su, j / sv), p11 = P((i + 1) / su, (j + 1) / sv);
+      const pts = [p00.p, p10.p, p11.p, p01.p].map(p => tf ? transformPoint(p, tf) : p);
+      const fill = fillFn((p00.u + p01.u + p10.u + p11.u) / 4, (p00.v + p01.v + p10.v + p11.v) / 4, (p00.w + p01.w + p10.w + p11.w) / 4);
+      pushQuad(faces, pts[0], pts[3], pts[2], pts[1], fill, alpha);
+    }
+  }
+}
+function addCylinder(faces, from, to, r0, r1, steps, fillFn, alpha = 1, cap0 = true, cap1 = false) {
+  const axis = V3.norm(V3.sub(to, from));
+  const ref = Math.abs(axis.y) < 0.92 ? vec(0, 1, 0) : vec(1, 0, 0);
+  const side = V3.norm(V3.cross(ref, axis));
+  const up = V3.norm(V3.cross(axis, side));
+  const rings0 = [], rings1 = [], n = Math.max(5, steps);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU, c = Math.cos(a), s = Math.sin(a);
+    const off = V3.add(V3.scale(side, c), V3.scale(up, s));
+    rings0.push(V3.add(from, V3.scale(off, r0)));
+    rings1.push(V3.add(to, V3.scale(off, r1)));
+  }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const fill = fillFn(i / n, 0, j / n);
+    pushQuad(faces, rings0[i], rings0[j], rings1[j], rings1[i], fill, alpha);
+    if (cap0 && r0 > 0.001) pushFace(faces, [from, rings0[j], rings0[i]], fill, alpha);
+    if (cap1 && r1 > 0.001) pushFace(faces, [to, rings1[i], rings1[j]], fill, alpha);
+  }
+}
+function bodyTransform(spec, time) {
+  const drift = spec.motion.drift || 0;
+  const reach = spec.motion.reach || 0;
+  const sway = drift * 0.18 * Math.sin(time * 0.55);
+  return {
+    pos: vec(0, drift * 0.12 * Math.cos(time * 0.6), 0),
+    rot: vec(drift * 0.06 * Math.sin(time * 0.5), reach * 0.14 * Math.sin(time * 0.45), sway),
+    scale: vec(1, 1, 1)
+  };
+}
+function readGenome(genome, time, forcedWindow = null) {
+  const layers = genome.layers || [], compose = genome.compose || {}, windows = compose.windows || [];
+  const winIdx = forcedWindow == null
+    ? (windows.length > 1 && compose.loop ? Math.floor(time / 1.8) % windows.length : 0)
+    : forcedWindow;
+  const active = windows.length ? new Set(windows[winIdx] || []) : null;
+  const byRole = {};
+  layers.forEach(layer => {
+    if (!byRole[layer.role]) byRole[layer.role] = layer;
+  });
+  if (active) layers.forEach((layer, index) => {
+    if (active.has(index)) byRole[layer.role] = layer;
+  });
+  const form = byRole.form || {};
+  const surface = byRole.surface || {};
+  const motion = byRole.motion || {};
+  const breathe = (motion.breathe ?? 0) * Math.sin(time * TAU * 0.65);
+  const pulseAmt = motion.pulse ?? 0;
+  const pulse = pulseAmt * (0.5 + 0.5 * Math.sin(time * TAU * Math.max(pulseAmt, 0.2) * 1.3));
+  const size = 1.1 + (form.body_r ?? 0.25) * 2.7;
+  return {
+    form,
+    surface: { palette: surface.palette && surface.palette.length ? surface.palette : DEFAULT_PALETTE, pattern: surface.pattern || 'solid', glow: surface.glow ?? 0, opacity: surface.opacity == null ? 1 : surface.opacity },
+    motion,
+    size: size * (1 + breathe * 0.18),
+    limbLen: 0.5 + (form.limb_len ?? 0.3) * 2.6,
+    segments: clamp(Math.round(form.segments ?? 6), 3, 24),
+    limbs: clamp(Math.round(form.limbs ?? 0), 0, 14),
+    spikes: clamp(Math.round(form.spikes ?? 0), 0, 14),
+    pulse,
+    breathe
+  };
+}
+function buildCreatureFaces(spec, time) {
+  const faces = [];
+  const { form, surface, motion, size, limbLen, limbs, segments, spikes, pulse } = spec;
+  const shape = form.shape || 'blob';
+  const symmetry = form.symmetry || 'radial';
+  const tf = bodyTransform(spec, time);
+  const bodyY = limbs > 0 ? Math.max(0.45, limbLen * 0.42) : 0.28;
+  const bodyFill = (u, v, w) => patternSample(surface.pattern, surface.palette, u, v, w, pulse, 'body');
+  const limbFill = (u, v, w) => patternSample(surface.pattern, surface.palette, u + 0.2, v, w, pulse, 'limb');
+  const spikeFill = (u, v, w) => patternSample(surface.pattern, surface.palette, u, v, w, pulse, 'spike');
+  const headFill = (u, v, w) => patternSample(surface.pattern, surface.palette, u + 0.1, v + 0.15, w, pulse, 'body');
+
+  if (limbs > 0) {
+    if (symmetry === 'radial') {
+      for (let i = 0; i < limbs; i++) {
+        const ang = (i / limbs) * TAU;
+        const wag = (motion.reach || 0) * 0.34 * Math.sin(time * 2.4 + i * 1.1);
+        const anchor = vec(Math.cos(ang) * size * 0.52, bodyY - size * 0.16, Math.sin(ang) * size * 0.44);
+        const foot = vec(Math.cos(ang + wag) * (size * 0.68 + limbLen * 0.28), bodyY - (limbLen + size * 0.5), Math.sin(ang + wag) * (size * 0.56 + limbLen * 0.28));
+        addCylinder(faces, transformPoint(anchor, tf), transformPoint(foot, tf), size * 0.085, size * 0.045, 8, limbFill, surface.opacity, false, false);
+      }
+    } else {
+      const pairs = Math.floor(limbs / 2);
+      for (let i = 0; i < pairs; i++) {
+        const x = pairs === 1 ? 0 : lerp(-size * 0.45, size * 0.38, i / (pairs - 1));
+        const wag = (motion.reach || 0) * 0.28 * Math.sin(time * 2.6 + i * 1.3);
+        for (const side of [-1, 1]) {
+          const anchor = vec(x, bodyY - size * 0.18, side * size * 0.34);
+          const foot = vec(x + wag * size * 0.55, bodyY - (limbLen + size * 0.48), side * (size * 0.54 + limbLen * 0.22));
+          addCylinder(faces, transformPoint(anchor, tf), transformPoint(foot, tf), size * 0.08, size * 0.04, 8, limbFill, surface.opacity, false, false);
+        }
+      }
+      if (limbs % 2 === 1) {
+        const tailA = vec(-size * 0.7, bodyY - size * 0.05, 0);
+        const tailB = vec(-size * 1.1, bodyY + size * 0.08 + (motion.reach || 0) * 0.25 * Math.sin(time * 2.1), 0);
+        addCylinder(faces, transformPoint(tailA, tf), transformPoint(tailB, tf), size * 0.06, size * 0.015, 7, limbFill, surface.opacity, false, false);
+      }
+    }
+  }
+
+  if (shape === 'blob') addSphere(faces, vec(0, bodyY, 0), size * 0.88, size * 0.58, size * 0.7, segments + 3, segments * 2, bodyFill, surface.opacity, tf);
+  else if (shape === 'star') addStarBody(faces, vec(0, bodyY, 0), size, segments + 4, segments * 2 + 2, Math.max(5, limbs || segments), bodyFill, surface.opacity, tf);
+  else if (shape === 'ring') addTorus(faces, vec(0, bodyY, 0), size * 0.7, size * 0.24, segments * 2 + 4, Math.max(8, segments + 3), bodyFill, surface.opacity, tf);
+  else {
+    const segN = Math.max(3, segments);
+    for (let i = 0; i < segN; i++) {
+      const frac = segN === 1 ? 0.5 : i / (segN - 1);
+      const x = lerp(-size * 0.62, size * 0.62, frac);
+      const s = 0.58 + 0.42 * Math.sin(frac * Math.PI);
+      addSphere(faces, vec(x, bodyY, 0), size * 0.34 * s, size * 0.28 * s, size * 0.32 * s, 7, 10, (u, v, w) => bodyFill(u + frac * 0.8, v, w), surface.opacity, tf);
+    }
+  }
+
+  const spikeCount = spikes;
+  if (spikeCount > 0 && shape !== 'ring') {
+    for (let i = 0; i < spikeCount; i++) {
+      const frac = spikeCount === 1 ? 0.5 : i / (spikeCount - 1);
+      const base = vec(lerp(-size * 0.42, size * 0.35, frac), bodyY + size * (shape === 'segment' ? 0.18 : 0.4), 0);
+      const tip = vec(base.x, base.y + size * (0.24 + 0.05 * Math.sin(frac * Math.PI)), 0);
+      addCylinder(faces, transformPoint(base, tf), transformPoint(tip, tf), size * 0.08, 0.001, 6, spikeFill, surface.opacity, true, false);
+    }
+  }
+
+  const headPos = vec(shape === 'ring' ? size * 1.0 : size * 0.98, bodyY + size * 0.12, 0);
+  addBox(faces, headPos, size * 0.56, size * 0.44, size * 0.42, headFill(0.8, 0.5, 0.5), surface.opacity, tf);
+  addSphere(faces, transformPoint(vec(headPos.x + size * 0.33, headPos.y + size * 0.06, size * 0.11), tf), size * 0.08, size * 0.08, size * 0.08, 5, 8, () => patternSample(surface.pattern, surface.palette, 0.5, 0.5, 0.5, pulse, 'eye'), Math.min(1, surface.opacity + 0.12));
+  addSphere(faces, transformPoint(vec(headPos.x + size * 0.33, headPos.y + size * 0.06, -size * 0.11), tf), size * 0.08, size * 0.08, size * 0.08, 5, 8, () => patternSample(surface.pattern, surface.palette, 0.5, 0.5, 0.5, pulse, 'eye'), Math.min(1, surface.opacity + 0.12));
+
+  const geometryFloor = Math.min(...faces.flatMap(face => face.pts.map(point => point.y)));
+  const floorY = geometryFloor - (limbs > 1 ? size * 0.02 : size * 0.08);
+  return { faces, bodyY, floorY, haloCenter: transformPoint(vec(0, bodyY, 0), tf), size };
+}
+function makeCamera(target, yaw, pitch, radius) {
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const pos = { x: target.x + Math.cos(yaw) * cp * radius, y: target.y + sp * radius, z: target.z + Math.sin(yaw) * cp * radius };
+  const forward = V3.norm(V3.sub(target, pos));
+  const right = V3.norm(V3.cross(forward, vec(0, 1, 0)));
+  const up = V3.norm(V3.cross(right, forward));
+  return { pos, forward, right, up };
+}
+function projectPoint(p, camera, w, h, focal) {
+  const rel = V3.sub(p, camera.pos);
+  const x = V3.dot(rel, camera.right), y = V3.dot(rel, camera.up), z = V3.dot(rel, camera.forward);
+  if (z <= 0.08) return null;
+  const s = focal / z;
+  return { x: w / 2 + x * s, y: h / 2 - y * s, z };
+}
+function includeSceneBounds(bounds, faces) {
+  for (const face of faces) for (const point of face.pts) {
+    bounds.min.x = Math.min(bounds.min.x, point.x); bounds.min.y = Math.min(bounds.min.y, point.y); bounds.min.z = Math.min(bounds.min.z, point.z);
+    bounds.max.x = Math.max(bounds.max.x, point.x); bounds.max.y = Math.max(bounds.max.y, point.y); bounds.max.z = Math.max(bounds.max.z, point.z);
+  }
+}
+function finishSceneBounds(bounds) {
+  const center = vec(
+    (bounds.min.x + bounds.max.x) / 2,
+    (bounds.min.y + bounds.max.y) / 2,
+    (bounds.min.z + bounds.max.z) / 2
+  );
+  const radius = V3.len(V3.sub(bounds.max, bounds.min)) / 2;
+  return { center, radius: Math.max(radius, 1) };
+}
+function measureScene(faces) {
+  const bounds = { min: vec(Infinity, Infinity, Infinity), max: vec(-Infinity, -Infinity, -Infinity) };
+  includeSceneBounds(bounds, faces);
+  return finishSceneBounds(bounds);
+}
+const FRAME_BOUNDS = new WeakMap();
+function framingBounds(genome) {
+  if (!FRAME_BOUNDS.has(genome)) {
+    const compose = genome.compose || {};
+    const windows = Array.isArray(compose.windows) ? compose.windows : [];
+    const windowCount = compose.loop && windows.length > 1 ? windows.length : 1;
+    const bounds = { min: vec(Infinity, Infinity, Infinity), max: vec(-Infinity, -Infinity, -Infinity) };
+    const seenWindows = new Set();
+    for (let index = 0; index < windowCount; index++) {
+      const signature = [...(windows[index] || [])].sort((a, b) => a - b).join(',');
+      if (seenWindows.has(signature)) continue;
+      seenWindows.add(signature);
+      includeSceneBounds(bounds, buildCreatureFaces(readGenome(genome, 0, index), 0).faces);
+    }
+    FRAME_BOUNDS.set(genome, finishSceneBounds(bounds));
+  }
+  return FRAME_BOUNDS.get(genome);
+}
+function drawShadow(ctx, camera, w, h, focal, floorY, size) {
+  const pts = [];
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * TAU;
+    const p = projectPoint(vec(Math.cos(a) * size * 0.95, floorY, Math.sin(a) * size * 0.72), camera, w, h, focal);
+    if (p) pts.push(p);
+  }
+  if (pts.length < 8) return;
+  ctx.beginPath();
+  pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(0,0,0,0.20)';
+  ctx.fill();
+}
+function drawHalo(ctx, camera, w, h, focal, center, size, surface, pulse) {
+  if ((surface.glow || 0) <= 0.03) return;
+  const cp = projectPoint(center, camera, w, h, focal);
+  if (!cp) return;
+  const edge = projectPoint(V3.add(center, V3.scale(camera.right, size * 1.15)), camera, w, h, focal);
+  if (!edge) return;
+  const rr = Math.max(20, Math.hypot(edge.x - cp.x, edge.y - cp.y) * (1.2 + surface.glow * 0.7));
+  const g = ctx.createRadialGradient(cp.x, cp.y, rr * 0.18, cp.x, cp.y, rr);
+  g.addColorStop(0, hexA(surface.palette[0], surface.glow * (0.22 + pulse * 0.28)));
+  g.addColorStop(0.55, hexA(surface.palette[0], surface.glow * 0.1));
+  g.addColorStop(1, hexA(surface.palette[0], 0));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cp.x, cp.y, rr, 0, TAU);
+  ctx.fill();
+}
+function renderScene(ctx, genome, time, view) {
+  const w = ctx.canvas.width, h = ctx.canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, '#07111b'); bg.addColorStop(0.55, '#04080f'); bg.addColorStop(1, '#010409');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+
+  const spec = readGenome(genome, time);
+  const built = buildCreatureFaces(spec, time);
+  const bounds = framingBounds(genome);
+  const yaw = view.yaw + (view.autoOrbit || 0);
+  const pitch = clamp(view.pitch, -0.85, 0.92);
+  const radius = Math.max(3.5, bounds.radius * 3.4) / clamp(view.zoom, 0.72, 1.9);
+  const target = bounds.center;
+  const camera = makeCamera(target, yaw, pitch, radius);
+  const focal = Math.min(w, h) * 0.96;
+  drawHalo(ctx, camera, w, h, focal, built.haloCenter, built.size, spec.surface, spec.pulse);
+  drawShadow(ctx, camera, w, h, focal, built.floorY, built.size);
+
+  const lightDir = V3.norm(vec(0.45, 0.9, 0.65));
+  const polys = [];
+  for (const face of built.faces) {
+    const proj = face.pts.map(p => projectPoint(p, camera, w, h, focal));
+    if (proj.some(p => !p)) continue;
+    const a = face.pts[0], b = face.pts[1], c = face.pts[2];
+    const normal = V3.norm(V3.cross(V3.sub(b, a), V3.sub(c, a)));
+    const center = V3.mid(face.pts);
+    const diffuse = Math.max(0, V3.dot(normal, lightDir));
+    const facing = V3.dot(normal, V3.norm(V3.sub(camera.pos, center)));
+    if (face.alpha >= 0.995 && facing <= 0) continue;
+    const viewDot = Math.max(0, facing);
+    const lit = 0.26 + diffuse * 0.76 + viewDot * 0.12 + (face.fill.emissive || 0) * 0.35;
+    polys.push({ proj, depth: proj.reduce((acc, p) => acc + p.z, 0) / proj.length, fill: colorCss(scaleColor(face.fill.color, lit), face.alpha) });
+  }
+  polys.sort((a, b) => b.depth - a.depth);
+  for (const poly of polys) {
+    ctx.beginPath();
+    poly.proj.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.closePath();
+    ctx.fillStyle = poly.fill;
+    ctx.fill();
+  }
+}
+/* ── SHA-256 (native SubtleCrypto, runs in-page — no sandbox needed for data) ─ */
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+function hasWellFormedUnicode(value) {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(++index);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
+function canonicalJson(value, stack = new Set()) {
+  // rapp-canonical-json/1: UTF-16 key order with ECMAScript JSON primitive serialization.
+  if (value === null || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'string') {
+    if (!hasWellFormedUnicode(value)) throw new Error('Canonical strings must contain valid Unicode.');
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('Canonical numbers must be finite.');
+    return JSON.stringify(value);
+  }
+  if (!value || typeof value !== 'object')
+    throw new Error('Canonical input must contain only JSON values.');
+  if (!Array.isArray(value) && Object.prototype.toString.call(value) !== '[object Object]')
+    throw new Error('Canonical objects must be plain JSON objects.');
+  if (stack.has(value)) throw new Error('Canonical input cannot contain cycles.');
+  stack.add(value);
+  let result;
+  if (Array.isArray(value)) {
+    const items = [];
+    for (let index = 0; index < value.length; index++) {
+      if (!Object.prototype.hasOwnProperty.call(value, index))
+        throw new Error('Canonical arrays cannot contain sparse holes.');
+      items.push(canonicalJson(value[index], stack));
+    }
+    result = '[' + items.join(',') + ']';
+  } else {
+    const keys = Object.keys(value).sort();
+    if (keys.some(key => !hasWellFormedUnicode(key)))
+      throw new Error('Canonical keys must contain valid Unicode.');
+    result = '{' + keys.map(key => JSON.stringify(key) + ':' + canonicalJson(value[key], stack)).join(',') + '}';
+  }
+  stack.delete(value);
+  return result;
+}
+async function genomeId(genome) {
+  return (await sha256hex(canonicalJson(genome))).slice(0, 12);
+}
+async function cartridgeContentId(cart) { return sha256hex(canonicalJson(cart)); }
+
+/* ── Base64url helpers ────────────────────────────────────────────────────── */
+function b64enc(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function b64dec(s) {
+  const encoded = String(s);
+  let padded = encoded.replace(/-/g,'+').replace(/_/g,'/');
+  while (padded.length % 4) padded += '=';
+  const binary = atob(padded);
+  const canonical = btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  if (canonical !== encoded) throw new Error('Shared egg fragment is not canonical base64url.');
+  return decodeURIComponent(escape(binary));
+}
+
+/* ── Bounded cartridge gate ──────────────────────────────────────────────── */
+const MAX_CART_BYTES = 2 * 1024 * 1024;
+const MAX_REGISTRY_BYTES = 256 * 1024;
+const LOAD_TIMEOUT_MS = 15000;
+const MAX_INLINE_URL_BYTES = 12000;
+const PROTOCOL_VERSION = 1;
+
+function parseCartridgeText(text) {
+  const clean = String(text).replace(/^\uFEFF/, '');
+  if (new TextEncoder().encode(clean).byteLength > MAX_CART_BYTES)
+    throw new Error('Cartridge exceeds the 2 MiB limit.');
+  return JSON.parse(clean);
+}
+
+function decodeUtf8Bytes(bytes, label = 'Cartridge') {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch { throw new Error(`${label} is not valid UTF-8.`); }
+}
+
+function parseCartridgeFragment(fragment) {
+  const encoded = String(fragment);
+  if (!encoded || !/^[A-Za-z0-9_-]+$/.test(encoded) || encoded.length % 4 === 1)
+    throw new Error('Shared egg fragment is not valid base64url.');
+  if (Math.floor(encoded.length * 3 / 4) > MAX_CART_BYTES)
+    throw new Error('Shared egg fragment exceeds the 2 MiB limit.');
+  return parseCartridgeText(b64dec(encoded));
+}
+
+function estimateGenomeFaces(layers, windows) {
+  const unique = new Set();
+  let total = 0;
+  for (const refs of windows) {
+    const signature = [...refs].sort((a, b) => a - b).join(',');
+    if (unique.has(signature)) continue;
+    unique.add(signature);
+    const active = new Set(refs);
+    let form = layers.find(layer => layer.role === 'form') || {};
+    layers.forEach((layer, index) => {
+      if (active.has(index) && layer.role === 'form') form = layer;
+    });
+    const segments = Math.max(3, Math.min(24, Math.round(form.segments ?? 6)));
+    const limbs = Math.max(0, Math.min(14, Math.round(form.limbs ?? 0)));
+    const spikes = Math.max(0, Math.min(14, Math.round(form.spikes ?? 0)));
+    const shape = form.shape || 'blob';
+    let faces = 172 + limbs * 16 + (shape === 'ring' ? 0 : spikes * 18);
+    if (shape === 'blob') faces += 2 * (segments + 3) * segments * 2;
+    else if (shape === 'star') faces += 2 * (segments + 4) * (segments * 2 + 2);
+    else if (shape === 'ring') faces += 2 * (segments * 2 + 4) * Math.max(8, segments + 3);
+    else faces += segments * 140;
+    if (faces > 5000) throw new Error('A genome window exceeds the 5,000-face render budget.');
+    total += faces;
+  }
+  if (total > 24000) throw new Error('Genome windows exceed the 24,000-face framing budget.');
+}
+
+function validateCartridge(cart) {
+  if (!cart || typeof cart !== 'object' || Array.isArray(cart))
+    throw new Error('Expected a hologram-cartridge/1.0 object.');
+  let values = 0;
+  const stack = new WeakSet();
+  const inspect = (value, depth) => {
+    if (depth > 32) throw new Error('Cartridge nesting is too deep.');
+    if (++values > 50000) throw new Error('Cartridge exceeds the 50,000-value complexity limit.');
+    const type = typeof value;
+    if (type === 'string') {
+      if (!hasWellFormedUnicode(value)) throw new Error('Cartridge strings must contain valid Unicode.');
+      return;
+    }
+    if (value === null || type === 'boolean') return;
+    if (type === 'number' && !Number.isFinite(value))
+      throw new Error('Cartridge numbers must be finite.');
+    if (type === 'number') return;
+    if (type !== 'object') throw new Error('Cartridge data must contain only JSON values.');
+    if (!Array.isArray(value) && Object.prototype.toString.call(value) !== '[object Object]')
+      throw new Error('Cartridge objects must be plain JSON objects.');
+    if (Array.isArray(value) && value.length > 50000)
+      throw new Error('Cartridge arrays cannot contain more than 50,000 entries.');
+    if (stack.has(value)) throw new Error('Cartridge data cannot contain cycles.');
+    stack.add(value);
+    if (Array.isArray(value)) {
+      for (const child of value) inspect(child, depth + 1);
+    } else {
+      for (const [key, child] of Object.entries(value)) {
+        if (!hasWellFormedUnicode(key)) throw new Error('Cartridge keys must contain valid Unicode.');
+        inspect(child, depth + 1);
+      }
+    }
+    stack.delete(value);
+  };
+  inspect(cart, 0);
+  const serialized = JSON.stringify(cart);
+  if (new TextEncoder().encode(serialized).byteLength > MAX_CART_BYTES)
+    throw new Error('Cartridge exceeds the 2 MiB limit.');
+  if (cart.schema !== 'hologram-cartridge/1.0')
+    throw new Error('Expected schema hologram-cartridge/1.0.');
+  for (const key of ['id', 'title', 'author', 'sig']) {
+    if (cart[key] != null && typeof cart[key] !== 'string')
+      throw new Error(`Cartridge ${key} must be a string.`);
+  }
+  if (cart.title && new TextEncoder().encode(cart.title).byteLength > 512)
+    throw new Error('Cartridge title exceeds 512 UTF-8 bytes.');
+  if (cart.author && new TextEncoder().encode(cart.author).byteLength > 256)
+    throw new Error('Cartridge author exceeds 256 UTF-8 bytes.');
+  if (cart.id && (cart.id.length > 256 || /[\u0000-\u001f]/.test(cart.id)))
+    throw new Error('Cartridge id is invalid.');
+  if (cart.parents != null && (!Array.isArray(cart.parents) || cart.parents.length > 128 ||
+      cart.parents.some(parent => typeof parent !== 'string')))
+    throw new Error('Cartridge parents must be an array of strings.');
+  if (!cart.genome || Object.prototype.toString.call(cart.genome) !== '[object Object]')
+    throw new Error('Cartridge genome must be an object.');
+  const compose = cart.genome.compose;
+  if (compose != null && Object.prototype.toString.call(compose) !== '[object Object]')
+    throw new Error('Genome compose must be an object.');
+  if (compose && compose.loop != null && typeof compose.loop !== 'boolean')
+    throw new Error('Genome compose.loop must be boolean.');
+  const layers = cart.genome.layers;
+  if (!Array.isArray(layers) || !layers.length || layers.length > 128)
+    throw new Error('Genome layers must contain between 1 and 128 entries.');
+  const numericKeys = new Set(['k', 'limbs', 'segments', 'body_r', 'limb_len', 'spikes', 'glow', 'opacity', 'breathe', 'drift', 'pulse', 'reach']);
+  for (const layer of layers) {
+    if (!layer || typeof layer !== 'object' || Array.isArray(layer) || typeof layer.role !== 'string')
+      throw new Error('Every genome layer needs a role.');
+    for (const key of numericKeys) {
+      if (layer[key] != null && (!Number.isFinite(layer[key]) || Math.abs(layer[key]) > 10000))
+        throw new Error(`Invalid numeric trait: ${key}.`);
+    }
+    if (layer.palette != null) {
+      if (!Array.isArray(layer.palette) || !layer.palette.length || layer.palette.length > 64 ||
+          layer.palette.some(color => typeof color !== 'string' || !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(color)))
+        throw new Error('Surface palettes must contain between 1 and 64 hex colors.');
+    }
+    const inRange = (key, min, max, integer = false) => {
+      if (layer[key] == null) return;
+      if (layer[key] < min || layer[key] > max || (integer && !Number.isInteger(layer[key])))
+        throw new Error(`Trait ${key} must be ${integer ? 'an integer ' : ''}between ${min} and ${max}.`);
+    };
+    inRange('k', 0, 100);
+    if (layer.role === 'form') {
+      if (layer.shape != null && !['blob', 'star', 'ring', 'segment'].includes(layer.shape))
+        throw new Error(`Unsupported form shape: ${layer.shape}.`);
+      if (layer.symmetry != null && !['radial', 'bilateral'].includes(layer.symmetry))
+        throw new Error(`Unsupported form symmetry: ${layer.symmetry}.`);
+      inRange('limbs', 0, 14, true); inRange('segments', 3, 24, true);
+      inRange('spikes', 0, 14, true); inRange('body_r', 0, 1); inRange('limb_len', 0, 1);
+    } else if (layer.role === 'surface') {
+      if (layer.pattern != null && !['solid', 'stripe', 'spot', 'glow'].includes(layer.pattern))
+        throw new Error(`Unsupported surface pattern: ${layer.pattern}.`);
+      inRange('glow', 0, 1); inRange('opacity', 0, 1);
+    } else if (layer.role === 'motion') {
+      for (const key of ['breathe', 'drift', 'pulse', 'reach']) inRange(key, 0, 1);
+    }
+  }
+  if (!layers.some(layer => layer.role === 'form') || !layers.some(layer => layer.role === 'surface'))
+    throw new Error('Genome needs at least one form and one surface layer.');
+  const windows = compose && compose.windows;
+  if (windows != null) {
+    if (!Array.isArray(windows) || !windows.length || windows.length > 32)
+      throw new Error('Genome windows must contain between 1 and 32 entries.');
+    let refs = 0;
+    for (const windowLayers of windows) {
+      if (!Array.isArray(windowLayers) || !windowLayers.length)
+        throw new Error('Each genome window must reference at least one layer.');
+      refs += windowLayers.length;
+      if (refs > 4096 || windowLayers.some(index => !Number.isInteger(index) || index < 0 || index >= layers.length))
+        throw new Error('Genome windows contain invalid layer references.');
+    }
+  } else if (compose && compose.loop != null) {
+    throw new Error('Genome compose.loop requires windows.');
+  }
+  const reachableWindows = windows
+    ? (compose.loop ? windows : [windows[0]])
+    : [layers.map((_, index) => index)];
+  estimateGenomeFaces(layers, reachableWindows);
+  return cart;
+}
+
+async function readBounded(response, maxBytes = MAX_CART_BYTES, label = 'Cartridge') {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes)
+    throw new Error(`${label} exceeds its size limit.`);
+  if (!response.body || !response.body.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes)
+      throw new Error(`${label} exceeds its size limit.`);
+    return decodeUtf8Bytes(bytes, label);
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maxBytes) {
+      await reader.cancel();
+      throw new Error(`${label} exceeds its size limit.`);
+    }
+    chunks.push(value);
+  }
+  const merged = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
+  return decodeUtf8Bytes(merged, label);
+}
+
+/* ── Default cartridge (Lumina) ────────────────────────────────────────────── */
+const DEFAULT_CART = {"schema":"hologram-cartridge/1.0","id":"d45a79d29e99","title":"Lumina","author":"@kody-w","born":{"coord":"0,0","from":"genesis"},"parents":[],"genome":{"layers":[{"role":"form","k":30,"shape":"blob","limbs":0,"segments":8,"symmetry":"radial","body_r":0.3,"limb_len":0},{"role":"surface","k":85,"palette":["#00ccff","#0088ff","#ffffff","#aaddff"],"pattern":"glow","glow":0.8,"opacity":0.85},{"role":"motion","k":60,"breathe":0.2,"drift":0.5,"pulse":0.8,"reach":0}],"compose":{"windows":[[0,1,2]],"loop":true}},"sig":""};
+
+/* ── State ────────────────────────────────────────────────────────────────── */
+let CART = null, RAF = null, _pmPort = null, _directHost = null;
+let LOAD_SEQUENCE = 0, activeFetch = null, activeRegistryController = null;
+let CURRENT_GENOME_ID = null, CURRENT_CONTENT_ID = null;
+let PREPARED_SHARE_URL = null;
+const RENDER_STATES = new Map();
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const stageEl = document.getElementById('stage');
+const verEl = document.getElementById('verify');
+const orbitHintEl = document.getElementById('orbit-hint');
+const playerStatusEl = document.getElementById('player-status');
+const motionToggleEl = document.getElementById('motion-toggle');
+const reducedMotionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+const VIEW = { yaw: 0.85, pitch: 0.22, zoom: 1.0, dragging: false, autoOrbit: 0, userMoved: false, activePointer: null };
+const MOTION = {
+  time: 0,
+  lastTs: null,
+  userPaused: false,
+  reduced: reducedMotionQuery.matches,
+  visible: !document.hidden,
+  onscreen: true,
+  genomeMoves: true,
+  disposed: false
+};
+
+function setPlayerStatus(message, error = false) {
+  playerStatusEl.className = error ? 'err' : '';
+  playerStatusEl.setAttribute('role', error ? 'alert' : 'status');
+  playerStatusEl.setAttribute('aria-live', error ? 'assertive' : 'polite');
+  playerStatusEl.textContent = message || '';
+}
+
+function clearShareArtifacts() {
+  PREPARED_SHARE_URL = null;
+  document.getElementById('qr-wrap').style.display = 'none';
+  document.getElementById('btn-qr').setAttribute('aria-expanded', 'false');
+  document.getElementById('qr-link').textContent = '';
+  document.getElementById('share-fallback').hidden = true;
+  document.getElementById('share-url').value = '';
+}
+
+function setOutputActionsEnabled(enabled) {
+  for (const id of ['btn-dl', 'btn-link', 'btn-share', 'btn-qr'])
+    document.getElementById(id).disabled = !enabled;
+}
+
+function showSourceError(message) {
+  cancelScheduledFrame();
+  CART = null;
+  CURRENT_GENOME_ID = null;
+  CURRENT_CONTENT_ID = null;
+  clearShareArtifacts();
+  setOutputActionsEnabled(false);
+  const keepLink = document.getElementById('keep-link');
+  keepLink.href = 'index.html';
+  keepLink.textContent = 'Open gallery';
+  keepLink.setAttribute('aria-disabled', 'true');
+  keepLink.removeAttribute('href');
+  keepLink.setAttribute('tabindex', '-1');
+  verEl.style.display = 'none';
+  document.getElementById('i-title').textContent = 'Could not verify this egg';
+  document.getElementById('i-title').style.color = '#f85149';
+  document.getElementById('i-author').textContent = '';
+  document.getElementById('i-id').textContent = '';
+  const embedError = document.getElementById('embed-error');
+  embedError.textContent = message;
+  embedError.hidden = !document.documentElement.classList.contains('embed');
+  document.getElementById('view-controls').style.display = 'none';
+  orbitHintEl.style.display = 'none';
+  canvas.setAttribute('aria-label', `Hologram unavailable. ${message}`);
+  ctx.fillStyle = '#010409';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  document.title = 'egg unavailable — rapp-lantern';
+  setPlayerStatus(message, true);
+}
+
+function genomeHasMotion(genome) {
+  const compose = genome.compose || {};
+  const windows = Array.isArray(compose.windows) ? compose.windows : [];
+  const windowCount = compose.loop && windows.length > 1 ? windows.length : 1;
+  let moves = false;
+  for (let index = 0; index < windowCount; index++) {
+    const motion = readGenome(genome, 0, index).motion;
+    if (['breathe', 'drift', 'pulse', 'reach'].some(key => Math.abs(motion[key] || 0) > 0.0001)) {
+      moves = true;
+      break;
+    }
+  }
+  return moves || Boolean(compose.loop && windows.length > 1);
+}
+
+function animationActive() {
+  return !MOTION.userPaused && !MOTION.reduced && (MOTION.genomeMoves || !VIEW.userMoved);
+}
+
+function updateMotionButton() {
+  const paused = MOTION.userPaused || MOTION.reduced;
+  motionToggleEl.textContent = paused ? '▶' : 'Ⅱ';
+  motionToggleEl.setAttribute('aria-pressed', String(paused));
+  motionToggleEl.setAttribute('aria-label', MOTION.reduced ? 'Motion paused by reduced-motion preference' : (paused ? 'Resume motion' : 'Pause motion'));
+}
+
+function cancelScheduledFrame() {
+  if (RAF) cancelAnimationFrame(RAF);
+  RAF = null;
+  MOTION.lastTs = null;
+}
+
+function requestRender() {
+  if (!CART || RAF || MOTION.disposed || !MOTION.visible || !MOTION.onscreen) return;
+  RAF = requestAnimationFrame(renderFrame);
+}
+
+function renderFrame(timestamp) {
+  RAF = null;
+  if (!CART || !MOTION.visible || !MOTION.onscreen) {
+    MOTION.lastTs = null;
+    return;
+  }
+  const active = animationActive();
+  if (active && !VIEW.dragging && MOTION.lastTs != null && timestamp - MOTION.lastTs < 30) {
+    requestRender();
+    return;
+  }
+  const dt = MOTION.lastTs == null ? 0 : Math.min(0.1, Math.max(0, (timestamp - MOTION.lastTs) / 1000));
+  MOTION.lastTs = timestamp;
+  if (active) {
+    MOTION.time += dt;
+    if (!VIEW.dragging && !VIEW.userMoved) VIEW.autoOrbit += dt * 0.32;
+  }
+  renderScene(ctx, CART.genome, MOTION.time, VIEW);
+  if (active) requestRender();
+  else MOTION.lastTs = null;
+}
+
+function invalidateRender() {
+  requestRender();
+}
+
+function rememberRenderState() {
+  if (!CART || !CURRENT_GENOME_ID) return;
+  RENDER_STATES.set(CURRENT_GENOME_ID, {
+    time: MOTION.time,
+    view: {
+      yaw: VIEW.yaw,
+      pitch: VIEW.pitch,
+      zoom: VIEW.zoom,
+      autoOrbit: VIEW.autoOrbit,
+      userMoved: VIEW.userMoved
+    }
+  });
+  if (RENDER_STATES.size > 8) RENDER_STATES.delete(RENDER_STATES.keys().next().value);
+}
+
+function beginLoad() {
+  LOAD_SEQUENCE += 1;
+  if (activeFetch) activeFetch.abort();
+  if (activeRegistryController) activeRegistryController.abort();
+  activeFetch = null;
+  activeRegistryController = null;
+  return LOAD_SEQUENCE;
+}
+
+function describeCartridge(cart, got, match, time = 0) {
+  const active = readGenome(cart.genome, time);
+  const form = active.form, surface = active.surface, motion = active.motion;
+  const title = cart.title || 'Untitled organism';
+  const author = cart.author ? ` by ${cart.author}` : '';
+  const traits = [
+    form.shape || 'unknown form',
+    Number.isFinite(form.limbs) ? `${form.limbs} limbs` : '',
+    surface.pattern ? `${surface.pattern} surface` : '',
+    Number.isFinite(motion.breathe) && motion.breathe > 0 ? 'breathing motion' : ''
+  ].filter(Boolean).join(', ');
+  const trust = cart.id ? (match ? 'verified' : 'genome ID mismatch') : `computed ID ${got}`;
+  return `${title}${author}. ${traits}. ${trust}. Interactive 3D view: use arrow keys to orbit, plus and minus to zoom, and Home to reset.`;
+}
+
+function boundedCanvasSize(cssWidth, cssHeight, deviceScale, maxPixels = 1600000, maxDimension = 8192) {
+  const width = Math.max(1, cssWidth);
+  const height = Math.max(1, cssHeight);
+  const scale = Math.min(
+    deviceScale || 1,
+    2,
+    Math.sqrt(maxPixels / (width * height)),
+    maxDimension / width,
+    maxDimension / height
+  );
+  let outputWidth = Math.max(1, Math.floor(width * scale));
+  let outputHeight = Math.max(1, Math.floor(height * scale));
+  if (outputWidth * outputHeight > maxPixels) {
+    if (outputWidth >= outputHeight) outputWidth = Math.max(1, Math.floor(maxPixels / outputHeight));
+    else outputHeight = Math.max(1, Math.floor(maxPixels / outputWidth));
+  }
+  return { width: outputWidth, height: outputHeight };
+}
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const { width, height } = boundedCanvasSize(rect.width, rect.height, window.devicePixelRatio || 1);
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+    invalidateRender();
+  }
+}
+if ('ResizeObserver' in window) new ResizeObserver(resizeCanvas).observe(stageEl);
+else window.addEventListener('resize', resizeCanvas);
+requestAnimationFrame(resizeCanvas);
+
+async function loadCart(input, sequence = beginLoad(), options = {}) {
+  const cart = validateCartridge(input);
+  const [got, contentId] = await Promise.all([genomeId(cart.genome), cartridgeContentId(cart)]);
+  if (sequence !== LOAD_SEQUENCE) return null;
+  const declared = cart.id || '';
+  const trust = !declared ? 'unclaimed' : (got === declared ? 'verified' : 'mismatch');
+  const match = trust !== 'mismatch';
+  const serialized = JSON.stringify(cart, null, 2);
+  const pageTitle = `${cart.title || 'hologram'} — rapp-lantern`;
+  rememberRenderState();
+  const restoredState = options.restore ? RENDER_STATES.get(got) : null;
+  const nextView = { ...VIEW };
+  if (restoredState) Object.assign(nextView, restoredState.view, { dragging: false, activePointer: null });
+  else Object.assign(nextView, { autoOrbit: 0, userMoved: false, dragging: false, activePointer: null });
+  const nextTime = restoredState ? restoredState.time : 0;
+  const description = describeCartridge(cart, got, match, nextTime);
+  cancelScheduledFrame();
+  try {
+    const probe = document.createElement('canvas');
+    probe.width = 160; probe.height = 160;
+    const probeContext = probe.getContext('2d');
+    if (!probeContext) throw new Error('Canvas rendering is unavailable.');
+    renderScene(probeContext, cart.genome, nextTime, nextView);
+    renderScene(ctx, cart.genome, nextTime, nextView);
+  } catch (error) {
+    if (CART) {
+      try { renderScene(ctx, CART.genome, MOTION.time, VIEW); }
+      catch (restoreError) {
+        throw new Error(`Could not render this cartridge, and the previous scene could not be restored: ${restoreError.message || restoreError}`);
+      }
+      invalidateRender();
+    }
+    throw new Error(`Could not render this cartridge: ${error.message || error}`);
+  }
+  CART = cart;
+  CURRENT_GENOME_ID = got;
+  CURRENT_CONTENT_ID = contentId;
+  document.getElementById('embed-error').hidden = true;
+  document.getElementById('view-controls').style.display = '';
+  orbitHintEl.style.display = '';
+  clearShareArtifacts();
+  setOutputActionsEnabled(true);
+  updateJournalHandoff(cart);
+  verEl.style.display = 'block';
+  if (trust === 'verified') {
+    verEl.textContent = got + ' ✓';
+    verEl.className = 'mono';
+  } else if (trust === 'unclaimed') {
+    verEl.textContent = got + ' (computed)';
+    verEl.className = 'mono';
+  } else {
+    verEl.textContent = got + ' ≠ ' + declared.slice(0,12) + ' (remix)';
+    verEl.className = 'mono mismatch';
+  }
+  const titleEl = document.getElementById('i-title');
+  titleEl.textContent = cart.title || '';
+  titleEl.style.color = '';
+  document.getElementById('i-author').textContent = cart.author || '';
+  document.getElementById('i-id').textContent = 'id:' + (cart.id || got);
+  document.getElementById('cart-json').value = serialized;
+  canvas.setAttribute('aria-label', description);
+  document.title = pageTitle;
+  Object.assign(VIEW, nextView);
+  MOTION.time = nextTime;
+  setPlayerStatus(`Loaded ${cart.title || 'organism'}.`);
+  startAnim({ resetTime: false, initialRendered: true });
+  if (!document.documentElement.classList.contains('embed'))
+    prepareStandaloneShare(contentId);
+  return { id: got, contentId, declared, match, trust };
+}
+
+function startAnim({ resetTime = true, initialRendered = false } = {}) {
+  cancelScheduledFrame();
+  if (resetTime) MOTION.time = 0;
+  MOTION.genomeMoves = genomeHasMotion(CART.genome);
+  updateMotionButton();
+  if (initialRendered && animationActive() && typeof performance !== 'undefined')
+    MOTION.lastTs = performance.now();
+  if (!initialRendered || animationActive()) invalidateRender();
+}
+
+motionToggleEl.addEventListener('click', () => {
+  if (MOTION.reduced) {
+    setPlayerStatus('Motion remains paused while reduced motion is enabled.');
+    return;
+  }
+  MOTION.userPaused = !MOTION.userPaused;
+  cancelScheduledFrame();
+  updateMotionButton();
+  invalidateRender();
+  setPlayerStatus(MOTION.userPaused ? 'Motion paused.' : 'Motion resumed.');
+});
+
+const handleReducedMotion = event => {
+  MOTION.reduced = event.matches;
+  cancelScheduledFrame();
+  updateMotionButton();
+  invalidateRender();
+};
+if (reducedMotionQuery.addEventListener) reducedMotionQuery.addEventListener('change', handleReducedMotion);
+else if (reducedMotionQuery.addListener) reducedMotionQuery.addListener(handleReducedMotion);
+
+if (document.addEventListener) document.addEventListener('visibilitychange', () => {
+  MOTION.visible = !document.hidden;
+  cancelScheduledFrame();
+  if (MOTION.visible) invalidateRender();
+});
+
+if ('IntersectionObserver' in window) {
+  new IntersectionObserver(entries => {
+    MOTION.onscreen = entries.some(entry => entry.isIntersecting);
+    cancelScheduledFrame();
+    if (MOTION.onscreen) invalidateRender();
+  }, { threshold: 0.01 }).observe(stageEl);
+}
+
+/* ── Loader ───────────────────────────────────────────────────────────────── */
+async function loadFromUrl(input, sequence) {
+  const url = new URL(input, location.href);
+  if (!/^https?:$/.test(url.protocol)) throw new Error('Only HTTP(S) cartridge URLs are supported.');
+  const controller = new AbortController();
+  activeFetch = controller;
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, LOAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(url.href, {
+      signal: controller.signal,
+      credentials: url.origin === location.origin ? 'same-origin' : 'omit',
+      referrerPolicy: url.origin === location.origin ? 'strict-origin-when-cross-origin' : 'no-referrer'
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status} while fetching the cartridge.`);
+    const text = (await readBounded(response)).replace(/^\uFEFF/, '');
+    if (sequence != null && sequence !== LOAD_SEQUENCE) return null;
+    try { return JSON.parse(text); }
+    catch (error) { throw new Error(`Cartridge JSON is invalid: ${error.message}`); }
+  } catch (error) {
+    if (error.name === 'AbortError')
+      throw new Error(timedOut ? 'Cartridge request timed out after 15 seconds.' : 'Cartridge request was replaced by a newer load.');
+    if (error instanceof TypeError)
+      throw new Error('Could not fetch that cartridge. Use an HTTPS URL whose server allows cross-origin (CORS) access.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (activeFetch === controller) activeFetch = null;
+  }
+}
+
+let registryPromise = null;
+function validateRegistry(registry) {
+  if (!registry || registry.schema !== 'hologram-registry/1.0' ||
+      registry.canonicalization !== 'rapp-canonical-json/1' || !Array.isArray(registry.entries) ||
+      !registry.entries.length || registry.entries.length > 256)
+    throw new Error('Registry is malformed.');
+  const aliases = new Set(), hashes = new Set();
+  for (const entry of registry.entries) {
+    if (!entry || typeof entry !== 'object' ||
+        !['name', 'id', 'pin_path', 'content_sha256'].every(key => typeof entry[key] === 'string'))
+      throw new Error('Registry entry is malformed.');
+    if (!/^[0-9a-f]{64}$/.test(entry.content_sha256))
+      throw new Error(`Registry entry "${entry.name}" has an invalid content hash.`);
+    const pin = new URL(entry.pin_path, location.href);
+    if (pin.origin !== location.origin || !/^https?:$/.test(pin.protocol))
+      throw new Error(`Registry entry "${entry.name}" has an unsafe path.`);
+    for (const alias of new Set([entry.name, entry.id])) {
+      if (aliases.has(alias)) throw new Error('Registry names and ids must share one unique alias namespace.');
+      aliases.add(alias);
+    }
+    if (hashes.has(entry.content_sha256))
+      throw new Error('Registry content hashes must be unique.');
+    hashes.add(entry.content_sha256);
+  }
+  if (!registry.summary || registry.summary.cartridges !== registry.entries.length)
+    throw new Error('Registry summary does not match its entries.');
+  return registry;
+}
+
+function getRegistry() {
+  if (!registryPromise) {
+    const controller = new AbortController();
+    activeRegistryController = controller;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, LOAD_TIMEOUT_MS);
+    registryPromise = (async () => {
+      const response = await fetch('registry.json', {
+        cache: 'no-store',
+        signal: controller.signal,
+        credentials: 'same-origin',
+        referrerPolicy: 'no-referrer'
+      });
+      if (!response.ok) throw new Error(`Registry returned HTTP ${response.status}.`);
+      const text = await readBounded(response, MAX_REGISTRY_BYTES, 'Registry');
+      let registry;
+      try { registry = JSON.parse(text); }
+      catch (error) { throw new Error(`Registry JSON is invalid: ${error.message}`); }
+      return validateRegistry(registry);
+    })().catch(error => {
+      registryPromise = null;
+      if (error.name === 'AbortError')
+        throw new Error(timedOut ? 'Registry request timed out after 15 seconds.' : 'Registry request was replaced by a newer load.');
+      throw error;
+    }).finally(() => {
+      clearTimeout(timer);
+      if (activeRegistryController === controller) activeRegistryController = null;
+    });
+  }
+  return registryPromise;
+}
+
+async function makeShareUrl() {
+  if (!CART) throw new Error('Load an egg before sharing.');
+  const cart = CART;
+  const expectedContentId = CURRENT_CONTENT_ID;
+  const contentId = await cartridgeContentId(cart);
+  if (!expectedContentId || contentId !== expectedContentId || CURRENT_CONTENT_ID !== expectedContentId)
+    throw new Error('The organism changed while preparing its link.');
+  let registry = null;
+  try {
+    registry = await getRegistry();
+  } catch (error) {
+    if (CURRENT_CONTENT_ID !== expectedContentId) throw new Error('The organism changed while preparing its link.');
+    setPlayerStatus(`Registry lookup unavailable; using a self-contained link. ${error.message}`);
+  }
+  if (CURRENT_CONTENT_ID !== expectedContentId) throw new Error('The organism changed while preparing its link.');
+  const entry = registry && registry.entries.find(item => item.content_sha256 === contentId);
+  if (entry) {
+    const url = new URL('player.html', location.href);
+    url.searchParams.set('id', entry.name);
+    url.searchParams.set('h', contentId);
+    if (CURRENT_CONTENT_ID !== expectedContentId) throw new Error('The organism changed while preparing its link.');
+    return url.href;
+  }
+  const url = new URL('player.html#' + b64enc(JSON.stringify(cart)), location.href).href;
+  if (new TextEncoder().encode(url).byteLength > MAX_INLINE_URL_BYTES)
+    throw new Error('This egg is too large for a reliable link. Download and send the .egg instead.');
+  if (CURRENT_CONTENT_ID !== expectedContentId) throw new Error('The organism changed while preparing its link.');
+  return url;
+}
+
+async function prepareStandaloneShare(contentId) {
+  PREPARED_SHARE_URL = null;
+  document.getElementById('btn-link').disabled = true;
+  document.getElementById('btn-share').disabled = true;
+  document.getElementById('btn-qr').disabled = true;
+  try {
+    const url = await makeShareUrl();
+    if (CURRENT_CONTENT_ID !== contentId) return;
+    PREPARED_SHARE_URL = url;
+    document.getElementById('btn-link').disabled = false;
+    document.getElementById('btn-share').disabled = false;
+    document.getElementById('btn-link').title = '';
+    document.getElementById('btn-qr').title = '';
+    const qrTooLarge = new TextEncoder().encode(url).byteLength > 997;
+    document.getElementById('btn-qr').disabled = qrTooLarge;
+    if (qrTooLarge)
+      setPlayerStatus('Link ready, but QR is too large. Use share, copy link, or download the .egg.');
+  } catch (error) {
+    if (CURRENT_CONTENT_ID !== contentId) return;
+    const message = error.message || String(error);
+    document.getElementById('btn-share').disabled = false;
+    document.getElementById('btn-link').title = message;
+    document.getElementById('btn-qr').title = message;
+    setPlayerStatus(`Link and QR unavailable. Use share or download the .egg. ${message}`, true);
+  }
+}
+
+function updateJournalHandoff(cart) {
+  const link = document.getElementById('keep-link');
+  const fragment = b64enc(JSON.stringify(cart));
+  const url = new URL('index.html', location.href);
+  url.searchParams.set('keep', '1');
+  url.hash = fragment;
+  if (new TextEncoder().encode(url.href).byteLength <= MAX_INLINE_URL_BYTES) {
+    link.href = url.href;
+    link.textContent = 'Keep in Field Journal →';
+    link.removeAttribute('aria-disabled');
+    link.removeAttribute('tabindex');
+  } else {
+    link.removeAttribute('href');
+    link.textContent = 'Open gallery · download to keep';
+    link.setAttribute('aria-disabled', 'true');
+    link.setAttribute('tabindex', '-1');
+  }
+}
+
+async function resolveAndLoad(input) {
+  input = (input || '').trim();
+  if (!input) return;
+  const sequence = beginLoad();
+  let cart;
+  setPlayerStatus('Loading cartridge...');
+  try {
+    if (input.replace(/^\uFEFF/, '').startsWith('{')) cart = parseCartridgeText(input);
+    else cart = await loadFromUrl(input, sequence);
+    if (!cart || sequence !== LOAD_SEQUENCE) return;
+    await loadCart(cart, sequence);
+  } catch (error) {
+    if (sequence !== LOAD_SEQUENCE) return;
+    setPlayerStatus(error.message || String(error), true);
+  }
+}
+
+/* ── Boot ─────────────────────────────────────────────────────────────────── */
+(async () => {
+  const p = new URLSearchParams(location.search);
+  const hashPresent = location.href.includes('#');
+  const hash = hashPresent ? location.href.slice(location.href.indexOf('#') + 1) : '';
+  const cartParams = p.getAll('cart');
+  const idParams = p.getAll('id');
+  const hashParams = p.getAll('h');
+  const sourceCount = Number(hashPresent) + Number(cartParams.length > 0) + Number(idParams.length > 0);
+  const explicitSource = sourceCount > 0 || hashParams.length > 0;
+  const bootSequence = beginLoad();
+  let cart = null, bootError = '';
+
+  if (sourceCount > 1 || cartParams.length > 1 || idParams.length > 1 || hashParams.length > 1)
+    bootError = 'A shared link must contain exactly one egg source.';
+  else if (hashParams.length && !idParams.length)
+    bootError = 'A registry content hash must be paired with an id.';
+  else if (hashPresent && !hash)
+    bootError = 'The shared egg fragment is empty.';
+
+  if (!bootError && hashPresent) {
+    try { cart = parseCartridgeFragment(hash); }
+    catch (error) { bootError = `Shared egg link is invalid: ${error.message}`; }
+  }
+  if (!bootError && !cart && cartParams.length) {
+    try { cart = await loadFromUrl(cartParams[0], bootSequence); }
+    catch (error) {
+      if (bootSequence !== LOAD_SEQUENCE) return;
+      bootError = error.message || String(error);
+    }
+  }
+  if (!bootError && !cart && idParams.length) {
+    try {
+      const reg = await getRegistry();
+      if (bootSequence !== LOAD_SEQUENCE) return;
+      const expectedContentId = hashParams.length ? hashParams[0].toLowerCase() : null;
+      if (expectedContentId && !/^[0-9a-f]{64}$/i.test(expectedContentId))
+        throw new Error('The registry content hash in this link is invalid.');
+      if (hashParams.length && !expectedContentId)
+        throw new Error('The registry content hash in this link is empty.');
+      const entry = (reg.entries || []).find(candidate =>
+        candidate.name === idParams[0] || candidate.id === idParams[0]);
+      if (!entry) throw new Error(`No registry entry matches "${idParams[0]}".`);
+      if (expectedContentId && expectedContentId !== entry.content_sha256)
+        throw new Error(`Registry entry "${entry.name}" does not match this shared link.`);
+      cart = await loadFromUrl(new URL(entry.pin_path, location.href).href, bootSequence);
+      if (bootSequence !== LOAD_SEQUENCE) return;
+      const actualContentId = await cartridgeContentId(cart);
+      if (actualContentId !== entry.content_sha256 || (expectedContentId && actualContentId !== expectedContentId))
+        throw new Error(`Registry content check failed for "${entry.name}".`);
+    } catch (error) {
+      if (bootSequence !== LOAD_SEQUENCE) return;
+      cart = null;
+      bootError = error.message || String(error);
+    }
+  }
+  if (bootSequence !== LOAD_SEQUENCE) return;
+  if (bootError && explicitSource) {
+    showSourceError(bootError);
+    return;
+  }
+  if (!explicitSource && !cart) cart = DEFAULT_CART;
+
+  try {
+    await loadCart(cart, bootSequence);
+  } catch (error) {
+    if (bootSequence !== LOAD_SEQUENCE) return;
+    bootError = error.message || String(error);
+    if (explicitSource) {
+      showSourceError(bootError);
+      return;
+    }
+    if (cart !== DEFAULT_CART) await loadCart(DEFAULT_CART, bootSequence);
+  }
+  if (bootSequence === LOAD_SEQUENCE && bootError)
+    setPlayerStatus(`${bootError} Showing the built-in organism instead.`, true);
+})();
+
+/* ── Controls ─────────────────────────────────────────────────────────────── */
+document.getElementById('btn-load').onclick = () =>
+  resolveAndLoad(document.getElementById('cart-url').value);
+document.getElementById('cart-url').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('btn-load').click(); });
+
+document.getElementById('btn-apply').onclick = async () => {
+  const sequence = beginLoad();
+  try {
+    const cart = parseCartridgeText(document.getElementById('cart-json').value);
+    await loadCart(cart, sequence);
+  } catch (error) {
+    if (sequence === LOAD_SEQUENCE) setPlayerStatus(error.message || String(error), true);
+  }
+};
+
+function safeEggFilename(title, contentId = '') {
+  const cleaned = String(title || 'cartridge').normalize('NFKC')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'cartridge';
+  let base = '';
+  for (const character of cleaned) {
+    if (new TextEncoder().encode(base + character).byteLength > 120) break;
+    base += character;
+  }
+  const suffix = contentId ? '-' + contentId.slice(0, 8) : '';
+  return `${base || 'cartridge'}${suffix}.egg`;
+}
+
+function canNativeShareFile(file) {
+  if (!file || !navigator.canShare) return false;
+  try { return navigator.canShare({ files: [file] }); }
+  catch { return false; }
+}
+
+document.getElementById('btn-dl').onclick = () => {
+  if (!CART) return;
+  const blob = new Blob([JSON.stringify(CART)], { type: 'application/json' });
+  const fileName = safeEggFilename(CART.title, CURRENT_CONTENT_ID);
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: fileName });
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 0);
+};
+
+document.getElementById('btn-link').onclick = async () => {
+  if (!CART) return;
+  const btn = document.getElementById('btn-link');
+  const cart = CART;
+  let url;
+  try {
+    url = await makeShareUrl();
+    if (CART !== cart) throw new Error('The organism changed while preparing its link.');
+  } catch (error) {
+    if (CART !== cart) return;
+    setPlayerStatus(error.message || String(error), true);
+    return;
+  }
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('Clipboard access is unavailable.');
+    await navigator.clipboard.writeText(url);
+    if (CART !== cart) return;
+    document.getElementById('share-fallback').hidden = true;
+    btn.textContent = 'copied ✓';
+    setPlayerStatus('Share link copied.');
+    setTimeout(() => btn.textContent = 'copy link', 1400);
+  } catch (error) {
+    if (CART !== cart) return;
+    const fallback = document.getElementById('share-fallback');
+    const input = document.getElementById('share-url');
+    input.value = url;
+    fallback.hidden = false;
+    input.focus();
+    input.select();
+    setPlayerStatus('Clipboard access failed. The share link is selected for manual copy.', true);
+  }
+};
+
+document.getElementById('btn-share').onclick = async () => {
+  if (!CART) return;
+  const cart = CART, contentId = CURRENT_CONTENT_ID, url = PREPARED_SHARE_URL;
+  const blob = new Blob([JSON.stringify(cart)], { type: 'application/json' });
+  const file = typeof File === 'function'
+    ? new File([blob], safeEggFilename(cart.title, contentId), { type: blob.type })
+    : null;
+  const isCurrent = () => CART === cart && CURRENT_CONTENT_ID === contentId;
+  if (!navigator.share) {
+    if (url) document.getElementById('btn-link').click();
+    else document.getElementById('btn-dl').click();
+    return;
+  }
+  const canShareFile = !url && canNativeShareFile(file);
+  const payload = url
+    ? {
+            title: cart.title || 'Holographic organism',
+            text: 'Open this holographic organism in rapp-lantern.',
+            url
+          }
+    : (canShareFile
+        ? {
+            title: cart.title || 'Holographic organism',
+            text: 'Keep this holographic organism as an .egg file.',
+            files: [file]
+          }
+        : null);
+  if (payload) {
+    try {
+      await navigator.share(payload);
+      if (isCurrent()) setPlayerStatus(canShareFile ? 'Shared .egg file.' : 'Shared link.');
+      return;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      if (!isCurrent()) return;
+      setPlayerStatus(
+        canShareFile ? 'File sharing was unavailable; use download.' : 'Link sharing was unavailable; use copy link.',
+        true
+      );
+      return;
+    }
+  }
+  if (!isCurrent()) return;
+  if (url) document.getElementById('btn-link').click();
+  else document.getElementById('btn-dl').click();
+};
+
+document.getElementById('btn-file').onclick = () => {
+  const input = document.getElementById('file-in');
+  input.value = '';
+  input.click();
+};
+document.getElementById('file-in').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const sequence = beginLoad();
+  try {
+    if (f.size > MAX_CART_BYTES) throw new Error('Cartridge exceeds the 2 MiB limit.');
+    const cart = parseCartridgeText(decodeUtf8Bytes(new Uint8Array(await f.arrayBuffer())));
+    await loadCart(cart, sequence);
+  } catch(error) {
+    if (sequence === LOAD_SEQUENCE) setPlayerStatus(error.message || String(error), true);
+  }
+};
+
+function markOrbitInteraction() {
+  VIEW.userMoved = true;
+  orbitHintEl.classList.add('hide');
+  invalidateRender();
+}
+function orbitDown(x, y) {
+  VIEW.dragging = true;
+  VIEW.lastX = x;
+  VIEW.lastY = y;
+  canvas.classList.add('dragging');
+  markOrbitInteraction();
+}
+function orbitMove(x, y) {
+  if (!VIEW.dragging) return;
+  const dx = x - VIEW.lastX, dy = y - VIEW.lastY;
+  VIEW.lastX = x; VIEW.lastY = y;
+  VIEW.yaw -= dx * 0.0105;
+  VIEW.pitch = clamp(VIEW.pitch + dy * 0.0075, -0.85, 0.92);
+  invalidateRender();
+}
+function orbitUp() {
+  VIEW.dragging = false;
+  canvas.classList.remove('dragging');
+  VIEW.activePointer = null;
+}
+function orbitZoom(delta) {
+  VIEW.zoom = clamp(VIEW.zoom * Math.exp(-delta * 0.0014), 0.72, 1.9);
+  markOrbitInteraction();
+}
+
+function resetView() {
+  VIEW.yaw = 0.85;
+  VIEW.pitch = 0.22;
+  VIEW.zoom = 1;
+  VIEW.autoOrbit = 0;
+  markOrbitInteraction();
+}
+
+function applyViewAction(action) {
+  const orbitStep = 0.18;
+  if (action === 'left') VIEW.yaw += orbitStep;
+  else if (action === 'right') VIEW.yaw -= orbitStep;
+  else if (action === 'up') VIEW.pitch = clamp(VIEW.pitch - orbitStep, -0.85, 0.92);
+  else if (action === 'down') VIEW.pitch = clamp(VIEW.pitch + orbitStep, -0.85, 0.92);
+  else if (action === 'zoom-in') orbitZoom(-180);
+  else if (action === 'zoom-out') orbitZoom(180);
+  else if (action === 'reset') { resetView(); return; }
+  markOrbitInteraction();
+}
+
+canvas.addEventListener('pointerdown', event => {
+  if (VIEW.activePointer != null) return;
+  VIEW.activePointer = event.pointerId;
+  canvas.setPointerCapture(event.pointerId);
+  canvas.focus({ preventScroll: true });
+  orbitDown(event.clientX, event.clientY);
+});
+canvas.addEventListener('pointermove', event => {
+  if (event.pointerId === VIEW.activePointer) orbitMove(event.clientX, event.clientY);
+});
+canvas.addEventListener('pointerup', event => {
+  if (event.pointerId === VIEW.activePointer) orbitUp();
+});
+canvas.addEventListener('pointercancel', event => {
+  if (event.pointerId === VIEW.activePointer) orbitUp();
+});
+canvas.addEventListener('lostpointercapture', event => {
+  if (event.pointerId === VIEW.activePointer) orbitUp();
+});
+canvas.addEventListener('wheel', event => {
+  if (event.ctrlKey || document.activeElement !== canvas) return;
+  event.preventDefault();
+  orbitZoom(event.deltaY);
+}, { passive: false });
+canvas.addEventListener('keydown', event => {
+  const actions = {
+    ArrowLeft: 'left', a: 'left', A: 'left',
+    ArrowRight: 'right', d: 'right', D: 'right',
+    ArrowUp: 'up', w: 'up', W: 'up',
+    ArrowDown: 'down', s: 'down', S: 'down',
+    '+': 'zoom-in', '=': 'zoom-in',
+    '-': 'zoom-out', '_': 'zoom-out',
+    Home: 'reset', r: 'reset', R: 'reset'
+  };
+  const action = actions[event.key];
+  if (!action) return;
+  event.preventDefault();
+  applyViewAction(action);
+});
+document.querySelectorAll('[data-view]').forEach(button => {
+  button.addEventListener('click', () => {
+    applyViewAction(button.dataset.view);
+  });
+});
+if (matchMedia('(pointer: coarse)').matches) orbitHintEl.textContent = 'swipe sideways or use controls';
+
+// Drag-and-drop
+function postDropToHost(message) {
+  if (_pmPort) {
+    _pmPort.postMessage(message);
+    return true;
+  }
+  if (_directHost) {
+    _directHost.source.postMessage(message, _directHost.origin);
+    return true;
+  }
+  return false;
+}
+
+canvas.addEventListener('dragover', e => e.preventDefault());
+let dropSequence = 0;
+document.getElementById('canvas').addEventListener('drop', async e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  const embedded = document.documentElement.classList.contains('embed') || Boolean(_pmPort || _directHost);
+  const dropId = `drop-${Date.now()}-${++dropSequence}`;
+  const sequence = embedded ? null : beginLoad();
+  try {
+    if (embedded) {
+      if (!postDropToHost({ type: 'drop-started', version: PROTOCOL_VERSION, dropId }))
+        throw new Error('The embedding page is not ready to receive this egg.');
+    }
+    if (f.size > MAX_CART_BYTES) throw new Error('Cartridge exceeds the 2 MiB limit.');
+    const cart = parseCartridgeText(decodeUtf8Bytes(new Uint8Array(await f.arrayBuffer())));
+    if (!embedded && sequence !== LOAD_SEQUENCE) return;
+    if (embedded) {
+      postDropToHost({
+        type: 'cartridge-dropped',
+        version: PROTOCOL_VERSION,
+        dropId,
+        name: f.name.replace(/\.(egg|json)$/i, ''),
+        cart
+      });
+    } else {
+      await loadCart(cart, sequence);
+    }
+  } catch(error) {
+    if (embedded || sequence === LOAD_SEQUENCE) {
+      const message = error.message || String(error);
+      if (embedded && postDropToHost({ type: 'drop-error', version: PROTOCOL_VERSION, dropId, message }))
+        return;
+      else setPlayerStatus(message, true);
+    }
+  }
+});
+
+// QR
+let qrMod = null;
+document.getElementById('btn-qr').onclick = async () => {
+  if (!CART) return;
+  const cart = CART;
+  const wrap = document.getElementById('qr-wrap');
+  if (wrap.style.display === 'block') {
+    wrap.style.display = 'none';
+    document.getElementById('btn-qr').setAttribute('aria-expanded', 'false');
+    setPlayerStatus('QR code hidden.');
+    return;
+  }
+  if (!qrMod) {
+    try { qrMod = await import('./qr.mjs'); }
+    catch (error) {
+      if (CART !== cart) return;
+      setPlayerStatus(`QR module unavailable: ${error.message}`, true);
+      return;
+    }
+  }
+  if (CART !== cart) return;
+  let url, code;
+  try {
+    url = await makeShareUrl();
+    if (CART !== cart) throw new Error('The organism changed while preparing its QR code.');
+    code = qrMod.qr(url, { ecl: 'M' });
+  } catch (error) {
+    if (CART !== cart) return;
+    setPlayerStatus(error.message || String(error), true);
+    return;
+  }
+  if (CART !== cart) return;
+  const { size, modules } = code;
+  const q = 4, scale = Math.max(2, Math.floor(240 / (size + 2 * q))), dim = (size + 2 * q) * scale;
+  const qc = document.getElementById('qr'); qc.width = dim; qc.height = dim;
+  const qx = qc.getContext('2d');
+  qx.fillStyle = '#fff'; qx.fillRect(0, 0, dim, dim);
+  qx.fillStyle = '#000';
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++)
+    if (modules[y][x]) qx.fillRect((x+q)*scale, (y+q)*scale, scale, scale);
+  document.getElementById('qr-link').textContent = url;
+  wrap.style.display = 'block';
+  document.getElementById('btn-qr').setAttribute('aria-expanded', 'true');
+  setPlayerStatus('QR code ready to scan.');
+};
+
+/* ── postMessage housing protocol ────────────────────────────────────────── */
+// Accepts {type:'hologram-init'} from a host page that embeds this player in a
+// sandboxed iframe (sandbox="allow-scripts"). Replies {type:'ready'} on the
+// MessageChannel port, then accepts {type:'load-cartridge', cart:{...}} and
+// replies with a load-scoped rendered/error event plus legacy trust events.
+async function handleIncomingCartridge(message, send) {
+  try {
+    const result = await loadCart(message.cart, undefined, { restore: Boolean(message.restore) });
+    if (!result) {
+      send({ type: 'error', version: PROTOCOL_VERSION, loadId: message.loadId, message: 'Load was superseded by a newer cartridge.' });
+      return;
+    }
+    send({ type: 'rendered', version: PROTOCOL_VERSION, loadId: message.loadId, id: result.id, contentId: result.contentId, declared: result.declared, match: result.match, trust: result.trust });
+    if (result.match) send({ type: 'hatched', version: PROTOCOL_VERSION, id: result.id, trust: result.trust });
+    else send({ type: 'hash-mismatch', version: PROTOCOL_VERSION, got: result.id, declared: result.declared });
+  } catch (error) {
+    const messageText = error.message || String(error);
+    setPlayerStatus(messageText, true);
+    send({ type: 'error', version: PROTOCOL_VERSION, loadId: message.loadId, message: messageText });
+  }
+}
+
+async function handlePrepareShare(message, send) {
+  try {
+    if (typeof message.requestId !== 'string' || !message.requestId || message.requestId.length > 128)
+      throw new Error('prepare-share requires a nonempty requestId of at most 128 characters.');
+    if (!CART || typeof message.contentId !== 'string' || message.contentId !== CURRENT_CONTENT_ID)
+      throw new Error('The requested specimen is not the currently confirmed cartridge.');
+    const url = await makeShareUrl();
+    if (CURRENT_CONTENT_ID !== message.contentId)
+      throw new Error('The specimen changed while preparing sharing.');
+    send({
+      type: 'share-ready',
+      version: PROTOCOL_VERSION,
+      requestId: message.requestId,
+      contentId: CURRENT_CONTENT_ID,
+      url,
+      qrEligible: new TextEncoder().encode(url).byteLength <= 997
+    });
+  } catch (error) {
+    send({
+      type: 'share-error',
+      version: PROTOCOL_VERSION,
+      requestId: typeof message.requestId === 'string' ? message.requestId : '',
+      message: error.message || String(error)
+    });
+  }
+}
+
+function handleProtocolMessage(message, send, dispose) {
+  if (!message || typeof message !== 'object') {
+    send({ type: 'protocol-error', version: PROTOCOL_VERSION, message: 'Protocol messages must be objects.' });
+    return;
+  }
+  const version = message.version == null ? PROTOCOL_VERSION : message.version;
+  if (version !== PROTOCOL_VERSION) {
+    send({ type: 'protocol-error', version: PROTOCOL_VERSION, message: `Unsupported protocol version: ${version}.` });
+    return;
+  }
+  if (message.type === 'cancel-loads') {
+    beginLoad();
+    send({ type: 'cancelled', version: PROTOCOL_VERSION });
+    return;
+  }
+  if (message.type === 'dispose') {
+    MOTION.disposed = true;
+    beginLoad();
+    cancelScheduledFrame();
+    send({ type: 'disposed', version: PROTOCOL_VERSION });
+    dispose && dispose();
+    return;
+  }
+  if (message.type === 'load-cartridge') {
+    const loadId = typeof message.loadId === 'string' ? message.loadId : '';
+    if (!loadId || loadId.length > 128 || !message.cart || typeof message.cart !== 'object') {
+      send({
+        type: 'error',
+        version: PROTOCOL_VERSION,
+        loadId,
+        message: 'load-cartridge requires a nonempty loadId and cartridge object.'
+      });
+      return;
+    }
+    MOTION.disposed = false;
+    handleIncomingCartridge(message, send);
+    return;
+  }
+  if (message.type === 'prepare-share') {
+    handlePrepareShare(message, send);
+    return;
+  }
+  send({
+    type: 'protocol-error',
+    version: PROTOCOL_VERSION,
+    requestId: typeof message.requestId === 'string' ? message.requestId : '',
+    loadId: typeof message.loadId === 'string' ? message.loadId : '',
+    message: `Unknown protocol command: ${String(message.type || '')}.`
+  });
+}
+
+window.addEventListener('message', e => {
+  if (window.parent === window) return;
+  if (e.source !== window.parent) return;
+  if (e.data && typeof e.data === 'object' && e.data.type === 'hologram-init') {
+    const port = e.ports[0] || null;
+    if (!port) return;
+    const version = e.data.version == null ? PROTOCOL_VERSION : e.data.version;
+    if (version !== PROTOCOL_VERSION) {
+      port.postMessage({ type: 'protocol-error', version: PROTOCOL_VERSION, message: `Unsupported protocol version: ${version}.` });
+      port.close();
+      return;
+    }
+    if (_pmPort) {
+      beginLoad();
+      _pmPort.onmessage = null;
+      _pmPort.close();
+    }
+    _directHost = null;
+    MOTION.disposed = false;
+    _pmPort = port;
+    const send = response => port.postMessage(response);
+    const dispose = () => {
+      if (_pmPort === port) _pmPort = null;
+      port.onmessage = null;
+      port.close();
+    };
+    port.onmessage = event => handleProtocolMessage(event.data, send, dispose);
+    port.start && port.start();
+    port.postMessage({
+      type: 'ready',
+      version: PROTOCOL_VERSION,
+      capabilities: ['load-cartridge', 'cancel-loads', 'dispose', 'transactional-render', 'prepare-share', 'forward-drop']
+    });
+    invalidateRender();
+    return;
+  }
+  const targetOrigin = e.origin === 'null' ? '*' : e.origin;
+  if (e.data && typeof e.data === 'object' && e.data.type === 'load-cartridge')
+    _directHost = { source: e.source, origin: targetOrigin };
+  const send = response => e.source.postMessage(response, targetOrigin);
+  handleProtocolMessage(e.data, send, () => { _directHost = null; });
+});
+</script></body></html>

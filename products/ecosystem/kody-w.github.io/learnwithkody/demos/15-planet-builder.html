@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PLANET BUILDER — Climate Sim</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#000;color:#dbe7ff;font:13px/1.4 -apple-system,'SF Mono',Menlo,Consolas,monospace;overflow:hidden}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  #stage{position:absolute;inset:0}
+  .panel{position:absolute;background:rgba(8,12,22,.78);backdrop-filter:blur(10px);border:1px solid rgba(120,180,255,.18);border-radius:10px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.55)}
+  #left{top:14px;left:14px;width:280px;max-height:calc(100% - 28px);overflow:auto}
+  #right{top:14px;right:14px;width:300px;max-height:calc(100% - 28px);overflow:auto;display:none}
+  #bottom{left:14px;right:14px;bottom:14px;height:140px;display:flex;gap:12px;align-items:stretch}
+  #bottom .col{flex:1;display:flex;flex-direction:column}
+  h1{margin:0 0 6px 0;font-size:13px;letter-spacing:2px;color:#9fd0ff;text-transform:uppercase}
+  h2{margin:8px 0 6px 0;font-size:11px;letter-spacing:1.5px;color:#9fd0ff;text-transform:uppercase;border-top:1px solid rgba(120,180,255,.12);padding-top:8px}
+  label{display:flex;justify-content:space-between;font-size:11px;color:#bcd1ee;margin:6px 0 2px}
+  label span{color:#fff;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;-webkit-appearance:none;background:transparent;height:18px}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;background:linear-gradient(90deg,#1b4380,#5fa6ff);border-radius:2px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #5fa6ff;margin-top:-6px;cursor:pointer;box-shadow:0 0 6px #5fa6ff}
+  .btnrow{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+  button{cursor:pointer;background:rgba(40,80,140,.45);color:#cbe1ff;border:1px solid rgba(140,200,255,.28);padding:5px 8px;border-radius:5px;font:11px monospace;letter-spacing:.5px;transition:.15s}
+  button:hover{background:rgba(80,150,230,.55);color:#fff;border-color:#7fbcff}
+  button.active{background:#3a7bd1;color:#fff;border-color:#9fd6ff}
+  .stat{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:#bcd1ee}
+  .stat b{color:#fff;font-weight:600;font-variant-numeric:tabular-nums}
+  .legend{display:grid;grid-template-columns:repeat(2,1fr);gap:3px 8px;font-size:10px;margin-top:4px}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  #title{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:5px;color:rgba(200,220,255,.45);pointer-events:none}
+  .graph-wrap{flex:1;position:relative;background:rgba(0,0,0,.35);border:1px solid rgba(120,180,255,.15);border-radius:6px;overflow:hidden}
+  .graph-wrap canvas{position:absolute;inset:0;width:100%;height:100%}
+  .glabel{position:absolute;top:5px;left:8px;font-size:10px;color:#9fd0ff;letter-spacing:1.2px;text-transform:uppercase;pointer-events:none}
+  .gunit{position:absolute;bottom:4px;right:8px;font-size:9px;color:#7493bc;pointer-events:none}
+  #closer{position:absolute;top:8px;right:10px;cursor:pointer;font-size:14px;color:#7fbcff}
+  .crumb{font-size:10px;color:#7493bc;margin-top:4px}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-thumb{background:rgba(120,180,255,.25);border-radius:3px}
+  #toast{position:absolute;left:50%;top:60px;transform:translateX(-50%);background:rgba(20,40,80,.9);padding:6px 14px;border-radius:20px;font-size:11px;letter-spacing:1.5px;color:#9fd0ff;opacity:0;transition:.4s;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"></div>
+  <div id="title">PLANET BUILDER · CLIMATE SIM</div>
+  <div id="toast"></div>
+
+  <div id="left" class="panel">
+    <h1>Orbital Parameters</h1>
+    <label>Axial Tilt <span id="vTilt">23.5°</span></label>
+    <input id="sTilt" type="range" min="0" max="90" step="0.5" value="23.5">
+    <label>Orbital Distance <span id="vDist">1.00 AU</span></label>
+    <input id="sDist" type="range" min="0.5" max="2.0" step="0.01" value="1.0">
+    <label>CO₂ <span id="vCO2">400 ppm</span></label>
+    <input id="sCO2" type="range" min="100" max="2000" step="10" value="400">
+    <label>Water Fraction <span id="vWater">0.71</span></label>
+    <input id="sWater" type="range" min="0" max="1" step="0.01" value="0.71">
+    <label>Day Length <span id="vRot">1.00 d</span></label>
+    <input id="sRot" type="range" min="0.1" max="3.0" step="0.05" value="1.0">
+
+    <h2>Presets</h2>
+    <div class="btnrow">
+      <button data-p="earth">Earth</button>
+      <button data-p="mars">Mars</button>
+      <button data-p="venus">Venus</button>
+      <button data-p="snowball">Snowball</button>
+      <button data-p="hothouse">Hothouse</button>
+      <button data-p="random">Random</button>
+    </div>
+
+    <h2>Time</h2>
+    <div class="btnrow">
+      <button id="bPause">Pause</button>
+      <button id="bDeep">Run 100 Myr</button>
+      <button id="bResetT">Reset Yr 0</button>
+    </div>
+
+    <h2>Planet Stats</h2>
+    <div class="stat"><span>Year</span><b id="oYear">0.00</b></div>
+    <div class="stat"><span>Season</span><b id="oSeason">—</b></div>
+    <div class="stat"><span>Mean Surface T</span><b id="oTemp">—</b></div>
+    <div class="stat"><span>Equator T</span><b id="oTeq">—</b></div>
+    <div class="stat"><span>Pole T</span><b id="oTp">—</b></div>
+    <div class="stat"><span>Ice Cover</span><b id="oIce">—</b></div>
+    <div class="stat"><span>Greenhouse</span><b id="oGH">—</b></div>
+    <div class="stat"><span>Insolation S₀</span><b id="oIns">—</b></div>
+    <div class="stat"><span>Habitability</span><b id="oHab">—</b></div>
+
+    <h2>Biome Legend</h2>
+    <div class="legend" id="legend"></div>
+    <div class="crumb">Click planet to inspect a location.</div>
+  </div>
+
+  <div id="right" class="panel">
+    <span id="closer">×</span>
+    <h1 id="locTitle">Location</h1>
+    <div class="stat"><span>Latitude</span><b id="locLat">—</b></div>
+    <div class="stat"><span>Longitude</span><b id="locLon">—</b></div>
+    <div class="stat"><span>Biome</span><b id="locBiome">—</b></div>
+    <div class="stat"><span>Annual Mean T</span><b id="locTmean">—</b></div>
+    <div class="stat"><span>Annual Range</span><b id="locTrange">—</b></div>
+    <div class="stat"><span>Precipitation</span><b id="locPrecip">—</b></div>
+    <h2>Annual Cycle</h2>
+    <div class="graph-wrap" style="height:120px"><canvas id="locGraph"></canvas><div class="glabel">Temp by Month</div></div>
+    <h2>Latitude Profile</h2>
+    <div class="graph-wrap" style="height:100px"><canvas id="latGraph"></canvas><div class="glabel">T(lat) Now</div></div>
+  </div>
+
+  <div id="bottom">
+    <div class="col">
+      <div class="graph-wrap"><canvas id="iceGraph"></canvas><div class="glabel">Ice cover · history</div><div class="gunit" id="iceLabel"></div></div>
+    </div>
+    <div class="col">
+      <div class="graph-wrap"><canvas id="tempGraph"></canvas><div class="glabel">Mean global T · history</div><div class="gunit" id="tempLabel"></div></div>
+    </div>
+    <div class="col">
+      <div class="graph-wrap"><canvas id="tiltGraph"></canvas><div class="glabel">Axial tilt · Milankovitch</div><div class="gunit" id="tiltLabel"></div></div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =====================================================================
+   PLANET CLIMATE SIMULATOR
+   - 1D Energy Balance Model (Budyko/Sellers style) with 36 latitude bands
+   - Iterative relaxation to equilibrium then time-stepping
+   - Procedural continents (Perlin-style noise) + biome classification
+   - Three.js sphere with dynamically painted texture, atmosphere shell
+   ===================================================================== */
+
+// ----- Constants -----
+const SIGMA  = 5.67e-8;            // Stefan-Boltzmann
+const S_SUN  = 1361;               // W/m^2 at 1 AU
+const NLAT   = 36;                 // latitude bands
+const TEXW   = 512, TEXH = 256;    // texture resolution
+const FREEZE = 273.15;             // K
+const HABMIN = 273, HABMAX = 313;  // habitability band
+
+// ----- Biomes -----
+const BIOMES = {
+  ocean:    { c:[0x10,0x35,0x6e], name:'Ocean'        },
+  ice:      { c:[0xea,0xf3,0xff], name:'Ice / Glacier'},
+  tundra:   { c:[0xae,0xb8,0xa6], name:'Tundra'       },
+  taiga:    { c:[0x35,0x6b,0x4a], name:'Taiga'        },
+  forest:   { c:[0x2c,0x82,0x3e], name:'Forest'       },
+  grassland:{ c:[0xa9,0xb6,0x52], name:'Grassland'    },
+  desert:   { c:[0xc9,0xa3,0x57], name:'Desert'       },
+  tropical: { c:[0x18,0x6e,0x33], name:'Tropical'     },
+  rock:     { c:[0x7a,0x67,0x55], name:'Rock'         },
+  shallow:  { c:[0x2a,0x68,0xa8], name:'Shallow Sea'  },
+};
+
+// ----- Perlin-ish noise (value noise + fBm) -----
+const PRNG = (s)=>()=>((s = (s*9301+49297)%233280)/233280);
+function makeNoise(seed){
+  const rng = PRNG(seed);
+  const N = 256;
+  const grid = new Float32Array(N*N);
+  for(let i=0;i<grid.length;i++) grid[i]=rng()*2-1;
+  function smooth(t){return t*t*(3-2*t);}
+  function val(x,y){
+    x=((x%N)+N)%N; y=((y%N)+N)%N;
+    const xi=Math.floor(x), yi=Math.floor(y);
+    const xf=x-xi, yf=y-yi;
+    const a=grid[yi*N+xi];
+    const b=grid[yi*N+((xi+1)%N)];
+    const c=grid[((yi+1)%N)*N+xi];
+    const d=grid[((yi+1)%N)*N+((xi+1)%N)];
+    const u=smooth(xf), v=smooth(yf);
+    return (1-v)*((1-u)*a+u*b)+v*((1-u)*c+u*d);
+  }
+  return function fbm(x,y,oct=5){
+    let amp=1, freq=1, sum=0, norm=0;
+    for(let i=0;i<oct;i++){
+      sum  += amp * val(x*freq, y*freq);
+      norm += amp;
+      amp  *= 0.5; freq *= 2;
+    }
+    return sum/norm;
+  };
+}
+
+// ----- Planet state -----
+const P = {
+  tilt: 23.5,
+  dist: 1.0,
+  co2: 400,
+  water: 0.71,
+  rot: 1.0,
+  T: new Float64Array(NLAT),       // band temperatures (K)
+  precip: new Float64Array(NLAT),  // proxy precip
+  iceFrac: 0,                       // global ice cover fraction (area-weighted)
+  meanT: 288,
+  ghFactor: 0.4,
+  S0: S_SUN,
+  year: 0,                          // fractional years
+  paused: false,
+  deepTime: false,                  // 100 Myr mode
+  tiltBase: 23.5,                   // base axial tilt for Milankovitch
+  noise: makeNoise(1337),
+  seed: 1337,
+  history: { ice:[], temp:[], tilt:[] },
+};
+
+// Initialize T to ~288K
+for(let i=0;i<NLAT;i++) P.T[i] = 288;
+
+// ----- EBM physics -----
+function bandLat(i){ return -90 + (i+0.5)*(180/NLAT); }    // center latitude
+function bandArea(i){
+  const l1 = (i*(180/NLAT) - 90) * Math.PI/180;
+  const l2 = ((i+1)*(180/NLAT) - 90) * Math.PI/180;
+  return Math.sin(l2) - Math.sin(l1);                       // proportional area
+}
+const BAND_AREA = new Float64Array(NLAT);
+let BAND_AREA_SUM = 0;
+for(let i=0;i<NLAT;i++){ BAND_AREA[i]=bandArea(i); BAND_AREA_SUM+=BAND_AREA[i]; }
+
+// Insolation: simplified daily mean S(lat, dec)
+function dailyInsolation(latDeg, decDeg, S0){
+  const lat=latDeg*Math.PI/180, dec=decDeg*Math.PI/180;
+  const arg = -Math.tan(lat)*Math.tan(dec);
+  let H;
+  if(arg <= -1) H = Math.PI;          // 24h day
+  else if(arg >= 1) H = 0;            // polar night
+  else H = Math.acos(arg);
+  const ins = (S0/Math.PI) * (H*Math.sin(lat)*Math.sin(dec) + Math.cos(lat)*Math.cos(dec)*Math.sin(H));
+  return Math.max(ins, 0);
+}
+
+// Albedo: ice-albedo feedback + base land/ocean
+function albedo(T, latDeg){
+  const aIce = 0.62, aOpen = 0.30 + 0.04*Math.cos(latDeg*Math.PI/180); // hi at poles
+  if(T < 263) return aIce;              // -10C threshold
+  if(T < 273) {                          // smooth ramp
+    const t = (T-263)/10;
+    return aIce*(1-t) + aOpen*t;
+  }
+  return aOpen;
+}
+
+// Greenhouse factor f in [0,1]; outgoing = sigma T^4 (1 - f)
+function greenhouse(co2, water){
+  // log dependence on CO2; water vapor amplifies; clamp 0..0.85
+  const co2Term = 0.06 * Math.log2(co2/280); // ~0 at 280ppm
+  const waterTerm = 0.10 * water;
+  const base = 0.38;
+  return Math.max(0, Math.min(0.85, base + co2Term + waterTerm));
+}
+
+// Solar constant scaled by orbital distance
+function solarConstant(dist){ return S_SUN / (dist*dist); }
+
+// One EBM time-step (relaxation) — returns mean change
+function stepEBM(decDeg, dt){
+  const S0 = solarConstant(P.dist);
+  const f  = greenhouse(P.co2, P.water);
+  P.S0 = S0; P.ghFactor = f;
+  const C = 2.5e8;                      // heat capacity J/m^2/K (mixed layer)
+  const D = 0.6;                        // diffusion strength (W/m^2/K)
+  const newT = new Float64Array(NLAT);
+  for(let i=0;i<NLAT;i++){
+    const lat = bandLat(i);
+    const ins = dailyInsolation(lat, decDeg, S0);
+    const a   = albedo(P.T[i], lat);
+    const Sin = (1-a) * ins;
+    const Out = SIGMA * Math.pow(P.T[i],4) * (1-f);
+    // diffusion (heat transport from neighbors)
+    const tL = i>0 ? P.T[i-1] : P.T[i];
+    const tR = i<NLAT-1 ? P.T[i+1] : P.T[i];
+    const diff = D * ((tL - P.T[i]) + (tR - P.T[i]));
+    const dT = (Sin - Out + diff) / C * dt;
+    newT[i] = P.T[i] + dT;
+  }
+  let totDelta=0, weightedT=0, weightedIce=0, totA=0;
+  for(let i=0;i<NLAT;i++){
+    totDelta += Math.abs(newT[i]-P.T[i]);
+    P.T[i] = newT[i];
+    weightedT += P.T[i] * BAND_AREA[i];
+    if(P.T[i] < 263) weightedIce += BAND_AREA[i];
+    else if(P.T[i] < 273){ weightedIce += BAND_AREA[i]*(273-P.T[i])/10; }
+    totA += BAND_AREA[i];
+  }
+  P.meanT  = weightedT / totA;
+  P.iceFrac = weightedIce / totA;
+  // precip proxy: warmer + more water = more rain; mid-lats peak
+  for(let i=0;i<NLAT;i++){
+    const lat = Math.abs(bandLat(i));
+    const tw  = Math.max(0, P.T[i]-263)/40;
+    const itcz = Math.exp(-Math.pow((lat-0)/15,2));
+    const midlat = 0.5*Math.exp(-Math.pow((lat-50)/12,2));
+    P.precip[i] = (tw * P.water * (0.6 + itcz + midlat)) ;
+  }
+  return totDelta/NLAT;
+}
+
+// Equilibrate planet for given orbit position
+function equilibrate(decDeg, iters=60){
+  for(let k=0;k<iters;k++) stepEBM(decDeg, 86400*30);  // 30-day pseudo-steps
+}
+
+// Declination at year fraction f (0..1) given tilt
+function declination(yearFrac, tiltDeg){
+  return tiltDeg * Math.sin(2*Math.PI*(yearFrac - 0.22)); // northern summer near 0.5
+}
+
+/* =====================================================================
+   THREE.JS RENDERING
+   ===================================================================== */
+const stage = document.getElementById('stage');
+const W = window.innerWidth, H = window.innerHeight;
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(W, H);
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = null;
+
+const camera = new THREE.PerspectiveCamera(45, W/H, 0.1, 100);
+camera.position.set(0, 0.7, 3.4);
+
+// Stars background
+{
+  const g = new THREE.BufferGeometry();
+  const N = 1500; const pts = new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const r = 40 + Math.random()*15;
+    const t = Math.random()*Math.PI*2;
+    const p = Math.acos(2*Math.random()-1);
+    pts[i*3]=r*Math.sin(p)*Math.cos(t);
+    pts[i*3+1]=r*Math.cos(p);
+    pts[i*3+2]=r*Math.sin(p)*Math.sin(t);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pts,3));
+  const m = new THREE.PointsMaterial({color:0xffffff, size:0.06, sizeAttenuation:true, transparent:true, opacity:0.85});
+  scene.add(new THREE.Points(g,m));
+}
+
+// Sun (directional light + small visual disc)
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(5,1,2);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x202840, 0.7));
+
+const sunMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.18, 24, 24),
+  new THREE.MeshBasicMaterial({color:0xffe9a8})
+);
+scene.add(sunMesh);
+{
+  // glow halo
+  const h = new THREE.Mesh(
+    new THREE.SphereGeometry(0.34, 24, 24),
+    new THREE.MeshBasicMaterial({color:0xfff1c0, transparent:true, opacity:0.25, side:THREE.BackSide})
+  );
+  sunMesh.add(h);
+}
+
+// Planet group (handles axial tilt) + mesh (handles rotation)
+const tiltGroup = new THREE.Group();
+scene.add(tiltGroup);
+const planetMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 96, 64),
+  new THREE.MeshPhongMaterial({shininess:18, specular:0x223044})
+);
+tiltGroup.add(planetMesh);
+
+// Atmosphere shell
+const atm = new THREE.Mesh(
+  new THREE.SphereGeometry(1.04, 64, 48),
+  new THREE.ShaderMaterial({
+    transparent:true, side:THREE.BackSide, depthWrite:false, uniforms:{
+      uColor:{value:new THREE.Color(0x6fbfff)}, uIntensity:{value:1.0}
+    },
+    vertexShader:`varying vec3 vN; void main(){vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader:`uniform vec3 uColor; uniform float uIntensity; varying vec3 vN; void main(){
+      float i=pow(0.74-dot(vN,vec3(0.,0.,1.0)),3.0)*uIntensity;
+      gl_FragColor=vec4(uColor,1.)*i;}`
+  })
+);
+tiltGroup.add(atm);
+
+// Cloud layer (subtle)
+const cloudCanvas = document.createElement('canvas');
+cloudCanvas.width = TEXW; cloudCanvas.height = TEXH;
+const cloudTex = new THREE.CanvasTexture(cloudCanvas);
+cloudTex.colorSpace = THREE.SRGBColorSpace;
+const clouds = new THREE.Mesh(
+  new THREE.SphereGeometry(1.012, 64, 48),
+  new THREE.MeshLambertMaterial({map:cloudTex, transparent:true, opacity:0.45, depthWrite:false})
+);
+tiltGroup.add(clouds);
+
+// Texture canvas for biome map
+const texCanvas = document.createElement('canvas');
+texCanvas.width = TEXW; texCanvas.height = TEXH;
+const texCtx = texCanvas.getContext('2d');
+const texture = new THREE.CanvasTexture(texCanvas);
+texture.colorSpace = THREE.SRGBColorSpace;
+planetMesh.material.map = texture;
+
+// Continent height map (precomputed once; varies with seed/water)
+let HEIGHT = new Float32Array(TEXW*TEXH);
+function regenHeights(){
+  const noise = P.noise;
+  for(let y=0;y<TEXH;y++){
+    const v = y/TEXH;
+    const lat = (v-0.5)*Math.PI;          // -pi/2..pi/2
+    for(let x=0;x<TEXW;x++){
+      const u = x/TEXW;
+      const lon = u*2*Math.PI;
+      // Use 3D position on sphere to avoid pole pinching
+      const sx = Math.cos(lat)*Math.cos(lon);
+      const sy = Math.sin(lat);
+      const sz = Math.cos(lat)*Math.sin(lon);
+      // 3D fbm via 2D projections
+      let n = 0;
+      n += noise(sx*2.1+10, sy*2.1+10, 5);
+      n += 0.6*noise(sz*2.1+20, sx*2.1+20, 4);
+      n = n/1.6;
+      HEIGHT[y*TEXW+x] = n; // -1..1
+    }
+  }
+}
+regenHeights();
+
+function colorForCell(h, lat, T, precip){
+  const cell = {};
+  // Sea level chosen so that fraction of land matches (1 - water)
+  // Approx: heights ~ uniform [-1,1] => sea level = 1-2*water
+  const seaLevel = 1 - 2*P.water;
+  if(h < seaLevel){
+    if(T < 271) return BIOMES.ice;
+    if(h < seaLevel - 0.05) return BIOMES.ocean;
+    return BIOMES.shallow;
+  }
+  // land
+  if(T < 263) return BIOMES.ice;
+  if(T < 273) return BIOMES.tundra;
+  if(T < 280){
+    if(precip < 0.1) return BIOMES.rock;
+    return BIOMES.taiga;
+  }
+  if(T < 295){
+    if(precip < 0.06) return BIOMES.desert;
+    if(precip < 0.18) return BIOMES.grassland;
+    return BIOMES.forest;
+  }
+  // hot
+  if(precip < 0.05) return BIOMES.desert;
+  if(precip < 0.18) return BIOMES.grassland;
+  return BIOMES.tropical;
+}
+
+// Render the texture from current band T + precip + height map
+function paintTexture(){
+  const img = texCtx.getImageData(0,0,TEXW,TEXH);
+  const d = img.data;
+  // precompute T/precip per pixel-row from band data (interpolated)
+  const rowT = new Float32Array(TEXH);
+  const rowP = new Float32Array(TEXH);
+  for(let y=0;y<TEXH;y++){
+    const v = y/TEXH;
+    const latDeg = (v-0.5)*180; // -90..90 (pixel y=0 is south)
+    // map to band index (lat -90..90)
+    const bf = (latDeg+90)/180 * NLAT - 0.5;
+    const i0 = Math.max(0, Math.min(NLAT-1, Math.floor(bf)));
+    const i1 = Math.max(0, Math.min(NLAT-1, i0+1));
+    const t  = Math.max(0, Math.min(1, bf - i0));
+    rowT[y] = P.T[i0]*(1-t) + P.T[i1]*t;
+    rowP[y] = P.precip[i0]*(1-t) + P.precip[i1]*t;
+  }
+
+  for(let y=0;y<TEXH;y++){
+    // Texture: y=0 is north pole in three.js sphere mapping
+    // We invert for clarity: y=0 (top) = north, y=TEXH = south
+    const latDeg = 90 - (y/TEXH)*180;
+    const ry = TEXH-1-y; // for HEIGHT we used v=y/TEXH (south at 0); reverse
+    const T = rowT[ry];
+    const Pp = rowP[ry];
+    for(let x=0;x<TEXW;x++){
+      const h = HEIGHT[y*TEXW + x];
+      const b = colorForCell(h, latDeg, T, Pp);
+      const idx = (y*TEXW+x)*4;
+      // small lighting from height for relief
+      const shade = 1 + (h-(1-2*P.water))*0.15;
+      d[idx]   = Math.max(0, Math.min(255, b.c[0]*shade));
+      d[idx+1] = Math.max(0, Math.min(255, b.c[1]*shade));
+      d[idx+2] = Math.max(0, Math.min(255, b.c[2]*shade));
+      d[idx+3] = 255;
+    }
+  }
+  texCtx.putImageData(img,0,0);
+  texture.needsUpdate = true;
+}
+
+// Cloud texture: derived from precip per latitude + a noise band
+function paintClouds(){
+  const ctx = cloudCanvas.getContext('2d');
+  const img = ctx.getImageData(0,0,TEXW,TEXH);
+  const d = img.data;
+  const noise = P.noise;
+  for(let y=0;y<TEXH;y++){
+    const latDeg = 90 - (y/TEXH)*180;
+    const bf = ((90-latDeg))/180 * NLAT - 0.5;
+    const i0 = Math.max(0, Math.min(NLAT-1, Math.floor(bf)));
+    const Pp = P.precip[i0];
+    for(let x=0;x<TEXW;x++){
+      const u = x/TEXW, v = y/TEXH;
+      const n = (noise(u*7+P.year*0.3, v*5, 4)+1)*0.5;
+      let a = Math.max(0, n*0.7 + Pp*1.4 - 0.55);
+      a = Math.min(1, a)*255;
+      const idx = (y*TEXW+x)*4;
+      d[idx]=255; d[idx+1]=255; d[idx+2]=255; d[idx+3]=a;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  cloudTex.needsUpdate = true;
+}
+
+/* =====================================================================
+   UI WIRING
+   ===================================================================== */
+const $ = id=>document.getElementById(id);
+
+// build legend
+const legendEl = $('legend');
+for(const [k,b] of Object.entries(BIOMES)){
+  const s = document.createElement('div');
+  s.innerHTML = `<span class="swatch" style="background:rgb(${b.c.join(',')})"></span>${b.name}`;
+  legendEl.appendChild(s);
+}
+
+const sliders = {
+  Tilt:['sTilt','vTilt', v=>v.toFixed(1)+'°', 'tilt'],
+  Dist:['sDist','vDist', v=>v.toFixed(2)+' AU', 'dist'],
+  CO2:['sCO2','vCO2',  v=>Math.round(v)+' ppm', 'co2'],
+  Water:['sWater','vWater', v=>v.toFixed(2), 'water'],
+  Rot:['sRot','vRot', v=>v.toFixed(2)+' d', 'rot'],
+};
+function syncSliders(){
+  for(const k of Object.keys(sliders)){
+    const [sid,vid,fmt,key] = sliders[k];
+    $(sid).value = P[key];
+    $(vid).textContent = fmt(+$(sid).value);
+  }
+}
+function bindSliders(){
+  for(const k of Object.keys(sliders)){
+    const [sid,vid,fmt,key] = sliders[k];
+    $(sid).addEventListener('input', e=>{
+      P[key] = +e.target.value;
+      $(vid).textContent = fmt(P[key]);
+      if(key==='tilt'){ P.tiltBase = P.tilt; }
+      // re-equilibrate quickly so user feels response
+      equilibrate(declination(P.year%1, P.tilt), 12);
+      paintTexture();
+    });
+  }
+}
+bindSliders();
+
+// Presets
+const PRESETS = {
+  earth:    { tilt:23.5, dist:1.0, co2:400, water:0.71, rot:1.0 },
+  mars:     { tilt:25.2, dist:1.52,co2:600, water:0.05, rot:1.03 },
+  venus:    { tilt:2.6,  dist:0.72,co2:2000,water:0.02, rot:0.5  },
+  snowball: { tilt:23.5, dist:1.05,co2:150, water:0.71, rot:1.0  },
+  hothouse: { tilt:23.5, dist:0.95,co2:1800,water:0.85, rot:1.0  },
+  random:   null
+};
+document.querySelectorAll('[data-p]').forEach(b=>b.addEventListener('click',()=>{
+  let p = PRESETS[b.dataset.p];
+  if(!p){
+    p = {
+      tilt:Math.random()*70+5,
+      dist:0.6+Math.random()*1.3,
+      co2: 100+Math.random()*1900,
+      water:Math.random(),
+      rot: 0.2+Math.random()*2.5
+    };
+    P.seed = Math.floor(Math.random()*1e6);
+    P.noise = makeNoise(P.seed);
+    regenHeights();
+  }
+  Object.assign(P, p);
+  P.tiltBase = P.tilt;
+  // reset T to neutral so equilibration is clean
+  for(let i=0;i<NLAT;i++) P.T[i] = 280;
+  syncSliders();
+  equilibrate(declination(P.year%1, P.tilt), 80);
+  paintTexture();
+  flash(b.textContent.toUpperCase());
+}));
+
+// Time controls
+$('bPause').addEventListener('click',()=>{ P.paused = !P.paused; $('bPause').classList.toggle('active', P.paused); $('bPause').textContent = P.paused?'Play':'Pause'; });
+$('bDeep').addEventListener('click',()=>{
+  P.deepTime = !P.deepTime;
+  $('bDeep').classList.toggle('active', P.deepTime);
+  flash(P.deepTime ? '100 MYR MODE' : 'NORMAL TIME');
+});
+$('bResetT').addEventListener('click',()=>{
+  P.year = 0;
+  P.history.ice.length=0; P.history.temp.length=0; P.history.tilt.length=0;
+});
+
+function flash(msg){
+  const t=$('toast'); t.textContent=msg; t.style.opacity=1;
+  clearTimeout(flash._t); flash._t=setTimeout(()=>t.style.opacity=0, 1100);
+}
+
+// Resize
+addEventListener('resize',()=>{
+  const w=innerWidth,h=innerHeight;
+  renderer.setSize(w,h);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+});
+
+/* =====================================================================
+   CLICK -> LOCATION INSPECTION
+   ===================================================================== */
+const ray = new THREE.Raycaster();
+const m2 = new THREE.Vector2();
+let clickLatLon = null;
+
+renderer.domElement.addEventListener('pointerdown', e=>{
+  const r = renderer.domElement.getBoundingClientRect();
+  m2.x = ((e.clientX-r.left)/r.width)*2-1;
+  m2.y = -((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(m2, camera);
+  const hits = ray.intersectObject(planetMesh);
+  if(!hits.length) return;
+  const p = hits[0].point.clone();
+  // Convert from world to planet-local (account for rotations)
+  planetMesh.worldToLocal(p);
+  p.normalize();
+  const lat = Math.asin(p.y)*180/Math.PI;
+  const lon = Math.atan2(p.z, p.x)*180/Math.PI;
+  clickLatLon = {lat, lon};
+  showLocation();
+});
+
+$('closer').addEventListener('click',()=>{
+  $('right').style.display='none'; clickLatLon=null;
+});
+
+// Compute annual T cycle for a given latitude
+function annualCycle(latDeg){
+  const months = 12;
+  const out = new Float32Array(months);
+  // Save T then run 1 year quickly without modifying state
+  const Tsave = P.T.slice();
+  // Approximation: for each month, compute equilibrium T(lat) using current ghFactor
+  for(let m=0;m<months;m++){
+    const yf = m/months;
+    const dec = declination(yf, P.tilt);
+    // run small equilibration
+    for(let k=0;k<6;k++) stepEBM(dec, 86400*30);
+    // interpolate to lat
+    const bf = (latDeg+90)/180 * NLAT - 0.5;
+    const i0 = Math.max(0, Math.min(NLAT-1, Math.floor(bf)));
+    const i1 = Math.max(0, Math.min(NLAT-1, i0+1));
+    const t = Math.max(0, Math.min(1, bf - i0));
+    out[m] = P.T[i0]*(1-t)+P.T[i1]*t;
+  }
+  // restore
+  for(let i=0;i<NLAT;i++) P.T[i] = Tsave[i];
+  return out;
+}
+
+function showLocation(){
+  if(!clickLatLon) return;
+  $('right').style.display='block';
+  const {lat, lon} = clickLatLon;
+  // sample HEIGHT
+  const u = ((lon+180)/360);
+  const v = (90-lat)/180;
+  const px = Math.floor(u*TEXW)%TEXW;
+  const py = Math.max(0,Math.min(TEXH-1,Math.floor(v*TEXH)));
+  const hy = TEXH-1-py;
+  const h  = HEIGHT[hy*TEXW + px];
+  const bf = (lat+90)/180 * NLAT - 0.5;
+  const i0 = Math.max(0, Math.min(NLAT-1, Math.floor(bf)));
+  const Tnow = P.T[i0];
+  const Pnow = P.precip[i0];
+  const biome = colorForCell(h, lat, Tnow, Pnow);
+  $('locTitle').textContent = `${lat.toFixed(1)}°, ${lon.toFixed(1)}°`;
+  $('locLat').textContent = lat.toFixed(2)+'°';
+  $('locLon').textContent = lon.toFixed(2)+'°';
+  $('locBiome').textContent = biome.name;
+  const cyc = annualCycle(lat);
+  let mn=Infinity,mx=-Infinity,sum=0;
+  for(const v of cyc){ mn=Math.min(mn,v); mx=Math.max(mx,v); sum+=v; }
+  $('locTmean').textContent = (sum/12-FREEZE).toFixed(1)+' °C';
+  $('locTrange').textContent = (mx-mn).toFixed(1)+' °C';
+  $('locPrecip').textContent = Pnow.toFixed(2);
+  drawLocGraph(cyc);
+  drawLatGraph();
+}
+
+function drawLocGraph(cyc){
+  const cv = $('locGraph'); const ctx=cv.getContext('2d');
+  cv.width = cv.clientWidth; cv.height = cv.clientHeight;
+  const W=cv.width,H=cv.height;
+  ctx.fillStyle='#0a1322'; ctx.fillRect(0,0,W,H);
+  // freezing line
+  let mn=Infinity,mx=-Infinity;
+  for(const v of cyc){ mn=Math.min(mn,v); mx=Math.max(mx,v);}
+  mn-=2; mx+=2; const range = mx-mn || 1;
+  // freeze line
+  const fy = H - ((FREEZE-mn)/range)*H;
+  ctx.strokeStyle='rgba(180,200,255,.25)'; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(0,fy); ctx.lineTo(W,fy); ctx.stroke(); ctx.setLineDash([]);
+  // line
+  ctx.strokeStyle='#ffb070'; ctx.lineWidth=2; ctx.beginPath();
+  for(let i=0;i<cyc.length;i++){
+    const x = (i/(cyc.length-1))*W;
+    const y = H - ((cyc[i]-mn)/range)*H;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.fillStyle='#7493bc'; ctx.font='10px monospace';
+  ctx.fillText((mx-FREEZE).toFixed(1)+'°C',4,12);
+  ctx.fillText((mn-FREEZE).toFixed(1)+'°C',4,H-3);
+  // months
+  const months=['J','F','M','A','M','J','J','A','S','O','N','D'];
+  for(let i=0;i<12;i++){
+    const x=(i+0.5)/12*W; ctx.fillText(months[i], x-3, H-3);
+  }
+}
+function drawLatGraph(){
+  const cv = $('latGraph'); const ctx=cv.getContext('2d');
+  cv.width = cv.clientWidth; cv.height = cv.clientHeight;
+  const W=cv.width,H=cv.height;
+  ctx.fillStyle='#0a1322'; ctx.fillRect(0,0,W,H);
+  // gradient by temp
+  let mn=Infinity,mx=-Infinity;
+  for(let i=0;i<NLAT;i++){ mn=Math.min(mn,P.T[i]); mx=Math.max(mx,P.T[i]);}
+  mn-=4; mx+=4; const range=mx-mn||1;
+  // freeze line
+  const fy = H - ((FREEZE-mn)/range)*H;
+  ctx.strokeStyle='rgba(180,200,255,.25)'; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(0,fy); ctx.lineTo(W,fy); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle='#7fdcff'; ctx.lineWidth=2; ctx.beginPath();
+  for(let i=0;i<NLAT;i++){
+    const x = i/(NLAT-1)*W;
+    const y = H - ((P.T[i]-mn)/range)*H;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.fillStyle='#7493bc'; ctx.font='10px monospace';
+  ctx.fillText('S 90°',4,H-3); ctx.fillText('N 90°',W-40,H-3); ctx.fillText('Eq', W/2-6, H-3);
+}
+
+/* =====================================================================
+   HISTORY GRAPHS (bottom)
+   ===================================================================== */
+function drawHistory(canvasId, data, color, fmt, label){
+  const cv = $(canvasId); const ctx=cv.getContext('2d');
+  if(cv.width!==cv.clientWidth || cv.height!==cv.clientHeight){
+    cv.width = cv.clientWidth; cv.height = cv.clientHeight;
+  }
+  const W=cv.width,H=cv.height;
+  ctx.fillStyle='#0a1322'; ctx.fillRect(0,0,W,H);
+  if(data.length<2) return;
+  let mn=Infinity,mx=-Infinity;
+  for(const v of data){ mn=Math.min(mn,v); mx=Math.max(mx,v); }
+  if(mx-mn<1e-3){ mn-=0.5; mx+=0.5; }
+  const range = mx-mn;
+  // grid
+  ctx.strokeStyle='rgba(120,180,255,.08)';
+  for(let i=1;i<4;i++){ const y = i/4*H; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();}
+  // line
+  ctx.strokeStyle = color; ctx.lineWidth=1.6; ctx.beginPath();
+  for(let i=0;i<data.length;i++){
+    const x = i/(data.length-1)*W;
+    const y = H - ((data[i]-mn)/range)*H;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // current value label
+  $(label).textContent = fmt(data[data.length-1]);
+}
+
+/* =====================================================================
+   ANIMATION LOOP
+   ===================================================================== */
+let last = performance.now();
+let dayAngle = 0;
+function animate(now){
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, (now-last)/1000);
+  last = now;
+  if(!P.paused){
+    // 60s real == 1 year normally; deepTime = 1000x
+    const yearRate = (P.deepTime ? 1000/60 : 1/60);
+    P.year += dt * yearRate;
+    // Milankovitch in deep time: tilt oscillates ±2° on 41kyr cycle
+    if(P.deepTime){
+      const k = (P.year/41000)*Math.PI*2;
+      P.tilt = P.tiltBase + 2*Math.sin(k);
+      // Also a slow eccentricity-like nudge to insolation distance ±2%
+      // (kept subtle to avoid runaway)
+    }
+    // EBM step
+    const dec = declination(P.year%1, P.tilt);
+    // run a couple of EBM substeps; bigger dt in deep time
+    const subDt = (P.deepTime ? 86400*120 : 86400*7);
+    stepEBM(dec, subDt);
+    if(P.deepTime) stepEBM(dec, subDt);
+
+    // record history
+    if(P.history.ice.length>400) { P.history.ice.shift(); P.history.temp.shift(); P.history.tilt.shift(); }
+    P.history.ice.push(P.iceFrac*100);
+    P.history.temp.push(P.meanT-FREEZE);
+    P.history.tilt.push(P.tilt);
+  }
+
+  // Repaint texture occasionally (cheap throttling)
+  paintCounter += dt;
+  if(paintCounter > (P.deepTime ? 0.05 : 0.12)){
+    paintCounter = 0;
+    paintTexture();
+    paintClouds();
+  }
+
+  // Tilt orientation: rotate scene tilt group around Z
+  tiltGroup.rotation.z = P.tilt*Math.PI/180;
+
+  // Planet rotation
+  dayAngle += dt * (1/Math.max(0.05,P.rot)) * (P.deepTime?0.2:1.0);
+  planetMesh.rotation.y = dayAngle;
+  clouds.rotation.y = dayAngle * 0.92;
+
+  // Sun position around planet (orbit) — use year fraction
+  const oa = P.year * Math.PI*2;
+  const orbR = 6;
+  sun.position.set(Math.cos(oa)*orbR, 0.4, Math.sin(oa)*orbR);
+  sunMesh.position.copy(sun.position).multiplyScalar(0.7);
+  sunMesh.scale.setScalar(1/P.dist*0.8 + 0.4);
+
+  // Update atmosphere color from greenhouse / temperature
+  const warm = Math.max(0, Math.min(1, (P.meanT-260)/60));
+  atm.material.uniforms.uColor.value.setRGB(
+    0.3+warm*0.7, 0.5+warm*0.2, 1.0 - warm*0.4
+  );
+  atm.material.uniforms.uIntensity.value = 0.7 + (P.water*0.5);
+
+  // Slow camera rotation
+  const camR = 3.4 + Math.sin(now/9000)*0.1;
+  camera.position.x = Math.sin(now/12000)*0.4;
+  camera.lookAt(0,0,0);
+
+  renderer.render(scene, camera);
+  updateHud();
+  drawHistory('iceGraph', P.history.ice, '#9fd6ff', v=>v.toFixed(1)+' %', 'iceLabel');
+  drawHistory('tempGraph', P.history.temp, '#ffb070', v=>v.toFixed(1)+' °C', 'tempLabel');
+  drawHistory('tiltGraph', P.history.tilt, '#bbff90', v=>v.toFixed(2)+'°', 'tiltLabel');
+}
+let paintCounter = 0;
+
+function updateHud(){
+  $('oYear').textContent = P.deepTime ? (P.year/1000).toFixed(2)+' kyr' : P.year.toFixed(2);
+  const yf = P.year%1;
+  const seasons = ['N. Spring','N. Summer','N. Autumn','N. Winter'];
+  $('oSeason').textContent = seasons[Math.floor(yf*4)%4];
+  $('oTemp').textContent = (P.meanT-FREEZE).toFixed(1)+' °C';
+  $('oTeq').textContent = (P.T[Math.floor(NLAT/2)]-FREEZE).toFixed(1)+' °C';
+  $('oTp').textContent = (P.T[NLAT-1]-FREEZE).toFixed(1)+' °C';
+  $('oIce').textContent = (P.iceFrac*100).toFixed(1)+' %';
+  $('oGH').textContent = (P.ghFactor*100).toFixed(1)+' %';
+  $('oIns').textContent = P.S0.toFixed(0)+' W/m²';
+  // habitability score: fraction of bands in HABMIN..HABMAX
+  let hab=0, tot=0;
+  for(let i=0;i<NLAT;i++){
+    if(P.T[i]>=HABMIN && P.T[i]<=HABMAX) hab += BAND_AREA[i];
+    tot += BAND_AREA[i];
+  }
+  const score = hab/tot*100;
+  $('oHab').textContent = score.toFixed(0)+' / 100';
+}
+
+// initial equilibration
+syncSliders();
+equilibrate(declination(0, P.tilt), 80);
+paintTexture();
+paintClouds();
+flash('PLANET BUILDER LOADED');
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

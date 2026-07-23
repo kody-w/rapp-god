@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CORAL REEF — First-Person Underwater</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#001823;color:#bfe6f5;font:12px/1.4 -apple-system,'SF Mono',Menlo,Consolas,monospace;overflow:hidden;cursor:none}
+  #stage{position:fixed;inset:0}
+  canvas{display:block}
+  #hud{position:fixed;top:14px;left:14px;background:rgba(0,18,28,.55);backdrop-filter:blur(8px);border:1px solid rgba(120,220,255,.18);border-radius:10px;padding:10px 14px;letter-spacing:1px;text-transform:uppercase;font-size:11px;color:#9be8ff;pointer-events:none;text-shadow:0 0 8px rgba(0,0,0,.6)}
+  #hud b{color:#fff;font-weight:600}
+  #title{position:fixed;top:14px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:6px;color:rgba(180,230,255,.6);pointer-events:none;text-shadow:0 0 8px rgba(0,40,60,.8)}
+  #fps{position:fixed;top:14px;right:14px;font-size:11px;color:#9be8ff;background:rgba(0,18,28,.55);padding:6px 10px;border-radius:8px;letter-spacing:1px;border:1px solid rgba(120,220,255,.18);pointer-events:none}
+  #help{position:fixed;bottom:14px;left:14px;font-size:10px;color:rgba(180,230,255,.55);letter-spacing:1.5px;text-transform:uppercase;pointer-events:none;text-shadow:0 0 8px rgba(0,0,0,.6)}
+  #click{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,rgba(0,80,120,.6),rgba(0,10,30,.95));color:#cdf3ff;font-size:14px;letter-spacing:5px;text-transform:uppercase;cursor:pointer;z-index:10}
+  #click span{padding:14px 30px;border:1px solid rgba(140,230,255,.4);border-radius:30px;background:rgba(0,30,50,.5);box-shadow:0 0 30px rgba(80,200,255,.3)}
+  .hidden{display:none!important}
+  #crosshair{position:fixed;left:50%;top:50%;width:6px;height:6px;border-radius:50%;background:rgba(200,240,255,.55);transform:translate(-50%,-50%);box-shadow:0 0 8px rgba(120,220,255,.7);pointer-events:none}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="title">CORAL REEF · DESCEND</div>
+<div id="hud">DEPTH <b id="depth">0m</b> · FISH <b>500</b> · CORALS <b>140</b></div>
+<div id="fps">60 FPS</div>
+<div id="crosshair"></div>
+<div id="help">WASD · MOUSE · SPACE ASCEND · SHIFT DESCEND · ESC RELEASE</div>
+<div id="click"><span>Click to dive</span></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ====================== SCENE / RENDERER ======================
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x033a55);
+const FOG_NEAR_COLOR = new THREE.Color(0x0a6a90);
+scene.fog = new THREE.FogExp2(0x0a6a90, 0.025);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 220);
+camera.position.set(0, 4, 0);
+
+// ====================== LIGHTS ======================
+const sun = new THREE.DirectionalLight(0xb8e8ff, 1.4);
+sun.position.set(8, 30, 4);
+scene.add(sun);
+const ambient = new THREE.HemisphereLight(0x88d8ff, 0x05283a, 0.55);
+scene.add(ambient);
+
+// ====================== SEAFLOOR (caustics shader) ======================
+const floorGeo = new THREE.PlaneGeometry(220, 220, 100, 100);
+floorGeo.rotateX(-Math.PI / 2);
+// Subtle hill displacement
+{
+  const pos = floorGeo.attributes.position;
+  for (let i=0; i<pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const h = Math.sin(x*0.18)*Math.cos(z*0.22)*0.6 + Math.sin(x*0.05+z*0.07)*0.9;
+    pos.setY(i, h);
+  }
+  pos.needsUpdate = true;
+  floorGeo.computeVertexNormals();
+}
+
+const floorUniforms = {
+  uTime: { value: 0 },
+  uSandColor: { value: new THREE.Color(0xc8b78a) },
+  uShadowColor: { value: new THREE.Color(0x3a5060) },
+  uCausticColor: { value: new THREE.Color(0xddf6ff) },
+  uFogColor: { value: FOG_NEAR_COLOR },
+};
+
+const floorMat = new THREE.ShaderMaterial({
+  uniforms: floorUniforms,
+  vertexShader: `
+    varying vec3 vWorld;
+    varying vec3 vNormal;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorld = wp.xyz;
+      vNormal = normalize(normalMatrix * normal);
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    uniform float uTime;
+    uniform vec3 uSandColor;
+    uniform vec3 uShadowColor;
+    uniform vec3 uCausticColor;
+    uniform vec3 uFogColor;
+    varying vec3 vWorld;
+    varying vec3 vNormal;
+
+    // Voronoi caustics — cellular distance forms shimmering light webs
+    vec2 hash2(vec2 p){
+      p = vec2(dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3)));
+      return fract(sin(p)*43758.5453);
+    }
+
+    float voronoiCaustic(vec2 uv, float t){
+      vec2 ip = floor(uv);
+      vec2 fp = fract(uv);
+      float md = 8.0;
+      for (int j=-1; j<=1; j++){
+        for (int i=-1; i<=1; i++){
+          vec2 g = vec2(float(i), float(j));
+          vec2 o = hash2(ip + g);
+          o = 0.5 + 0.5*sin(t + 6.2831*o);
+          vec2 r = g + o - fp;
+          float d = dot(r,r);
+          md = min(md, d);
+        }
+      }
+      return md;
+    }
+
+    // sand grain noise
+    float grain(vec2 p){
+      return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453);
+    }
+
+    void main(){
+      vec2 uv = vWorld.xz * 0.35;
+      float c1 = voronoiCaustic(uv, uTime*0.55);
+      float c2 = voronoiCaustic(uv*1.7 + 4.0, uTime*0.7 + 1.3);
+      // bright network = small distance => invert
+      float caustic = smoothstep(0.0, 0.18, 0.35 - c1) + smoothstep(0.0, 0.14, 0.30 - c2)*0.7;
+      caustic = pow(caustic, 1.4) * 1.2;
+
+      // Sand color with noise
+      float g = grain(floor(vWorld.xz * 18.0));
+      vec3 sand = mix(uSandColor*0.85, uSandColor*1.05, g);
+      // darker low spots (using world Y as proxy for relief)
+      sand = mix(uShadowColor, sand, smoothstep(-1.2, 1.2, vWorld.y));
+
+      // Add caustic light
+      vec3 col = sand + uCausticColor * caustic * 0.55;
+
+      // Fog by distance
+      float d = length(vWorld - cameraPosition);
+      float fog = 1.0 - exp(-d*d * 0.00055);
+      col = mix(col, uFogColor, clamp(fog, 0.0, 0.92));
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.position.y = -3;
+scene.add(floor);
+
+// ====================== WATER SURFACE OVERHEAD (sun shafts) ======================
+const surfGeo = new THREE.PlaneGeometry(260, 260, 1, 1);
+surfGeo.rotateX(Math.PI/2);
+const surfMat = new THREE.ShaderMaterial({
+  transparent: true,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    varying vec2 vUv;
+    void main(){
+      vec2 p = vUv - 0.5;
+      float r = length(p);
+      // ripples from above
+      float w = sin(p.x*60.0 + uTime*1.2)*0.5 + cos(p.y*52.0 - uTime*0.8)*0.5;
+      w = w*0.5 + 0.5;
+      float a = (1.0 - smoothstep(0.0, 0.55, r)) * 0.55;
+      vec3 col = mix(vec3(0.2,0.55,0.7), vec3(0.85,0.95,1.0), w);
+      gl_FragColor = vec4(col, a);
+    }
+  `
+});
+const surface = new THREE.Mesh(surfGeo, surfMat);
+surface.position.y = 18;
+scene.add(surface);
+
+// Volumetric sun shafts (cone-stack)
+const shaftGroup = new THREE.Group();
+for (let i=0; i<14; i++){
+  const h = 22 + Math.random()*4;
+  const r = 0.6 + Math.random()*1.6;
+  const geo = new THREE.ConeGeometry(r, h, 16, 1, true);
+  const mat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color().setHSL(0.55, 0.6, 0.85),
+    transparent: true, opacity: 0.06,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set((Math.random()-0.5)*80, 7, (Math.random()-0.5)*80);
+  m.rotation.z = (Math.random()-0.5)*0.18;
+  m.rotation.x = (Math.random()-0.5)*0.18;
+  shaftGroup.add(m);
+}
+scene.add(shaftGroup);
+
+// ====================== CORALS (instanced primitives) ======================
+const coralGroup = new THREE.Group();
+scene.add(coralGroup);
+
+const coralPalette = [
+  new THREE.Color(0xff6b6b), new THREE.Color(0xff9f1c), new THREE.Color(0xffd166),
+  new THREE.Color(0xee5b8b), new THREE.Color(0xc77dff), new THREE.Color(0x4ecdc4),
+  new THREE.Color(0xff7eb3), new THREE.Color(0xfd9644), new THREE.Color(0xa29bfe),
+  new THREE.Color(0xff6f91), new THREE.Color(0x06d6a0)
+];
+
+// Build ONE big coral cluster geometry per "type" via merged InstancedMesh approach using small forests
+// To stay simple & fast we use InstancedMesh for branches (cylinders), pebbles (spheres), and spires (cones).
+const NUM_BRANCHES = 1200;
+const NUM_BLOBS = 800;
+const NUM_SPIRES = 400;
+
+const branchGeo = new THREE.CylinderGeometry(0.05, 0.12, 1.0, 6, 1);
+branchGeo.translate(0, 0.5, 0);
+const blobGeo = new THREE.SphereGeometry(0.5, 10, 8);
+const spireGeo = new THREE.ConeGeometry(0.35, 1.4, 7);
+spireGeo.translate(0, 0.7, 0);
+
+const branchMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05, vertexColors:false });
+const blobMat = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.05 });
+const spireMat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.05 });
+
+const branches = new THREE.InstancedMesh(branchGeo, branchMat, NUM_BRANCHES);
+branches.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NUM_BRANCHES*3), 3);
+const blobs = new THREE.InstancedMesh(blobGeo, blobMat, NUM_BLOBS);
+blobs.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NUM_BLOBS*3), 3);
+const spires = new THREE.InstancedMesh(spireGeo, spireMat, NUM_SPIRES);
+spires.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NUM_SPIRES*3), 3);
+
+const tmpObj = new THREE.Object3D();
+
+function floorY(x, z){
+  return -3 + Math.sin(x*0.18)*Math.cos(z*0.22)*0.6 + Math.sin(x*0.05+z*0.07)*0.9;
+}
+
+// Place ~140 coral cluster sites; each cluster contributes branches/blobs/spires
+const NUM_CLUSTERS = 140;
+const clusterCenters = [];
+for (let i=0; i<NUM_CLUSTERS; i++){
+  let x, z, ok = false, tries=0;
+  while (!ok && tries < 30){
+    x = (Math.random()-0.5)*180;
+    z = (Math.random()-0.5)*180;
+    // keep a clearing around origin so the player spawns in open water
+    if (x*x + z*z < 36) { tries++; continue; }
+    ok = true;
+    for (const c of clusterCenters){
+      const dx = c.x-x, dz = c.z-z;
+      if (dx*dx+dz*dz < 14){ ok = false; break; }
+    }
+    tries++;
+  }
+  if (!ok) continue;
+  clusterCenters.push({ x, z, color: coralPalette[Math.floor(Math.random()*coralPalette.length)] });
+}
+
+let bIdx = 0, blIdx = 0, sIdx = 0;
+for (const c of clusterCenters){
+  const baseY = floorY(c.x, c.z);
+  const palette = c.color;
+  // Branches — sprawling fan
+  const branchCount = 6 + Math.floor(Math.random()*8);
+  for (let b=0; b<branchCount && bIdx < NUM_BRANCHES; b++){
+    const a = Math.random()*Math.PI*2;
+    const r = Math.random()*1.4;
+    const x = c.x + Math.cos(a)*r;
+    const z = c.z + Math.sin(a)*r;
+    const h = 0.8 + Math.random()*1.8;
+    tmpObj.position.set(x, baseY, z);
+    tmpObj.scale.set(0.5+Math.random()*0.7, h, 0.5+Math.random()*0.7);
+    tmpObj.rotation.set((Math.random()-0.5)*0.6, Math.random()*Math.PI, (Math.random()-0.5)*0.6);
+    tmpObj.updateMatrix();
+    branches.setMatrixAt(bIdx, tmpObj.matrix);
+    const col = palette.clone().offsetHSL((Math.random()-0.5)*0.05, 0, (Math.random()-0.5)*0.15);
+    branches.instanceColor.setXYZ(bIdx, col.r, col.g, col.b);
+    bIdx++;
+  }
+  // Blobs — brain coral / rocks
+  const blobCount = 4 + Math.floor(Math.random()*7);
+  for (let b=0; b<blobCount && blIdx < NUM_BLOBS; b++){
+    const a = Math.random()*Math.PI*2;
+    const r = Math.random()*1.6;
+    const x = c.x + Math.cos(a)*r;
+    const z = c.z + Math.sin(a)*r;
+    const s = 0.4 + Math.random()*1.2;
+    tmpObj.position.set(x, baseY + s*0.4, z);
+    tmpObj.scale.set(s, s*0.7, s);
+    tmpObj.rotation.set(0, Math.random()*Math.PI, 0);
+    tmpObj.updateMatrix();
+    blobs.setMatrixAt(blIdx, tmpObj.matrix);
+    const useDark = Math.random() < 0.3;
+    const col = useDark
+      ? new THREE.Color().setHSL(0.08 + Math.random()*0.05, 0.3, 0.18 + Math.random()*0.1)
+      : palette.clone().offsetHSL((Math.random()-0.5)*0.06, 0, (Math.random()-0.5)*0.12);
+    blobs.instanceColor.setXYZ(blIdx, col.r, col.g, col.b);
+    blIdx++;
+  }
+  // Spires — tall finger corals
+  const spireCount = 2 + Math.floor(Math.random()*4);
+  for (let b=0; b<spireCount && sIdx < NUM_SPIRES; b++){
+    const a = Math.random()*Math.PI*2;
+    const r = Math.random()*1.0;
+    const x = c.x + Math.cos(a)*r;
+    const z = c.z + Math.sin(a)*r;
+    const h = 1.2 + Math.random()*2.2;
+    tmpObj.position.set(x, baseY, z);
+    tmpObj.scale.set(0.6+Math.random()*0.4, h, 0.6+Math.random()*0.4);
+    tmpObj.rotation.set((Math.random()-0.5)*0.25, Math.random()*Math.PI, (Math.random()-0.5)*0.25);
+    tmpObj.updateMatrix();
+    spires.setMatrixAt(sIdx, tmpObj.matrix);
+    const col = palette.clone().offsetHSL((Math.random()-0.5)*0.05, 0.05, (Math.random()-0.5)*0.1);
+    spires.instanceColor.setXYZ(sIdx, col.r, col.g, col.b);
+    sIdx++;
+  }
+}
+branches.count = bIdx;
+blobs.count = blIdx;
+spires.count = sIdx;
+branches.instanceMatrix.needsUpdate = true;
+blobs.instanceMatrix.needsUpdate = true;
+spires.instanceMatrix.needsUpdate = true;
+branches.instanceColor.needsUpdate = true;
+blobs.instanceColor.needsUpdate = true;
+spires.instanceColor.needsUpdate = true;
+coralGroup.add(branches, blobs, spires);
+
+// ====================== KELP (vertex displacement) ======================
+const kelpGroup = new THREE.Group();
+scene.add(kelpGroup);
+
+const kelpVS = `
+  uniform float uTime;
+  attribute float aPhase;
+  attribute float aHeight;
+  varying float vY;
+  void main(){
+    vec3 p = position;
+    // Sway intensity grows from base to tip
+    float t = clamp((p.y + 0.0)/aHeight, 0.0, 1.0);
+    float sway = sin(uTime*1.3 + aPhase + p.y*0.5) * 0.35;
+    p.x += sway * t * t;
+    p.z += cos(uTime*1.05 + aPhase*1.4 + p.y*0.42) * 0.28 * t * t;
+    vY = t;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.0);
+  }
+`;
+const kelpFS = `
+  varying float vY;
+  uniform vec3 uFogColor;
+  void main(){
+    vec3 base = mix(vec3(0.05,0.18,0.08), vec3(0.25,0.55,0.18), vY);
+    base = mix(base, vec3(0.45,0.75,0.35), pow(vY,2.2)*0.5);
+    // simple fog by gl_FragCoord depth
+    float depth = gl_FragCoord.z / gl_FragCoord.w;
+    float fog = 1.0 - exp(-depth*depth*0.00065);
+    base = mix(base, uFogColor, clamp(fog, 0.0, 0.85));
+    gl_FragColor = vec4(base, 1.0);
+  }
+`;
+
+// Build a strand: thin tapered ribbon (plane) per strand, merged
+const STRAND_SEGMENTS = 12;
+function makeKelpForest(){
+  const STRAND_COUNT = 320;
+  const positions = [];
+  const indices = [];
+  const phases = [];
+  const heights = [];
+  let vOffset = 0;
+  for (let s=0; s<STRAND_COUNT; s++){
+    let x, z, ok=false, tries=0;
+    while(!ok && tries<10){
+      x = (Math.random()-0.5)*170;
+      z = (Math.random()-0.5)*170;
+      if (x*x+z*z > 60) ok = true;
+      tries++;
+    }
+    if (!ok) continue;
+    const baseY = floorY(x,z);
+    const height = 3.5 + Math.random()*4.5;
+    const phase = Math.random()*Math.PI*2;
+    const width = 0.18 + Math.random()*0.12;
+    for (let i=0; i<=STRAND_SEGMENTS; i++){
+      const t = i/STRAND_SEGMENTS;
+      const y = baseY + t*height;
+      const w = width * (1.0 - t*0.7);
+      positions.push(x - w, y, z, x + w, y, z);
+      phases.push(phase, phase);
+      heights.push(height, height);
+      if (i < STRAND_SEGMENTS){
+        const a = vOffset + i*2;
+        indices.push(a, a+1, a+2,  a+2, a+1, a+3);
+      }
+    }
+    vOffset += (STRAND_SEGMENTS+1)*2;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('aPhase', new THREE.Float32BufferAttribute(phases, 1));
+  g.setAttribute('aHeight', new THREE.Float32BufferAttribute(heights, 1));
+  g.setIndex(indices);
+  g.computeVertexNormals();
+  return g;
+}
+const kelpGeo = makeKelpForest();
+const kelpUniforms = { uTime: { value: 0 }, uFogColor: { value: FOG_NEAR_COLOR } };
+const kelpMat = new THREE.ShaderMaterial({
+  uniforms: kelpUniforms,
+  vertexShader: kelpVS, fragmentShader: kelpFS,
+  side: THREE.DoubleSide
+});
+const kelp = new THREE.Mesh(kelpGeo, kelpMat);
+kelpGroup.add(kelp);
+
+// ====================== FISH (Boids + InstancedMesh) ======================
+const NUM_FISH = 500;
+// Fish geo: tapered diamond (two cones back-to-back)
+const fishGeo = (() => {
+  const g = new THREE.ConeGeometry(0.18, 0.7, 6);
+  g.rotateX(Math.PI/2);
+  // taper tail
+  const pos = g.attributes.position;
+  for (let i=0;i<pos.count;i++){
+    const z = pos.getZ(i);
+    if (z < 0) {
+      pos.setX(i, pos.getX(i)*0.4);
+      pos.setY(i, pos.getY(i)*0.4);
+    }
+  }
+  pos.needsUpdate = true;
+  g.computeVertexNormals();
+  return g;
+})();
+const fishMat = new THREE.MeshStandardMaterial({ roughness:0.5, metalness:0.3 });
+const fish = new THREE.InstancedMesh(fishGeo, fishMat, NUM_FISH);
+fish.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NUM_FISH*3), 3);
+scene.add(fish);
+
+// Boids state
+const fishPos = new Float32Array(NUM_FISH*3);
+const fishVel = new Float32Array(NUM_FISH*3);
+const fishGroup = new Uint8Array(NUM_FISH); // 0..NUM_GROUPS-1
+const NUM_GROUPS = 6;
+const groupColors = [
+  new THREE.Color(0xfff3a0), new THREE.Color(0x6cd2ff), new THREE.Color(0xff9f7a),
+  new THREE.Color(0xb4ffce), new THREE.Color(0xffadd2), new THREE.Color(0xffe26d)
+];
+const groupCenters = [];
+for (let g=0; g<NUM_GROUPS; g++){
+  groupCenters.push(new THREE.Vector3(
+    (Math.random()-0.5)*60,
+    1 + Math.random()*8,
+    (Math.random()-0.5)*60
+  ));
+}
+
+for (let i=0; i<NUM_FISH; i++){
+  const g = i % NUM_GROUPS;
+  fishGroup[i] = g;
+  const center = groupCenters[g];
+  fishPos[i*3]   = center.x + (Math.random()-0.5)*5;
+  fishPos[i*3+1] = center.y + (Math.random()-0.5)*3;
+  fishPos[i*3+2] = center.z + (Math.random()-0.5)*5;
+  const a = Math.random()*Math.PI*2;
+  fishVel[i*3]   = Math.cos(a)*1.5;
+  fishVel[i*3+1] = (Math.random()-0.5)*0.5;
+  fishVel[i*3+2] = Math.sin(a)*1.5;
+  const c = groupColors[g].clone().offsetHSL((Math.random()-0.5)*0.04, 0, (Math.random()-0.5)*0.1);
+  fish.instanceColor.setXYZ(i, c.r, c.g, c.b);
+}
+
+// Spatial hash for performance — with 500 fish, naive O(N^2) is 250k ops, manageable.
+// We'll use group-local boids + a coarse grid.
+const GRID_SIZE = 6;
+const gridMap = new Map();
+function gridKey(x,y,z){
+  return ((Math.floor(x/GRID_SIZE)+512)<<20) | ((Math.floor(y/GRID_SIZE)+128)<<10) | (Math.floor(z/GRID_SIZE)+512);
+}
+function rebuildGrid(){
+  gridMap.clear();
+  for (let i=0; i<NUM_FISH; i++){
+    const k = gridKey(fishPos[i*3], fishPos[i*3+1], fishPos[i*3+2]);
+    let arr = gridMap.get(k);
+    if (!arr){ arr = []; gridMap.set(k, arr); }
+    arr.push(i);
+  }
+}
+
+const tmpV = new THREE.Vector3();
+const tmpQ = new THREE.Quaternion();
+const upY = new THREE.Vector3(0,1,0);
+const fwd = new THREE.Vector3(0,0,1);
+
+const FISH_BOUND_R = 60; // soft bound radius around origin
+
+function stepBoids(dt){
+  rebuildGrid();
+  const SEP_R = 1.0, SEP_R2 = SEP_R*SEP_R;
+  const NBR_R = 3.0, NBR_R2 = NBR_R*NBR_R;
+  const PRED_R = 6.0, PRED_R2 = PRED_R*PRED_R;
+  const MAX_SPEED = 4.5;
+  const MIN_SPEED = 1.5;
+
+  const camPos = camera.position;
+
+  for (let i=0; i<NUM_FISH; i++){
+    const ix = i*3;
+    const px = fishPos[ix], py = fishPos[ix+1], pz = fishPos[ix+2];
+    const vx = fishVel[ix], vy = fishVel[ix+1], vz = fishVel[ix+2];
+    const myGroup = fishGroup[i];
+
+    let sepX=0, sepY=0, sepZ=0;
+    let aliX=0, aliY=0, aliZ=0;
+    let cohX=0, cohY=0, cohZ=0;
+    let nbrCount = 0, sepCount = 0;
+
+    // Check 3x3x3 grid neighborhood
+    const gx = Math.floor(px/GRID_SIZE), gy = Math.floor(py/GRID_SIZE), gz = Math.floor(pz/GRID_SIZE);
+    for (let dx=-1; dx<=1; dx++){
+      for (let dy=-1; dy<=1; dy++){
+        for (let dz=-1; dz<=1; dz++){
+          const k = (((gx+dx)+512)<<20) | (((gy+dy)+128)<<10) | ((gz+dz)+512);
+          const arr = gridMap.get(k);
+          if (!arr) continue;
+          for (let n=0; n<arr.length; n++){
+            const j = arr[n];
+            if (j === i) continue;
+            const jx = j*3;
+            const dxp = fishPos[jx]-px, dyp = fishPos[jx+1]-py, dzp = fishPos[jx+2]-pz;
+            const d2 = dxp*dxp + dyp*dyp + dzp*dzp;
+            if (d2 > NBR_R2) continue;
+            // Same-school neighbors get full influence; other schools mostly separation
+            const sameGroup = fishGroup[j] === myGroup;
+            if (d2 < SEP_R2 && d2 > 0.0001){
+              const inv = 1.0 / Math.sqrt(d2);
+              sepX -= dxp * inv;
+              sepY -= dyp * inv;
+              sepZ -= dzp * inv;
+              sepCount++;
+            }
+            if (sameGroup){
+              aliX += fishVel[jx]; aliY += fishVel[jx+1]; aliZ += fishVel[jx+2];
+              cohX += fishPos[jx]; cohY += fishPos[jx+1]; cohZ += fishPos[jx+2];
+              nbrCount++;
+            }
+          }
+        }
+      }
+    }
+
+    let ax=0, ay=0, az=0;
+
+    // Separation
+    if (sepCount > 0){
+      ax += sepX * 3.5;
+      ay += sepY * 3.5;
+      az += sepZ * 3.5;
+    }
+    // Alignment + Cohesion
+    if (nbrCount > 0){
+      const inv = 1.0/nbrCount;
+      ax += (aliX*inv - vx) * 1.4;
+      ay += (aliY*inv - vy) * 1.4;
+      az += (aliZ*inv - vz) * 1.4;
+
+      ax += ((cohX*inv) - px) * 0.4;
+      ay += ((cohY*inv) - py) * 0.4;
+      az += ((cohZ*inv) - pz) * 0.4;
+    }
+
+    // Avoid camera (predator!) — fish part as you swim toward them
+    const cdx = px - camPos.x, cdy = py - camPos.y, cdz = pz - camPos.z;
+    const cd2 = cdx*cdx + cdy*cdy + cdz*cdz;
+    if (cd2 < PRED_R2 && cd2 > 0.001){
+      const inv = 1.0 / Math.sqrt(cd2);
+      const w = (1.0 - cd2 / PRED_R2) * 9.0;
+      ax += cdx * inv * w;
+      ay += cdy * inv * w;
+      az += cdz * inv * w;
+    }
+
+    // Soft bounds — keep fish near origin & between floor/surface
+    const r = Math.sqrt(px*px + pz*pz);
+    if (r > FISH_BOUND_R){
+      const w = (r - FISH_BOUND_R) * 0.06;
+      ax -= (px/r) * w;
+      az -= (pz/r) * w;
+    }
+    const fy = floorY(px, pz);
+    if (py < fy + 1.5) ay += (fy + 1.5 - py) * 2.0;
+    if (py > 12) ay -= (py - 12) * 1.5;
+
+    // Tiny wander
+    ax += (Math.random()-0.5)*0.6;
+    ay += (Math.random()-0.5)*0.3;
+    az += (Math.random()-0.5)*0.6;
+
+    // Integrate velocity
+    let nvx = vx + ax*dt;
+    let nvy = vy + ay*dt;
+    let nvz = vz + az*dt;
+    // Clamp speed
+    let sp = Math.sqrt(nvx*nvx + nvy*nvy + nvz*nvz);
+    if (sp > MAX_SPEED){ const k = MAX_SPEED/sp; nvx*=k; nvy*=k; nvz*=k; sp=MAX_SPEED; }
+    if (sp < MIN_SPEED && sp > 0.001){ const k = MIN_SPEED/sp; nvx*=k; nvy*=k; nvz*=k; }
+
+    fishVel[ix] = nvx; fishVel[ix+1] = nvy; fishVel[ix+2] = nvz;
+    fishPos[ix] = px + nvx*dt;
+    fishPos[ix+1] = py + nvy*dt;
+    fishPos[ix+2] = pz + nvz*dt;
+  }
+}
+
+function updateFishMatrices(time){
+  for (let i=0; i<NUM_FISH; i++){
+    const ix = i*3;
+    tmpV.set(fishVel[ix], fishVel[ix+1], fishVel[ix+2]);
+    if (tmpV.lengthSq() < 1e-6) continue;
+    tmpV.normalize();
+    tmpQ.setFromUnitVectors(fwd, tmpV);
+    tmpObj.position.set(fishPos[ix], fishPos[ix+1], fishPos[ix+2]);
+    tmpObj.quaternion.copy(tmpQ);
+    // Tail wag — slight roll oscillation
+    const wag = Math.sin(time*8 + i*0.5) * 0.15;
+    tmpObj.rotateZ(wag);
+    const sc = 0.85 + ((i*7919)%17)*0.018;
+    tmpObj.scale.set(sc, sc, sc);
+    tmpObj.updateMatrix();
+    fish.setMatrixAt(i, tmpObj.matrix);
+  }
+  fish.instanceMatrix.needsUpdate = true;
+}
+
+// ====================== BUBBLES ======================
+const NUM_BUBBLES = 80;
+const bubbleGeo = new THREE.SphereGeometry(0.05, 6, 6);
+const bubbleMat = new THREE.MeshBasicMaterial({
+  color: 0xeaffff, transparent: true, opacity: 0.55,
+  blending: THREE.AdditiveBlending, depthWrite: false
+});
+const bubbles = new THREE.InstancedMesh(bubbleGeo, bubbleMat, NUM_BUBBLES);
+scene.add(bubbles);
+const bubbleData = []; // {x,y,z,vx,vy,vz,scale,life}
+for (let i=0; i<NUM_BUBBLES; i++){
+  bubbleData.push({ x:0,y:0,z:0,vy:0,vx:0,vz:0, scale:0.3, life:Math.random()*4 });
+}
+
+function spawnBubble(idx){
+  const cam = camera.position;
+  const right = new THREE.Vector3();
+  camera.getWorldDirection(right);
+  const left = new THREE.Vector3().crossVectors(upY, right).normalize();
+  const offsetSide = (Math.random()-0.5)*0.6;
+  const bd = bubbleData[idx];
+  bd.x = cam.x - right.x*0.5 + left.x*offsetSide;
+  bd.y = cam.y - 0.4 + (Math.random()-0.5)*0.2;
+  bd.z = cam.z - right.z*0.5 + left.z*offsetSide;
+  bd.vx = (Math.random()-0.5)*0.2;
+  bd.vy = 0.5 + Math.random()*0.6;
+  bd.vz = (Math.random()-0.5)*0.2;
+  bd.scale = 0.4 + Math.random()*0.9;
+  bd.life = 4 + Math.random()*3;
+}
+
+function updateBubbles(dt, time){
+  for (let i=0; i<NUM_BUBBLES; i++){
+    const b = bubbleData[i];
+    b.life -= dt;
+    if (b.life <= 0){
+      // chance to respawn (only when player is moving / breathing)
+      if (Math.random() < 0.3) spawnBubble(i);
+      else { tmpObj.position.set(0,-1000,0); tmpObj.scale.set(0.001,0.001,0.001); tmpObj.updateMatrix(); bubbles.setMatrixAt(i, tmpObj.matrix); continue; }
+    }
+    // wobble
+    b.vx += Math.sin(time*3 + i)*0.05*dt;
+    b.vz += Math.cos(time*2.7 + i*0.7)*0.05*dt;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.z += b.vz * dt;
+    tmpObj.position.set(b.x, b.y, b.z);
+    tmpObj.scale.setScalar(b.scale * Math.min(1.0, b.life));
+    tmpObj.rotation.set(0,0,0);
+    tmpObj.updateMatrix();
+    bubbles.setMatrixAt(i, tmpObj.matrix);
+  }
+  bubbles.instanceMatrix.needsUpdate = true;
+}
+
+// Initial spawn
+for (let i=0; i<NUM_BUBBLES; i++) spawnBubble(i);
+
+// ====================== CONTROLS ======================
+const yawObj = new THREE.Object3D();
+const pitchObj = new THREE.Object3D();
+yawObj.add(pitchObj);
+scene.add(yawObj);
+yawObj.position.copy(camera.position);
+pitchObj.add(camera);
+camera.position.set(0,0,0);
+
+let yaw = 0, pitch = 0;
+let pointerLocked = false;
+const click = document.getElementById('click');
+click.addEventListener('click', () => {
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = (document.pointerLockElement === renderer.domElement);
+  click.classList.toggle('hidden', pointerLocked);
+});
+document.addEventListener('mousemove', (e) => {
+  if (!pointerLocked) return;
+  yaw   -= e.movementX * 0.0025;
+  pitch -= e.movementY * 0.0025;
+  pitch = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, pitch));
+  yawObj.rotation.y = yaw;
+  pitchObj.rotation.x = pitch;
+});
+
+const keys = {};
+addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'Escape') document.exitPointerLock();
+});
+addEventListener('keyup',  (e) => keys[e.code] = false);
+
+const velocity = new THREE.Vector3();
+const desired = new THREE.Vector3();
+function updatePlayer(dt){
+  desired.set(0,0,0);
+  // Forward direction from yaw + pitch (free swim — including pitch)
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const right = new THREE.Vector3().crossVectors(dir, upY).normalize();
+  if (keys['KeyW']) desired.add(dir);
+  if (keys['KeyS']) desired.sub(dir);
+  if (keys['KeyA']) desired.sub(right);
+  if (keys['KeyD']) desired.add(right);
+  if (keys['Space']) desired.y += 1;
+  if (keys['ShiftLeft'] || keys['ShiftRight']) desired.y -= 1;
+  if (desired.lengthSq() > 0) desired.normalize();
+  const SPEED = 6.0;
+  desired.multiplyScalar(SPEED);
+  // Smooth velocity (water resistance)
+  velocity.lerp(desired, 1 - Math.exp(-dt * 4.0));
+  yawObj.position.addScaledVector(velocity, dt);
+
+  // Soft bounds (don't fall below floor or rise above surface)
+  const fy = floorY(yawObj.position.x, yawObj.position.z) + 1.0;
+  if (yawObj.position.y < fy) yawObj.position.y = fy;
+  if (yawObj.position.y > 16) yawObj.position.y = 16;
+
+  // Camera bob (more when moving)
+  const moving = velocity.length();
+  bobPhase += dt * (1.0 + moving*0.7);
+  pitchObj.position.y = Math.sin(bobPhase * 1.5) * 0.04 * Math.min(1, moving*0.4 + 0.4);
+  pitchObj.position.x = Math.cos(bobPhase * 0.8) * 0.03 * Math.min(1, moving*0.4 + 0.4);
+}
+let bobPhase = 0;
+
+// ====================== RESIZE ======================
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ====================== HUD ======================
+const depthEl = document.getElementById('depth');
+const fpsEl = document.getElementById('fps');
+let fpsT = 0, fpsCount = 0, fpsSmooth = 60;
+
+// ====================== ANIMATION LOOP ======================
+const clock = new THREE.Clock();
+let acc = 0;
+const FIXED = 1/30; // boids tick at 30Hz to keep frame rate up
+
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  updatePlayer(dt);
+
+  // Boids update at fixed rate
+  acc += dt;
+  let steps = 0;
+  while (acc >= FIXED && steps < 2){
+    stepBoids(FIXED);
+    acc -= FIXED;
+    steps++;
+  }
+  updateFishMatrices(t);
+  updateBubbles(dt, t);
+
+  // Shader uniforms
+  floorUniforms.uTime.value = t;
+  surfMat.uniforms.uTime.value = t;
+  kelpUniforms.uTime.value = t;
+
+  // Slow shaft drift
+  shaftGroup.rotation.y = Math.sin(t*0.05)*0.05;
+
+  // Fog tint shifts deeper -> more saturated blue
+  const depth = 18 - yawObj.position.y;
+  const fogStrength = THREE.MathUtils.clamp(0.018 + depth*0.0015, 0.018, 0.045);
+  scene.fog.density = fogStrength;
+  const tintT = THREE.MathUtils.clamp((depth-2)/14, 0, 1);
+  const c = FOG_NEAR_COLOR.clone().lerp(new THREE.Color(0x023049), tintT);
+  scene.fog.color.copy(c);
+  scene.background.copy(c);
+  floorUniforms.uFogColor.value.copy(c);
+  kelpUniforms.uFogColor.value.copy(c);
+
+  renderer.render(scene, camera);
+
+  // HUD
+  depthEl.textContent = Math.max(0, Math.round(depth)) + 'm';
+  fpsCount++;
+  fpsT += dt;
+  if (fpsT > 0.5){
+    fpsSmooth = fpsCount / fpsT;
+    fpsEl.textContent = Math.round(fpsSmooth) + ' FPS';
+    fpsT = 0; fpsCount = 0;
+  }
+}
+loop();
+</script>
+</body>
+</html>

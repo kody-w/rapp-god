@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Gameshow Network Friday Night</title>
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#080812;color:#fff;overflow:hidden;font-family:Georgia,'Times New Roman',serif;}
+  #app{position:fixed;inset:0;}
+  canvas{display:block;}
+  .panel{position:fixed;background:rgba(8,8,18,.78);border:1px solid rgba(255,215,0,.38);box-shadow:0 0 18px rgba(255,215,0,.12),inset 0 0 22px rgba(0,0,0,.45);backdrop-filter:blur(2px);pointer-events:none;border-radius:6px;}
+  #hud{top:14px;left:14px;padding:9px 14px;font-size:13px;letter-spacing:1px;line-height:1.5;max-width:420px;}
+  #hud .row1{font-family:'Impact','Arial Black',sans-serif;font-size:18px;color:#ffd700;letter-spacing:2px;}
+  #hud .row2{color:#ffe27a;font-size:12px;}
+  #hud .row3{color:#9adfff;font-size:11px;font-style:italic;margin-top:3px;}
+  #stamp{top:14px;right:14px;padding:8px 14px;font-family:'Impact','Arial Black',sans-serif;font-size:18px;letter-spacing:3px;color:#ffd700;text-shadow:0 0 12px rgba(255,215,0,.55);}
+  #chyron{bottom:14px;left:14px;right:340px;padding:9px 16px;font-size:14px;line-height:1.5;color:#fff;border-color:rgba(255,80,160,.55);box-shadow:0 0 18px rgba(255,80,160,.18),inset 0 0 22px rgba(0,0,0,.5);}
+  #chyron b{color:#ffd700;letter-spacing:1px;}
+  #chyron i{color:#9adfff;}
+  #minimap{bottom:14px;right:14px;width:312px;padding:8px 10px;font-size:10.5px;color:#cfd8ff;}
+  #minimap h4{margin:0 0 6px 0;font-family:'Impact',sans-serif;font-size:13px;letter-spacing:2px;color:#66aaff;}
+  #minimap .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:5px;}
+  #minimap .mon{height:36px;border:1px solid rgba(102,170,255,.4);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;text-align:center;line-height:1.1;padding:2px;background:rgba(20,28,48,.6);transition:all .35s;}
+  #minimap .mon.live{background:rgba(255,80,160,.35);border-color:#ff66cc;color:#fff;box-shadow:0 0 12px rgba(255,80,160,.55) inset, 0 0 8px rgba(255,80,160,.35);}
+  #minimap .ticker{font-size:9.5px;color:#9adfff;border-top:1px solid rgba(102,170,255,.25);padding-top:4px;font-family:'Courier New',monospace;}
+  #cams{position:fixed;top:80px;right:14px;width:230px;padding:7px 10px;font-size:10px;color:#bcd;line-height:1.45;}
+  #cams h4{margin:0 0 4px 0;font-family:'Impact',sans-serif;font-size:11px;letter-spacing:2px;color:#ff7a99;}
+  #cams .cam{padding:1px 2px;border-radius:3px;}
+  #cams .cam.live{background:rgba(255,80,160,.25);color:#fff;}
+  #warp{position:fixed;inset:0;pointer-events:none;z-index:999;background:radial-gradient(ellipse at center,#fff 0%,#fff 0%,transparent 0%);opacity:0;transition:none;}
+  #scan{position:fixed;inset:0;pointer-events:none;z-index:998;opacity:.06;background:repeating-linear-gradient(0deg,rgba(255,255,255,.5) 0px,rgba(255,255,255,.5) 1px,transparent 1px,transparent 3px);mix-blend-mode:overlay;}
+  #vignette{position:fixed;inset:0;pointer-events:none;z-index:997;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.55) 100%);}
+  #signoff{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-family:'Impact',sans-serif;font-size:42px;color:#ffd700;text-shadow:0 0 22px rgba(255,215,0,.65);letter-spacing:5px;opacity:0;pointer-events:none;z-index:1000;text-align:center;}
+  #signoff small{display:block;font-size:14px;color:#fff;letter-spacing:3px;margin-top:8px;}
+</style>
+</head>
+<body>
+<!-- ROUND17_PORTAL v1 -->
+<div id="app"></div>
+<div id="hud" class="panel">
+  <div class="row1" id="hudShow">SHOW 1 OF 5: BRAIN BUSTERS!</div>
+  <div class="row2" id="hudMeta">ROUND 1 · $0 IN PLAY · LIVE</div>
+  <div class="row3" id="hudHost">HOST: MADDOX KANE</div>
+</div>
+<div id="stamp" class="panel">★ FRIDAY NIGHT ★</div>
+<div id="cams" class="panel">
+  <h4>DIRECTOR CAMS</h4>
+  <div id="camList"></div>
+</div>
+<div id="chyron" class="panel">
+  <span id="chyronText">Stand by — coverage begins in 3, 2, 1…</span>
+</div>
+<div id="minimap" class="panel">
+  <h4>◉ CONTROL ROOM · MONITOR WALL</h4>
+  <div class="grid" id="monGrid"></div>
+  <div class="ticker" id="ticker">RATINGS  ▼  loading network feed…</div>
+</div>
+<div id="vignette"></div>
+<div id="scan"></div>
+<div id="warp"></div>
+<div id="signoff"></div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   GAMESHOW NETWORK FRIDAY NIGHT
+   5 fictional shows + control room hub, portal multiverse
+   ============================================================ */
+
+const MEM_KEY='gameshow_winners_v1';
+
+const SHOWS=[
+ {id:'control',idx:0,name:'CONTROL ROOM',short:'CTRL',color:0x14213d,accent:0x66aaff,floor:0x0d1428,host:'NETWORK FEED'},
+ {id:'bb',idx:1,name:'BRAIN BUSTERS!',short:'BRAIN',color:0x0033aa,accent:0xffd700,floor:0x081a55,host:'MADDOX KANE',tag:'QUIZ STAGE · COBALT'},
+ {id:'sw',idx:2,name:'SAY WHAT?',short:'SAY!',color:0xff7722,accent:0xffffff,floor:0xb24a10,host:'PENNY BELL',tag:'FAMILY STAGE · ORANGE'},
+ {id:'sc',idx:3,name:'SPIN-CITY',short:'SPIN',color:0xff3399,accent:0xffd700,floor:0x802050,host:'MAXINE TRENT',tag:'WHEEL STAGE · HOT PINK'},
+ {id:'pr',idx:4,name:'PRICE IT RIGHT!',short:'PRICE',color:0xffcc22,accent:0xff3344,floor:0x886611,host:'ANDY WHITTLE',tag:'SHOWCASE AISLE · YELLOW'},
+ {id:'ie',idx:5,name:'ISLAND ENDURE',short:'ISLE',color:0x227733,accent:0xffaa33,floor:0x153c1d,host:'CAPTAIN JOAQUIN REYES',tag:'TROPICAL SET · PALM GREEN'}
+];
+
+/* ---- 100+ NAMES ---- */
+const HOSTS=['MADDOX KANE','PENNY BELL','MAXINE TRENT','ANDY WHITTLE','CAPT. JOAQUIN REYES'];
+const BB_C=['Megan Park','Tariq Vance','Lula Brennan'];
+const SW_PARK=['Joel Park','Lina Park','Will Park','Esme Park','Cleo Park'];
+const SW_HOLST=['Dax Holst','Vera Holst','Ron Holst','Pia Holst','Eko Holst'];
+const SC_C=['Cyrus Lake','Joni Mar','Bree Calder'];
+const PR_C=['Sandy Veil','Kip Forrester','Nev Caldwell','Iris Hong']; // rotating volunteers
+const IE_C=['Marigold Tess','Bo Sherwood','Yui Otomo','Davey Chen','Femi Okafor','Aria Shen'];
+const AUDIENCE=['Sam Brewer','Joy Liang','Ravi Naik','Nico Park','Trish Vega','Owen Reed','Amal Sayed','Coco Chen','Hank Wills','Pia Bell',
+ 'Greta Lin','Mo Peterson','Sasha Quinn','Ed Rowe','Beth Hart','Ito Kuma','Kim Tate','Reggie Faye','Lou Marsh','Nora West',
+ 'Vic Cleary','Wynn Ortiz','Bea Sloan','Tom Riggs','Ula Day','Dell Vargas','Ash Gold','Jin Park','Mara Kim','Ruth Sands',
+ 'Kai Brown','Dot Ellis','Eve Tran','Fox Burke','Gus Holm','Hattie Ree','Iggy Soto','Jude Mell','Liv Cassel','Marlo Knox',
+ 'Nev Pruitt','Olive Tash','Pen Ortega','Quill Hayes','Reba Drake','Sully Vex','Tia Hopper','Uma Crane','Vance Olin','Wesley Pim',
+ 'Ximena Rho','Yuna Bly','Zane Coro','Briar Holt','Calla Vance','Doris Mae','Erin Pace','Finn Toll','Gabe Ono','Hilda Joss',
+ 'Ivor Page','Jules Mira','Kit Sands','Loa Beck','Maeve Ott','Niko Esh','Onyx Plum','Paige Vey','Quinn Tao','Ren Bly',
+ 'Sage Howe','Theo Gem','Una Roe','Vito Sye','Wren Ash','Xan Loro','Yves Dahl','Zola Crest','Bobby Jett','Carla Pez'];
+const POOL=['Quinn','Ash','Rio','Sky','Pippin','Wren','Sage','Linnet','Bram','Otto','Halia','Jove','Kiri','Mossy','Nell','Onyx','Piper','Ruvi','Stell','Tess','Ula','Vyn','Wynn','Xio','Yale','Zev','Bram','Calla','Doss','Effy'];
+
+/* ---- localStorage memory ---- */
+function loadMem(){
+ let m=null;try{m=JSON.parse(localStorage.getItem(MEM_KEY)||'null');}catch(e){}
+ if(!m||!m.episodes){m={episodes:0,scores:{bb:0,sw:0,sc:0,pr:0,ie:0},champions:[],retired:[],eliminations:[],pots:{bb:0,sw:0,sc:0,pr:0,ie:0}};}
+ return m;
+}
+function saveMem(m){try{localStorage.setItem(MEM_KEY,JSON.stringify(m));}catch(e){}}
+let MEM=loadMem();
+MEM.episodes=(MEM.episodes||0)+1;
+const EP=MEM.episodes;
+function pickName(seed){return AUDIENCE[(seed*7919)%AUDIENCE.length];}
+const newChampShow=SHOWS[1+(EP%5)];
+const newChamp=pickName(EP*13+5);
+MEM.champions=(MEM.champions||[]).slice(-9);MEM.champions.push({ep:EP,show:newChampShow.id,name:newChamp});
+if(MEM.champions.length>10){MEM.retired=(MEM.retired||[]).concat(MEM.champions.shift());}
+MEM.eliminations=(MEM.eliminations||[]).slice(-12);
+MEM.eliminations.push({ep:EP,show:'ie',name:IE_C[(EP*3)%IE_C.length],note:'gracious nod, torch dimmed'});
+SHOWS.slice(1).forEach(s=>{
+ const w=400+((EP*97+s.idx*311)%18600);
+ MEM.pots[s.id]=w;MEM.scores[s.id]=(MEM.scores[s.id]||0)+w;
+});
+saveMem(MEM);
+
+/* ---- THREE setup ---- */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x0a0d18,40,260);
+const camera=new THREE.PerspectiveCamera(58,window.innerWidth/window.innerHeight,0.1,800);
+camera.position.set(0,8,28);
+
+window.addEventListener('resize',()=>{
+ renderer.setSize(window.innerWidth,window.innerHeight);
+ camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();
+});
+
+/* ---- helpers ---- */
+const DISPOSE=[];
+function track(o){if(o&&o.geometry)DISPOSE.push(o);return o;}
+function makeMat(c,e,r,m){return new THREE.MeshStandardMaterial({color:c,emissive:e||0,emissiveIntensity:e?0.6:0,roughness:r==null?0.7:r,metalness:m==null?0.1:m});}
+
+function txt(text,opts){
+ opts=opts||{};
+ const c=document.createElement('canvas');c.width=opts.w||512;c.height=opts.h||128;
+ const x=c.getContext('2d');
+ x.fillStyle=opts.bg||'rgba(0,0,0,0.78)';x.fillRect(0,0,c.width,c.height);
+ if(opts.border){x.strokeStyle=opts.border;x.lineWidth=6;x.strokeRect(3,3,c.width-6,c.height-6);}
+ x.font=opts.font||('bold '+(opts.size||64)+'px Impact, Arial Black, sans-serif');
+ x.fillStyle=opts.fg||'#ffd700';x.textAlign='center';x.textBaseline='middle';
+ const lines=String(text).split('\n');const lh=(opts.size||64)*1.05;
+ lines.forEach((ln,i)=>x.fillText(ln,c.width/2,c.height/2+(i-(lines.length-1)/2)*lh));
+ const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;
+ return t;
+}
+function sprite(text,opts){
+ opts=opts||{};const t=txt(text,opts);
+ const m=new THREE.SpriteMaterial({map:t,transparent:true,depthWrite:false});
+ const s=new THREE.Sprite(m);
+ const w=(opts.w||512),h=(opts.h||128);const sc=opts.scale||3;
+ s.scale.set(sc,sc*h/w,1);return s;
+}
+function plane(text,opts){
+ opts=opts||{};const t=txt(text,opts);
+ const w=opts.pw||10,h=opts.ph||5;
+ const g=new THREE.PlaneGeometry(w,h);
+ const m=new THREE.MeshBasicMaterial({map:t,transparent:opts.trans!==false,side:THREE.DoubleSide});
+ const p=new THREE.Mesh(g,m);track(p);return p;
+}
+
+const SKIN=[0xeec39a,0xc68b5d,0xa06a3a,0xd9a878,0xf1c79e,0x8b5a3c];
+const CLOTHA=[0xc0392b,0x2980b9,0x27ae60,0xf39c12,0x8e44ad,0x16a085,0xd35400,0xc41e3a,0x336699,0x9b59b6];
+function person(name,opts){
+ opts=opts||{};const g=new THREE.Group();
+ const sk=opts.skin!==undefined?opts.skin:SKIN[Math.floor(Math.random()*SKIN.length)];
+ const cl=opts.suit!==undefined?opts.suit:CLOTHA[Math.floor(Math.random()*CLOTHA.length)];
+ const pants=opts.pants!==undefined?opts.pants:0x222230;
+ const sc=opts.size||1;
+ const legs=new THREE.Mesh(new THREE.CylinderGeometry(0.28*sc,0.32*sc,1.0*sc,8),makeMat(pants));track(legs);
+ legs.position.y=0.5*sc;g.add(legs);
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.42*sc,0.5*sc,1.2*sc,10),makeMat(cl));track(body);
+ body.position.y=1.6*sc;g.add(body);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.34*sc,12,10),makeMat(sk));track(head);
+ head.position.y=2.42*sc;g.add(head);
+ if(opts.hair!==false){
+  const h=new THREE.Mesh(new THREE.SphereGeometry(0.36*sc,12,10,0,Math.PI*2,0,Math.PI*0.55),makeMat(opts.hair||0x2a1a10));track(h);
+  h.position.y=2.55*sc;g.add(h);
+ }
+ if(name){const lab=sprite(name,{w:512,h:96,size:48,fg:'#ffe27a',bg:'rgba(0,0,0,0.78)',border:'#ffd700',scale:2.4});
+  lab.position.y=3.25*sc;g.add(lab);}
+ g.userData={name:name||'',head,body,baseY:g.position.y,phase:Math.random()*Math.PI*2};
+ return g;
+}
+function audienceBlock(count,opts){
+ opts=opts||{};const g=new THREE.Group();
+ const w=opts.w||16,d=opts.d||5,rows=opts.rows||4;
+ const cols=Math.ceil(count/rows);
+ const heads=[];
+ for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+  const i=r*cols+c;if(i>=count)break;
+  const px=(c-cols/2+0.5)*(w/cols);
+  const pz=(r-rows/2+0.5)*(d/rows);
+  const py=r*0.4;
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,8),makeMat(SKIN[i%SKIN.length]));track(head);
+  head.position.set(px,py+1.4,pz);
+  head.userData.baseY=py+1.4;head.userData.phase=Math.random()*Math.PI*2;
+  g.add(head);heads.push(head);
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.34,0.7,6),makeMat(CLOTHA[i%CLOTHA.length]));track(body);
+  body.position.set(px,py+0.95,pz);g.add(body);
+ }
+ g.userData.heads=heads;
+ return g;
+}
+
+/* ---- WORLDS - each is a Group placed at (idx*1000, 0, 0) ---- */
+const WORLD_SPACING=1000;
+const worlds={};
+SHOWS.forEach(s=>{
+ const g=new THREE.Group();
+ g.position.x=s.idx*WORLD_SPACING;
+ worlds[s.id]=g;scene.add(g);
+});
+
+/* ---- lighting per world (each world has a light group child) ---- */
+function worldLights(g,col,intensity){
+ const amb=new THREE.AmbientLight(col,0.55);g.add(amb);
+ const key=new THREE.DirectionalLight(0xffffff,intensity||0.85);
+ key.position.set(20,40,15);g.add(key);
+ const fill=new THREE.PointLight(col,0.9,80);
+ fill.position.set(0,18,0);g.add(fill);
+ return {amb,key,fill};
+}
+
+/* ============================================================
+   CONTROL ROOM
+   ============================================================ */
+function buildControl(){
+ const g=worlds.control;
+ worldLights(g,0x66aaff,0.6);
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(120,120),makeMat(0x0a1224,0,0.85,0.05));track(floor);
+ floor.rotation.x=-Math.PI/2;g.add(floor);
+ // back wall
+ const wall=new THREE.Mesh(new THREE.BoxGeometry(80,30,1),makeMat(0x111a30,0,0.9,0.05));track(wall);
+ wall.position.set(0,15,-22);g.add(wall);
+ // 5 monitor banks across the wall
+ const monsX=[-28,-14,0,14,28];
+ g.userData.monitors=[];
+ SHOWS.slice(1).forEach((s,i)=>{
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(11,7,0.6),makeMat(0x0a0a14,0,0.6,0.4));track(frame);
+  frame.position.set(monsX[i],14,-21.4);g.add(frame);
+  // glowing screen
+  const scr=new THREE.Mesh(new THREE.PlaneGeometry(10,6),makeMat(s.color,s.accent,0.5,0));track(scr);
+  scr.position.set(monsX[i],14,-21.05);g.add(scr);
+  // label below
+  const lab=plane(s.short+'\n'+s.host.split(' ')[0],{pw:9,ph:1.6,size:60,fg:'#fff',bg:'rgba(0,0,0,0.85)',border:'#ffd700',w:768,h:140});
+  lab.position.set(monsX[i],9.5,-21.0);g.add(lab);
+  // CH number
+  const ch=plane('CH 0'+(i+1),{pw:2.6,ph:1.2,size:80,fg:'#ffd700',bg:'rgba(0,0,0,0.9)',w:256,h:128});
+  ch.position.set(monsX[i]-4,17.6,-21.0);g.add(ch);
+  // small live dot
+  const dot=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,8),makeMat(0xff3344,0xff3344,0.4,0));track(dot);
+  dot.position.set(monsX[i]+4.5,17.6,-21.0);g.add(dot);
+  g.userData.monitors.push({frame,scr,dot,id:s.id,baseColor:s.color,accent:s.accent});
+ });
+ // central control desk
+ const desk=new THREE.Mesh(new THREE.BoxGeometry(28,1.2,4),makeMat(0x1d2942,0,0.7,0.2));track(desk);
+ desk.position.set(0,3,2);g.add(desk);
+ const desk2=new THREE.Mesh(new THREE.BoxGeometry(28,3,1.2),makeMat(0x14203a,0,0.8,0.1));track(desk2);
+ desk2.position.set(0,2,4.2);g.add(desk2);
+ // console buttons
+ for(let i=0;i<24;i++){
+  const b=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.15,8),makeMat([0xff3344,0x66ff88,0xffaa00,0x66aaff][i%4],[0xff3344,0x66ff88,0xffaa00,0x66aaff][i%4],0.6,0.2));track(b);
+  b.position.set(-13+i*1.13,3.8,2);g.add(b);
+ }
+ // ratings ticker board overhead
+ const ticker=new THREE.Mesh(new THREE.BoxGeometry(60,2.2,0.4),makeMat(0x000000,0xff5500,0.6,0));track(ticker);
+ ticker.position.set(0,24,-21.6);g.add(ticker);
+ g.userData.tickerBoard=ticker;
+ // 3 producers at desk
+ const producers=[
+  person('Director Hale',{suit:0x2a3550,size:1.0}),
+  person('Producer Vey',{suit:0x504070,size:1.0}),
+  person('Floor Mgr Ono',{suit:0x405040,size:1.0})
+ ];
+ producers.forEach((p,i)=>{p.position.set(-8+i*8,1.2,5);p.rotation.y=Math.PI;g.add(p);});
+ g.userData.npcs=producers;
+ // overhead light strips
+ for(let i=0;i<6;i++){
+  const ls=new THREE.Mesh(new THREE.BoxGeometry(50,0.2,0.6),makeMat(0xffffff,0xaadcff,0.4,0));track(ls);
+  ls.position.set(0,28,-15+i*4);g.add(ls);
+ }
+ // hub label "CONTROL ROOM"
+ const hub=plane('★ NETWORK CONTROL ★',{pw:18,ph:2.4,size:120,fg:'#66aaff',bg:'rgba(0,0,0,0.85)',border:'#66aaff',w:1024,h:160});
+ hub.position.set(0,21,-21.55);g.add(hub);
+}
+
+/* ============================================================
+   BRAIN BUSTERS! (cobalt-blue quiz)
+   ============================================================ */
+function buildBB(){
+ const g=worlds.bb;const s=SHOWS[1];
+ worldLights(g,0x4477ff,0.95);
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(120,120),makeMat(s.floor,0,0.6,0.1));track(floor);
+ floor.rotation.x=-Math.PI/2;g.add(floor);
+ // back wall
+ const wall=new THREE.Mesh(new THREE.BoxGeometry(60,28,1),makeMat(0x081a55));track(wall);
+ wall.position.set(0,14,-20);g.add(wall);
+ // big question board (5x6 grid)
+ const board=new THREE.Group();
+ const bg=new THREE.Mesh(new THREE.BoxGeometry(34,18,0.6),makeMat(0x0a1568,0x0a1568,0.7,0));track(bg);
+ board.add(bg);
+ const cats=['ANCIENT MAPS','COZY RECIPES','TINY CITIES','OLD RADIO','DOG LATIN','BIG IDEAS'];
+ for(let c=0;c<6;c++){
+  const head=plane(cats[c],{pw:5.2,ph:2.0,size:42,fg:'#ffd700',bg:'#0a1568',border:'#ffd700',w:640,h:240});
+  head.position.set(-13.75+c*5.5,7.2,0.4);board.add(head);
+  for(let r=0;r<5;r++){
+   const v=(r+1)*200;
+   const tile=plane('$'+v,{pw:5.2,ph:2.6,size:96,fg:'#ffd700',bg:'#0a1568',border:'#ffaa00',w:512,h:256});
+   tile.position.set(-13.75+c*5.5,5.4-r*2.8,0.4);board.add(tile);
+  }
+ }
+ board.position.set(0,11,-19);g.add(board);
+ // 3 podiums
+ const podsX=[-9,0,9];
+ g.userData.podiums=[];
+ BB_C.forEach((nm,i)=>{
+  const pod=new THREE.Mesh(new THREE.BoxGeometry(3.6,3,2.2),makeMat(0x1a2a90,0x1a2a90,0.5,0.2));track(pod);
+  pod.position.set(podsX[i],1.5,4);g.add(pod);
+  // score panel
+  const sp=plane('$'+((MEM.pots.bb*((i+1)/6))|0),{pw:3.0,ph:1.0,size:72,fg:'#ffd700',bg:'#000',border:'#ffd700',w:512,h:160});
+  sp.position.set(podsX[i],3.3,5.13);g.add(sp);
+  // contestant
+  const p=person(nm,{size:0.85,suit:[0xc0392b,0x16a085,0xf39c12][i]});
+  p.position.set(podsX[i],3.0,4);g.add(p);
+  g.userData.podiums.push({pod,scorePanel:sp,person:p});
+ });
+ // host stand center back
+ const hostStand=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.6,2.6,12),makeMat(0xffd700,0xffd700,0.4,0.4));track(hostStand);
+ hostStand.position.set(15,1.3,-2);g.add(hostStand);
+ const host=person('MADDOX KANE · HOST',{size:1.0,suit:0x113366,hair:0x3a2618});
+ host.position.set(15,2.6,-2);g.add(host);
+ g.userData.host=host;
+ // scoreboard side panel
+ const sb=plane('SCOREBOARD\nROUND '+(EP%9+1)+'\nTOTAL POT $'+MEM.pots.bb.toLocaleString(),{pw:9,ph:5,size:70,fg:'#ffd700',bg:'#0a1568',border:'#ffd700',w:768,h:512});
+ sb.position.set(-22,7,-12);sb.rotation.y=Math.PI/6;g.add(sb);
+ // audience risers L & R
+ const audL=audienceBlock(40,{w:18,d:6,rows:5});audL.position.set(-30,1,8);audL.rotation.y=Math.PI/8;g.add(audL);
+ const audR=audienceBlock(40,{w:18,d:6,rows:5});audR.position.set(30,1,8);audR.rotation.y=-Math.PI/8;g.add(audR);
+ g.userData.audience=[audL,audR];
+ // signage
+ const sign=plane('★ BRAIN BUSTERS! ★',{pw:18,ph:3,size:140,fg:'#ffd700',bg:'#0a1568',border:'#ffd700',w:1024,h:200});
+ sign.position.set(0,22,-19.4);g.add(sign);
+ // show stamp era
+ const era=plane('FRIDAY · CH 01',{pw:5,ph:1.4,size:80,fg:'#fff',bg:'rgba(0,0,0,0.8)',border:'#66aaff',w:512,h:128});
+ era.position.set(-22,22,-19);g.add(era);
+}
+
+/* ============================================================
+   SAY WHAT? (orange family-feud-style)
+   ============================================================ */
+function buildSW(){
+ const g=worlds.sw;const s=SHOWS[2];
+ worldLights(g,0xffaa55,1.0);
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(120,120),makeMat(s.floor,0,0.7,0.05));track(floor);
+ floor.rotation.x=-Math.PI/2;g.add(floor);
+ const wall=new THREE.Mesh(new THREE.BoxGeometry(60,26,1),makeMat(0xb24a10));track(wall);
+ wall.position.set(0,13,-18);g.add(wall);
+ // big board (8 answers)
+ const boardBG=new THREE.Mesh(new THREE.BoxGeometry(22,12,0.6),makeMat(0x6a2810,0x6a2810,0.7,0));track(boardBG);
+ boardBG.position.set(0,11,-17.5);g.add(boardBG);
+ const answers=['SPAGHETTI — 38','PIZZA — 27','CASSEROLE — 14','TACOS — 9','SOUP — 6','ROAST — 3','PANCAKES — 2','OMELET — 1'];
+ const tiles=[];
+ for(let i=0;i<8;i++){
+  const t=plane((i+1)+'  '+answers[i],{pw:9,ph:1.0,size:54,fg:'#ffd700',bg:'#a93a08',border:'#ffd700',w:1024,h:128});
+  t.position.set(-4.5+(i%2)*9,15-Math.floor(i/2)*1.3,-17.1);g.add(t);tiles.push(t);
+ }
+ g.userData.tiles=tiles;
+ // X marker (giant red X overlay, hidden until reveal)
+ const xMark=plane('✕ ✕ ✕',{pw:10,ph:6,size:300,fg:'#ff3344',bg:'rgba(0,0,0,0)',w:512,h:256});
+ xMark.position.set(0,11,-16.8);xMark.material.opacity=0;xMark.material.transparent=true;g.add(xMark);
+ g.userData.xMark=xMark;
+ // 2 tribe stands
+ const standL=new THREE.Mesh(new THREE.BoxGeometry(11,2.6,2.2),makeMat(0xff7722,0xff7722,0.5,0.2));track(standL);
+ standL.position.set(-12,1.3,5);g.add(standL);
+ const standR=new THREE.Mesh(new THREE.BoxGeometry(11,2.6,2.2),makeMat(0x55a0ff,0x55a0ff,0.5,0.2));track(standR);
+ standR.position.set(12,1.3,5);g.add(standR);
+ // family labels
+ const labL=plane('★ THE PARK FAMILY ★',{pw:9,ph:1.1,size:80,fg:'#fff',bg:'#ff7722',border:'#ffd700',w:768,h:128});
+ labL.position.set(-12,3.3,6.13);g.add(labL);
+ const labR=plane('★ THE HOLST FAMILY ★',{pw:9,ph:1.1,size:80,fg:'#fff',bg:'#55a0ff',border:'#ffd700',w:768,h:128});
+ labR.position.set(12,3.3,6.13);g.add(labR);
+ // 5 family members each side
+ const parks=[];const holsts=[];
+ SW_PARK.forEach((nm,i)=>{const p=person(nm,{size:0.8,suit:0xc0392b});p.position.set(-16+i*2,2.6,5);g.add(p);parks.push(p);});
+ SW_HOLST.forEach((nm,i)=>{const p=person(nm,{size:0.8,suit:0x2980b9});p.position.set(8+i*2,2.6,5);g.add(p);holsts.push(p);});
+ g.userData.parks=parks;g.userData.holsts=holsts;
+ // host between stands
+ const hostStand=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.4,2.2,12),makeMat(0xffd700,0xffd700,0.4,0.4));track(hostStand);
+ hostStand.position.set(0,1.1,2);g.add(hostStand);
+ const host=person('PENNY BELL · HOST',{size:1.0,suit:0xc41e3a,hair:0xddaa33});
+ host.position.set(0,2.2,2);g.add(host);
+ g.userData.host=host;
+ // audience
+ const aud=audienceBlock(60,{w:30,d:8,rows:5});aud.position.set(0,1,16);g.add(aud);
+ g.userData.audience=[aud];
+ // sign
+ const sign=plane('☆ SAY WHAT? ☆',{pw:18,ph:3,size:140,fg:'#fff',bg:'#ff7722',border:'#fff',w:1024,h:200});
+ sign.position.set(0,21,-17.4);g.add(sign);
+ const era=plane('FRIDAY · CH 02',{pw:5,ph:1.4,size:80,fg:'#fff',bg:'rgba(0,0,0,0.8)',border:'#ffaa55',w:512,h:128});
+ era.position.set(-22,21,-17);g.add(era);
+}
+
+/* ============================================================
+   SPIN-CITY (hot pink wheel-of-fortune-style)
+   ============================================================ */
+function buildSC(){
+ const g=worlds.sc;const s=SHOWS[3];
+ worldLights(g,0xff66cc,1.05);
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(120,120),makeMat(s.floor,0,0.6,0.15));track(floor);
+ floor.rotation.x=-Math.PI/2;g.add(floor);
+ const wall=new THREE.Mesh(new THREE.BoxGeometry(70,26,1),makeMat(0x802050));track(wall);
+ wall.position.set(0,13,-19);g.add(wall);
+ // letter board (puzzle)
+ const boardBG=new THREE.Mesh(new THREE.BoxGeometry(34,12,0.6),makeMat(0x4a1030,0x4a1030,0.7,0));track(boardBG);
+ boardBG.position.set(0,15,-18.3);g.add(boardBG);
+ const phrase=['EARLY','MORNING','JOG'];
+ const letters=[];
+ phrase.forEach((wd,wi)=>{
+  for(let li=0;li<wd.length;li++){
+   const isReveal=Math.random()<0.55;
+   const t=plane(isReveal?wd[li]:'·',{pw:1.8,ph:2.4,size:160,fg:'#ffd700',bg:isReveal?'#fff':'#222',border:'#ffd700',w:240,h:320});
+   const startX=-15+wi*0.7;
+   t.position.set(startX+(wi*4)+li*2.0,15,-17.9);g.add(t);letters.push(t);
+  }
+ });
+ g.userData.letters=letters;
+ // giant wheel (horizontal)
+ const wheel=new THREE.Group();
+ const ring=new THREE.Mesh(new THREE.CylinderGeometry(7,7,0.6,32),makeMat(0xffd700,0xffd700,0.4,0.5));track(ring);
+ ring.rotation.x=Math.PI/2;wheel.add(ring);
+ const sectors=24;const sectorColors=[0xff3399,0xffd700,0x66ccff,0xff77aa,0xffffff,0x802050,0xc83a82];
+ for(let i=0;i<sectors;i++){
+  const a=(i/sectors)*Math.PI*2;
+  const seg=new THREE.Mesh(new THREE.BoxGeometry(0.55,1.6,5.6),makeMat(sectorColors[i%sectorColors.length],sectorColors[i%sectorColors.length],0.5,0.3));track(seg);
+  seg.position.set(Math.cos(a)*4,0,Math.sin(a)*4);
+  seg.rotation.y=-a;
+  wheel.add(seg);
+ }
+ // center cap
+ const cap=new THREE.Mesh(new THREE.CylinderGeometry(1,1,0.7,16),makeMat(0xffd700,0xffd700,0.4,0.6));track(cap);
+ cap.rotation.x=Math.PI/2;wheel.add(cap);
+ wheel.position.set(0,0.4,4);wheel.rotation.x=-Math.PI/8;
+ g.add(wheel);g.userData.wheel=wheel;
+ // 3 contestants in arc behind wheel
+ const arcR=10;
+ SC_C.forEach((nm,i)=>{
+  const a=(i/2-0.5)*0.6+Math.PI;
+  const x=Math.sin(a)*arcR,z=4-Math.cos(a)*arcR;
+  const p=person(nm,{size:0.85,suit:[0xc41e3a,0x6633cc,0x009988][i]});
+  p.position.set(x,0.7,z);p.rotation.y=Math.atan2(-x,4-z);g.add(p);
+ });
+ // host stand to the right of wheel
+ const hstand=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.4,2.2,12),makeMat(0xffd700,0xffd700,0.4,0.4));track(hstand);
+ hstand.position.set(13,1.1,1);g.add(hstand);
+ const host=person('MAXINE TRENT · HOST',{size:1.0,suit:0xff66cc,hair:0xeebb44});
+ host.position.set(13,2.2,1);g.add(host);
+ g.userData.host=host;
+ // prize wall (left)
+ const pwall=new THREE.Mesh(new THREE.BoxGeometry(0.6,10,18),makeMat(0xff3399,0xff3399,0.5,0.2));track(pwall);
+ pwall.position.set(-22,5,-2);g.add(pwall);
+ const prizes=['☂ TROPICAL VACATION','♣ COZY CABIN','♕ KITCHEN UPGRADE','✿ GARDEN SET','♫ HOME STUDIO','★ $25,000 CASH'];
+ prizes.forEach((p,i)=>{
+  const pl=plane(p,{pw:8,ph:1.2,size:70,fg:'#fff',bg:'#802050',border:'#ffd700',w:768,h:128});
+  pl.position.set(-21.6,9-i*1.5,-2);pl.rotation.y=Math.PI/2;g.add(pl);
+ });
+ // audience
+ const aud=audienceBlock(50,{w:24,d:7,rows:4});aud.position.set(0,0.8,18);g.add(aud);
+ g.userData.audience=[aud];
+ const sign=plane('✦ SPIN-CITY ✦',{pw:18,ph:3,size:140,fg:'#ffd700',bg:'#ff3399',border:'#ffd700',w:1024,h:200});
+ sign.position.set(0,22,-18.4);g.add(sign);
+ const era=plane('FRIDAY · CH 03',{pw:5,ph:1.4,size:80,fg:'#fff',bg:'rgba(0,0,0,0.8)',border:'#ff66cc',w:512,h:128});
+ era.position.set(-22,22,-18);g.add(era);
+}
+
+/* ============================================================
+   PRICE IT RIGHT! (yellow showcase)
+   ============================================================ */
+function buildPR(){
+ const g=worlds.pr;const s=SHOWS[4];
+ worldLights(g,0xffeeaa,1.0);
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(120,120),makeMat(s.floor,0,0.65,0.15));track(floor);
+ floor.rotation.x=-Math.PI/2;g.add(floor);
+ const wall=new THREE.Mesh(new THREE.BoxGeometry(70,26,1),makeMat(0x886611));track(wall);
+ wall.position.set(0,13,-20);g.add(wall);
+ // showcase aisle (3 platforms with prizes)
+ const items=[
+  {n:'★ NEW SOFA SET ★',p:'$2,499',c:0xc0392b,geom:new THREE.BoxGeometry(3.5,1.6,2)},
+  {n:'★ CAMPER VAN ★',p:'$18,900',c:0xffffff,geom:new THREE.BoxGeometry(5,2.6,2.4)},
+  {n:'★ KITCHEN MIXER ★',p:'$349',c:0xff66aa,geom:new THREE.CylinderGeometry(0.9,0.7,1.5,12)}
+ ];
+ items.forEach((it,i)=>{
+  const stage=new THREE.Mesh(new THREE.CylinderGeometry(3,3.4,1,16),makeMat(0xffd700,0xffd700,0.5,0.3));track(stage);
+  stage.position.set(-12+i*12,0.5,-12);g.add(stage);
+  const item=new THREE.Mesh(it.geom,makeMat(it.c,it.c,0.5,0.3));track(item);
+  item.position.set(-12+i*12,2.5,-12);g.add(item);
+  const tag=plane(it.n+'\n'+it.p+'??',{pw:5,ph:1.6,size:54,fg:'#000',bg:'#ffd700',border:'#ff3344',w:768,h:240});
+  tag.position.set(-12+i*12,5.4,-12);g.add(tag);
+ });
+ // big wheel (vertical, like Showcase Showdown)
+ const bigWheel=new THREE.Group();
+ const wbg=new THREE.Mesh(new THREE.CylinderGeometry(4.5,4.5,0.6,32),makeMat(0xffd700,0xffd700,0.4,0.5));track(wbg);
+ bigWheel.add(wbg);
+ const segs=20;
+ for(let i=0;i<segs;i++){
+  const a=(i/segs)*Math.PI*2;
+  const v=(i+1)*5;
+  const seg=new THREE.Mesh(new THREE.BoxGeometry(0.45,1.0,3.6),makeMat(i%2?0xff3344:0xffffff,i%2?0xff3344:0xffffff,0.5,0.2));track(seg);
+  seg.position.set(Math.cos(a)*2.5,0,Math.sin(a)*2.5);
+  seg.rotation.y=-a;
+  bigWheel.add(seg);
+  const lab=plane(String(v*5),{pw:1.0,ph:0.5,size:120,fg:'#fff',bg:i%2?'#ff3344':'#000',w:128,h:64});
+  lab.position.set(Math.cos(a)*3.7,0.4,Math.sin(a)*3.7);lab.rotation.y=-a+Math.PI/2;
+  bigWheel.add(lab);
+ }
+ bigWheel.position.set(15,5,-6);bigWheel.rotation.z=Math.PI/2;
+ g.add(bigWheel);g.userData.bigWheel=bigWheel;
+ // dollar display
+ const dd=plane('$ '+MEM.pots.pr.toLocaleString()+' .00',{pw:11,ph:2.6,size:160,fg:'#00ff66',bg:'#000',border:'#ffd700',w:1024,h:256});
+ dd.position.set(-15,6,-19.4);g.add(dd);
+ g.userData.dollarDisplay=dd;
+ // host stand
+ const hstand=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.3,2.0,12),makeMat(0xffd700,0xffd700,0.4,0.4));track(hstand);
+ hstand.position.set(0,1.0,3);g.add(hstand);
+ const host=person('ANDY WHITTLE · HOST',{size:1.0,suit:0xc0392b,hair:0xaaaaaa});
+ host.position.set(0,2.0,3);g.add(host);
+ g.userData.host=host;
+ // contestants' row (4 podiums front)
+ PR_C.forEach((nm,i)=>{
+  const pod=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.6,1.6),makeMat(0xff3344,0xff3344,0.5,0.2));track(pod);
+  pod.position.set(-9+i*6,0.8,12);g.add(pod);
+  const lab=plane('$ ___',{pw:2.2,ph:0.7,size:90,fg:'#00ff66',bg:'#000',border:'#ffd700',w:256,h:96});
+  lab.position.set(-9+i*6,2.0,12.85);g.add(lab);
+  const p=person(nm,{size:0.85,suit:[0x16a085,0x9b59b6,0xd35400,0x2980b9][i]});
+  p.position.set(-9+i*6,1.6,12);g.add(p);
+ });
+ // audience
+ const aud=audienceBlock(60,{w:30,d:8,rows:5});aud.position.set(0,0.8,21);g.add(aud);
+ g.userData.audience=[aud];
+ const sign=plane('☼ PRICE IT RIGHT! ☼',{pw:18,ph:3,size:140,fg:'#000',bg:'#ffd700',border:'#ff3344',w:1024,h:200});
+ sign.position.set(0,21,-19.4);g.add(sign);
+ const era=plane('FRIDAY · CH 04',{pw:5,ph:1.4,size:80,fg:'#000',bg:'#ffd700',border:'#ff3344',w:512,h:128});
+ era.position.set(-22,21,-19);g.add(era);
+}
+
+/* ============================================================
+   ISLAND ENDURE (palm-green tropical)
+   ============================================================ */
+function buildIE(){
+ const g=worlds.ie;const s=SHOWS[5];
+ worldLights(g,0xaaffaa,0.9);
+ const sand=new THREE.Mesh(new THREE.PlaneGeometry(140,140),makeMat(0xddc080,0,0.95,0.0));track(sand);
+ sand.rotation.x=-Math.PI/2;g.add(sand);
+ const water=new THREE.Mesh(new THREE.PlaneGeometry(140,40),makeMat(0x2080aa,0x2080aa,0.6,0.3));track(water);
+ water.rotation.x=-Math.PI/2;water.position.set(0,0.05,40);g.add(water);
+ // palm trees (12)
+ const palms=[];
+ for(let i=0;i<14;i++){
+  const t=new THREE.Group();
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.5,8,8),makeMat(0x6a3a1c,0,0.95,0));track(trunk);
+  trunk.position.y=4;t.add(trunk);
+  for(let f=0;f<7;f++){
+   const a=(f/7)*Math.PI*2;
+   const frond=new THREE.Mesh(new THREE.ConeGeometry(0.5,3.5,6),makeMat(0x227733,0x227733,0.7,0));track(frond);
+   frond.position.set(Math.cos(a)*1.3,7.6,Math.sin(a)*1.3);
+   frond.rotation.z=Math.cos(a)*0.7;frond.rotation.x=Math.sin(a)*0.7;
+   t.add(frond);
+  }
+  const ang=Math.random()*Math.PI*2;const r=14+Math.random()*16;
+  t.position.set(Math.cos(ang)*r,0,Math.sin(ang)*r-4);
+  g.add(t);palms.push(t);
+ }
+ g.userData.palms=palms;
+ // tribal council shelter (back)
+ const shelterBase=new THREE.Mesh(new THREE.BoxGeometry(20,0.6,12),makeMat(0x8b4a1f,0,0.95,0));track(shelterBase);
+ shelterBase.position.set(0,0.3,-15);g.add(shelterBase);
+ // 6 stilts
+ for(let i=0;i<8;i++){
+  const stilt=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.3,4,8),makeMat(0x5c3010));track(stilt);
+  stilt.position.set(-9+(i%4)*6,2.2,-19+Math.floor(i/4)*8);g.add(stilt);
+ }
+ // thatched roof
+ const roof=new THREE.Mesh(new THREE.ConeGeometry(13,5,4),makeMat(0x7a5a20,0,0.95,0));track(roof);
+ roof.position.set(0,7.5,-15);roof.rotation.y=Math.PI/4;g.add(roof);
+ // fire pit (front center)
+ const pit=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.4,0.4,16),makeMat(0x222222,0,0.9,0));track(pit);
+ pit.position.set(0,0.2,-8);g.add(pit);
+ const flame=new THREE.Mesh(new THREE.ConeGeometry(1.4,3.0,8),makeMat(0xff6622,0xff6622,0.5,0));track(flame);
+ flame.position.set(0,1.7,-8);flame.material.transparent=true;flame.material.opacity=0.9;
+ g.add(flame);g.userData.flame=flame;
+ // voting podium
+ const votePodium=new THREE.Mesh(new THREE.BoxGeometry(3,2.2,2),makeMat(0x4a3010,0,0.9,0));track(votePodium);
+ votePodium.position.set(-12,1.1,-2);g.add(votePodium);
+ const voteLab=plane('VOTING URN',{pw:2.6,ph:0.7,size:80,fg:'#fff',bg:'#000',border:'#ffaa33',w:256,h:96});
+ voteLab.position.set(-12,2.5,-1);voteLab.rotation.y=0.3;g.add(voteLab);
+ // 6 contestants seated around fire
+ g.userData.tribe=[];
+ IE_C.forEach((nm,i)=>{
+  const a=(i/6)*Math.PI*2+Math.PI/6;
+  const r=6;
+  const p=person(nm,{size:0.8,suit:[0x556633,0x7a4422,0x335588,0x884466,0xcc7733,0x227755][i]});
+  p.position.set(Math.cos(a)*r,0.5,Math.sin(a)*r-8);
+  p.rotation.y=Math.atan2(-Math.cos(a)*r,-Math.sin(a)*r);
+  g.add(p);g.userData.tribe.push(p);
+ });
+ // host (Captain Reyes) at podium
+ const host=person('CAPT. JOAQUIN REYES · HOST',{size:1.0,suit:0x5d3010,hair:0x222222});
+ host.position.set(-12,2.7,-2.2);g.add(host);g.userData.host=host;
+ // beach challenge platform (right)
+ const bcLog=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,8,8),makeMat(0x6a3a1c));track(bcLog);
+ bcLog.rotation.z=Math.PI/2;bcLog.position.set(14,0.5,4);g.add(bcLog);
+ const bcSign=plane('CHALLENGE: BALANCE BEAM',{pw:6,ph:1.2,size:54,fg:'#fff',bg:'#226644',border:'#ffaa33',w:768,h:128});
+ bcSign.position.set(14,3.2,4);g.add(bcSign);
+ // tribe flag
+ const flagPole=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,9,8),makeMat(0x222222));track(flagPole);
+ flagPole.position.set(0,4.5,-15);flagPole.translateX(8);g.add(flagPole);
+ const flag=plane('TRIBE\nKEMU',{pw:3,ph:2,size:140,fg:'#ffaa33',bg:'#226644',border:'#ffaa33',w:256,h:200});
+ flag.position.set(9.5,8,-15);g.add(flag);
+ // sky
+ scene.background=null;
+ const sign=plane('☀ ISLAND ENDURE ☀',{pw:18,ph:3,size:140,fg:'#fff',bg:'#226644',border:'#ffaa33',w:1024,h:200});
+ sign.position.set(0,15,-23);g.add(sign);
+ const era=plane('FRIDAY · CH 05',{pw:5,ph:1.4,size:80,fg:'#fff',bg:'#226644',border:'#ffaa33',w:512,h:128});
+ era.position.set(-22,15,-22);g.add(era);
+}
+
+/* ---- build all worlds ---- */
+buildControl();buildBB();buildSW();buildSC();buildPR();buildIE();
+
+/* ============================================================
+   DIRECTOR CAMERAS — 18+
+   Each: {name, world, getPos(t)->Vector3, getLook(t)->Vector3}
+   ============================================================ */
+const CAMS=[
+ // Brain Busters (1-3)
+ {name:'BB · Podium close',world:'bb',pos:(t)=>[Math.cos(t*0.06)*2,3.6,9],look:()=>[0,3,4]},
+ {name:'BB · Big board',world:'bb',pos:(t)=>[Math.cos(t*0.04)*5,12,8],look:()=>[0,11,-19]},
+ {name:'BB · Host face',world:'bb',pos:(t)=>[15+Math.sin(t*0.05)*2,3.4,3],look:()=>[15,2.8,-2]},
+ // Say What (4-6)
+ {name:'SAY! · Tribe wide',world:'sw',pos:(t)=>[Math.sin(t*0.05)*3,5,18],look:()=>[0,5,2]},
+ {name:'SAY! · X reveal',world:'sw',pos:(t)=>[0+Math.cos(t*0.07)*3,11,4],look:()=>[0,11,-17.5]},
+ {name:'SAY! · Host close',world:'sw',pos:(t)=>[Math.cos(t*0.04)*2,3,7],look:()=>[0,2.5,2]},
+ // Spin City (7-9)
+ {name:'SPIN · Wheel track',world:'sc',pos:(t)=>[Math.cos(t*0.12)*9,7,Math.sin(t*0.12)*9+4],look:()=>[0,1,4]},
+ {name:'SPIN · Letter reveal',world:'sc',pos:(t)=>[Math.sin(t*0.05)*3,15,2],look:()=>[0,15,-18]},
+ {name:'SPIN · Host close',world:'sc',pos:(t)=>[13+Math.cos(t*0.04)*2,3.0,5],look:()=>[13,2.4,1]},
+ // Price It Right (10-12)
+ {name:'PRICE · Showcase aisle',world:'pr',pos:(t)=>[Math.sin(t*0.04)*14,5,2],look:()=>[Math.sin(t*0.04)*10,3,-12]},
+ {name:'PRICE · Dollar wheel',world:'pr',pos:(t)=>[15+Math.cos(t*0.1)*4,5,2+Math.sin(t*0.1)*4],look:()=>[15,5,-6]},
+ {name:'PRICE · Host close',world:'pr',pos:(t)=>[Math.cos(t*0.04)*2,3,8],look:()=>[0,2.4,3]},
+ // Island Endure (13-15)
+ {name:'ISLE · Jungle wide',world:'ie',pos:(t)=>[Math.sin(t*0.03)*18,9,18+Math.cos(t*0.03)*6],look:()=>[0,3,-4]},
+ {name:'ISLE · Voting podium',world:'ie',pos:(t)=>[-12+Math.cos(t*0.05)*3,3.4,3],look:()=>[-12,2.6,-2]},
+ {name:'ISLE · Fire pit',world:'ie',pos:(t)=>[Math.cos(t*0.07)*5,2.4,Math.sin(t*0.07)*5-8],look:()=>[0,1.8,-8]},
+ // Control room (16-18)
+ {name:'CTRL · Wall wide',world:'control',pos:(t)=>[Math.sin(t*0.04)*10,12,18],look:()=>[0,14,-21]},
+ {name:'CTRL · Ratings ticker',world:'control',pos:(t)=>[Math.cos(t*0.06)*4,22,-6],look:()=>[0,24,-21]},
+ {name:'CTRL · Monitor close',world:'control',pos:(t)=>[Math.sin(t*0.08)*22,14,-12],look:()=>[Math.sin(t*0.08)*22,14,-21]}
+];
+
+/* ---- HUD/MINIMAP setup ---- */
+const monGrid=document.getElementById('monGrid');
+SHOWS.slice(1).forEach((s,i)=>{
+ const d=document.createElement('div');d.className='mon';d.id='mon-'+s.id;
+ d.innerHTML='<div><b>CH 0'+(i+1)+'</b><br>'+s.short+'</div>';
+ monGrid.appendChild(d);
+});
+const camListEl=document.getElementById('camList');
+CAMS.forEach((c,i)=>{
+ const d=document.createElement('div');d.className='cam';d.id='cam-'+i;
+ d.textContent=String(i+1).padStart(2,'0')+' '+c.name;
+ camListEl.appendChild(d);
+});
+
+/* ---- chyron generator ---- */
+const SAY_WHAT_ANSWERS=['spaghetti','pizza','casserole','tacos','soup','roast','pancakes','omelet','grilled cheese','pot pie'];
+const SPIN_PHRASES=['EARLY MORNING JOG','SUNDAY KITCHEN','HOMEMADE BREAD','CORNER LIBRARY','AUTUMN PICNIC','BACKYARD GARDEN','STARLIGHT WALK','HARVEST MOON','COZY BOOKSTORE'];
+const BB_CATS=['ANCIENT MAPS','COZY RECIPES','TINY CITIES','OLD RADIO','DOG LATIN','BIG IDEAS','TEA HOUSES','VINTAGE TOYS','PUFFY CLOUDS'];
+function rng(seed){return ((Math.sin(seed*9301+49297)+1)/2);}
+function pick(arr,seed){return arr[Math.floor(rng(seed)*arr.length)%arr.length];}
+
+let chyronCycle=0;
+function buildChyron(){
+ chyronCycle++;
+ const sw=pick(SAY_WHAT_ANSWERS,chyronCycle*7+EP);
+ const sp=pick(SPIN_PHRASES,chyronCycle*11+EP);
+ const cat=pick(BB_CATS,chyronCycle*13+EP);
+ const winName=pick(AUDIENCE,chyronCycle*17+EP);
+ const winShow=SHOWS[1+(chyronCycle%5)];
+ const winAmt=(2400+(chyronCycle*1733)%18600).toLocaleString();
+ const tribeOut=IE_C[chyronCycle%IE_C.length];
+ const tribeWin=chyronCycle%2===0?'PARK':'HOLST';
+ return '<b>Cycle '+chyronCycle+' —</b> '+winName+' wins $'+winAmt+' on <b>'+winShow.name+'</b>: '+
+  '<i>"'+sp+'."</i>  Across the network, the <b>'+tribeWin+' family</b> takes the lead on <b>SAY WHAT?</b> with "<i>'+sw+'</i>."  '+
+  'Captain Reyes announces tribal council on <b>ISLAND ENDURE</b> — '+tribeOut+' speaks last in a gracious nod.  '+
+  '<i>Brain Busters category: '+cat+'.</i>';
+}
+function rotateChyron(){document.getElementById('chyronText').innerHTML=buildChyron();}
+
+/* ---- ratings ticker ---- */
+const TICKER_ITEMS=[
+ 'NIELSEN ▲ 12.4M  ',
+ 'BRAIN BUSTERS! +0.8M  ',
+ 'SAY WHAT? steady at 3.1M  ',
+ 'SPIN-CITY ▲ 4.2M (winner: '+pickName(EP*5)+')  ',
+ 'PRICE IT RIGHT! ▲ 2.9M  ',
+ 'ISLAND ENDURE ▲ 2.0M  ',
+ 'AD BREAK SOLD: COZY OAT CO.  ',
+ 'GRAND CHAMPION ROLL: '+(MEM.champions||[]).slice(-4).map(c=>c.name).join(' · ')+'  ',
+ 'EPISODE '+EP+'  ',
+ 'NETWORK NOTE: keep it warm, keep it kind.  '
+];
+let tickerOffset=0;
+function rotateTicker(){
+ const txt=TICKER_ITEMS.join(' ★ ');
+ const len=txt.length;
+ tickerOffset=(tickerOffset+1)%len;
+ const slice=(txt+txt).substring(tickerOffset,tickerOffset+72);
+ document.getElementById('ticker').textContent='RATINGS ▼ '+slice;
+}
+
+/* ============================================================
+   PORTAL TRAVEL
+   ============================================================ */
+let activeWorldIdx=0;
+let activeShow=SHOWS[0];
+let camIdx=15; // start with control room cam
+let portalT=0;
+let nextPortalAt=4500;
+let inWarp=false;
+let warpPhase=0; // 0=none, 1=collapse, 2=hold, 3=expand
+const warpEl=document.getElementById('warp');
+
+function setActiveShow(idx){
+ activeWorldIdx=idx;
+ activeShow=SHOWS[idx];
+ // pick a camera in that world
+ const candidates=[];
+ CAMS.forEach((c,i)=>{if(c.world===activeShow.id)candidates.push(i);});
+ camIdx=candidates[Math.floor(Math.random()*candidates.length)];
+ // hud
+ const round=((EP+idx*3)%9)+1;
+ const pot=idx>0?MEM.pots[activeShow.id]:Object.values(MEM.pots).reduce((a,b)=>a+b,0);
+ document.getElementById('hudShow').textContent= idx===0
+  ? 'NETWORK CONTROL ROOM · HUB'
+  : 'SHOW '+idx+' OF 5: '+activeShow.name;
+ document.getElementById('hudMeta').textContent= idx===0
+  ? 'EPISODE '+EP+' · NETWORK POT $'+pot.toLocaleString()+' · LIVE'
+  : 'ROUND '+round+' · $'+pot.toLocaleString()+' IN PLAY · LIVE';
+ document.getElementById('hudHost').textContent='HOST: '+activeShow.host+(activeShow.tag?'  •  '+activeShow.tag:'');
+ // mini map
+ SHOWS.slice(1).forEach((s,i)=>{
+  const el=document.getElementById('mon-'+s.id);
+  if(el)el.classList.toggle('live',s.idx===idx);
+ });
+ // cam list
+ CAMS.forEach((c,i)=>{
+  const el=document.getElementById('cam-'+i);
+  if(el)el.classList.toggle('live',i===camIdx);
+ });
+}
+
+function startPortal(){
+ if(inWarp)return;
+ inWarp=true;warpPhase=1;
+ portalT=0;
+}
+
+function updatePortal(dt){
+ if(!inWarp)return;
+ portalT+=dt;
+ if(warpPhase===1){
+  // collapse white
+  const k=Math.min(1,portalT/450);
+  const sz=(1-k)*100;
+  warpEl.style.background='radial-gradient(ellipse at center, #fff '+(sz*0.4)+'%, rgba(255,255,255,0.95) '+sz+'%, rgba(0,0,0,0.92) '+(sz+1)+'%, #000 100%)';
+  warpEl.style.opacity='1';
+  if(k>=1){warpPhase=2;portalT=0;
+   // teleport
+   let next;
+   if(activeWorldIdx===0){next=1+Math.floor(Math.random()*5);}
+   else{next=Math.random()<0.6?0:(activeWorldIdx%5)+1;}
+   setActiveShow(next);
+   // immediate camera placement
+   const cam=CAMS[camIdx];
+   const wx=activeShow.idx*WORLD_SPACING;
+   const p=cam.pos(0);const l=cam.look(0);
+   camera.position.set(p[0]+wx,p[1],p[2]);
+   camera.lookAt(l[0]+wx,l[1],l[2]);
+   rotateChyron();
+  }
+ } else if(warpPhase===2){
+  if(portalT>180){warpPhase=3;portalT=0;}
+ } else if(warpPhase===3){
+  const k=Math.min(1,portalT/520);
+  const sz=k*120;
+  warpEl.style.background='radial-gradient(ellipse at center, transparent '+(sz*0.4)+'%, transparent '+sz+'%, rgba(255,255,255,'+(1-k)*0.85+') '+(sz+2)+'%, rgba(0,0,0,'+(1-k)+') 100%)';
+  warpEl.style.opacity=(1-k);
+  if(k>=1){
+   inWarp=false;warpPhase=0;
+   warpEl.style.opacity='0';warpEl.style.background='radial-gradient(ellipse at center,#fff 0%,#fff 0%,transparent 0%)';
+   nextPortalAt=60000+Math.random()*15000;
+  }
+ }
+}
+
+/* ---- initial state: cycle through control room then start portaling ---- */
+setActiveShow(0);
+{const cam=CAMS[camIdx];const wx=activeShow.idx*WORLD_SPACING;
+ const p=cam.pos(0);const l=cam.look(0);
+ camera.position.set(p[0]+wx,p[1],p[2]);camera.lookAt(l[0]+wx,l[1],l[2]);}
+rotateChyron();
+
+/* ============================================================
+   ANIMATION LOOP
+   ============================================================ */
+let lastT=performance.now();
+let camHoldT=0;
+let camHoldDur=8000+Math.random()*5000;
+let portalTimer=0;
+let chyronTimer=0;
+let tickerTimer=0;
+let reseedTimer=0;
+const RESEED_AT=600000; // 10 minutes
+
+function pickCamInActiveWorld(){
+ const candidates=[];
+ CAMS.forEach((c,i)=>{if(c.world===activeShow.id)candidates.push(i);});
+ const next=candidates[Math.floor(Math.random()*candidates.length)];
+ camIdx=next;
+ CAMS.forEach((c,i)=>{const el=document.getElementById('cam-'+i);if(el)el.classList.toggle('live',i===camIdx);});
+}
+
+function reseedSession(){
+ // advance an episode, wipe geometry, rebuild
+ MEM=loadMem();MEM.episodes=(MEM.episodes||0)+1;
+ const e=MEM.episodes;
+ const champShow=SHOWS[1+(e%5)];
+ const champ=pickName(e*13+5);
+ MEM.champions=(MEM.champions||[]).concat([{ep:e,show:champShow.id,name:champ}]);
+ if(MEM.champions.length>10){MEM.retired=(MEM.retired||[]).concat(MEM.champions.shift());}
+ SHOWS.slice(1).forEach(s=>{const w=400+((e*97+s.idx*311)%18600);MEM.pots[s.id]=w;MEM.scores[s.id]=(MEM.scores[s.id]||0)+w;});
+ saveMem(MEM);
+ // sign-off flash
+ const so=document.getElementById('signoff');
+ so.innerHTML='✦ NEW EPISODE: '+e+' ✦<small>Champion retires — '+champ+' takes the wheel</small>';
+ so.style.transition='opacity 0.6s';so.style.opacity='1';
+ setTimeout(()=>{so.style.opacity='0';},2400);
+ // dispose & rebuild
+ disposeAll();
+ buildControl();buildBB();buildSW();buildSC();buildPR();buildIE();
+ setActiveShow(0);
+}
+
+function disposeAll(){
+ SHOWS.forEach(s=>{
+  const w=worlds[s.id];
+  while(w.children.length){
+   const c=w.children[0];
+   w.remove(c);
+   c.traverse(o=>{
+    if(o.geometry)o.geometry.dispose();
+    if(o.material){
+     if(Array.isArray(o.material))o.material.forEach(m=>{if(m.map)m.map.dispose();m.dispose();});
+     else{if(o.material.map)o.material.map.dispose();o.material.dispose();}
+    }
+   });
+  }
+ });
+ DISPOSE.length=0;
+}
+
+function tick(now){
+ const dt=Math.min(60,now-lastT);lastT=now;
+ const t=now*0.001;
+
+ // animate
+ if(!inWarp){
+  camHoldT+=dt;portalTimer+=dt;chyronTimer+=dt;tickerTimer+=dt;reseedTimer+=dt;
+  // camera shift within world
+  if(camHoldT>camHoldDur){
+   camHoldT=0;camHoldDur=8000+Math.random()*5000;
+   pickCamInActiveWorld();
+  }
+  if(portalTimer>nextPortalAt){portalTimer=0;startPortal();}
+  if(chyronTimer>16000){chyronTimer=0;rotateChyron();}
+  if(tickerTimer>240){tickerTimer=0;rotateTicker();}
+  if(reseedTimer>RESEED_AT){reseedTimer=0;reseedSession();}
+ }
+ updatePortal(dt);
+
+ // camera pose for active world
+ if(!inWarp){
+  const cam=CAMS[camIdx];
+  const wx=activeShow.idx*WORLD_SPACING;
+  const p=cam.pos(t);const l=cam.look(t);
+  // smooth follow
+  camera.position.lerp(new THREE.Vector3(p[0]+wx,p[1],p[2]),0.04);
+  const tgt=new THREE.Vector3(l[0]+wx,l[1],l[2]);
+  camera.lookAt(tgt);
+ }
+
+ // background per world
+ const bg=new THREE.Color(activeShow.color).multiplyScalar(0.18);
+ if(!scene.background)scene.background=new THREE.Color();
+ scene.background.lerp(bg,0.04);
+ if(scene.fog)scene.fog.color.copy(scene.background);
+
+ // ----- per-world animations -----
+ // BB: hosts/contestants subtle bob, score panels glow
+ const bb=worlds.bb.userData;
+ if(bb&&bb.podiums){
+  bb.podiums.forEach((pd,i)=>{
+   pd.person.position.y=3.0+Math.sin(t*1.4+i)*0.04;
+   pd.person.rotation.y=Math.sin(t*0.7+i*0.5)*0.18;
+  });
+  if(bb.host){bb.host.position.y=2.6+Math.sin(t*1.1)*0.05;bb.host.rotation.y=Math.PI*0.0+Math.sin(t*0.5)*0.25;}
+ }
+ // SW: X marker flash, host
+ const sw=worlds.sw.userData;
+ if(sw){
+  if(sw.xMark){
+   const pulse=Math.max(0,Math.sin(t*0.6)*0.55-0.1);
+   sw.xMark.material.opacity=pulse;
+  }
+  if(sw.host){sw.host.rotation.y=Math.sin(t*0.4)*0.5;}
+  (sw.parks||[]).concat(sw.holsts||[]).forEach((p,i)=>{p.position.y=2.6+Math.sin(t*1.3+i*0.4)*0.05;});
+ }
+ // SC: wheel spin
+ const sc=worlds.sc.userData;
+ if(sc&&sc.wheel){sc.wheel.rotation.y+=0.018+Math.sin(t*0.3)*0.012;}
+ if(sc&&sc.host){sc.host.rotation.y=Math.sin(t*0.5)*0.4;}
+ // PR: big wheel
+ const pr=worlds.pr.userData;
+ if(pr&&pr.bigWheel){pr.bigWheel.rotation.x+=0.012;}
+ if(pr&&pr.host){pr.host.rotation.y=Math.sin(t*0.45)*0.3;pr.host.position.y=2.0+Math.sin(t*1.2)*0.06;}
+ // IE: flame flicker, palms sway
+ const ie=worlds.ie.userData;
+ if(ie&&ie.flame){
+  ie.flame.scale.set(1+Math.sin(t*7)*0.16,1+Math.sin(t*5)*0.22,1+Math.cos(t*6)*0.15);
+  ie.flame.material.opacity=0.75+Math.sin(t*8)*0.18;
+ }
+ if(ie&&ie.palms){ie.palms.forEach((p,i)=>{p.rotation.z=Math.sin(t*0.6+i)*0.05;});}
+ if(ie&&ie.tribe){ie.tribe.forEach((p,i)=>{p.position.y=0.5+Math.sin(t*1.1+i*0.7)*0.05;});}
+ // CTRL: monitor pulse
+ const ctrl=worlds.control.userData;
+ if(ctrl&&ctrl.monitors){
+  ctrl.monitors.forEach((m,i)=>{
+   const phase=Math.sin(t*1.3+i*1.1)*0.5+0.5;
+   m.scr.material.emissiveIntensity=0.4+phase*0.4;
+   m.dot.material.emissiveIntensity=0.6+Math.sin(t*5+i)*0.3;
+  });
+ }
+ if(ctrl&&ctrl.tickerBoard){
+  ctrl.tickerBoard.material.emissiveIntensity=0.5+Math.sin(t*2.4)*0.3;
+ }
+
+ // audience sway
+ SHOWS.slice(1).forEach(s=>{
+  const w=worlds[s.id].userData;
+  if(w&&w.audience){
+   w.audience.forEach(a=>{
+    if(a.userData.heads)a.userData.heads.forEach((h)=>{h.position.y=h.userData.baseY+Math.sin(t*1.7+h.userData.phase)*0.05;});
+   });
+  }
+ });
+
+ renderer.render(scene,camera);
+ requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ---- chyron initial ---- */
+setTimeout(()=>{rotateChyron();},900);
+setInterval(rotateTicker,180);
+
+/* ---- when control room is active, no portal triggers immediately, instead briefly show network overview then auto-portal to a show after ~7 sec ---- */
+setTimeout(()=>{ if(activeWorldIdx===0&&!inWarp){startPortal();} },7000);
+
+})();
+</script>
+</body>
+</html>

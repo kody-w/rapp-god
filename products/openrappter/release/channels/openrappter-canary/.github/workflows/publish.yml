@@ -1,0 +1,137 @@
+name: Publish canary
+
+# Builds openrappter from upstream at a given ref and publishes it as
+# openrappter-canary. This repo can only ever write its own package: the
+# guard below aborts if the resolved package name is the production one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'kody-w/openrappter ref to build (branch, tag, or sha)'
+        required: true
+        default: main
+        type: string
+      version:
+        description: 'Version to publish (blank = derive from upstream package.json + run number)'
+        required: false
+        type: string
+  repository_dispatch:
+    types: [promote]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openrappter-canary-publish
+  cancel-in-progress: false
+
+env:
+  RING: canary
+  RING_PACKAGE: openrappter-canary
+  PRODUCTION_PACKAGE: openrappter
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Refuse to run if this ring resolves to production
+        run: |
+          set -euo pipefail
+          if [ "$RING_PACKAGE" = "$PRODUCTION_PACKAGE" ]; then
+            echo "FATAL: ring $RING resolves to the production package" >&2
+            exit 1
+          fi
+          echo "ring $RING -> $RING_PACKAGE (production $PRODUCTION_PACKAGE untouched)"
+
+      - name: Check out this ring repo
+        uses: actions/checkout@v4
+
+      - name: Check out upstream openrappter at the requested ref
+        uses: actions/checkout@v4
+        with:
+          repository: kody-w/openrappter
+          ref: ${{ inputs.ref || github.event.client_payload.ref || 'main' }}
+          path: upstream
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Rename the package to this ring
+        working-directory: upstream/typescript
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const ring = process.env.RING_PACKAGE;
+            if (ring === process.env.PRODUCTION_PACKAGE) {
+              console.error("refusing to publish the production package");
+              process.exit(1);
+            }
+            p.name = ring;
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+            console.log("package renamed to", p.name, "at version", p.version);
+          '
+
+      - name: Stamp the ring version
+        working-directory: upstream/typescript
+        env:
+          RING_RANK: "0"
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          # Ring version grammar, kept in step with scripts/ring.mjs:
+          #   <base>-<rank>.<ring>.<suffix>
+          # Rank is a leading NUMERIC identifier so semver precedence matches
+          # the train order (canary < nightly < alpha < beta < stable).
+          base="$(node -p 'require("./package.json").version.split("-")[0]')"
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            case "$RING" in
+              canary)  suffix="$(git -C .. rev-parse HEAD | cut -c1-8)" ;;
+              nightly) suffix="$(date -u +%Y%m%d)" ;;
+              alpha|beta) suffix="${GITHUB_RUN_NUMBER}" ;;
+              *) echo "unknown ring $RING" >&2; exit 1 ;;
+            esac
+            version="${base}-${RING_RANK}.${RING}.${suffix}"
+          fi
+          npm version "$version" --no-git-tag-version --allow-same-version
+          echo "publishing $RING_PACKAGE@$version"
+
+      - name: Build
+        working-directory: upstream/typescript
+        run: |
+          npm ci
+          npm run build
+
+      - name: Final guard before publish
+        working-directory: upstream/typescript
+        run: |
+          set -euo pipefail
+          name="$(node -p 'require("./package.json").name')"
+          if [ "$name" != "$RING_PACKAGE" ]; then
+            echo "FATAL: package.json name is $name, expected $RING_PACKAGE" >&2
+            exit 1
+          fi
+
+      - name: Publish
+        working-directory: upstream/typescript
+        run: npm publish --access public --provenance
+
+      - name: Confirm production package was untouched
+        run: |
+          set -euo pipefail
+          before="${{ github.event.client_payload.production_latest }}"
+          now="$(npm view "$PRODUCTION_PACKAGE" dist-tags.latest)"
+          echo "production $PRODUCTION_PACKAGE latest is $now"
+          if [ -n "$before" ] && [ "$before" != "$now" ]; then
+            echo "FATAL: production latest changed during a ring publish" >&2
+            exit 1
+          fi

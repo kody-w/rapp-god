@@ -1,0 +1,138 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>rapp-basket — your eggs, kept offline</title>
+<style>
+ :root{--bg:#0a0d13;--panel:#131924;--line:#26303f;--ink:#e8eef7;--muted:#8b98a9;--accent:#58a6ff;--accent2:#bc8cff;--good:#3fb950;--bad:#ff8080}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,system-ui,Segoe UI,sans-serif;line-height:1.5}
+ body.drag{outline:3px dashed var(--accent);outline-offset:-8px}
+ .wrap{max-width:960px;margin:0 auto;padding:24px 18px 60px}
+ h1{margin:0 0 4px;font-size:24px;letter-spacing:-.3px} .sub{color:var(--muted);font-size:14px;margin:0 0 16px}
+ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+ code{font-family:ui-monospace,Menlo,monospace;font-size:.85em;background:#0a1018;border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+ .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 16px}
+ button{font:inherit;font-size:13px;cursor:pointer;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 13px}
+ button:hover{border-color:var(--accent)} button.primary{background:#12365e;border-color:#2f6bb0;color:#cfe6ff;font-weight:600}
+ button.danger:hover{border-color:var(--bad);color:var(--bad)}
+ .count{color:var(--muted);font-size:13px;margin-left:auto}
+ #stage{display:none;position:relative;border:1px solid var(--line);border-radius:16px;background:#05080d;overflow:hidden;aspect-ratio:16/10;max-height:380px;margin:0 0 16px}
+ #stage.on{display:block} #player{position:absolute;inset:0;width:100%;height:100%;border:0}
+ #stage .close{position:absolute;top:8px;right:8px;z-index:2;background:rgba(0,0,0,.5)}
+ #stage .cap{position:absolute;left:12px;bottom:10px;z-index:2;font-size:13px;text-shadow:0 1px 3px #000}
+ #stage .cap .m{color:#cfd8e6;font-size:12px}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+ .egg{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:10px;transition:border-color .15s;position:relative}
+ .egg:hover{border-color:var(--accent2)}
+ .egg canvas{width:100%;aspect-ratio:1;display:block;border-radius:10px;background:#05080d;cursor:pointer}
+ .egg .t{font-weight:700;font-size:13.5px;margin:8px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .egg .b{color:var(--muted);font-size:11px;line-height:1.3;height:28px;overflow:hidden}
+ .egg .row{display:flex;gap:6px;margin-top:7px}
+ .egg .row button{padding:5px 9px;font-size:12px;flex:1}
+ .empty{border:1px dashed var(--line);border-radius:16px;padding:48px 20px;text-align:center;color:var(--muted)}
+ .empty .big{font-size:46px;opacity:.75} .empty b{color:var(--ink)}
+ .status{color:var(--muted);font-size:12.5px;min-height:18px;margin-top:12px} .status.err{color:var(--bad)} .status.ok{color:var(--good)}
+</style></head>
+<body>
+<div class="wrap">
+ <h1>🧺 rapp-basket</h1>
+ <p class="sub">Your eggs, kept in this browser — offline, private, yours. Every organism you catch or make can live here; import and export the whole basket to move it between devices. Stored on-device (IndexedDB); nothing leaves without you.</p>
+
+ <div id="stage">
+  <button class="close" onclick="closeStage()">× close</button>
+  <iframe id="player" title="preview"></iframe>
+  <div class="cap"><span id="cap-t"></span><div class="m" id="cap-b"></div></div>
+ </div>
+
+ <div class="bar">
+  <button class="primary" id="add">＋ Add eggs…</button>
+  <button id="imp">⇩ Import basket</button>
+  <button id="exp">⇧ Export basket</button>
+  <button class="danger" id="clr">Clear</button>
+  <input type="file" id="file" accept=".egg,.json,application/json" multiple class="hidden" style="display:none">
+  <input type="file" id="bfile" accept=".json,.basket,application/json" class="hidden" style="display:none">
+  <span class="count" id="count"></span>
+ </div>
+
+ <div class="grid" id="grid"></div>
+ <div class="empty" id="empty" style="display:none">
+  <div class="big">🧺</div>
+  <div style="margin-top:8px"><b>Your basket is empty.</b></div>
+  <div style="font-size:13px;margin-top:4px">Drop an <code>.egg</code> here, or make one in
+   <a href="https://kody-w.github.io/rapp-snap/" target="_blank" rel="noopener">snap</a> ·
+   <a href="https://kody-w.github.io/rapp-static-apis/hologram/" target="_blank" rel="noopener">the cabinet</a> ·
+   <a href="https://kody-w.github.io/rapp-lantern/" target="_blank" rel="noopener">the lantern</a>.</div>
+ </div>
+ <div class="status" id="status"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const status = (m, cls) => { const s=$('status'); s.textContent=m||''; s.className='status'+(cls?' '+cls:''); };
+const esc = s => String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const valid = c => c && c.schema==='hologram-cartridge/1.0' && c.genome && Array.isArray(c.genome.layers);
+
+/* ── shared origin-wide store (any rapp-* app on this origin can write to it) ── */
+const DB='rapp-basket', STORE='eggs';
+function db(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB,1); r.onupgradeneeded=()=>{ const d=r.result; if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE,{keyPath:'id'}); }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function put(cart){ if(!valid(cart))return false; if(!cart.id)return false; const d=await db(); return new Promise((res)=>{ const tx=d.transaction(STORE,'readwrite'); tx.objectStore(STORE).put({id:cart.id,egg:cart,title:cart.title||'organism',born:(cart.born&&cart.born.from)||'',addedAt:Date.now()}); tx.oncomplete=()=>res(true); tx.onerror=()=>res(false); }); }
+async function all(){ const d=await db(); return new Promise((res)=>{ const tx=d.transaction(STORE,'readonly'); const rq=tx.objectStore(STORE).getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>res([]); }); }
+async function del(id){ const d=await db(); return new Promise((res)=>{ const tx=d.transaction(STORE,'readwrite'); tx.objectStore(STORE).delete(id); tx.oncomplete=res; }); }
+async function wipe(){ const d=await db(); return new Promise((res)=>{ const tx=d.transaction(STORE,'readwrite'); tx.objectStore(STORE).clear(); tx.oncomplete=res; }); }
+
+/* ── mini icon: a quick palette-hued silhouette of the genome ── */
+function drawIcon(cv, g){
+  const ctx=cv.getContext('2d'), w=cv.width, h=cv.height; ctx.clearRect(0,0,w,h);
+  const form=(g.layers||[]).find(l=>l.role==='form')||{}, surf=(g.layers||[]).find(l=>l.role==='surface')||{};
+  const pal=surf.palette&&surf.palette.length?surf.palette:['#7a8aa0']; const r=Math.min(w,h)*0.32*(0.7+(form.body_r||0.28));
+  ctx.save(); ctx.translate(w/2,h/2);
+  const gr=ctx.createRadialGradient(0,0,r*0.3,0,0,r*2); gr.addColorStop(0,pal[0]); gr.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.globalAlpha=Math.min(0.6,(surf.glow||0.3)*0.6); ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(0,0,r*2,0,7); ctx.fill(); ctx.globalAlpha=1;
+  ctx.fillStyle=pal[0]; const shape=form.shape||'blob';
+  if(shape==='ring'){ ctx.beginPath(); ctx.arc(0,0,r,0,7); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(0,0,r*0.5,0,7); ctx.fill(); ctx.globalCompositeOperation='source-over'; ctx.restore(); return; }
+  if(shape==='segment'){ for(let i=0;i<4;i++){ctx.fillStyle=pal[i%pal.length]; ctx.beginPath(); ctx.ellipse(0,(i-1.5)*r*0.52,r*(0.72-Math.abs(i-1.5)*0.13),r*0.27,0,0,7); ctx.fill();} ctx.restore(); return; }
+  ctx.beginPath();
+  if(shape==='star'){ const p=Math.max(3,form.limbs||form.segments||6); for(let i=0;i<p*2;i++){const a=i/(p*2)*Math.PI*2-Math.PI/2,rad=i%2?r*0.42:r; i?ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad):ctx.moveTo(Math.cos(a)*rad,Math.sin(a)*rad);} }
+  else { const n=Math.max(3,form.segments||8); for(let i=0;i<n;i++){const a=i/n*Math.PI*2-Math.PI/2,ww=1+0.12*Math.sin(a*3+1); i?ctx.lineTo(Math.cos(a)*r*ww,Math.sin(a)*r*ww):ctx.moveTo(Math.cos(a)*r*ww,Math.sin(a)*r*ww);} }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+function preview(egg){ $('stage').classList.add('on'); $('player').src='player.html#'+b64url(JSON.stringify(egg)); $('cap-t').textContent=egg.title||'organism'; $('cap-b').textContent=(egg.born&&egg.born.from)||''; window.scrollTo({top:0,behavior:'smooth'}); }
+function closeStage(){ $('stage').classList.remove('on'); $('player').src='about:blank'; }
+window.closeStage=closeStage;
+
+async function render(){
+  const items=(await all()).sort((a,b)=>b.addedAt-a.addedAt);
+  $('count').textContent=items.length?(items.length+' egg'+(items.length>1?'s':'')):'';
+  $('empty').style.display=items.length?'none':'block';
+  const grid=$('grid'); grid.innerHTML='';
+  for(const it of items){
+    const el=document.createElement('div'); el.className='egg';
+    el.innerHTML=`<canvas width="150" height="150"></canvas><div class="t">${esc(it.title)}</div><div class="b">${esc(it.born)}</div><div class="row"><button data-a="talk" title="talk to it">💬 talk</button><button data-a="remix" title="breed at the Cabinet">🧬</button><button data-a="dl" title="download .egg">↓</button><button data-a="rm" title="remove">✕</button></div>`;
+    grid.appendChild(el);
+    drawIcon(el.querySelector('canvas'), it.egg.genome);
+    el.querySelector('canvas').onclick=()=>preview(it.egg);
+    el.querySelector('[data-a=talk]').onclick=()=>window.open('https://kody-w.github.io/rapp-static-apis/companion/#'+b64url(JSON.stringify(it.egg)));
+    el.querySelector('[data-a=dl]').onclick=()=>download(it.egg);
+    el.querySelector('[data-a=remix]').onclick=()=>window.open('https://kody-w.github.io/rapp-static-apis/hologram/#remix='+b64url(JSON.stringify(it.egg)));
+    el.querySelector('[data-a=rm]').onclick=async()=>{ await del(it.id); render(); status('removed'); };
+  }
+}
+function download(egg){ const blob=new Blob([JSON.stringify(egg,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(egg.title||'egg').toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-'+egg.id+'.egg'; a.click(); }
+
+async function addFiles(files){ let n=0,bad=0; for(const f of files){ try{ const j=JSON.parse(await f.text()); const arr=Array.isArray(j)?j:(Array.isArray(j.eggs)?j.eggs:[j]); for(const c of arr){ if(await put(c))n++; else bad++; } }catch{ bad++; } } await render(); status(`added ${n} egg${n===1?'':'s'}`+(bad?` · ${bad} skipped (not a valid .egg)`:''), bad&&!n?'err':'ok'); }
+
+$('add').onclick=()=>$('file').click();
+$('file').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) addFiles(fs); };
+$('imp').onclick=()=>$('bfile').click();
+$('bfile').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) addFiles(fs); };
+$('exp').onclick=async()=>{ const items=await all(); if(!items.length){status('nothing to export',' err');return;} const bundle={schema:'rapp-basket/1.0',exported:new Date().toISOString(),eggs:items.map(i=>i.egg)}; const blob=new Blob([JSON.stringify(bundle,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-eggs-'+items.length+'.basket.json'; a.click(); status('exported '+items.length+' eggs','ok'); };
+$('clr').onclick=async()=>{ if(!confirm('Empty the whole basket? (export first if you want to keep them)'))return; await wipe(); render(); status('basket cleared'); };
+
+addEventListener('dragover',e=>{e.preventDefault();document.body.classList.add('drag');});
+addEventListener('dragleave',e=>{ if(e.relatedTarget===null)document.body.classList.remove('drag'); });
+addEventListener('drop',e=>{ e.preventDefault(); document.body.classList.remove('drag'); if(e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+render();
+</script>
+</body></html>

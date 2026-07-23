@@ -1,0 +1,96 @@
+name: assimilation-integrity
+
+on:
+  push:
+    paths:
+      - "authority/**"
+      - "vendor/**"
+      - "src/**"
+      - "products/**"
+      - "services/**"
+      - "integrations/**"
+      - "instances/**"
+      - "examples/**"
+      - "docs/**"
+      - "migrations/**"
+      - "archive/**"
+      - "observatory/**"
+      - "provenance/**"
+      - "catalog/**"
+      - "compat/**"
+      - "workspace/**"
+      - "security/**"
+      - "tools/**"
+      - "tests/**"
+      - "api/**"
+      - "registry.json"
+      - "manifest.json"
+      - "build_god.py"
+      - "README.md"
+      - "MONOREPO.md"
+      - "GRAIL_SCAN.md"
+      - "WORKSPACE.json"
+      - ".github/workflows/assimilation-integrity.yml"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generator-checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - task: semantic
+            command: python3 tools/semantic_catalog.py --check
+          - task: tests
+            command: python3 tools/test_catalog.py --check
+          - task: portability
+            command: python3 tools/portability.py --check
+          - task: licenses
+            command: python3 tools/license_inventory.py --check
+          - task: native
+            command: python3 tools/native_provenance.py --check
+          - task: source-captures
+            command: python3 tools/source_capture.py --check
+          - task: observatory-history
+            command: python3 tools/observatory_history.py --check
+          - task: archives
+            command: python3 tools/archive_inventory.py check-public
+          - task: refs-releases
+            command: python3 tools/ref_inventory.py --check-public
+          - task: rapp-map-wrapper
+            command: python3 tools/wrappers/rapp_map_offline.py --check
+          - task: rapp-spine-wrapper
+            command: python3 tools/wrappers/rapp_spine_offline.py --check
+          - task: ultracode-rdw-overlay
+            command: python3 tools/wrappers/ultracode_local_rdw.py --check
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Check generated ${{ matrix.task }}
+        run: ${{ matrix.command }}
+
+  offline-integrity:
+    needs: generator-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Check offline observatory generation
+        run: python3 build_god.py --check
+      - name: Check generated artifact digests and staging closure
+        run: |
+          python3 tools/generated_manifest.py --check
+          python3 tools/stage_materialized.py --check-plan
+          python3 tools/stage_materialized.py --check
+          python3 tools/staged_secret_scan.py --check
+      - name: Verify exact imports and deterministic indexes
+        run: python3 -m unittest tests.test_assimilation tests.test_compat tests.test_wrappers tests.test_quarantine_matching -v

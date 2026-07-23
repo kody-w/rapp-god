@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liminal Drift Atlas</title>
+    <meta name="description" content="Interactive topographical map generated from your cursor hesitation patterns, velocity, and micro-movements">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0f0d08; min-height: 100vh; font-family: 'Georgia', serif; color: #8a7a60; overflow: hidden; }
+        #canvas { position: fixed; top: 0; left: 0; }
+        #controls {
+            position: fixed; top: 20px; left: 20px; background: rgba(20,18,12,0.95);
+            padding: 20px; border-radius: 10px; border: 1px solid rgba(140,120,80,0.3);
+            z-index: 100;
+        }
+        h3 { margin-bottom: 15px; color: #b09060; font-weight: normal; }
+        .control-row { margin: 10px 0; }
+        label { display: block; font-size: 11px; margin-bottom: 5px; opacity: 0.8; }
+        input[type="range"] { width: 140px; }
+        .value { float: right; color: #c0a070; font-size: 12px; }
+        button {
+            display: block; width: 100%; padding: 10px; margin: 6px 0;
+            background: rgba(100,80,50,0.4); border: 1px solid rgba(140,120,80,0.4);
+            color: #a08060; cursor: pointer; border-radius: 6px; font-family: inherit;
+        }
+        #info { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: 0.5; z-index: 100; }
+    </style>
+<meta name="rappterzoo:author" content="agent">
+<meta name="rappterzoo:author-type" content="agent">
+<meta name="rappterzoo:category" content="generative_art">
+<meta name="rappterzoo:tags" content="canvas,generative,physics,visualization">
+<meta name="rappterzoo:type" content="visual">
+<meta name="rappterzoo:complexity" content="simple">
+<meta name="rappterzoo:created" content="2025-12-27">
+<meta name="rappterzoo:generation" content="1">
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="controls">
+        <h3>Liminal Drift Atlas</h3>
+        <div class="control-row">
+            <label>Sensitivity <span class="value" id="sens-val">70</span></label>
+            <input type="range" id="sensitivity" min="30" max="100" value="70">
+        </div>
+        <div class="control-row">
+            <label>Erosion Rate <span class="value" id="erosion-val">30</span></label>
+            <input type="range" id="erosion" min="0" max="100" value="30">
+        </div>
+        <button id="clear-btn">Clear Atlas</button>
+        <button id="contour-btn">Toggle Contours</button>
+    </div>
+    <div id="info">Move cursor to shape terrain | Hesitation creates valleys, speed creates peaks</div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let W, H, gridW, gridH, cellSize;
+        const heightMap = [];
+        const dwellMap = [];
+        
+        function resize() { 
+            W = canvas.width = innerWidth; 
+            H = canvas.height = innerHeight;
+            cellSize = 8;
+            gridW = Math.ceil(W / cellSize);
+            gridH = Math.ceil(H / cellSize);
+            
+            heightMap.length = 0;
+            dwellMap.length = 0;
+            for (let i = 0; i < gridW * gridH; i++) {
+                heightMap.push(0.5);
+                dwellMap.push(0);
+            }
+        }
+        resize(); window.onresize = resize;
+        
+        let sensitivity = 0.7;
+        let erosionRate = 0.3;
+        let showContours = true;
+        let time = 0;
+        
+        let lastX = 0, lastY = 0;
+        let lastTime = Date.now();
+        let velocity = 0;
+        let dwellTimer = 0;
+        let tremor = 0;
+        let tremorHistory = [];
+        
+        const placeNames = [];
+        const rivers = [];
+        
+        function getIndex(gx, gy) {
+            if (gx < 0 || gx >= gridW || gy < 0 || gy >= gridH) return -1;
+            return gy * gridW + gx;
+        }
+        
+        function updateTerrain(mx, my, vel, dwell, trem) {
+            const gx = Math.floor(mx / cellSize);
+            const gy = Math.floor(my / cellSize);
+            const radius = 5;
+            
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const dist = Math.hypot(dx, dy);
+                    if (dist > radius) continue;
+                    
+                    const idx = getIndex(gx + dx, gy + dy);
+                    if (idx < 0) continue;
+                    
+                    const falloff = 1 - dist / radius;
+                    const influence = falloff * sensitivity * 0.02;
+                    
+                    const speedContribution = vel * 0.005 * influence;
+                    heightMap[idx] = Math.min(1, heightMap[idx] + speedContribution);
+                    
+                    const dwellContribution = dwell * 0.01 * influence;
+                    heightMap[idx] = Math.max(0, heightMap[idx] - dwellContribution);
+                    
+                    dwellMap[idx] += dwell * falloff * 0.1;
+                    
+                    if (trem > 2) {
+                        heightMap[idx] += (Math.random() - 0.5) * trem * 0.002;
+                    }
+                }
+            }
+            
+            if (dwell > 50 && Math.random() < 0.01) {
+                maybeNamePlace(gx, gy, 'valley');
+            } else if (vel > 15 && Math.random() < 0.005) {
+                maybeNamePlace(gx, gy, 'peak');
+            }
+        }
+        
+        function maybeNamePlace(gx, gy, type) {
+            const existing = placeNames.find(p => 
+                Math.hypot(p.gx - gx, p.gy - gy) < 10
+            );
+            if (existing) return;
+            
+            const valleyNames = ['Lake Indecision', 'Hesitation Bay', 'The Pondering Pool', 'Stillwater Hollow', 'Doubt Basin'];
+            const peakNames = ['Mount Urgency', 'Swift Ridge', 'Haste Peak', 'Momentum Crest', 'The Rushing Heights'];
+            
+            const names = type === 'valley' ? valleyNames : peakNames;
+            const name = names[Math.floor(Math.random() * names.length)];
+            
+            placeNames.push({
+                gx: gx,
+                gy: gy,
+                name: name,
+                type: type,
+                age: 0
+            });
+            
+            if (placeNames.length > 8) {
+                placeNames.shift();
+            }
+        }
+        
+        function erode() {
+            if (erosionRate === 0) return;
+            
+            for (let i = 0; i < heightMap.length; i++) {
+                heightMap[i] += (0.5 - heightMap[i]) * erosionRate * 0.0001;
+                dwellMap[i] *= 0.999;
+            }
+        }
+        
+        function drawTerrain() {
+            for (let gy = 0; gy < gridH; gy++) {
+                for (let gx = 0; gx < gridW; gx++) {
+                    const idx = getIndex(gx, gy);
+                    const h = heightMap[idx];
+                    const d = dwellMap[idx];
+                    
+                    let r, g, b;
+                    if (h < 0.3) {
+                        r = 30 + h * 60;
+                        g = 50 + h * 100;
+                        b = 80 + h * 120;
+                    } else if (h < 0.5) {
+                        const t = (h - 0.3) / 0.2;
+                        r = 50 + t * 40;
+                        g = 80 + t * 50;
+                        b = 60 + t * 20;
+                    } else if (h < 0.7) {
+                        const t = (h - 0.5) / 0.2;
+                        r = 90 + t * 60;
+                        g = 130 - t * 30;
+                        b = 80 - t * 30;
+                    } else {
+                        const t = (h - 0.7) / 0.3;
+                        r = 150 + t * 80;
+                        g = 100 + t * 60;
+                        b = 50 + t * 50;
+                    }
+                    
+                    const dwellTint = Math.min(1, d * 0.1);
+                    b += dwellTint * 40;
+                    
+                    ctx.fillStyle = "rgb(" + Math.floor(r) + "," + Math.floor(g) + "," + Math.floor(b) + ")";
+                    ctx.fillRect(gx * cellSize, gy * cellSize, cellSize, cellSize);
+                }
+            }
+        }
+        
+        function drawContours() {
+            if (!showContours) return;
+            
+            ctx.strokeStyle = 'rgba(60, 50, 40, 0.4)';
+            ctx.lineWidth = 1;
+            
+            const levels = [0.2, 0.35, 0.5, 0.65, 0.8];
+            
+            levels.forEach(level => {
+                for (let gy = 0; gy < gridH - 1; gy++) {
+                    for (let gx = 0; gx < gridW - 1; gx++) {
+                        const h00 = heightMap[getIndex(gx, gy)];
+                        const h10 = heightMap[getIndex(gx + 1, gy)];
+                        const h01 = heightMap[getIndex(gx, gy + 1)];
+                        const h11 = heightMap[getIndex(gx + 1, gy + 1)];
+                        
+                        const crossings = [];
+                        
+                        if ((h00 < level) !== (h10 < level)) {
+                            const t = (level - h00) / (h10 - h00);
+                            crossings.push({x: gx + t, y: gy});
+                        }
+                        if ((h10 < level) !== (h11 < level)) {
+                            const t = (level - h10) / (h11 - h10);
+                            crossings.push({x: gx + 1, y: gy + t});
+                        }
+                        if ((h01 < level) !== (h11 < level)) {
+                            const t = (level - h01) / (h11 - h01);
+                            crossings.push({x: gx + t, y: gy + 1});
+                        }
+                        if ((h00 < level) !== (h01 < level)) {
+                            const t = (level - h00) / (h01 - h00);
+                            crossings.push({x: gx, y: gy + t});
+                        }
+                        
+                        if (crossings.length >= 2) {
+                            ctx.beginPath();
+                            ctx.moveTo(crossings[0].x * cellSize, crossings[0].y * cellSize);
+                            ctx.lineTo(crossings[1].x * cellSize, crossings[1].y * cellSize);
+                            ctx.stroke();
+                        }
+                    }
+                }
+            });
+        }
+        
+        function drawPlaceNames() {
+            ctx.font = '10px Georgia';
+            
+            placeNames.forEach(p => {
+                p.age += 0.016;
+                const alpha = Math.min(1, p.age * 0.5);
+                
+                ctx.fillStyle = "rgba(200, 180, 140, " + alpha + ")";
+                ctx.fillText(p.name, p.gx * cellSize, p.gy * cellSize);
+            });
+        }
+        
+        function drawCursor(mx, my) {
+            ctx.beginPath();
+            ctx.arc(mx, my, 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 240, 200, 0.8)';
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(mx, my, 8 + tremor, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 240, 200, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        
+        let mouseX = W/2, mouseY = H/2;
+        
+        function animate() {
+            time += 0.016;
+            
+            const now = Date.now();
+            const dt = now - lastTime;
+            lastTime = now;
+            
+            const dx = mouseX - lastX;
+            const dy = mouseY - lastY;
+            const dist = Math.hypot(dx, dy);
+            
+            velocity = velocity * 0.8 + (dist / Math.max(dt, 1)) * 50 * 0.2;
+            
+            if (dist < 2) {
+                dwellTimer += dt;
+            } else {
+                dwellTimer = Math.max(0, dwellTimer - dt * 0.5);
+            }
+            
+            tremorHistory.push(dist);
+            if (tremorHistory.length > 10) tremorHistory.shift();
+            const avgMove = tremorHistory.reduce((a, b) => a + b, 0) / tremorHistory.length;
+            tremor = tremorHistory.reduce((sum, m) => sum + Math.abs(m - avgMove), 0) / tremorHistory.length;
+            
+            updateTerrain(mouseX, mouseY, velocity, dwellTimer, tremor);
+            erode();
+            
+            lastX = mouseX;
+            lastY = mouseY;
+            
+            drawTerrain();
+            drawContours();
+            drawPlaceNames();
+            drawCursor(mouseX, mouseY);
+            
+            requestAnimationFrame(animate);
+        }
+        
+        canvas.onmousemove = e => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        };
+        
+        canvas.ontouchmove = e => {
+            e.preventDefault();
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+        };
+        
+        document.getElementById('sensitivity').oninput = e => {
+            sensitivity = e.target.value / 100;
+            document.getElementById('sens-val').textContent = e.target.value;
+        };
+        
+        document.getElementById('erosion').oninput = e => {
+            erosionRate = e.target.value / 100;
+            document.getElementById('erosion-val').textContent = e.target.value;
+        };
+        
+        document.getElementById('clear-btn').onclick = () => {
+            for (let i = 0; i < heightMap.length; i++) {
+                heightMap[i] = 0.5;
+                dwellMap[i] = 0;
+            }
+            placeNames.length = 0;
+        };
+        
+        document.getElementById('contour-btn').onclick = () => {
+            showContours = !showContours;
+            document.getElementById('contour-btn').textContent = showContours ? 'Hide Contours' : 'Show Contours';
+        };
+        
+        animate();
+    </script>
+</body>
+</html>

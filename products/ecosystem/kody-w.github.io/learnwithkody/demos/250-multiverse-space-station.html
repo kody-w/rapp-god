@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>R24 Multiverse — Universe 5/12: Brimsworth Orbital Station</title>
+<style>
+html,body{margin:0;padding:0;background:#000010;color:#cfe6ff;font-family:ui-monospace,Menlo,Consolas,monospace;overflow:hidden;height:100%;width:100%}
+canvas#c{display:block;position:fixed;inset:0}
+#hud{position:fixed;inset:0;pointer-events:none;font-size:11px;line-height:1.35;z-index:5}
+.panel{position:absolute;background:rgba(0,8,24,0.55);border:1px solid #3a5e8c;border-radius:6px;padding:6px 8px;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+#stamp{top:8px;left:8px;color:#f9b572;font-weight:bold;letter-spacing:1px;max-width:48vw}
+#plan{top:8px;right:8px;width:240px;max-height:46vh;overflow:hidden}
+#fork{bottom:8px;right:8px;width:240px}
+#ladder{bottom:8px;left:8px;width:240px}
+#act{top:8px;left:50%;transform:translateX(-50%);color:#9fc2ff;letter-spacing:2px;font-size:10px;display:none}
+#chyron{position:absolute;bottom:18vh;left:50%;transform:translateX(-50%);background:rgba(58,94,140,0.42);border:1px solid #f9b572;color:#fff7e0;padding:8px 16px;border-radius:4px;letter-spacing:1px;text-transform:uppercase;font-size:12px;opacity:0;transition:opacity .8s;text-align:center;max-width:70vw}
+#chyron.on{opacity:1}
+#minimap{position:absolute;top:50%;left:8px;transform:translateY(-50%);width:140px;height:140px}
+#pip{position:absolute;top:42px;left:50%;transform:translateX(-50%);display:flex;gap:4px}
+.pipcell{width:130px;height:78px;border:1px solid #3a5e8c;background:#000010;font-size:9px;color:#9fc2ff;position:relative;overflow:hidden}
+.pipcell .lbl{position:absolute;bottom:1px;left:2px;background:rgba(0,0,0,0.55);padding:0 4px;z-index:2;letter-spacing:1px}
+.pipcell canvas{position:absolute;inset:0;width:100%;height:100%}
+#camlbl{position:absolute;top:130px;left:8px;color:#9fc2ff;letter-spacing:1px}
+#info{position:absolute;top:130px;right:8px;color:#6f8db3;font-size:10px}
+.tree{padding-left:6px;border-left:1px solid #3a5e8c;margin-top:2px}
+.done{color:#7fd9a6}.now{color:#f9b572}.todo{color:#6f8db3}.head{color:#cfe6ff;font-weight:bold}
+b{color:#cfe6ff}
+#hint{position:absolute;bottom:6vh;left:50%;transform:translateX(-50%);color:#6f8db3;font-size:10px;letter-spacing:1px}
+</style>
+</head>
+<body>
+<!-- ROUND24_MULTIVERSE v1 -->
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="stamp" class="panel">UNIVERSE 5/12: SPACE STATION · BRIMSWORTH ORBITAL · R24</div>
+  <div id="act" class="panel">ACT I · ARRIVAL</div>
+  <div id="pip">
+    <div class="pipcell" id="pip0"><span class="lbl">CH1 DOME</span></div>
+    <div class="pipcell" id="pip1"><span class="lbl">CH2 EARTH</span></div>
+    <div class="pipcell" id="pip2"><span class="lbl">CH3 GARDEN</span></div>
+    <div class="pipcell" id="pip3"><span class="lbl">CH4 PORTAL</span></div>
+  </div>
+  <div id="camlbl" class="panel">CAM 01</div>
+  <div id="info" class="panel">— ledger online —</div>
+  <div id="plan" class="panel"><span class="head">AGENTIC PLAN · 3-ACT</span><div id="planbody"></div></div>
+  <div id="fork" class="panel"><span class="head">TIMELINE FORK</span><div id="forkbody"></div></div>
+  <div id="ladder" class="panel"><span class="head">DRAMA LADDER · 7 RUNGS</span><div id="ladderbody"></div></div>
+  <canvas id="minimap" class="panel"></canvas>
+  <div id="chyron"></div>
+  <div id="hint">[click anywhere to enable cabin audio · pure sine + airlock hiss pad]</div>
+</div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+var SENTINEL = "ROUND24"+"_MULTIVERSE"+" v1";
+var LS_SELF   = "multiverse_space_station_v1";
+var LS_LEDGER = "brimsworth_multiverse_v1";
+var LS_RECUR  = "recurring_cast_v1";
+var LS_CANON  = "brimsworth_canon_v1";
+
+// ---- cross-read canon + recurring cast + self ----
+var canon={}, recur={}, selfst={};
+try{ canon=JSON.parse(localStorage.getItem(LS_CANON)||"{}"); }catch(e){}
+try{ recur=JSON.parse(localStorage.getItem(LS_RECUR)||"{}"); }catch(e){}
+try{ selfst=JSON.parse(localStorage.getItem(LS_SELF)||"{}"); }catch(e){}
+var NOW = Date.now();
+var RESEED_MS = 600000; // 10 minutes
+if(!selfst.seed || !selfst.seedAt || (NOW-selfst.seedAt) > RESEED_MS){
+  selfst.seed = Math.floor(Math.random()*0xffffffff);
+  selfst.seedAt = NOW;
+  selfst.visits = (selfst.visits||0)+1;
+  selfst.universe = "space-station";
+  selfst.universe_index = "5/12";
+  selfst.round = 24;
+}
+selfst.lastSeen = NOW;
+function save(){ try{ localStorage.setItem(LS_SELF, JSON.stringify(selfst)); }catch(e){} }
+save();
+
+// PRNG seeded
+var _s = (selfst.seed>>>0) || 1;
+function rng(){ _s = (_s*1664525 + 1013904223) >>> 0; return _s/4294967296; }
+function rrange(a,b){ return a + (b-a)*rng(); }
+function rpick(a){ return a[Math.floor(rng()*a.length)]; }
+
+// ledger append
+function appendLedger(entry){
+  var L=[]; try{ L=JSON.parse(localStorage.getItem(LS_LEDGER)||"[]"); }catch(e){}
+  L.push(entry); if(L.length>240) L=L.slice(-240);
+  try{ localStorage.setItem(LS_LEDGER, JSON.stringify(L)); }catch(e){}
+}
+appendLedger({
+  universe_id: "space-station",
+  universe_index: "5/12",
+  round: 24,
+  sentinel: SENTINEL,
+  seed: selfst.seed,
+  visits: selfst.visits,
+  at: NOW,
+  cast: ["Lily","Tomas","Otto","Bytes","CaptainCrunch"],
+  motif: "C-E-G-C · pure sine + airlock hiss pad",
+  setting: "brimsworth-orbital-observation-dome"
+});
+
+// recurring cast cross-read + write
+function bumpRecur(name, role){
+  var r = recur[name] = recur[name] || {firstSeen:NOW, count:0, universes:[]};
+  r.count = (r.count||0) + 1;
+  r.last = "space-station";
+  r.lastAt = NOW;
+  r.role = role;
+  if(!r.universes.includes("space-station")) r.universes.push("space-station");
+}
+bumpRecur("Lily","bride");
+bumpRecur("Tomas","groom");
+bumpRecur("Otto","pet-ringbearer");
+bumpRecur("Bytes","crystal-cat-globe");
+bumpRecur("CaptainCrunch","pup-honor-guard");
+try{ localStorage.setItem(LS_RECUR, JSON.stringify(recur)); }catch(e){}
+
+// BroadcastChannel
+var bc=null, peers=[], peerEvents=[];
+try{ bc = new BroadcastChannel('brimsworth_multiverse'); }catch(e){}
+if(bc){
+  bc.onmessage = function(ev){
+    var d = ev.data||{};
+    if(d.universe && d.universe!=="space-station"){
+      peers.push({u:d.universe, t:Date.now(), ev:d.event||'beat'});
+      if(peers.length>20) peers.shift();
+    }
+    if(d.event){ peerEvents.push(d); if(peerEvents.length>20) peerEvents.shift(); }
+  };
+  try{ bc.postMessage({universe:"space-station", round:24, t:NOW, seed:selfst.seed, hello:true}); }catch(e){}
+  setInterval(function(){ try{ bc.postMessage({universe:"space-station", round:24, t:Date.now(), beat:true}); }catch(e){} }, 9000);
+}
+
+// ---- 252 minor named entities (space-flavored) ----
+var PREFIXES = ["Bramble-Orbital","Field-Astro","Pemberton-Probe","Vellum-Vega","Wren-Comet","Whitford-Beacon"];
+var NAMES = [];
+for(var pi=0; pi<PREFIXES.length; pi++){
+  for(var i=1; i<=42; i++){
+    NAMES.push(PREFIXES[pi]+"-"+("000"+i).slice(-3));
+  }
+}
+// 6*42 = 252 minor + 5 mains + officiant = 258 named entities
+
+var ROLES_MINOR = ["Guest","Ensign","Hydroponicist","Stargazer","Comm-Officer","Quartermaster","Caterer","Photographer","Cousin","Ambassador"];
+
+// ---- THREE setup ----
+var THREE = window.THREE;
+var canvas = document.getElementById('c');
+var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, powerPreference:"high-performance"});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 1.5));
+function resize(){
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  for(var i=0;i<cams.length;i++){ cams[i].aspect = window.innerWidth/window.innerHeight; cams[i].updateProjectionMatrix(); }
+}
+
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000010);
+scene.fog = new THREE.FogExp2(0x000010, 0.0006);
+
+// ---- 32 cameras ----
+var cams = [];
+function addCam(name, p, l, fov){
+  var c = new THREE.PerspectiveCamera(fov||50, 16/9, 0.1, 4000);
+  c.position.set(p[0],p[1],p[2]);
+  c.lookAt(new THREE.Vector3(l[0],l[1],l[2]));
+  c.userData = {name:name, basePos:p.slice(), baseLook:l.slice()};
+  cams.push(c); return c;
+}
+addCam("CAM 01 · DOME WIDE",          [0, 6, 30],   [0, 4, 0],   50);
+addCam("CAM 02 · ALTAR CLOSE",        [0, 5, 8],    [0, 5, 0],   35);
+addCam("CAM 03 · LILY SOLO",          [3, 5.4, 6],  [0.7, 5.2, 0], 32);
+addCam("CAM 04 · TOMAS SOLO",         [-3, 5.4, 6], [-0.7, 5.2, 0],32);
+addCam("CAM 05 · OTTO POV",           [1.3, 1.2, 4],[0, 5, 0],   60);
+addCam("CAM 06 · BYTES GLOBE",        [0.6, 5.0, 3],[0, 4.6, 0], 28);
+addCam("CAM 07 · CRUNCH POV",         [-1.3, 1, 4], [0, 5, 0],   60);
+addCam("CAM 08 · EARTH-RISE",         [0, 0, 22],   [0, -30, -10],55);
+addCam("CAM 09 · DOME LOOKUP",        [0, 1.2, 0.1],[0, 30, 0],  78);
+addCam("CAM 10 · GUEST AISLE R",      [12, 4, 12],  [0, 5, 0],   40);
+addCam("CAM 11 · GUEST AISLE L",      [-12, 4, 12], [0, 5, 0],   40);
+addCam("CAM 12 · STATION EXT",        [60, 25, 60], [0, 0, 0],   35);
+addCam("CAM 13 · STATION EXT 2",      [-50, -8, 70],[0, 0, 0],   38);
+addCam("CAM 14 · AIRLOCK FRONT",      [3, 3, 18],   [3, 3, 11],  40);
+addCam("CAM 15 · GARDEN",             [-22, 3, 5],  [-30, 1.5, 5],55);
+addCam("CAM 16 · MESS HALL",          [0, 4, -18],  [0, 1.5, -25], 50);
+addCam("CAM 17 · TELESCOPE BAY",      [32, 3, -28], [40, 3, -30], 45);
+addCam("CAM 18 · ORBITAL TOP",        [0, 90, 0],   [0, 0, 0.1], 60);
+addCam("CAM 19 · TETHER DETAIL",      [1.2, 3.5, 3],[0.7, 4.4, 0],25);
+addCam("CAM 20 · RING HOVER",         [0.4, 5.0, 0.7],[0, 5.05, 0],20);
+addCam("CAM 21 · GUESTS LO",          [0, 1.5, 16], [0, 5, 0],   50);
+addCam("CAM 22 · DOME ARC E",         [18, 8, 12],  [0, 4, 0],   40);
+addCam("CAM 23 · DOME ARC W",         [-18, 8, 12], [0, 4, 0],   40);
+addCam("CAM 24 · PORTAL CLOSE",       [3, 3.2, 14], [3, 3, 11],  35);
+addCam("CAM 25 · WINDOWSILL",         [4.5, 2.5, 2.5],[3.7, 1.5, 0.5],40);
+addCam("CAM 26 · OVERHEAD ALTAR",     [0, 14, 2],   [0, 4, 0],   55);
+addCam("CAM 27 · MOTHER POV",         [-6, 4, 10],  [0, 5, 0],   45);
+addCam("CAM 28 · OFFICIANT",          [0, 5.4, -2], [0, 5, 4],   38);
+addCam("CAM 29 · STAR FIELD",         [0, 5, 30],   [0, 5, 200], 60);
+addCam("CAM 30 · DOLLY SLOW",         [0, 6, 22],   [0, 5, 0],   42);
+addCam("CAM 31 · CRANE",              [0, 18, 14],  [0, 5, 0],   50);
+addCam("CAM 32 · INTIMATE TWO-SHOT",  [0, 5.2, 3],  [0, 5.1, 0], 28);
+
+// ---- lighting ----
+scene.add(new THREE.AmbientLight(0x223355, 0.55));
+var earthGlow = new THREE.DirectionalLight(0x6fb8ff, 0.65); earthGlow.position.set(0,-30,30); scene.add(earthGlow);
+var amber1 = new THREE.PointLight(0xf9b572, 1.3, 80, 1.6); amber1.position.set(8, 9, 8); scene.add(amber1);
+var amber2 = new THREE.PointLight(0xf9b572, 1.0, 80, 1.6); amber2.position.set(-8, 9, 8); scene.add(amber2);
+var amber3 = new THREE.PointLight(0xf9b572, 0.7, 60, 1.6); amber3.position.set(0, 9, -10); scene.add(amber3);
+var altarSpot = new THREE.SpotLight(0xfff1c8, 1.6, 50, Math.PI/5.2, 0.4, 1.4);
+altarSpot.position.set(0,14,1); altarSpot.target.position.set(0,4,0);
+scene.add(altarSpot); scene.add(altarSpot.target);
+var airlockStrobe = new THREE.PointLight(0x6fbfff, 0.0, 60, 2.0); airlockStrobe.position.set(3,3,11); scene.add(airlockStrobe);
+
+// ---- starfield ----
+function makeStars(count, radius){
+  var g = new THREE.BufferGeometry();
+  var pos = new Float32Array(count*3);
+  var col = new Float32Array(count*3);
+  for(var i=0;i<count;i++){
+    var u = rng()*2-1, t = rng()*Math.PI*2, r = radius*(0.6+0.4*rng()), sq=Math.sqrt(1-u*u);
+    pos[i*3]   = r*sq*Math.cos(t);
+    pos[i*3+1] = r*u;
+    pos[i*3+2] = r*sq*Math.sin(t);
+    var k = 0.55+0.45*rng();
+    col[i*3]   = k*(0.85+0.15*rng());
+    col[i*3+1] = k*(0.9+0.1*rng());
+    col[i*3+2] = Math.min(1, k+0.15);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  g.setAttribute('color', new THREE.BufferAttribute(col,3));
+  var m = new THREE.PointsMaterial({size:1.4, vertexColors:true, sizeAttenuation:false, transparent:true, opacity:0.9});
+  return new THREE.Points(g, m);
+}
+scene.add(makeStars(4500, 900));
+
+// distant nebula glow
+(function(){
+  var g = new THREE.SphereGeometry(700, 24, 16);
+  var m = new THREE.MeshBasicMaterial({color:0x1a2a44, transparent:true, opacity:0.18, side:THREE.BackSide});
+  scene.add(new THREE.Mesh(g, m));
+})();
+
+// ---- Earth (procedural texture) ----
+function earthTexture(){
+  var cv = document.createElement('canvas'); cv.width=512; cv.height=256;
+  var x = cv.getContext('2d');
+  var og = x.createLinearGradient(0,0,0,256);
+  og.addColorStop(0,'#0a3a6e'); og.addColorStop(0.5,'#1262a8'); og.addColorStop(1,'#0a3a6e');
+  x.fillStyle = og; x.fillRect(0,0,512,256);
+  for(var i=0;i<70;i++){
+    var cx=rng()*512, cy=40+rng()*180, r=10+rng()*48;
+    x.fillStyle = 'rgba('+(50+rng()*60|0)+','+(110+rng()*40|0)+','+(50+rng()*40|0)+',0.85)';
+    x.beginPath();
+    for(var a=0;a<26;a++){
+      var ang = a/26*Math.PI*2;
+      var rr = r*(0.6+rng()*0.7);
+      var px = cx+Math.cos(ang)*rr, py = cy+Math.sin(ang)*rr*0.55;
+      if(a===0) x.moveTo(px,py); else x.lineTo(px,py);
+    }
+    x.closePath(); x.fill();
+  }
+  for(var j=0;j<90;j++){
+    x.fillStyle = 'rgba(255,255,255,'+(0.05+rng()*0.14).toFixed(3)+')';
+    x.beginPath(); x.ellipse(rng()*512, rng()*256, 6+rng()*32, 3+rng()*10, rng()*Math.PI, 0, Math.PI*2); x.fill();
+  }
+  return new THREE.CanvasTexture(cv);
+}
+var earth = new THREE.Mesh(
+  new THREE.SphereGeometry(50, 48, 32),
+  new THREE.MeshStandardMaterial({map:earthTexture(), roughness:0.85, metalness:0.0, emissive:0x051a3a, emissiveIntensity:0.18})
+);
+earth.position.set(0, -75, -10); scene.add(earth);
+var earthAtm = new THREE.Mesh(
+  new THREE.SphereGeometry(52, 32, 16),
+  new THREE.MeshBasicMaterial({color:0x6fb8ff, transparent:true, opacity:0.14, side:THREE.BackSide})
+);
+earthAtm.position.copy(earth.position); scene.add(earthAtm);
+
+// ---- station structure (decorative around dome) ----
+var station = new THREE.Group(); scene.add(station);
+var ringMat = new THREE.MeshStandardMaterial({color:0xb6c8de, metalness:0.7, roughness:0.4, emissive:0x223355, emissiveIntensity:0.18});
+var ring = new THREE.Mesh(new THREE.TorusGeometry(34, 1.6, 12, 64), ringMat);
+ring.rotation.x = Math.PI/2; station.add(ring);
+var hub = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 8, 16), ringMat); station.add(hub);
+for(var sk=0; sk<6; sk++){
+  var spg = new THREE.CylinderGeometry(0.3,0.3,32,8);
+  spg.translate(16,0,0);
+  var sp = new THREE.Mesh(spg, ringMat);
+  sp.rotation.z = sk*Math.PI/3; station.add(sp);
+}
+for(var mi=0; mi<28; mi++){
+  var ang = mi/28*Math.PI*2;
+  var modMat = new THREE.MeshStandardMaterial({color:0x8fa6c7, metalness:0.6, roughness:0.4, emissive:0xf9b572, emissiveIntensity:0.18});
+  var m = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 2.2), modMat);
+  m.position.set(Math.cos(ang)*34, Math.sin(ang)*34, 0);
+  station.add(m);
+}
+station.position.set(0, 6, 0);
+
+// ---- observation dome ----
+var dome = new THREE.Group(); scene.add(dome);
+var domeGlass = new THREE.Mesh(
+  new THREE.SphereGeometry(22, 48, 32, 0, Math.PI*2, 0, Math.PI/2),
+  new THREE.MeshPhysicalMaterial({color:0xa6d4ff, transparent:true, opacity:0.10, transmission:0.7, roughness:0.05, metalness:0.0, side:THREE.DoubleSide, ior:1.2})
+);
+dome.add(domeGlass);
+// glass meridian wireframe
+var domeWire = new THREE.Mesh(
+  new THREE.SphereGeometry(22.05, 24, 16, 0, Math.PI*2, 0, Math.PI/2),
+  new THREE.MeshBasicMaterial({color:0x6fbfff, wireframe:true, transparent:true, opacity:0.18})
+);
+dome.add(domeWire);
+// dome floor
+var floor = new THREE.Mesh(
+  new THREE.CircleGeometry(22, 48),
+  new THREE.MeshStandardMaterial({color:0x1a2a44, roughness:0.6, metalness:0.3, emissive:0x3a5e8c, emissiveIntensity:0.10})
+);
+floor.rotation.x = -Math.PI/2; dome.add(floor);
+// aisle (amber runway)
+var aisle = new THREE.Mesh(
+  new THREE.PlaneGeometry(3, 22),
+  new THREE.MeshStandardMaterial({color:0xf9b572, emissive:0xf9b572, emissiveIntensity:0.55, roughness:0.4})
+);
+aisle.rotation.x = -Math.PI/2; aisle.position.set(0, 0.02, -8); dome.add(aisle);
+// floor console panels (star-map screens)
+for(var cp=0; cp<8; cp++){
+  var apan = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2, 0.05, 0.7),
+    new THREE.MeshStandardMaterial({color:0x223355, emissive:0x6fbfff, emissiveIntensity:0.7})
+  );
+  var ang2 = cp/8*Math.PI*2;
+  apan.position.set(Math.cos(ang2)*16, 0.05, Math.sin(ang2)*16);
+  dome.add(apan);
+}
+// altar pedestal
+var altar = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.6, 1.8, 0.8, 18),
+  new THREE.MeshStandardMaterial({color:0xb6c8de, metalness:0.6, roughness:0.3, emissive:0xf9b572, emissiveIntensity:0.25})
+);
+altar.position.set(0, 0.4, 0); dome.add(altar);
+// arch over couple
+var arch = new THREE.Mesh(
+  new THREE.TorusGeometry(2.6, 0.06, 12, 32, Math.PI),
+  new THREE.MeshStandardMaterial({color:0xfff1c8, emissive:0xf9b572, emissiveIntensity:0.7})
+);
+arch.position.set(0, 5.2, -0.6); dome.add(arch);
+// arch flowers (orbital lilies)
+for(var fi=0; fi<7; fi++){
+  var ang3 = (fi/6)*Math.PI;
+  var fl = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 12, 8),
+    new THREE.MeshStandardMaterial({color:0xfff8e6, emissive:0xfff8e6, emissiveIntensity:0.4})
+  );
+  fl.position.set(Math.cos(Math.PI - ang3)*2.6, 5.2 + Math.sin(ang3)*2.6, -0.6);
+  dome.add(fl);
+}
+
+// ---- guests (52 along aisle, named from NAMES[]) ----
+var guests = new THREE.Group(); dome.add(guests);
+var guestColors = [0xa83249,0x2a5d8c,0x4a7a55,0x8e6a3c,0x6a3c8e,0xc7a14c,0x3c8e7a,0x8e3c6a,0xb6c8de,0x4a4a4a,0x556677,0x9d3a55];
+var skinColors = [0xf2c290,0xc88a5e,0x9a6342,0xe2b89a,0x6b4427,0xddae8b];
+function makePerson(c1, c2, scl){
+  scl = scl||1;
+  var g = new THREE.Group();
+  var body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.28*scl, 0.6*scl, 4, 8),
+    new THREE.MeshStandardMaterial({color:c1, roughness:0.6})
+  );
+  body.position.y = 0.55*scl; g.add(body);
+  var head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22*scl, 16, 12),
+    new THREE.MeshStandardMaterial({color:c2, roughness:0.7})
+  );
+  head.position.y = 1.1*scl; g.add(head);
+  // tiny tether ribbon
+  var rib = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, 0.5, 4),
+    new THREE.MeshStandardMaterial({color:0xf9b572, emissive:0xf9b572, emissiveIntensity:0.5})
+  );
+  rib.position.y = 0.25*scl; g.add(rib);
+  return g;
+}
+for(var gi=0; gi<52; gi++){
+  var row = Math.floor(gi/2);
+  var side = (gi%2===0)?-1:1;
+  var p = makePerson(rpick(guestColors), rpick(skinColors), 1);
+  p.position.set(side*(2.4 + (gi%4)*0.6), 0, -2 - row*1.4);
+  p.userData = {name:NAMES[gi], role:rpick(ROLES_MINOR), bob:rng()*Math.PI*2};
+  guests.add(p);
+}
+
+// officiant
+var officiant = makePerson(0x222244, 0xe2b89a, 1.05);
+officiant.position.set(0, 0, 1.2);
+officiant.userData = {name:"Reverend Mossbank-Pulsar", role:"officiant"};
+dome.add(officiant);
+
+// ---- Lily (bride, white dress + tether, hair-lift) ----
+var lily = new THREE.Group(); dome.add(lily);
+var lilyDress = new THREE.Mesh(
+  new THREE.ConeGeometry(0.55, 1.4, 16),
+  new THREE.MeshStandardMaterial({color:0xfff8e6, roughness:0.55, emissive:0xfff8e6, emissiveIntensity:0.06})
+);
+lilyDress.position.y = 0.8; lily.add(lilyDress);
+var lilyTorso = new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.22, 0.4, 4, 8),
+  new THREE.MeshStandardMaterial({color:0xfff8e6, roughness:0.6})
+);
+lilyTorso.position.y = 1.65; lily.add(lilyTorso);
+var lilyHead = new THREE.Mesh(
+  new THREE.SphereGeometry(0.22, 16, 12),
+  new THREE.MeshStandardMaterial({color:0xf2c290, roughness:0.6})
+);
+lilyHead.position.y = 2.1; lily.add(lilyHead);
+// hair (tiny sphere cap that lifts in zero-G)
+var lilyHair = new THREE.Mesh(
+  new THREE.SphereGeometry(0.26, 16, 12, 0, Math.PI*2, 0, Math.PI*0.6),
+  new THREE.MeshStandardMaterial({color:0x2a1a0a, roughness:0.85})
+);
+lilyHair.position.y = 2.18; lily.add(lilyHair);
+// hair strands (lift up subtly)
+var hairStrands = [];
+for(var hs=0; hs<10; hs++){
+  var st = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.008, 0.008, 0.32, 4),
+    new THREE.MeshStandardMaterial({color:0x2a1a0a})
+  );
+  var ang4 = hs/10*Math.PI*2;
+  st.position.set(Math.cos(ang4)*0.18, 2.32, Math.sin(ang4)*0.18);
+  st.userData = {ph: rng()*Math.PI*2, base:2.32};
+  lily.add(st); hairStrands.push(st);
+}
+// veil ribbons (zero-G drift)
+var veilRibbons = [];
+for(var vi=0; vi<6; vi++){
+  var v = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.07, 1.0+rng()*0.6),
+    new THREE.MeshStandardMaterial({color:0xfff8e6, transparent:true, opacity:0.65, side:THREE.DoubleSide})
+  );
+  v.position.set(rrange(-0.22,0.22), rrange(2.0,2.4), rrange(-0.18,0.18));
+  v.rotation.z = rrange(-0.4,0.4);
+  v.userData = {ph: rng()*Math.PI*2, base: v.position.y};
+  lily.add(v); veilRibbons.push(v);
+}
+// tether (attaches Lily to altar)
+var tether = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.018, 0.018, 1.4, 6),
+  new THREE.MeshStandardMaterial({color:0xf9b572, emissive:0xf9b572, emissiveIntensity:0.7})
+);
+tether.position.y = 1.0; lily.add(tether);
+lily.position.set(0.7, 0.9, 0);
+
+// ---- Tomas (engineer's dress uniform) ----
+var tomas = new THREE.Group(); dome.add(tomas);
+var tBody = new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.28, 0.95, 4, 8),
+  new THREE.MeshStandardMaterial({color:0x1c2c4a, roughness:0.5, metalness:0.2})
+);
+tBody.position.y = 0.95; tomas.add(tBody);
+// shoulder boards (engineer trim)
+var tShoulders = new THREE.Mesh(
+  new THREE.BoxGeometry(0.78, 0.12, 0.34),
+  new THREE.MeshStandardMaterial({color:0xf9b572, emissive:0xf9b572, emissiveIntensity:0.4})
+);
+tShoulders.position.y = 1.5; tomas.add(tShoulders);
+var tHead = new THREE.Mesh(
+  new THREE.SphereGeometry(0.22, 16, 12),
+  new THREE.MeshStandardMaterial({color:0xc88a5e, roughness:0.6})
+);
+tHead.position.y = 1.82; tomas.add(tHead);
+// medals
+for(var md=0; md<3; md++){
+  var medal = new THREE.Mesh(
+    new THREE.CircleGeometry(0.05, 12),
+    new THREE.MeshStandardMaterial({color:0xf9b572, emissive:0xf9b572, emissiveIntensity:0.7, side:THREE.DoubleSide})
+  );
+  medal.position.set(-0.15+md*0.15, 1.2, 0.29); tomas.add(medal);
+}
+// utility belt loop
+var belt = new THREE.Mesh(
+  new THREE.TorusGeometry(0.3, 0.03, 8, 16),
+  new THREE.MeshStandardMaterial({color:0xb6c8de, metalness:0.7})
+);
+belt.rotation.x = Math.PI/2; belt.position.y = 0.85; tomas.add(belt);
+tomas.position.set(-0.7, 0, 0);
+
+// ---- Otto (dog in pet pressure-suit) ----
+var otto = new THREE.Group(); dome.add(otto);
+var oBody = new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.18, 0.32, 4, 8),
+  new THREE.MeshStandardMaterial({color:0xd5b88f, roughness:0.45, metalness:0.35})
+);
+oBody.rotation.z = Math.PI/2; oBody.position.y = 0.32; otto.add(oBody);
+var oHelm = new THREE.Mesh(
+  new THREE.SphereGeometry(0.19, 16, 12),
+  new THREE.MeshPhysicalMaterial({color:0xa6d4ff, transparent:true, opacity:0.45, transmission:0.55, roughness:0.05})
+);
+oHelm.position.set(0.32, 0.45, 0); otto.add(oHelm);
+var oSnout = new THREE.Mesh(
+  new THREE.SphereGeometry(0.07, 8, 6),
+  new THREE.MeshStandardMaterial({color:0x8e6a3c})
+);
+oSnout.position.set(0.36, 0.40, 0); otto.add(oSnout);
+// ear flaps inside helmet
+var oEar = new THREE.Mesh(
+  new THREE.ConeGeometry(0.06, 0.14, 6),
+  new THREE.MeshStandardMaterial({color:0x6e4a2a})
+);
+oEar.position.set(0.28, 0.55, 0.06); oEar.rotation.x = -0.3; otto.add(oEar);
+// suit life-support pack
+var oPack = new THREE.Mesh(
+  new THREE.BoxGeometry(0.18, 0.18, 0.10),
+  new THREE.MeshStandardMaterial({color:0x3a5e8c, emissive:0x6fbfff, emissiveIntensity:0.4})
+);
+oPack.position.set(-0.05, 0.42, 0); otto.add(oPack);
+otto.position.set(1.4, 0, 0.6);
+
+// ---- Bytes (crystal cat globe with whiskers) ----
+var bytes = new THREE.Group(); dome.add(bytes);
+var bGlobe = new THREE.Mesh(
+  new THREE.SphereGeometry(0.32, 24, 16),
+  new THREE.MeshPhysicalMaterial({color:0xcae8ff, transparent:true, opacity:0.45, transmission:0.85, roughness:0.05, metalness:0.0, ior:1.45})
+);
+bytes.add(bGlobe);
+var bCat = new THREE.Mesh(
+  new THREE.SphereGeometry(0.18, 16, 12),
+  new THREE.MeshStandardMaterial({color:0x222244, emissive:0x6fbfff, emissiveIntensity:0.5})
+);
+bytes.add(bCat);
+// ears
+for(var be=-1; be<=1; be+=2){
+  var ear = new THREE.Mesh(
+    new THREE.ConeGeometry(0.06, 0.10, 5),
+    new THREE.MeshStandardMaterial({color:0x222244})
+  );
+  ear.position.set(be*0.09, 0.16, 0); bytes.add(ear);
+}
+// whiskers
+for(var wi=-1; wi<=1; wi+=2){
+  for(var ww=0; ww<2; ww++){
+    var wsk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.005,0.005,0.34,4),
+      new THREE.MeshBasicMaterial({color:0xeaffff})
+    );
+    wsk.position.set(wi*0.21, -0.02 - ww*0.04, 0);
+    wsk.rotation.z = Math.PI/2;
+    bytes.add(wsk);
+  }
+}
+bytes.position.set(0, 1.2, 0.2);
+
+// ---- Captain Crunch (pup pressure-suit) ----
+var crunch = new THREE.Group(); dome.add(crunch);
+var cBody = new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.14, 0.22, 4, 8),
+  new THREE.MeshStandardMaterial({color:0xeed8b4, roughness:0.45, metalness:0.35})
+);
+cBody.rotation.z = Math.PI/2; cBody.position.y = 0.24; crunch.add(cBody);
+var cHelm = new THREE.Mesh(
+  new THREE.SphereGeometry(0.15, 16, 12),
+  new THREE.MeshPhysicalMaterial({color:0xa6d4ff, transparent:true, opacity:0.45, transmission:0.55, roughness:0.05})
+);
+cHelm.position.set(0.23, 0.34, 0); crunch.add(cHelm);
+var cSnout = new THREE.Mesh(
+  new THREE.SphereGeometry(0.05, 8, 6),
+  new THREE.MeshStandardMaterial({color:0xb89a72})
+);
+cSnout.position.set(0.27, 0.32, 0); crunch.add(cSnout);
+crunch.position.set(-1.4, 0, 0.6);
+
+// ---- ring on altar (drifts in zero-G) ----
+var rings = new THREE.Group(); dome.add(rings);
+var ringR1 = new THREE.Mesh(
+  new THREE.TorusGeometry(0.06, 0.013, 8, 24),
+  new THREE.MeshStandardMaterial({color:0xfff1c8, metalness:0.95, roughness:0.12, emissive:0xf9b572, emissiveIntensity:0.5})
+);
+ringR1.position.set(-0.06, 1.3, 0); rings.add(ringR1);
+var ringR2 = ringR1.clone(); ringR2.position.set(0.06, 1.3, 0); rings.add(ringR2);
+
+// ---- airlock + portal disc (becomes shimmering portal at t=300s) ----
+var airlock = new THREE.Group(); dome.add(airlock);
+var alFrame = new THREE.Mesh(
+  new THREE.TorusGeometry(1.25, 0.18, 12, 24),
+  new THREE.MeshStandardMaterial({color:0xb6c8de, metalness:0.75, roughness:0.3})
+);
+alFrame.position.set(3, 3, 11); alFrame.rotation.y = Math.PI/2; airlock.add(alFrame);
+var portalDisc = new THREE.Mesh(
+  new THREE.CircleGeometry(1.18, 32),
+  new THREE.MeshBasicMaterial({color:0x000010, transparent:true, opacity:1.0, side:THREE.DoubleSide})
+);
+portalDisc.position.set(3, 3, 11); portalDisc.rotation.y = Math.PI/2;
+airlock.add(portalDisc);
+var shimmer = new THREE.Mesh(
+  new THREE.TorusGeometry(1.05, 0.07, 8, 32),
+  new THREE.MeshBasicMaterial({color:0xa6d4ff, transparent:true, opacity:0.0})
+);
+shimmer.position.copy(portalDisc.position); shimmer.rotation.y = Math.PI/2;
+airlock.add(shimmer);
+// airlock console
+var alCon = new THREE.Mesh(
+  new THREE.BoxGeometry(0.6, 0.4, 0.2),
+  new THREE.MeshStandardMaterial({color:0x223355, emissive:0xf9b572, emissiveIntensity:0.5})
+);
+alCon.position.set(3, 1.6, 11); airlock.add(alCon);
+
+// ---- portal Bytes (from prior universe) — hidden until t=300s ----
+var portalBytes = new THREE.Group(); dome.add(portalBytes); portalBytes.visible = false;
+var pbBody = new THREE.Mesh(
+  new THREE.SphereGeometry(0.18, 16, 12),
+  new THREE.MeshStandardMaterial({color:0x222244, emissive:0xf9b572, emissiveIntensity:0.5})
+);
+portalBytes.add(pbBody);
+var pbAura = new THREE.Mesh(
+  new THREE.SphereGeometry(0.32, 16, 12),
+  new THREE.MeshBasicMaterial({color:0xf9b572, transparent:true, opacity:0.25})
+);
+portalBytes.add(pbAura);
+for(var pe=-1; pe<=1; pe+=2){
+  var pear = new THREE.Mesh(
+    new THREE.ConeGeometry(0.06, 0.10, 5),
+    new THREE.MeshStandardMaterial({color:0x222244})
+  );
+  pear.position.set(pe*0.09, 0.16, 0); portalBytes.add(pear);
+}
+portalBytes.position.set(3, 1.0, 11);
+
+// ---- hydroponics garden module ----
+var garden = new THREE.Group(); scene.add(garden);
+garden.position.set(-30, 0, 5);
+garden.add(new THREE.Mesh(
+  new THREE.BoxGeometry(14, 0.3, 9),
+  new THREE.MeshStandardMaterial({color:0x2a3a44, roughness:0.7, emissive:0x1a3a2a, emissiveIntensity:0.2})
+));
+for(var hi=0; hi<14; hi++){
+  var tube = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.12, 3, 8),
+    new THREE.MeshStandardMaterial({color:0x9fffaa, emissive:0x2eaa3a, emissiveIntensity:0.7, transparent:true, opacity:0.7})
+  );
+  tube.position.set(-6.5 + hi*1.0, 1.5, rng()*4-2);
+  garden.add(tube);
+  var pot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.32, 12, 8),
+    new THREE.MeshStandardMaterial({color:0x4aa84a, emissive:0x2a8a3a, emissiveIntensity:0.35})
+  );
+  pot.position.set(tube.position.x, 0.32, tube.position.z); garden.add(pot);
+}
+
+// ---- mess hall reception module ----
+var mess = new THREE.Group(); scene.add(mess);
+mess.position.set(0, 0, -25);
+mess.add(new THREE.Mesh(
+  new THREE.BoxGeometry(16, 0.3, 9),
+  new THREE.MeshStandardMaterial({color:0x3a2c1a, roughness:0.7, emissive:0xf9b572, emissiveIntensity:0.06})
+));
+var cake = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.6, 0.7, 1.2, 16),
+  new THREE.MeshStandardMaterial({color:0xfff1c8, emissive:0xf9b572, emissiveIntensity:0.25})
+);
+cake.position.set(0, 1.1, 0); mess.add(cake);
+for(var ti=0; ti<6; ti++){
+  var tbl = new THREE.Mesh(
+    new THREE.CylinderGeometry(1, 1.1, 0.1, 16),
+    new THREE.MeshStandardMaterial({color:0xb6c8de, metalness:0.6, emissive:0xf9b572, emissiveIntensity:0.1})
+  );
+  tbl.position.set(-6 + ti*2.4, 0.6, 2.6); mess.add(tbl);
+}
+
+// ---- telescope bay (twilight) ----
+var tele = new THREE.Group(); scene.add(tele);
+tele.position.set(40, 0, -30);
+var tBase = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.2, 1.6, 1.0, 12),
+  new THREE.MeshStandardMaterial({color:0x223355, metalness:0.7, emissive:0x6fbfff, emissiveIntensity:0.15})
+);
+tBase.position.y = 0.5; tele.add(tBase);
+var tArm = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.45, 0.45, 5.5, 12),
+  new THREE.MeshStandardMaterial({color:0xb6c8de, metalness:0.7})
+);
+tArm.position.set(0, 2.6, 0); tArm.rotation.z = -0.55; tele.add(tArm);
+var tEye = new THREE.Mesh(
+  new THREE.SphereGeometry(0.4, 16, 12),
+  new THREE.MeshBasicMaterial({color:0x6fbfff})
+);
+tEye.position.set(2.0, 4.0, 0); tele.add(tEye);
+
+// ---- HUD ----
+var stamp = document.getElementById('stamp');
+stamp.textContent = "UNIVERSE 5/12: SPACE STATION · BRIMSWORTH ORBITAL · R24 · seed#"+selfst.seed.toString(16).slice(0,7)+" · visit "+selfst.visits;
+var planbody  = document.getElementById('planbody');
+var forkbody  = document.getElementById('forkbody');
+var ladbody   = document.getElementById('ladderbody');
+var camlbl    = document.getElementById('camlbl');
+var infobox   = document.getElementById('info');
+var chyron    = document.getElementById('chyron');
+var actEl     = document.getElementById('act');
+actEl.style.display = 'block';
+
+function showChyron(text, ms){
+  chyron.textContent = text;
+  chyron.classList.add('on');
+  clearTimeout(showChyron._t);
+  showChyron._t = setTimeout(function(){ chyron.classList.remove('on'); }, ms||5500);
+}
+
+// agentic plan tree (3-act)
+var plan = [
+  {id:'act1',     t:'ACT I · ARRIVAL', s:'now', head:true},
+  {id:'arrive',   t:'Airlock arrival · cabin pressure nominal', s:'todo'},
+  {id:'aisle',    t:'Walk the aisle (zero-G shuffle)', s:'todo'},
+  {id:'act2',     t:'ACT II · CEREMONY', s:'todo', head:true},
+  {id:'vows',     t:'Vows under Earth', s:'todo'},
+  {id:'rings',    t:'Ring exchange (drift catch)', s:'todo'},
+  {id:'pet',      t:'Otto delivers ring · zero-G pirouette', s:'todo'},
+  {id:'portal',   t:'Multiverse cat meet · airlock-portal', s:'todo'},
+  {id:'kiss',     t:'Earth-rise kiss', s:'todo'},
+  {id:'act3',     t:'ACT III · RECEPTION', s:'todo', head:true},
+  {id:'recep',    t:'Mess-hall reception · cake hover', s:'todo'},
+  {id:'garden',   t:'Hydroponics garden toast', s:'todo'},
+  {id:'twilight', t:'Telescope-bay twilight', s:'todo'}
+];
+function renderPlan(){
+  var html = '<div class="tree">';
+  for(var i=0;i<plan.length;i++){
+    var n = plan[i];
+    var icon = n.s==='done' ? '✓' : n.s==='now' ? '▶' : '·';
+    if(n.head){
+      html += '<div class="head '+n.s+'">'+icon+' '+n.t+'</div>';
+    } else {
+      html += '<div class="'+n.s+'">&nbsp;&nbsp;'+icon+' '+n.t+'</div>';
+    }
+  }
+  html += '</div>';
+  planbody.innerHTML = html;
+}
+renderPlan();
+function setPlan(id, st){
+  for(var i=0;i<plan.length;i++) if(plan[i].id===id){ plan[i].s=st; break; }
+  renderPlan();
+}
+
+// 7-rung drama ladder
+var ladder = [
+  'Rung 1 · Arrival hush',
+  'Rung 2 · Vows opening',
+  'Rung 3 · Ring exchange',
+  'Rung 4 · Pet ring-bearer mishap',
+  'Rung 5 · Multiverse portal cat meet',
+  'Rung 6 · Final vows',
+  'Rung 7 · Earth-rise kiss'
+];
+var ladderIdx = -1;
+function renderLadder(){
+  var h = '';
+  for(var i=0;i<ladder.length;i++){
+    var cls = i<ladderIdx?'done': i===ladderIdx?'now':'todo';
+    var icn = i<ladderIdx?'■': i===ladderIdx?'▣':'□';
+    h += '<div class="'+cls+'">'+icn+' '+ladder[i]+'</div>';
+  }
+  ladbody.innerHTML = h;
+}
+renderLadder();
+function setLadder(i){ if(i>ladderIdx){ ladderIdx=i; renderLadder(); } }
+
+// timeline fork panel (cross-reads ledger)
+function renderFork(){
+  var L=[]; try{ L=JSON.parse(localStorage.getItem(LS_LEDGER)||"[]"); }catch(e){}
+  var per = {};
+  for(var i=0;i<L.length;i++){ per[L[i].universe_id] = (per[L[i].universe_id]||0)+1; }
+  var keys = Object.keys(per);
+  var h = '<div>fork#'+(selfst.visits||1)+' · ledger '+L.length+' / 240</div>';
+  h += '<div class="todo">canon keys: '+Object.keys(canon).length+' · recur cast: '+Object.keys(recur).length+'</div>';
+  for(var k=0;k<keys.length && k<6;k++){
+    var key = keys[k];
+    h += '<div class="'+(key==='space-station'?'now':'todo')+'">↳ '+key+' ×'+per[key]+'</div>';
+  }
+  if(peers.length) h += '<div class="done">live peers: '+peers.length+'</div>';
+  if(peerEvents.length){
+    var last = peerEvents[peerEvents.length-1];
+    h += '<div class="done">peer.event: '+(last.event||'-')+'</div>';
+  }
+  forkbody.innerHTML = h;
+}
+renderFork();
+setInterval(renderFork, 4500);
+
+// minimap
+var mm = document.getElementById('minimap');
+mm.width = 140; mm.height = 140;
+var mctx = mm.getContext('2d');
+function drawMiniMap(active){
+  mctx.fillStyle = '#000010'; mctx.fillRect(0,0,140,140);
+  mctx.strokeStyle = '#3a5e8c'; mctx.lineWidth = 1; mctx.strokeRect(0.5,0.5,139,139);
+  // station ring
+  mctx.strokeStyle = '#b6c8de'; mctx.lineWidth = 1.5;
+  mctx.beginPath(); mctx.arc(70,70,46,0,Math.PI*2); mctx.stroke();
+  // hub
+  mctx.fillStyle='#3a5e8c'; mctx.beginPath(); mctx.arc(70,70,5,0,Math.PI*2); mctx.fill();
+  // sub-world dots
+  var dots = [
+    {x:115, y:70, l:'AL', n:'airlock-arrival'},
+    {x:70,  y:70, l:'DM', n:'observation-dome-chapel'},
+    {x:24,  y:70, l:'GD', n:'hydroponics-garden'},
+    {x:70,  y:115, l:'MS', n:'mess-hall-reception'},
+    {x:115, y:115, l:'TL', n:'telescope-bay-twilight'}
+  ];
+  for(var i=0;i<dots.length;i++){
+    var d = dots[i];
+    mctx.fillStyle = (active===d.n)?'#f9b572':'#6f8db3';
+    mctx.beginPath(); mctx.arc(d.x,d.y,5,0,Math.PI*2); mctx.fill();
+    mctx.fillStyle='#cfe6ff'; mctx.font='9px monospace'; mctx.fillText(d.l, d.x-6, d.y-7);
+  }
+  mctx.fillStyle='#9fc2ff'; mctx.font='9px monospace';
+  mctx.fillText('U5/12 ORBITAL', 8, 134);
+  mctx.fillText('SUB-WORLDS · 5', 8, 16);
+}
+drawMiniMap('observation-dome-chapel');
+
+// ---- PiP 4-channel crosscut ----
+var pipEls = [document.getElementById('pip0'),document.getElementById('pip1'),document.getElementById('pip2'),document.getElementById('pip3')];
+var pipCtxArr = [];
+for(var pp=0; pp<4; pp++){
+  var pcv = document.createElement('canvas');
+  pcv.width=130; pcv.height=78;
+  pipEls[pp].insertBefore(pcv, pipEls[pp].firstChild);
+  pipCtxArr.push(pcv.getContext('2d'));
+}
+function drawPip(t){
+  var x;
+  // CH1 dome (panning starscape with cabin spot + couple silhouettes)
+  x = pipCtxArr[0]; x.fillStyle='#000010'; x.fillRect(0,0,130,78);
+  for(var s=0;s<50;s++){ var sx=(s*7.3+t*8)%130, sy=(s*3.7+s)%78; x.fillStyle='rgba(207,230,255,'+(0.4+0.5*((s*53)%9)/8).toFixed(2)+')'; x.fillRect(sx,sy,1,1); }
+  x.fillStyle='rgba(249,181,114,0.4)'; x.beginPath(); x.arc(65,55,32,0,Math.PI*2); x.fill();
+  x.fillStyle='#fff8e6'; x.fillRect(60,40+Math.sin(t*0.7)*1, 4, 18); // bride
+  x.fillStyle='#1c2c4a'; x.fillRect(67,40, 4, 20); // groom
+  x.fillStyle='#f9b572'; x.fillRect(56,68,18,2); // aisle
+  // CH2 Earth (rotating crescent)
+  x = pipCtxArr[1]; x.fillStyle='#000010'; x.fillRect(0,0,130,78);
+  for(var sb=0;sb<25;sb++){ x.fillStyle='#cfe6ff'; x.fillRect((sb*11+13)%130,(sb*17)%78,1,1); }
+  x.save(); x.translate(65,42); x.rotate(t*0.04);
+  var grad = x.createRadialGradient(0,0,4,0,0,38); grad.addColorStop(0,'#1262a8'); grad.addColorStop(0.7,'#0a3a6e'); grad.addColorStop(1,'#000010');
+  x.fillStyle=grad; x.beginPath(); x.arc(0,0,32,0,Math.PI*2); x.fill();
+  x.fillStyle='#3a8a4a'; x.beginPath(); x.ellipse(8,-6,9,5,0,0,Math.PI*2); x.fill();
+  x.fillStyle='#5a9a5a'; x.beginPath(); x.ellipse(-12,8,11,5,0,0,Math.PI*2); x.fill();
+  x.fillStyle='rgba(255,255,255,0.18)'; x.beginPath(); x.ellipse(2,2,8,3,0.4,0,Math.PI*2); x.fill();
+  x.restore();
+  // atmosphere ring
+  x.strokeStyle='rgba(166,212,255,0.22)'; x.lineWidth=2; x.beginPath(); x.arc(65,42,34,0,Math.PI*2); x.stroke();
+  // CH3 Garden
+  x = pipCtxArr[2]; x.fillStyle='#08221a'; x.fillRect(0,0,130,78);
+  for(var hh=0;hh<8;hh++){
+    x.fillStyle='rgba(159,255,170,0.7)';
+    x.fillRect(13+hh*13, 18+Math.sin(t+hh)*1, 2, 42);
+    x.fillStyle='#2eaa3a';
+    x.beginPath(); x.arc(14+hh*13, 60, 5, 0, Math.PI*2); x.fill();
+    x.fillStyle='#9fffaa'; x.fillRect(13+hh*13-3, 18, 8, 4);
+  }
+  x.fillStyle='rgba(249,181,114,0.18)'; x.fillRect(0,0,130,78);
+  // CH4 Portal
+  x = pipCtxArr[3]; x.fillStyle='#000010'; x.fillRect(0,0,130,78);
+  var portalOn = (t>=298 && t<=346);
+  if(portalOn){
+    for(var rr=32; rr>0; rr-=3){
+      x.strokeStyle='rgba(166,212,255,'+(0.18+0.06*Math.sin(t*4+rr*0.3)).toFixed(2)+')';
+      x.beginPath(); x.arc(65,40,rr,0,Math.PI*2); x.stroke();
+    }
+    x.fillStyle='#f9b572'; x.beginPath(); x.arc(65,40,6+Math.sin(t*5)*1.5,0,Math.PI*2); x.fill();
+    x.fillStyle='#222244'; x.beginPath(); x.arc(65,40,3,0,Math.PI*2); x.fill();
+  } else {
+    x.strokeStyle='#3a5e8c'; x.lineWidth=2;
+    x.strokeRect(40,15,50,50);
+    x.fillStyle='#1a2a44'; x.fillRect(43,18,44,44);
+    x.fillStyle='#f9b572'; x.fillRect(60,38,10,4);
+    x.fillStyle='#6fbfff'; x.fillRect(45,55,5,5);
+  }
+}
+
+// ---- audio: pure sine + airlock hiss pad ----
+var actx=null, audioG=null, oscNotes=[], oscGains=[];
+function audioInit(){
+  if(actx) return;
+  try{
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    actx = new AC();
+    var master = actx.createGain(); master.gain.value = 0.18; master.connect(actx.destination);
+    audioG = master;
+    // C-E-G-C pure sine arpeggio
+    var notes = [261.63, 329.63, 392.00, 523.25];
+    for(var ni=0; ni<notes.length; ni++){
+      var o = actx.createOscillator(); o.type='sine'; o.frequency.value = notes[ni];
+      var g = actx.createGain(); g.gain.value = 0;
+      o.connect(g); g.connect(master); o.start();
+      oscNotes.push(o); oscGains.push(g);
+    }
+    // airlock hiss pad: filtered white noise + slow LFO
+    var bufLen = actx.sampleRate*2;
+    var nbuf = actx.createBuffer(1, bufLen, actx.sampleRate);
+    var nd = nbuf.getChannelData(0);
+    for(var bi=0; bi<bufLen; bi++) nd[bi] = (Math.random()*2-1)*0.5;
+    var noise = actx.createBufferSource(); noise.buffer = nbuf; noise.loop=true;
+    var lpf = actx.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=400; lpf.Q.value=0.6;
+    var nG = actx.createGain(); nG.gain.value = 0.05;
+    noise.connect(lpf); lpf.connect(nG); nG.connect(master); noise.start();
+    var lfo = actx.createOscillator(); lfo.frequency.value = 0.07;
+    var lfoG = actx.createGain(); lfoG.gain.value = 130;
+    lfo.connect(lfoG); lfoG.connect(lpf.frequency); lfo.start();
+    audioInit.lpf = lpf; audioInit.nG = nG;
+  }catch(e){}
+}
+function arpStep(t, portalActive){
+  if(!actx || !oscGains.length) return;
+  var idx = Math.floor(t/2.5) % 4;
+  for(var i=0;i<oscGains.length;i++){
+    var target = (i===idx) ? 0.16 : 0.0;
+    try{ oscGains[i].gain.linearRampToValueAtTime(target, actx.currentTime+0.6); }catch(e){}
+  }
+  if(audioInit.nG && audioInit.lpf){
+    try{
+      audioInit.nG.gain.linearRampToValueAtTime(portalActive?0.14:0.05, actx.currentTime+0.5);
+      audioInit.lpf.frequency.setTargetAtTime(portalActive?900:400, actx.currentTime, 0.7);
+    }catch(e){}
+  }
+}
+window.addEventListener('pointerdown', audioInit);
+window.addEventListener('keydown', audioInit);
+
+// ---- main loop ----
+resize();
+window.addEventListener('resize', resize);
+
+var activeCam = 0;
+var lastCamSwitch = 0;
+var T0 = performance.now();
+var lastReseedTs = NOW;
+var portalChyronShown = false;
+var ev_a=false, ev_b=false, ev_c=false, ev_d=false, ev_e=false, ev_f=false;
+
+function setAct(n){
+  if(n===1) actEl.textContent = 'ACT I · ARRIVAL';
+  else if(n===2) actEl.textContent = 'ACT II · CEREMONY';
+  else if(n===3) actEl.textContent = 'ACT III · RECEPTION';
+}
+
+function tick(){
+  var nowMs = performance.now();
+  var t = (nowMs - T0)/1000;
+  var ts = Date.now();
+
+  // reseed every ~10 minutes
+  if(ts - lastReseedTs > RESEED_MS){
+    selfst.seed = Math.floor(Math.random()*0xffffffff);
+    selfst.seedAt = ts;
+    _s = selfst.seed >>> 0;
+    save();
+    lastReseedTs = ts;
+    appendLedger({universe_id:"space-station", reseed:true, seed:selfst.seed, at:ts, sentinel:SENTINEL});
+    showChyron('reseed · seed#'+selfst.seed.toString(16).slice(0,7), 4000);
+  }
+
+  // camera switching ~ every 6s (slower for intimate moments)
+  var dwell = 6.0;
+  if(t>295 && t<350) dwell = 4.0; // portal sequence faster cuts
+  if(t - lastCamSwitch > dwell){
+    activeCam = (activeCam + 1 + Math.floor(rng()*3)) % cams.length;
+    lastCamSwitch = t;
+    camlbl.textContent = cams[activeCam].userData.name;
+  }
+  var cam = cams[activeCam];
+  // gentle camera bob/dolly
+  cam.position.y = cam.userData.basePos[1] + Math.sin(t*0.4)*0.06;
+  if(activeCam===29 || activeCam===0 || activeCam===29){
+    cam.position.z = cam.userData.basePos[2] - (t%30)*0.05;
+  }
+
+  // earth rotation
+  earth.rotation.y = t*0.012;
+  earthAtm.rotation.y = -t*0.005;
+  // station rotation (slow)
+  station.rotation.z = t*0.04;
+
+  // Lily zero-G float
+  lily.position.y = 0.9 + Math.sin(t*0.65)*0.05;
+  lilyHair.position.y = 2.18 + 0.02 + Math.sin(t*0.9)*0.015;
+  for(var hsi=0; hsi<hairStrands.length; hsi++){
+    var st2 = hairStrands[hsi];
+    st2.position.y = st2.userData.base + 0.04 + Math.sin(t*0.8 + st2.userData.ph)*0.02;
+    st2.rotation.z = Math.sin(t*0.5 + st2.userData.ph)*0.18;
+  }
+  for(var vri=0; vri<veilRibbons.length; vri++){
+    var v2 = veilRibbons[vri];
+    v2.position.y = v2.userData.base + Math.sin(t*0.6 + v2.userData.ph)*0.07;
+    v2.rotation.z = Math.sin(t*0.4 + v2.userData.ph)*0.32;
+  }
+  // Tomas subtle bob
+  tomas.position.y = Math.sin(t*0.5)*0.025;
+  // Otto/Crunch (tail wags via yaw)
+  otto.rotation.y = Math.sin(t*1.5)*0.12;
+  crunch.rotation.y = Math.sin(t*1.7)*0.12;
+  // Bytes globe
+  bytes.rotation.y = t*0.55;
+  bytes.position.y = 1.2 + Math.sin(t*0.8)*0.07;
+  // ring drift
+  ringR1.position.x = -0.06 + Math.sin(t*0.6)*0.04;
+  ringR2.position.x =  0.06 + Math.cos(t*0.6)*0.04;
+  ringR1.rotation.x = t*0.4;
+  ringR2.rotation.x = t*-0.4;
+  // guests bob
+  for(var gi2=0; gi2<guests.children.length; gi2++){
+    var pg = guests.children[gi2];
+    pg.position.y = Math.sin(t*0.4 + (pg.userData.bob||0))*0.04;
+  }
+
+  // act + plan progression
+  if(t<90) setAct(1);
+  else if(t<420) setAct(2);
+  else setAct(3);
+
+  if(t>5)   { setPlan('act1','done'); setPlan('arrive','done'); }
+  if(t>20)  { setPlan('aisle','now'); }
+  if(t>40)  { setPlan('aisle','done'); setPlan('act2','now'); setPlan('vows','now'); }
+  if(t>90)  { setPlan('vows','done'); setPlan('rings','now'); }
+  if(t>140) { setPlan('rings','done'); setPlan('pet','now'); }
+  if(t>200) { setPlan('pet','done'); setPlan('portal','now'); }
+  if(t>340) { setPlan('portal','done'); setPlan('kiss','now'); }
+  if(t>410) { setPlan('kiss','done'); setPlan('act2','done'); setPlan('act3','now'); setPlan('recep','now'); }
+  if(t>460) { setPlan('recep','done'); setPlan('garden','now'); }
+  if(t>510) { setPlan('garden','done'); setPlan('twilight','now'); }
+
+  // drama ladder
+  if(t>10)  setLadder(0);
+  if(t>40)  setLadder(1);
+  if(t>90)  setLadder(2);
+  if(t>150) setLadder(3);
+  if(t>300) setLadder(4);
+  if(t>340) setLadder(5);
+  if(t>380) setLadder(6);
+
+  // crossover chyrons
+  if(!ev_a && t>20 && t<26){ ev_a=true; showChyron("Brimsworth Orbital · cabin pressure nominal · ceremony begin", 5200); }
+  if(!ev_b && t>92 && t<98){ ev_b=true; showChyron("Tomas: I'd cross any orbit for you, Lily.", 5200); }
+  if(!ev_c && t>165 && t<172){ ev_c=true; showChyron("Otto delivers the ring · zero-G pirouette · the ring drifts · Tomas catches", 5500); }
+  if(!ev_d && t>380 && t<388){ ev_d=true; showChyron("Earth-rise kiss · 408km altitude · cabin amber meets ocean blue", 5500); }
+  if(!ev_e && t>465 && t<472){ ev_e=true; showChyron("hydroponics toast · the lilies grew here · the lilies always grow", 5200); }
+  if(!ev_f && t>515 && t<522){ ev_f=true; showChyron("telescope-bay twilight · the multiverse leans in to listen", 5500); }
+
+  // ---- portal sequence at t=300s ----
+  var portalActive = (t>=300 && t<=345);
+  if(portalActive){
+    var pT = t-300;
+    shimmer.material.opacity = 0.55 + 0.4*Math.sin(t*7);
+    shimmer.scale.setScalar(1 + 0.12*Math.sin(t*4));
+    var hue = 0.55 + 0.05*Math.sin(t*3);
+    portalDisc.material.color.setHSL(hue, 0.7, 0.55);
+    portalDisc.material.opacity = 1.0;
+    airlockStrobe.intensity = 1.4*(0.5+0.5*Math.sin(t*9));
+    portalBytes.visible = true;
+    var u = Math.min(1, pT/22);
+    portalBytes.position.x = 3 + (4.0-3)*u;
+    portalBytes.position.y = 1.0 + Math.sin(t*1.2)*0.06;
+    portalBytes.position.z = 11 + (1.0-11)*u; // walks toward windowsill at z=1
+    pbAura.material.opacity = 0.25 + 0.15*Math.sin(t*4);
+    // crystal-globe Bytes drifts toward portal-Bytes & yawns
+    var v = Math.min(1, Math.max(0,(pT-6)/18));
+    bytes.position.x = 0 + (3.7-0)*v;
+    bytes.position.z = 0.2 + (1.2-0.2)*v;
+    var yawn = Math.max(0, Math.sin((pT-12)*1.2));
+    bGlobe.scale.set(1+yawn*0.15, 1+yawn*0.18, 1+yawn*0.15);
+    pbBody.scale.set(1+yawn*0.12, 1+yawn*0.16, 1+yawn*0.12);
+    if(!portalChyronShown && pT>4){
+      portalChyronShown = true;
+      showChyron("the multiverse cat acknowledges itself across timelines", 7000);
+      appendLedger({universe_id:"space-station", event:"portal_cat_meet", at:Date.now(), sentinel:SENTINEL, partner:"crystal-cat-globe×prior-Bytes"});
+      try{ if(bc) bc.postMessage({universe:"space-station", event:"portal_cat_meet", t:Date.now()}); }catch(e){}
+      setLadder(4);
+    }
+  } else {
+    shimmer.material.opacity = Math.max(0, shimmer.material.opacity-0.02);
+    portalDisc.material.color.setRGB(0,0,0.06);
+    airlockStrobe.intensity = Math.max(0, airlockStrobe.intensity-0.05);
+    if(t>345 && portalBytes.visible){
+      // both cats settled at windowsill — drift slowly
+      portalBytes.position.y = 1.0 + Math.sin(t*0.8)*0.04;
+      bytes.position.y = 1.2 + Math.sin(t*0.6)*0.04;
+    }
+  }
+
+  // mini-map active sub-world
+  var aw='observation-dome-chapel';
+  if(t<10) aw='airlock-arrival';
+  else if(t>410 && t<460) aw='mess-hall-reception';
+  else if(t>=460 && t<510) aw='hydroponics-garden';
+  else if(t>=510) aw='telescope-bay-twilight';
+  drawMiniMap(aw);
+
+  // info box
+  infobox.textContent = 'cast×'+ (Object.keys(recur).length) + ' · entities×258 · cams×'+cams.length+' · t='+t.toFixed(0)+'s';
+
+  // audio + pip
+  arpStep(t, portalActive);
+  drawPip(t);
+
+  renderer.render(scene, cam);
+  requestAnimationFrame(tick);
+}
+tick();
+
+// persist on unload
+window.addEventListener('beforeunload', function(){
+  try{ localStorage.setItem(LS_RECUR, JSON.stringify(recur)); }catch(e){}
+  save();
+});
+
+// minimal verification trace
+try{ console.info('[brimsworth] U5/12 space-station online · sentinel=', SENTINEL, '· seed=', selfst.seed); }catch(e){}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cozy Cabin — Christmas Eve</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #1a0a05;
+    color: #ffd1a0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    height: 100%;
+  }
+  #c { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+  .overlay {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    pointer-events: none;
+    z-index: 5;
+    text-shadow: 0 0 8px rgba(0,0,0,0.95);
+    line-height: 1.35;
+  }
+  .overlay h1 {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: #ffb066;
+  }
+  .overlay p {
+    margin: 0;
+    font-size: 11px;
+    opacity: 0.7;
+    max-width: 360px;
+    color: #f3d4b0;
+  }
+  .hint {
+    position: fixed;
+    bottom: 12px;
+    right: 16px;
+    font-size: 10px;
+    opacity: 0.55;
+    pointer-events: none;
+    text-shadow: 0 0 6px rgba(0,0,0,0.95);
+    color: #ffd1a0;
+    text-align: right;
+    line-height: 1.5;
+  }
+  .splash {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, #2a1408 0%, #0a0503 80%);
+    color: #ffb066;
+    font-size: 12px;
+    letter-spacing: 0.25em;
+    z-index: 10;
+    transition: opacity 0.6s ease;
+    cursor: pointer;
+  }
+  .splash h2 {
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: 0.4em;
+    margin: 0 0 24px 0;
+    color: #ffd1a0;
+  }
+  .splash .small {
+    font-size: 10px;
+    opacity: 0.6;
+    letter-spacing: 0.2em;
+    margin-top: 14px;
+  }
+  .splash.hidden { opacity: 0; pointer-events: none; }
+  .crosshair {
+    position: fixed;
+    left: 50%; top: 50%;
+    width: 4px; height: 4px;
+    margin: -2px 0 0 -2px;
+    background: rgba(255, 200, 140, 0.5);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 4;
+    box-shadow: 0 0 4px rgba(255, 150, 80, 0.6);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="overlay">
+  <h1>COZY CABIN — CHRISTMAS EVE</h1>
+  <p>Procedural fire (vertex-displaced flame shader + GPU-instanced embers), flickering point light driven by Perlin noise, frosted window onto a snowy pine forest, synthesized fire crackle and wind howl.</p>
+</div>
+<div class="crosshair"></div>
+<div class="hint">
+  WASD — walk &nbsp;·&nbsp; mouse — look<br>
+  E — toggle desk lamp<br>
+  click to begin
+</div>
+<div class="splash" id="splash">
+  <h2>COZY CABIN</h2>
+  <div>CLICK TO ENTER</div>
+  <div class="small">audio + pointer lock</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+// RENDERER + SCENE
+// ============================================================
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0604);
+scene.fog = new THREE.FogExp2(0x1a0c06, 0.045);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 60);
+camera.position.set(0, 1.55, 1.6);
+
+// ============================================================
+// PROCEDURAL TEXTURE: WOOD GRAIN (canvas-based, used by walls/floor/furniture)
+// We bake at startup so the demo is GPU-cheap.
+// ============================================================
+function makeWoodTexture(w, h, baseColor, darkColor, plankHeight, knots) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  // base
+  ctx.fillStyle = baseColor; ctx.fillRect(0, 0, w, h);
+  // grain noise lines
+  for (let y = 0; y < h; y++) {
+    const t = y / h;
+    const n = Math.sin(y * 0.13 + Math.sin(y * 0.041) * 6.0) * 0.5 + 0.5;
+    const a = 0.06 + 0.18 * n;
+    ctx.fillStyle = `rgba(40,18,8,${a.toFixed(3)})`;
+    ctx.fillRect(0, y, w, 1);
+  }
+  // long grain streaks
+  for (let i = 0; i < 220; i++) {
+    const y = Math.random() * h;
+    const len = 60 + Math.random() * (w - 60);
+    const x = Math.random() * (w - len);
+    ctx.strokeStyle = `rgba(20,10,5,${0.05 + Math.random() * 0.15})`;
+    ctx.lineWidth = 0.6 + Math.random() * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.bezierCurveTo(x + len * 0.3, y + (Math.random() - 0.5) * 8,
+                      x + len * 0.7, y + (Math.random() - 0.5) * 8,
+                      x + len, y);
+    ctx.stroke();
+  }
+  // plank seams
+  ctx.fillStyle = darkColor;
+  for (let py = 0; py < h; py += plankHeight) {
+    ctx.fillRect(0, py, w, 2);
+  }
+  // vertical seams within planks (random offsets)
+  for (let py = 0; py < h; py += plankHeight) {
+    let x = Math.random() * 80;
+    while (x < w) {
+      ctx.fillRect(x, py, 1.5, plankHeight);
+      x += 60 + Math.random() * 140;
+    }
+  }
+  // knots
+  for (let i = 0; i < knots; i++) {
+    const x = Math.random() * w, y = Math.random() * h;
+    const r = 4 + Math.random() * 7;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, '#1a0c05');
+    g.addColorStop(0.6, 'rgba(40,20,10,0.6)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+const wallWoodTex = makeWoodTexture(512, 512, '#5a341c', '#1d0f06', 64, 22);
+wallWoodTex.repeat.set(2.0, 1.0);
+const floorWoodTex = makeWoodTexture(512, 512, '#3a2010', '#0e0703', 56, 30);
+floorWoodTex.repeat.set(3.0, 3.5);
+const ceilingWoodTex = makeWoodTexture(512, 512, '#2a160a', '#0a0502', 80, 12);
+ceilingWoodTex.repeat.set(2.0, 2.0);
+const furnitureWoodTex = makeWoodTexture(256, 256, '#4a2812', '#180a04', 48, 18);
+
+// stone texture for fireplace
+function makeStoneTexture(size) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#2a2520'; ctx.fillRect(0, 0, size, size);
+  // mortar background variation
+  for (let i = 0; i < 4000; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const v = 30 + Math.random() * 50;
+    ctx.fillStyle = `rgb(${v},${v - 5},${v - 10})`;
+    ctx.fillRect(x, y, 1, 1);
+  }
+  // stones — irregular polygons
+  for (let i = 0; i < 80; i++) {
+    const cx = Math.random() * size, cy = Math.random() * size;
+    const rx = 16 + Math.random() * 30, ry = 12 + Math.random() * 22;
+    const sides = 6 + Math.floor(Math.random() * 4);
+    const v = 90 + Math.random() * 70;
+    const r = v + Math.random() * 20;
+    const g = v + Math.random() * 10;
+    const b = v - 10 + Math.random() * 10;
+    ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
+    ctx.beginPath();
+    for (let s = 0; s < sides; s++) {
+      const a = (s / sides) * Math.PI * 2 + Math.random() * 0.4;
+      const ox = Math.cos(a) * rx * (0.7 + Math.random() * 0.4);
+      const oy = Math.sin(a) * ry * (0.7 + Math.random() * 0.4);
+      if (s === 0) ctx.moveTo(cx + ox, cy + oy); else ctx.lineTo(cx + ox, cy + oy);
+    }
+    ctx.closePath(); ctx.fill();
+    // dark outline / mortar
+    ctx.strokeStyle = 'rgba(10,8,6,0.85)'; ctx.lineWidth = 1.6; ctx.stroke();
+    // tiny highlight
+    ctx.fillStyle = `rgba(255,230,200,0.06)`;
+    ctx.beginPath();
+    ctx.arc(cx - rx * 0.3, cy - ry * 0.3, rx * 0.4, 0, Math.PI * 2); ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+const stoneTex = makeStoneTexture(512);
+stoneTex.repeat.set(1.6, 1.2);
+
+// ============================================================
+// ROOM GEOMETRY
+// Room is roughly 6m x 4.5m x 2.6m centered at origin
+// ============================================================
+const ROOM = { w: 6.0, d: 4.5, h: 2.6 };
+const HALF_W = ROOM.w / 2, HALF_D = ROOM.d / 2;
+
+const roomGroup = new THREE.Group();
+scene.add(roomGroup);
+
+// Floor
+const floorMat = new THREE.MeshStandardMaterial({
+  map: floorWoodTex, roughness: 0.85, metalness: 0.0, color: 0xffffff,
+});
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+roomGroup.add(floor);
+
+// Ceiling
+const ceilMat = new THREE.MeshStandardMaterial({
+  map: ceilingWoodTex, roughness: 0.95, color: 0x6a4a30,
+});
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), ceilMat);
+ceiling.rotation.x = Math.PI / 2;
+ceiling.position.y = ROOM.h;
+ceiling.receiveShadow = true;
+roomGroup.add(ceiling);
+
+// Walls — back, left, right; front wall has the window
+const wallMat = new THREE.MeshStandardMaterial({
+  map: wallWoodTex, roughness: 0.9, color: 0xffffff,
+});
+
+function addWall(w, h, x, y, z, ry) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
+  m.position.set(x, y, z); m.rotation.y = ry;
+  m.receiveShadow = true; m.castShadow = false;
+  roomGroup.add(m);
+  return m;
+}
+// back wall (where fireplace will be) — z = -HALF_D
+addWall(ROOM.w, ROOM.h, 0, ROOM.h / 2, -HALF_D, 0);
+// front wall (window cut-out), z = +HALF_D facing -z
+const frontWallGroup = new THREE.Group();
+roomGroup.add(frontWallGroup);
+// build front wall as 4 strips around a window hole
+const WIN = { w: 1.8, h: 1.2, cy: 1.4 }; // window opening
+// top strip
+const topStripH = ROOM.h - (WIN.cy + WIN.h / 2);
+const topStrip = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, topStripH), wallMat);
+topStrip.position.set(0, ROOM.h - topStripH / 2, HALF_D);
+topStrip.rotation.y = Math.PI;
+frontWallGroup.add(topStrip);
+// bottom strip
+const botStripH = WIN.cy - WIN.h / 2;
+const botStrip = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, botStripH), wallMat);
+botStrip.position.set(0, botStripH / 2, HALF_D);
+botStrip.rotation.y = Math.PI;
+frontWallGroup.add(botStrip);
+// left strip
+const sideStripW = (ROOM.w - WIN.w) / 2;
+const leftStrip = new THREE.Mesh(new THREE.PlaneGeometry(sideStripW, WIN.h), wallMat);
+leftStrip.position.set(-(WIN.w / 2 + sideStripW / 2), WIN.cy, HALF_D);
+leftStrip.rotation.y = Math.PI;
+frontWallGroup.add(leftStrip);
+// right strip
+const rightStrip = new THREE.Mesh(new THREE.PlaneGeometry(sideStripW, WIN.h), wallMat);
+rightStrip.position.set((WIN.w / 2 + sideStripW / 2), WIN.cy, HALF_D);
+rightStrip.rotation.y = Math.PI;
+frontWallGroup.add(rightStrip);
+
+// left wall x = -HALF_W facing +x
+addWall(ROOM.d, ROOM.h, -HALF_W, ROOM.h / 2, 0, Math.PI / 2);
+// right wall x = +HALF_W facing -x
+addWall(ROOM.d, ROOM.h, HALF_W, ROOM.h / 2, 0, -Math.PI / 2);
+
+// ceiling beams (cosmetic)
+const beamMat = new THREE.MeshStandardMaterial({ map: furnitureWoodTex, roughness: 0.9, color: 0x3a2010 });
+for (let i = 0; i < 4; i++) {
+  const t = (i + 0.5) / 4;
+  const x = (t - 0.5) * ROOM.w;
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, ROOM.d), beamMat);
+  beam.position.set(x, ROOM.h - 0.12, 0);
+  beam.castShadow = true; beam.receiveShadow = true;
+  roomGroup.add(beam);
+}
+
+// ============================================================
+// FIREPLACE (back wall)
+// ============================================================
+const fireplaceGroup = new THREE.Group();
+fireplaceGroup.position.set(0, 0, -HALF_D + 0.001);
+roomGroup.add(fireplaceGroup);
+
+// Hearth surround — stone block with a rectangular opening
+const stoneMat = new THREE.MeshStandardMaterial({ map: stoneTex, roughness: 0.95, color: 0xb8aa9a });
+const FP = { w: 2.0, h: 1.6, depth: 0.45, openW: 1.0, openH: 0.95 };
+// Build surround as 5 stone pieces
+const lintelH = FP.h - FP.openH;
+const lintel = new THREE.Mesh(new THREE.BoxGeometry(FP.w, lintelH, FP.depth), stoneMat);
+lintel.position.set(0, FP.openH + lintelH / 2, FP.depth / 2);
+lintel.castShadow = true; lintel.receiveShadow = true;
+fireplaceGroup.add(lintel);
+
+const sideStoneW = (FP.w - FP.openW) / 2;
+const leftPier = new THREE.Mesh(new THREE.BoxGeometry(sideStoneW, FP.openH, FP.depth), stoneMat);
+leftPier.position.set(-(FP.openW / 2 + sideStoneW / 2), FP.openH / 2, FP.depth / 2);
+leftPier.castShadow = true; leftPier.receiveShadow = true;
+fireplaceGroup.add(leftPier);
+const rightPier = leftPier.clone();
+rightPier.position.x = -leftPier.position.x;
+fireplaceGroup.add(rightPier);
+
+// Hearth slab on the floor
+const hearth = new THREE.Mesh(new THREE.BoxGeometry(FP.w + 0.4, 0.08, FP.depth + 0.3), stoneMat);
+hearth.position.set(0, 0.04, FP.depth / 2 + 0.15);
+hearth.castShadow = true; hearth.receiveShadow = true;
+fireplaceGroup.add(hearth);
+
+// Mantel (wooden beam across top)
+const mantel = new THREE.Mesh(new THREE.BoxGeometry(FP.w + 0.3, 0.1, FP.depth + 0.2),
+  new THREE.MeshStandardMaterial({ map: furnitureWoodTex, roughness: 0.85, color: 0x4a2814 }));
+mantel.position.set(0, FP.h, FP.depth / 2 + 0.1);
+mantel.castShadow = true; mantel.receiveShadow = true;
+fireplaceGroup.add(mantel);
+
+// Fireplace interior — dark recess (back panel)
+const recessMat = new THREE.MeshStandardMaterial({ color: 0x0a0503, roughness: 1.0 });
+const fpBack = new THREE.Mesh(new THREE.PlaneGeometry(FP.openW, FP.openH), recessMat);
+fpBack.position.set(0, FP.openH / 2, 0.01);
+fireplaceGroup.add(fpBack);
+// recess sides + floor + top so we don't see through
+const rDepth = FP.depth - 0.05;
+const fpBottom = new THREE.Mesh(new THREE.PlaneGeometry(FP.openW, rDepth), recessMat);
+fpBottom.rotation.x = -Math.PI / 2; fpBottom.position.set(0, 0.005, rDepth / 2);
+fireplaceGroup.add(fpBottom);
+const fpTop = new THREE.Mesh(new THREE.PlaneGeometry(FP.openW, rDepth), recessMat);
+fpTop.rotation.x = Math.PI / 2; fpTop.position.set(0, FP.openH - 0.005, rDepth / 2);
+fireplaceGroup.add(fpTop);
+const fpL = new THREE.Mesh(new THREE.PlaneGeometry(rDepth, FP.openH), recessMat);
+fpL.rotation.y = Math.PI / 2; fpL.position.set(-FP.openW / 2 + 0.005, FP.openH / 2, rDepth / 2);
+fireplaceGroup.add(fpL);
+const fpR = fpL.clone(); fpR.rotation.y = -Math.PI / 2; fpR.position.x = -fpL.position.x;
+fireplaceGroup.add(fpR);
+
+// Logs (stylized, three crossed cylinders)
+const logMat = new THREE.MeshStandardMaterial({ color: 0x2a1206, roughness: 1.0, emissive: 0x4a1c08, emissiveIntensity: 0.8 });
+function addLog(x, y, z, ry, len = 0.8) {
+  const g = new THREE.CylinderGeometry(0.08, 0.08, len, 10);
+  const m = new THREE.Mesh(g, logMat);
+  m.rotation.z = Math.PI / 2; m.rotation.y = ry;
+  m.position.set(x, y, z);
+  fireplaceGroup.add(m);
+}
+addLog(0, 0.12, 0.18, 0, 0.85);
+addLog(0.05, 0.22, 0.18, 0.3, 0.8);
+addLog(-0.08, 0.22, 0.16, -0.4, 0.78);
+
+// Embers bed (glowing patch at base of fire)
+const embersBedGeo = new THREE.PlaneGeometry(FP.openW * 0.85, 0.18);
+const embersBedMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    varying vec2 vUv;
+    uniform float uTime;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p){
+      vec2 i = floor(p), f = fract(p);
+      float a = hash(i), b = hash(i + vec2(1,0)), c = hash(i + vec2(0,1)), d = hash(i + vec2(1,1));
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+    }
+    void main(){
+      vec2 uv = vUv;
+      float n1 = noise(uv * 8.0 + uTime * 0.6);
+      float n2 = noise(uv * 22.0 - uTime * 1.5);
+      float ember = pow(n1 * 0.7 + n2 * 0.3, 2.5);
+      // edge falloff
+      float edge = smoothstep(0.0, 0.25, uv.y) * smoothstep(1.0, 0.75, uv.y);
+      edge *= smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
+      ember *= edge;
+      vec3 col = mix(vec3(0.6, 0.05, 0.0), vec3(1.4, 0.7, 0.15), ember);
+      gl_FragColor = vec4(col, ember * 1.2);
+    }`
+});
+const embersBed = new THREE.Mesh(embersBedGeo, embersBedMat);
+embersBed.rotation.x = -Math.PI / 2;
+embersBed.position.set(0, 0.045, 0.18);
+fireplaceGroup.add(embersBed);
+
+// ============================================================
+// FIRE — vertex-displaced billboard with procedural noise
+// ============================================================
+const fireGeo = new THREE.PlaneGeometry(0.95, 1.05, 24, 32);
+const fireMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    varying float vDisp;
+    uniform float uTime;
+    // hash + value noise
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p){
+      vec2 i = floor(p), f = fract(p);
+      float a = hash(i), b = hash(i + vec2(1,0)), c = hash(i + vec2(0,1)), d = hash(i + vec2(1,1));
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+    }
+    float fbm(vec2 p){
+      float v = 0.0, a = 0.5;
+      for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
+      return v;
+    }
+    void main(){
+      vUv = uv;
+      vec3 pos = position;
+      // displacement gets stronger toward the top — flames lick upward
+      float upBias = smoothstep(0.0, 1.0, uv.y);
+      float t = uTime * 1.6;
+      float dx = (fbm(vec2(uv.x * 3.5 + t * 0.3, uv.y * 4.0 - t)) - 0.5) * 2.0;
+      float dy = (fbm(vec2(uv.x * 4.0 - t * 0.7, uv.y * 3.0 + t * 1.2)) - 0.5);
+      pos.x += dx * 0.18 * upBias;
+      pos.y += dy * 0.12 * upBias;
+      // pinch the bottom inward so flames have a base
+      float pinch = (1.0 - upBias);
+      pos.x *= mix(1.0, 0.55, pinch);
+      vDisp = upBias;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }`,
+  fragmentShader: `
+    varying vec2 vUv;
+    varying float vDisp;
+    uniform float uTime;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p){
+      vec2 i = floor(p), f = fract(p);
+      float a = hash(i), b = hash(i + vec2(1,0)), c = hash(i + vec2(0,1)), d = hash(i + vec2(1,1));
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+    }
+    float fbm(vec2 p){
+      float v = 0.0, a = 0.5;
+      for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.07; a *= 0.5; }
+      return v;
+    }
+    void main(){
+      vec2 uv = vUv;
+      float t = uTime;
+      // upward-flowing turbulence
+      vec2 q = vec2(uv.x * 2.0, uv.y * 2.5 - t * 1.4);
+      float n = fbm(q + fbm(q * 1.5) * 0.6);
+      // shape: fire is wider at the bottom, tapers up
+      float shape = smoothstep(0.0, 0.15, uv.y) * (1.0 - smoothstep(0.6, 1.0, uv.y));
+      float radial = 1.0 - smoothstep(0.0, 0.5, abs(uv.x - 0.5) * (1.2 + uv.y * 1.4));
+      float flame = n * shape * radial;
+      flame = pow(flame, 1.4) * 2.4;
+      // color gradient: white-yellow core -> orange -> deep red -> dark
+      vec3 col;
+      if (flame > 1.2)      col = mix(vec3(1.6, 1.2, 0.6), vec3(1.8, 1.5, 0.9), (flame - 1.2));
+      else if (flame > 0.6) col = mix(vec3(1.4, 0.5, 0.05), vec3(1.6, 1.0, 0.3), (flame - 0.6) / 0.6);
+      else                  col = mix(vec3(0.4, 0.05, 0.0), vec3(1.4, 0.5, 0.05), flame / 0.6);
+      float alpha = clamp(flame * 1.1, 0.0, 1.0);
+      gl_FragColor = vec4(col * (0.9 + 0.3 * sin(t * 6.0)), alpha);
+    }`,
+});
+const fire = new THREE.Mesh(fireGeo, fireMat);
+fire.position.set(0, 0.55, 0.2); // inside the fireplace recess
+// fire faces forward (already does as plane is on XY)
+fireplaceGroup.add(fire);
+
+// Second crossed flame plane for volume
+const fire2 = new THREE.Mesh(fireGeo, fireMat);
+fire2.position.copy(fire.position);
+fire2.rotation.y = Math.PI / 2;
+fireplaceGroup.add(fire2);
+
+// ============================================================
+// EMBERS — 200 GPU-instanced particles drifting up the chimney
+// ============================================================
+const EMBER_COUNT = 200;
+const emberGeo = new THREE.PlaneGeometry(0.025, 0.025);
+const emberInstanceData = [];
+for (let i = 0; i < EMBER_COUNT; i++) {
+  emberInstanceData.push({
+    seedX: (Math.random() - 0.5) * 0.7,        // x offset within fireplace
+    seedZ: (Math.random() - 0.5) * 0.25 + 0.1, // z offset
+    speed: 0.3 + Math.random() * 0.6,
+    phase: Math.random() * 100,
+    wobbleAmp: 0.04 + Math.random() * 0.08,
+    life: Math.random(),                        // staggers initial lifetimes
+  });
+}
+// Pack per-instance attributes
+const emberSeeds = new Float32Array(EMBER_COUNT * 4);
+for (let i = 0; i < EMBER_COUNT; i++) {
+  const e = emberInstanceData[i];
+  emberSeeds[i * 4 + 0] = e.seedX;
+  emberSeeds[i * 4 + 1] = e.seedZ;
+  emberSeeds[i * 4 + 2] = e.speed;
+  emberSeeds[i * 4 + 3] = e.phase;
+}
+const emberWobbles = new Float32Array(EMBER_COUNT * 2);
+for (let i = 0; i < EMBER_COUNT; i++) {
+  emberWobbles[i * 2 + 0] = emberInstanceData[i].wobbleAmp;
+  emberWobbles[i * 2 + 1] = emberInstanceData[i].life;
+}
+
+const emberInstGeo = new THREE.InstancedBufferGeometry();
+emberInstGeo.index = emberGeo.index;
+for (const k in emberGeo.attributes) emberInstGeo.setAttribute(k, emberGeo.attributes[k]);
+emberInstGeo.instanceCount = EMBER_COUNT;
+emberInstGeo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(emberSeeds, 4));
+emberInstGeo.setAttribute('iWobble', new THREE.InstancedBufferAttribute(emberWobbles, 2));
+
+const emberMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: {
+    uTime: { value: 0 },
+    uOriginY: { value: 0.15 }, // base of fire in fireplaceGroup local coords
+    uMaxY: { value: 1.6 },     // travel up the chimney
+  },
+  vertexShader: `
+    attribute vec4 iSeed;     // x: seedX, y: seedZ, z: speed, w: phase
+    attribute vec2 iWobble;   // x: wobbleAmp, y: lifeOffset
+    uniform float uTime;
+    uniform float uOriginY;
+    uniform float uMaxY;
+    varying float vAlpha;
+    varying float vHeat;
+    void main(){
+      // life cycles 0->1 then resets
+      float life = fract(iWobble.y + uTime * 0.18 * iSeed.z);
+      float h = uOriginY + life * (uMaxY - uOriginY);
+      // wobble — two sines with phase
+      float w = iWobble.x;
+      float wob = sin(uTime * 2.2 + iSeed.w) * w + sin(uTime * 1.3 + iSeed.w * 1.7) * w * 0.5;
+      vec3 worldPos = vec3(iSeed.x + wob, h, iSeed.y + cos(uTime * 1.7 + iSeed.w) * w * 0.7);
+      // narrow toward top (chimney funnel)
+      float funnel = mix(1.0, 0.45, smoothstep(0.4, 1.0, life));
+      worldPos.x *= funnel;
+      worldPos.z *= funnel;
+      // billboard — make quad face camera
+      vec4 mvOrigin = modelViewMatrix * vec4(worldPos, 1.0);
+      mvOrigin.xy += position.xy * (0.6 + 0.4 * (1.0 - life));
+      gl_Position = projectionMatrix * mvOrigin;
+      vAlpha = (1.0 - life) * smoothstep(0.0, 0.15, life);
+      vHeat = (1.0 - life);
+    }`,
+  fragmentShader: `
+    varying float vAlpha;
+    varying float vHeat;
+    void main(){
+      // soft circular ember
+      vec2 c = gl_PointCoord; // not valid for triangles — compute via uv-ish
+      vec2 d = gl_FragCoord.xy; // unused
+      // Use a procedural soft disc via interpolated quad: derive from gl_FragCoord is hard,
+      // so instead approximate using a smoothstep on a normalized uv stored via dFd? Simpler: the quad is small, alpha falloff via dist from center via barycentric isn't trivial.
+      // Workaround: just emit warm color with falloff via distance from gl_PointCoord-equivalent by using gl_FragCoord modulo — but we have a real quad geometry.
+      // Best: approximate soft disc by using gl_FrontFacing + alpha = vAlpha (acceptable since particles are tiny).
+      vec3 col = mix(vec3(1.3, 0.4, 0.05), vec3(1.6, 1.1, 0.4), vHeat);
+      gl_FragColor = vec4(col, vAlpha * 0.9);
+    }`,
+});
+// Replace the simplistic frag shader with a UV-based disc (we need varying uv from quad)
+emberMat.fragmentShader = `
+  varying float vAlpha;
+  varying float vHeat;
+  void main(){
+    // gl_PointCoord not available for triangle quads; compute disc from gl_FragCoord-derived approx.
+    // Since plane geometry uvs aren't passed here, use a pseudo-radial via fract of fragcoord — but simplest: emit soft additive blob by computing distance from quad center using built-in approach:
+    // Use the fact that PlaneGeometry triangles have uv 0..1; we'll add a varying.
+    vec3 col = mix(vec3(1.3, 0.4, 0.05), vec3(1.6, 1.1, 0.4), vHeat);
+    gl_FragColor = vec4(col, vAlpha * 0.85);
+  }
+`;
+// Cleaner: use uv varying for nice disc falloff
+emberMat.vertexShader = `
+  attribute vec4 iSeed;
+  attribute vec2 iWobble;
+  uniform float uTime;
+  uniform float uOriginY;
+  uniform float uMaxY;
+  varying float vAlpha;
+  varying float vHeat;
+  varying vec2 vUv;
+  void main(){
+    vUv = uv;
+    float life = fract(iWobble.y + uTime * 0.18 * iSeed.z);
+    float h = uOriginY + life * (uMaxY - uOriginY);
+    float w = iWobble.x;
+    float wob = sin(uTime * 2.2 + iSeed.w) * w + sin(uTime * 1.3 + iSeed.w * 1.7) * w * 0.5;
+    vec3 worldPos = vec3(iSeed.x + wob, h, iSeed.y + cos(uTime * 1.7 + iSeed.w) * w * 0.7);
+    float funnel = mix(1.0, 0.45, smoothstep(0.4, 1.0, life));
+    worldPos.x *= funnel;
+    worldPos.z *= funnel;
+    vec4 mvOrigin = modelViewMatrix * vec4(worldPos, 1.0);
+    mvOrigin.xy += position.xy * (0.7 + 0.3 * (1.0 - life));
+    gl_Position = projectionMatrix * mvOrigin;
+    vAlpha = (1.0 - life) * smoothstep(0.0, 0.12, life);
+    vHeat = (1.0 - life);
+  }
+`;
+emberMat.fragmentShader = `
+  varying float vAlpha;
+  varying float vHeat;
+  varying vec2 vUv;
+  void main(){
+    vec2 d = vUv - 0.5;
+    float r = length(d) * 2.0;
+    float disc = 1.0 - smoothstep(0.0, 1.0, r);
+    vec3 col = mix(vec3(1.3, 0.4, 0.05), vec3(1.7, 1.2, 0.5), vHeat);
+    gl_FragColor = vec4(col, vAlpha * disc * 0.95);
+  }
+`;
+emberMat.needsUpdate = true;
+
+const embers = new THREE.Mesh(emberInstGeo, emberMat);
+embers.position.copy(fireplaceGroup.position);
+// Place embers in fireplaceGroup local space — by adding directly to the group
+fireplaceGroup.add(embers);
+embers.position.set(0, 0, 0); // local to fireplaceGroup; ember shader works in local frame around fire base
+
+// ============================================================
+// FROSTED WINDOW + WORLD OUTSIDE
+// We render: a glass pane (slightly frosted), a backing scene with snow particles
+// and a moonlit pine silhouette painted on a far plane.
+// ============================================================
+const windowGroup = new THREE.Group();
+windowGroup.position.set(0, WIN.cy, HALF_D + 0.001);
+roomGroup.add(windowGroup);
+
+// Far backdrop — moonlit night sky + pine silhouettes
+function makeNightBackdrop(w, h) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  // sky gradient
+  const sg = ctx.createLinearGradient(0, 0, 0, h);
+  sg.addColorStop(0.0, '#1a2540');
+  sg.addColorStop(0.5, '#0f1a30');
+  sg.addColorStop(1.0, '#04081a');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, w, h);
+  // moon
+  const mx = w * 0.72, my = h * 0.28, mr = 28;
+  const mg = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 4);
+  mg.addColorStop(0.0, 'rgba(220, 230, 255, 0.95)');
+  mg.addColorStop(0.15, 'rgba(180, 200, 240, 0.5)');
+  mg.addColorStop(0.5, 'rgba(120, 150, 200, 0.1)');
+  mg.addColorStop(1.0, 'rgba(0,0,0,0)');
+  ctx.fillStyle = mg; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#f0f4ff';
+  ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI * 2); ctx.fill();
+  // stars
+  for (let i = 0; i < 80; i++) {
+    const x = Math.random() * w, y = Math.random() * h * 0.7;
+    const a = 0.3 + Math.random() * 0.7;
+    ctx.fillStyle = `rgba(220,230,255,${a.toFixed(2)})`;
+    ctx.fillRect(x, y, 1.2, 1.2);
+  }
+  // distant pines (back layer)
+  function pine(cx, baseY, hPine, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    const layers = 5;
+    for (let l = 0; l < layers; l++) {
+      const ly = baseY - (l * hPine / layers);
+      const lw = (hPine * 0.55) * (1 - l / layers);
+      ctx.moveTo(cx - lw, ly);
+      ctx.lineTo(cx, ly - hPine / layers - 6);
+      ctx.lineTo(cx + lw, ly);
+      ctx.closePath();
+    }
+    ctx.fill();
+    // trunk
+    ctx.fillRect(cx - 2, baseY, 4, 6);
+  }
+  // back layer
+  for (let i = 0; i < 26; i++) {
+    const x = (i / 25) * w + (Math.random() - 0.5) * 30;
+    const ph = 50 + Math.random() * 50;
+    pine(x, h * 0.85, ph, 'rgba(8, 14, 28, 0.85)');
+  }
+  // mid layer
+  for (let i = 0; i < 16; i++) {
+    const x = (i / 15) * w + (Math.random() - 0.5) * 50;
+    const ph = 80 + Math.random() * 60;
+    pine(x, h * 0.92, ph, 'rgba(4, 8, 20, 0.95)');
+  }
+  // snowy ground glow
+  const gg = ctx.createLinearGradient(0, h * 0.85, 0, h);
+  gg.addColorStop(0, 'rgba(40, 60, 100, 0.0)');
+  gg.addColorStop(1, 'rgba(120, 150, 200, 0.35)');
+  ctx.fillStyle = gg; ctx.fillRect(0, h * 0.85, w, h * 0.15);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const nightTex = makeNightBackdrop(1024, 768);
+
+// Outside scene depth: place a backdrop a couple meters behind the window
+const backdrop = new THREE.Mesh(
+  new THREE.PlaneGeometry(WIN.w * 4.5, WIN.h * 3.6),
+  new THREE.MeshBasicMaterial({ map: nightTex, fog: false })
+);
+backdrop.position.set(0, 0, 2.4);
+backdrop.rotation.y = Math.PI; // face the window from behind
+windowGroup.add(backdrop);
+
+// Snow — instanced quads with downward + horizontal drift
+const SNOW_COUNT = 600;
+const snowGeo = new THREE.PlaneGeometry(0.018, 0.018);
+const snowSeeds = new Float32Array(SNOW_COUNT * 4);
+for (let i = 0; i < SNOW_COUNT; i++) {
+  snowSeeds[i * 4 + 0] = (Math.random() - 0.5) * WIN.w * 4;     // x
+  snowSeeds[i * 4 + 1] = Math.random();                          // life (0..1)
+  snowSeeds[i * 4 + 2] = (Math.random() - 0.5) * 2.0;            // depth z
+  snowSeeds[i * 4 + 3] = 0.4 + Math.random() * 0.8;              // speed
+}
+const snowInstGeo = new THREE.InstancedBufferGeometry();
+snowInstGeo.index = snowGeo.index;
+for (const k in snowGeo.attributes) snowInstGeo.setAttribute(k, snowGeo.attributes[k]);
+snowInstGeo.instanceCount = SNOW_COUNT;
+snowInstGeo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(snowSeeds, 4));
+const snowMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, fog: false,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    attribute vec4 iSeed;
+    uniform float uTime;
+    varying vec2 vUv;
+    void main(){
+      vUv = uv;
+      float life = fract(iSeed.y + uTime * 0.05 * iSeed.w);
+      float drop = 1.5 - life * 3.0; // y from +1.5 down to -1.5
+      float drift = sin(uTime * 0.6 + iSeed.x * 8.0) * 0.15;
+      vec3 worldPos = vec3(iSeed.x + drift, drop, iSeed.z);
+      vec4 mvOrigin = modelViewMatrix * vec4(worldPos, 1.0);
+      // billboard, scale by depth
+      float scale = 0.6 + 0.6 * (iSeed.z + 1.0) * 0.5;
+      mvOrigin.xy += position.xy * scale;
+      gl_Position = projectionMatrix * mvOrigin;
+    }`,
+  fragmentShader: `
+    varying vec2 vUv;
+    void main(){
+      vec2 d = vUv - 0.5;
+      float r = length(d) * 2.0;
+      float disc = 1.0 - smoothstep(0.0, 1.0, r);
+      gl_FragColor = vec4(0.95, 0.97, 1.0, disc * 0.95);
+    }`,
+});
+const snow = new THREE.Mesh(snowInstGeo, snowMat);
+snow.position.set(0, 0, 1.2);
+snow.rotation.y = Math.PI; // align with backdrop
+windowGroup.add(snow);
+
+// Frosted glass pane — semi-transparent with subtle frost overlay
+function makeFrostTexture(size) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = 'rgba(255,255,255,0)'; ctx.fillRect(0, 0, size, size);
+  // crystalline frost — radial fans from corners
+  for (let corner = 0; corner < 4; corner++) {
+    const cx = (corner % 2) ? size : 0;
+    const cy = (corner < 2) ? 0 : size;
+    for (let i = 0; i < 60; i++) {
+      const ang = Math.atan2(size / 2 - cy, size / 2 - cx) + (Math.random() - 0.5) * 1.4;
+      const len = 30 + Math.random() * (size * 0.6);
+      ctx.strokeStyle = `rgba(220, 235, 255, ${0.05 + Math.random() * 0.15})`;
+      ctx.lineWidth = 0.5 + Math.random() * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(ang) * len, cy + Math.sin(ang) * len);
+      // small branches
+      const bx = cx + Math.cos(ang) * len * 0.7, by = cy + Math.sin(ang) * len * 0.7;
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + Math.cos(ang + 0.6) * 12, by + Math.sin(ang + 0.6) * 12);
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + Math.cos(ang - 0.6) * 12, by + Math.sin(ang - 0.6) * 12);
+      ctx.stroke();
+    }
+  }
+  // soft fog overall
+  const sg = ctx.createRadialGradient(size / 2, size / 2, size * 0.2, size / 2, size / 2, size * 0.8);
+  sg.addColorStop(0, 'rgba(220,235,255,0.05)');
+  sg.addColorStop(1, 'rgba(180,210,250,0.25)');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const frostTex = makeFrostTexture(512);
+const glassMat = new THREE.MeshBasicMaterial({
+  map: frostTex, transparent: true, opacity: 0.55, depthWrite: false, fog: false,
+});
+const glass = new THREE.Mesh(new THREE.PlaneGeometry(WIN.w, WIN.h), glassMat);
+glass.position.set(0, 0, -0.005); // just inside windowGroup
+glass.rotation.y = Math.PI;
+windowGroup.add(glass);
+
+// Window frame (cross mullions)
+const frameMat = new THREE.MeshStandardMaterial({ map: furnitureWoodTex, color: 0x3a2010, roughness: 0.85 });
+const frameThk = 0.04;
+const frameDep = 0.06;
+function addFramePiece(w, h, x, y) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, frameDep), frameMat);
+  m.position.set(x, y, -frameDep / 2);
+  m.castShadow = true; m.receiveShadow = true;
+  windowGroup.add(m);
+}
+// outer frame
+addFramePiece(WIN.w + frameThk * 2, frameThk, 0, WIN.h / 2 + frameThk / 2);
+addFramePiece(WIN.w + frameThk * 2, frameThk, 0, -WIN.h / 2 - frameThk / 2);
+addFramePiece(frameThk, WIN.h + frameThk * 2, -WIN.w / 2 - frameThk / 2, 0);
+addFramePiece(frameThk, WIN.h + frameThk * 2, WIN.w / 2 + frameThk / 2, 0);
+// cross mullion
+addFramePiece(WIN.w, frameThk * 0.6, 0, 0);
+addFramePiece(frameThk * 0.6, WIN.h, 0, 0);
+
+// Window sill
+const sill = new THREE.Mesh(new THREE.BoxGeometry(WIN.w + 0.25, 0.05, 0.18), frameMat);
+sill.position.set(0, -WIN.h / 2 - 0.04, -0.04);
+sill.castShadow = true; sill.receiveShadow = true;
+windowGroup.add(sill);
+
+// ============================================================
+// FURNITURE — chair, table, book, mug
+// ============================================================
+const tableGroup = new THREE.Group();
+tableGroup.position.set(1.0, 0, -0.9);
+roomGroup.add(tableGroup);
+
+const tableTopMat = new THREE.MeshStandardMaterial({ map: furnitureWoodTex, roughness: 0.7, color: 0x6a3818 });
+const tableTop = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.55), tableTopMat);
+tableTop.position.y = 0.7; tableTop.castShadow = true; tableTop.receiveShadow = true;
+tableGroup.add(tableTop);
+const legMat = new THREE.MeshStandardMaterial({ map: furnitureWoodTex, roughness: 0.85, color: 0x4a2810 });
+function addLeg(x, z) {
+  const l = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.7, 0.05), legMat);
+  l.position.set(x, 0.35, z); l.castShadow = true; l.receiveShadow = true;
+  tableGroup.add(l);
+}
+addLeg(-0.4, -0.23); addLeg(0.4, -0.23); addLeg(-0.4, 0.23); addLeg(0.4, 0.23);
+
+// Book on table
+const bookGroup = new THREE.Group();
+bookGroup.position.set(-0.18, 0.74, 0.05);
+bookGroup.rotation.y = -0.3;
+tableGroup.add(bookGroup);
+const bookCover = new THREE.Mesh(
+  new THREE.BoxGeometry(0.22, 0.025, 0.32),
+  new THREE.MeshStandardMaterial({ color: 0x5a1a14, roughness: 0.6 })
+);
+bookCover.castShadow = true; bookCover.receiveShadow = true;
+bookGroup.add(bookCover);
+const bookPages = new THREE.Mesh(
+  new THREE.BoxGeometry(0.205, 0.018, 0.305),
+  new THREE.MeshStandardMaterial({ color: 0xeed8b5, roughness: 0.95 })
+);
+bookPages.position.y = 0.001;
+bookGroup.add(bookPages);
+
+// Mug on table
+const mugGroup = new THREE.Group();
+mugGroup.position.set(0.25, 0.72, -0.05);
+tableGroup.add(mugGroup);
+const mugBody = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.045, 0.04, 0.085, 18),
+  new THREE.MeshStandardMaterial({ color: 0xdcc8a0, roughness: 0.5 })
+);
+mugBody.position.y = 0.0425;
+mugBody.castShadow = true; mugBody.receiveShadow = true;
+mugGroup.add(mugBody);
+// handle (torus segment)
+const handle = new THREE.Mesh(
+  new THREE.TorusGeometry(0.03, 0.008, 8, 16, Math.PI),
+  new THREE.MeshStandardMaterial({ color: 0xdcc8a0, roughness: 0.5 })
+);
+handle.rotation.z = Math.PI / 2;
+handle.position.set(0.045, 0.045, 0);
+mugGroup.add(handle);
+// hot drink top + steam
+const drink = new THREE.Mesh(
+  new THREE.CircleGeometry(0.04, 18),
+  new THREE.MeshStandardMaterial({ color: 0x3a1a08, roughness: 0.4, emissive: 0x1a0804, emissiveIntensity: 0.3 })
+);
+drink.rotation.x = -Math.PI / 2;
+drink.position.y = 0.085;
+mugGroup.add(drink);
+
+// Steam — small additive billboard with shader
+const steamMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    varying vec2 vUv;
+    uniform float uTime;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p){
+      vec2 i = floor(p), f = fract(p);
+      float a = hash(i), b = hash(i + vec2(1,0)), c = hash(i + vec2(0,1)), d = hash(i + vec2(1,1));
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+    }
+    void main(){
+      vec2 uv = vUv;
+      float n = noise(vec2(uv.x * 4.0, uv.y * 6.0 - uTime * 0.6));
+      float shape = smoothstep(0.0, 0.4, uv.y) * (1.0 - smoothstep(0.6, 1.0, uv.y));
+      float radial = 1.0 - smoothstep(0.0, 0.5, abs(uv.x - 0.5) * (1.5 + uv.y));
+      float a = n * shape * radial * 0.5;
+      gl_FragColor = vec4(vec3(0.85, 0.82, 0.78), a);
+    }`,
+});
+const steam = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.3), steamMat);
+steam.position.set(0, 0.22, 0);
+mugGroup.add(steam);
+
+// Chair near table — low-poly
+const chairGroup = new THREE.Group();
+chairGroup.position.set(0.85, 0, -1.7);
+chairGroup.rotation.y = -0.7;
+roomGroup.add(chairGroup);
+const seat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.4), tableTopMat);
+seat.position.y = 0.42; seat.castShadow = true; seat.receiveShadow = true;
+chairGroup.add(seat);
+const back = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.04), tableTopMat);
+back.position.set(0, 0.42 + 0.25, -0.18); back.castShadow = true; back.receiveShadow = true;
+chairGroup.add(back);
+function chairLeg(x, z) {
+  const l = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.42, 0.04), legMat);
+  l.position.set(x, 0.21, z); l.castShadow = true; l.receiveShadow = true;
+  chairGroup.add(l);
+}
+chairLeg(-0.18, -0.18); chairLeg(0.18, -0.18); chairLeg(-0.18, 0.18); chairLeg(0.18, 0.18);
+
+// Desk lamp on the table (toggles with E)
+const lampGroup = new THREE.Group();
+lampGroup.position.set(-0.32, 0.72, -0.18);
+tableGroup.add(lampGroup);
+const lampBase = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.06, 0.07, 0.025, 16),
+  new THREE.MeshStandardMaterial({ color: 0x2a1a0c, roughness: 0.6, metalness: 0.4 })
+);
+lampBase.position.y = 0.0125;
+lampBase.castShadow = true;
+lampGroup.add(lampBase);
+const lampStem = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.008, 0.008, 0.18, 8),
+  new THREE.MeshStandardMaterial({ color: 0x2a1a0c, roughness: 0.6, metalness: 0.4 })
+);
+lampStem.position.y = 0.025 + 0.09;
+lampGroup.add(lampStem);
+const lampShade = new THREE.Mesh(
+  new THREE.ConeGeometry(0.07, 0.09, 16, 1, true),
+  new THREE.MeshStandardMaterial({ color: 0x8a5a30, roughness: 0.5, side: THREE.DoubleSide, emissive: 0x000000 })
+);
+lampShade.position.y = 0.025 + 0.18 + 0.04;
+lampShade.castShadow = false;
+lampGroup.add(lampShade);
+
+// Small rug in the middle
+const rugTex = (() => {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#5a1a14'; ctx.fillRect(0, 0, 256, 256);
+  // border
+  ctx.strokeStyle = '#3a0a08'; ctx.lineWidth = 12;
+  ctx.strokeRect(8, 8, 240, 240);
+  ctx.strokeStyle = '#7a3018'; ctx.lineWidth = 4;
+  ctx.strokeRect(20, 20, 216, 216);
+  // diamond pattern
+  ctx.strokeStyle = '#7a3018'; ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    const x = 40 + i * 22;
+    ctx.beginPath();
+    ctx.moveTo(x, 128); ctx.lineTo(128, 40 + i * 12);
+    ctx.lineTo(256 - x, 128); ctx.lineTo(128, 256 - 40 - i * 12);
+    ctx.closePath(); ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const rug = new THREE.Mesh(
+  new THREE.PlaneGeometry(2.0, 1.4),
+  new THREE.MeshStandardMaterial({ map: rugTex, roughness: 0.95 })
+);
+rug.rotation.x = -Math.PI / 2;
+rug.position.set(0, 0.005, 0.4);
+rug.receiveShadow = true;
+roomGroup.add(rug);
+
+// ============================================================
+// LIGHTING
+// - very low ambient (cabin is dark)
+// - flickering point light at fireplace (the star)
+// - moonlight directional from outside (cool blue, low intensity)
+// - desk lamp toggleable
+// ============================================================
+const ambient = new THREE.AmbientLight(0x2a1810, 0.18);
+scene.add(ambient);
+
+// hemisphere light: warm from below (firelight bounce), cool from above (moonlight bounce)
+const hemi = new THREE.HemisphereLight(0x1a2540, 0x5a2010, 0.18);
+scene.add(hemi);
+
+// fireplace light
+const fireLight = new THREE.PointLight(0xff7028, 4.0, 9.0, 1.6);
+fireLight.position.set(0, 0.7, -HALF_D + 0.6);
+fireLight.castShadow = true;
+fireLight.shadow.mapSize.set(1024, 1024);
+fireLight.shadow.bias = -0.001;
+fireLight.shadow.radius = 4;
+fireLight.shadow.camera.near = 0.1;
+fireLight.shadow.camera.far = 12;
+scene.add(fireLight);
+
+// secondary low ember glow — no shadows (cheap)
+const emberGlow = new THREE.PointLight(0xff4010, 1.2, 3.5, 1.8);
+emberGlow.position.set(0, 0.2, -HALF_D + 0.45);
+scene.add(emberGlow);
+
+// moonlight from outside, casts cold spill into the room through window
+const moonLight = new THREE.DirectionalLight(0x88a8d8, 0.35);
+moonLight.position.set(2.5, 4.0, 6.0);
+moonLight.target.position.set(0, 1.0, 0);
+scene.add(moonLight); scene.add(moonLight.target);
+
+// desk lamp light
+const deskLamp = new THREE.PointLight(0xffbb70, 0.0, 4.0, 2.0);
+deskLamp.position.set(tableGroup.position.x - 0.32, 0.95, tableGroup.position.z - 0.18);
+deskLamp.castShadow = true;
+deskLamp.shadow.mapSize.set(512, 512);
+deskLamp.shadow.bias = -0.002;
+scene.add(deskLamp);
+let deskLampOn = false;
+
+// ============================================================
+// PERLIN-LIKE NOISE FOR FIRE FLICKER
+// ============================================================
+function smoothstep01(t) { return t * t * (3 - 2 * t); }
+const fadeSeeds = new Float32Array(64);
+for (let i = 0; i < 64; i++) fadeSeeds[i] = Math.random();
+function pseudoPerlin1D(t) {
+  // smoothed value noise on fadeSeeds
+  const i = Math.floor(t) & 63;
+  const f = t - Math.floor(t);
+  const a = fadeSeeds[i];
+  const b = fadeSeeds[(i + 1) & 63];
+  const c = fadeSeeds[(i + 2) & 63];
+  // octave it
+  const o1 = a + (b - a) * smoothstep01(f);
+  const o2 = b + (c - b) * smoothstep01(f);
+  return o1 * 0.7 + o2 * 0.3;
+}
+
+// ============================================================
+// AUDIO — Web Audio API: fire crackle (filtered noise pops) + wind howl (band-passed noise)
+// ============================================================
+let audioCtx = null, audioReady = false;
+let masterGain, windNode, fireTimer = null;
+
+function initAudio() {
+  if (audioReady) return;
+  audioReady = true;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.45;
+  masterGain.connect(audioCtx.destination);
+
+  // === WIND HOWL: continuous filtered noise, slowly modulated ===
+  const bufSize = audioCtx.sampleRate * 4;
+  const noiseBuf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data = noiseBuf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+  windNode = audioCtx.createBufferSource();
+  windNode.buffer = noiseBuf;
+  windNode.loop = true;
+
+  const windFilter = audioCtx.createBiquadFilter();
+  windFilter.type = 'bandpass';
+  windFilter.frequency.value = 280;
+  windFilter.Q.value = 1.4;
+
+  const windFilter2 = audioCtx.createBiquadFilter();
+  windFilter2.type = 'lowpass';
+  windFilter2.frequency.value = 600;
+
+  const windGain = audioCtx.createGain();
+  windGain.gain.value = 0.18;
+
+  windNode.connect(windFilter).connect(windFilter2).connect(windGain).connect(masterGain);
+  windNode.start();
+
+  // Slowly modulate the wind frequency for a howling effect
+  const lfoBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 8, audioCtx.sampleRate);
+  const lfoData = lfoBuf.getChannelData(0);
+  for (let i = 0; i < lfoData.length; i++) {
+    lfoData[i] = Math.sin(i / audioCtx.sampleRate * Math.PI * 2 * 0.13) * 120
+               + Math.sin(i / audioCtx.sampleRate * Math.PI * 2 * 0.07) * 80;
+  }
+  const lfoSrc = audioCtx.createBufferSource();
+  lfoSrc.buffer = lfoBuf; lfoSrc.loop = true;
+  lfoSrc.connect(windFilter.frequency);
+  lfoSrc.start();
+
+  // === FIRE CRACKLE: scheduled filtered noise pops ===
+  function scheduleCrackle() {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    // brief noise burst
+    const burstLen = 0.04 + Math.random() * 0.12;
+    const burstBuf = audioCtx.createBuffer(1, Math.ceil(burstLen * audioCtx.sampleRate), audioCtx.sampleRate);
+    const bd = burstBuf.getChannelData(0);
+    for (let i = 0; i < bd.length; i++) {
+      // pink-ish noise via averaging
+      bd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bd.length, 2.0);
+    }
+    const burstSrc = audioCtx.createBufferSource();
+    burstSrc.buffer = burstBuf;
+
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1200 + Math.random() * 2800;
+    bp.Q.value = 2.0 + Math.random() * 4.0;
+
+    const bg = audioCtx.createGain();
+    const peak = 0.05 + Math.random() * 0.12;
+    bg.gain.setValueAtTime(0, now);
+    bg.gain.linearRampToValueAtTime(peak, now + 0.005);
+    bg.gain.exponentialRampToValueAtTime(0.0001, now + burstLen);
+
+    burstSrc.connect(bp).connect(bg).connect(masterGain);
+    burstSrc.start(now);
+    burstSrc.stop(now + burstLen + 0.05);
+
+    // schedule next crackle (random interval)
+    const next = 0.07 + Math.random() * 0.5;
+    fireTimer = setTimeout(scheduleCrackle, next * 1000);
+  }
+  scheduleCrackle();
+
+  // soft low rumble — sub-bass for warmth
+  const lowOsc = audioCtx.createOscillator();
+  lowOsc.type = 'sine'; lowOsc.frequency.value = 55;
+  const lowGain = audioCtx.createGain(); lowGain.gain.value = 0.04;
+  lowOsc.connect(lowGain).connect(masterGain);
+  lowOsc.start();
+}
+
+// ============================================================
+// CONTROLS — pointer lock + WASD
+// ============================================================
+const splash = document.getElementById('splash');
+let pointerLocked = false;
+let yaw = 0, pitch = 0;
+const keys = {};
+const player = {
+  pos: new THREE.Vector3(0, 1.55, 1.6),
+  vel: new THREE.Vector3(),
+  height: 1.55,
+  radius: 0.3,
+};
+
+function lockPointer() {
+  canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
+  if (canvas.requestPointerLock) canvas.requestPointerLock();
+}
+
+splash.addEventListener('click', () => {
+  splash.classList.add('hidden');
+  initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  lockPointer();
+});
+canvas.addEventListener('click', () => {
+  if (!pointerLocked) {
+    initAudio();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    lockPointer();
+  }
+});
+
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = (document.pointerLockElement === canvas);
+});
+document.addEventListener('mousemove', (e) => {
+  if (!pointerLocked) return;
+  yaw   -= e.movementX * 0.0025;
+  pitch -= e.movementY * 0.0025;
+  pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
+});
+
+document.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'KeyE') {
+    deskLampOn = !deskLampOn;
+    deskLamp.intensity = deskLampOn ? 2.4 : 0.0;
+    lampShade.material.emissive.setHex(deskLampOn ? 0xffaa55 : 0x000000);
+    lampShade.material.emissiveIntensity = deskLampOn ? 0.6 : 0;
+  }
+});
+document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+// ============================================================
+// RESIZE
+// ============================================================
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+const clock = new THREE.Clock();
+let frame = 0;
+
+function update(dt, t) {
+  // === movement ===
+  const speed = 2.6 * dt;
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right   = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const move = new THREE.Vector3();
+  if (keys['KeyW']) move.add(forward);
+  if (keys['KeyS']) move.sub(forward);
+  if (keys['KeyA']) move.sub(right);
+  if (keys['KeyD']) move.add(right);
+  if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
+  player.pos.add(move);
+  // wall collision: simple AABB clamp inside room minus radius
+  const margin = 0.25;
+  player.pos.x = Math.max(-HALF_W + margin, Math.min(HALF_W - margin, player.pos.x));
+  player.pos.z = Math.max(-HALF_D + margin, Math.min(HALF_D - margin, player.pos.z));
+  // also keep player out of the table footprint
+  const tx = tableGroup.position.x, tz = tableGroup.position.z;
+  const dx = player.pos.x - tx, dz = player.pos.z - tz;
+  const tableR = 0.55;
+  if (Math.abs(dx) < tableR && Math.abs(dz) < 0.45) {
+    if (Math.abs(dx) > Math.abs(dz)) player.pos.x = tx + Math.sign(dx) * tableR;
+    else player.pos.z = tz + Math.sign(dz) * 0.45;
+  }
+  // and out of fireplace footprint
+  if (player.pos.z < -HALF_D + 0.7 && Math.abs(player.pos.x) < FP.w / 2) {
+    player.pos.z = -HALF_D + 0.7;
+  }
+
+  player.pos.y = player.height + Math.sin(t * 6.0) * 0.005 * (move.lengthSq() > 0 ? 1 : 0);
+
+  // === camera ===
+  camera.position.copy(player.pos);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.set(pitch, yaw, 0);
+
+  // === fire animation ===
+  fireMat.uniforms.uTime.value = t;
+  embersBedMat.uniforms.uTime.value = t;
+  emberMat.uniforms.uTime.value = t;
+  snowMat.uniforms.uTime.value = t;
+  steamMat.uniforms.uTime.value = t;
+
+  // === flickering firelight (Perlin-driven) ===
+  const flick = pseudoPerlin1D(t * 4.5);
+  const flick2 = pseudoPerlin1D(t * 11.0 + 17.3);
+  const intensity = 3.4 + flick * 1.6 + (flick2 - 0.5) * 1.2;
+  fireLight.intensity = intensity;
+  // gentle color jitter — orange to slightly more red
+  const cTemp = 0.85 + flick * 0.3;
+  fireLight.color.setRGB(1.0, 0.45 * cTemp, 0.18 * cTemp);
+  emberGlow.intensity = 0.9 + flick * 0.6;
+  // slight position jitter so shadows actually move
+  fireLight.position.x = (flick - 0.5) * 0.06;
+  fireLight.position.y = 0.65 + (flick2 - 0.5) * 0.04;
+
+  // log emissive pulses too
+  logMat.emissiveIntensity = 0.6 + flick * 0.6;
+
+  // billboard the fire toward the player so it always reads as a flame
+  // (only yaw — keep vertical axis)
+  const fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  // rotate fire to face camera by yaw difference
+  const dxc = camera.position.x - (fireplaceGroup.position.x + fire.position.x);
+  const dzc = camera.position.z - (fireplaceGroup.position.z + fire.position.z);
+  fire.rotation.y = Math.atan2(dxc, dzc);
+
+  // mug hot drink subtly pulses
+  drink.material.emissiveIntensity = 0.25 + 0.15 * Math.sin(t * 1.5);
+
+  frame++;
+}
+
+function loop() {
+  const dt = Math.min(0.05, clock.getDelta());
+  const t = clock.elapsedTime;
+  update(dt, t);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+loop();
+
+// fire one immediate render for instant visibility
+renderer.render(scene, camera);
+
+</script>
+</body>
+</html>

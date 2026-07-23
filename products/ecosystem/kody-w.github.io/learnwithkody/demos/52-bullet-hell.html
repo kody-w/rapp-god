@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bullet Hell - LearnWithKody</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#000; color:#fff;
+    font-family: 'Courier New', monospace; cursor: crosshair; }
+  #game { display:block; width:100vw; height:100vh; }
+  #ui {
+    position:fixed; top:0; left:0; width:100%; padding:12px 20px;
+    pointer-events:none; z-index:10;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    text-shadow: 0 0 8px #f0f, 0 0 4px #fff;
+    font-size: 14px;
+  }
+  #ui .col { display:flex; flex-direction:column; gap:4px; }
+  #ui .right { text-align:right; }
+  #ui .stat { color:#fff; }
+  #ui .label { color:#a0a; font-size:11px; letter-spacing:2px; }
+  #ui .big { font-size:22px; color:#0ff; text-shadow: 0 0 12px #0ff, 0 0 4px #fff; }
+  #ui .pink { color:#f0f; }
+  #ui .yellow { color:#ff0; }
+  #ui .red { color:#f44; }
+  #help {
+    position:fixed; bottom:10px; left:0; width:100%; text-align:center;
+    color:#666; font-size:11px; letter-spacing:2px; pointer-events:none; z-index:10;
+  }
+  #overlay {
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background: radial-gradient(circle at center, rgba(40,0,40,0.85), rgba(0,0,0,0.95));
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index: 100; cursor:pointer; text-align:center;
+  }
+  #overlay h1 {
+    font-size: 64px; color:#f0f;
+    text-shadow: 0 0 20px #f0f, 0 0 40px #f0f, 0 0 4px #fff;
+    letter-spacing: 8px; margin-bottom: 10px;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  #overlay h2 {
+    font-size: 18px; color:#0ff; letter-spacing:6px; margin-bottom: 30px;
+    text-shadow: 0 0 10px #0ff;
+  }
+  #overlay p { color:#fff; font-size:14px; line-height:1.8; max-width:520px; }
+  #overlay .blink {
+    margin-top: 30px; color:#ff0; font-size:16px; letter-spacing:4px;
+    animation: blink 0.8s steps(2, jump-none) infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+  }
+  @keyframes blink { 50% { opacity: 0.3; } }
+  .hidden { display:none !important; }
+  #flash {
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background:#fff; pointer-events:none; opacity:0; z-index:50;
+    transition: opacity 0.15s ease-out;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div class="col">
+    <div class="label">SCORE</div>
+    <div class="stat big" id="score">0</div>
+    <div class="label">LIVES</div>
+    <div class="stat pink" id="lives">III</div>
+    <div class="label">BOMBS [F]</div>
+    <div class="stat yellow" id="bombs">II</div>
+  </div>
+  <div class="col right">
+    <div class="label">SURVIVE</div>
+    <div class="stat big" id="time">5:00</div>
+    <div class="label">BULLETS</div>
+    <div class="stat" id="bcount">0</div>
+    <div class="label">GRAZE</div>
+    <div class="stat pink" id="graze">0</div>
+  </div>
+</div>
+<div id="help">WASD MOVE • MOUSE AIM • F BOMB • DON'T DIE</div>
+<div id="overlay">
+  <h1>BULLET HELL</h1>
+  <h2>NEON DANMAKU</h2>
+  <p>You are a one-pixel hitbox in a sea of light.<br>
+  Your sprite is bigger than your hitbox. Graze bullets for points.<br>
+  WASD to move, mouse to aim. F bombs the screen.<br>
+  Survive five minutes against five geometric bosses.</p>
+  <div class="blink">CLICK TO BEGIN</div>
+</div>
+<div id="flash"></div>
+<script>
+"use strict";
+(function(){
+const canvas = document.getElementById('game');
+const overlay = document.getElementById('overlay');
+const flashEl = document.getElementById('flash');
+const ui = {
+  score: document.getElementById('score'),
+  lives: document.getElementById('lives'),
+  bombs: document.getElementById('bombs'),
+  time:  document.getElementById('time'),
+  bcount:document.getElementById('bcount'),
+  graze: document.getElementById('graze')
+};
+
+const gl = canvas.getContext('webgl2', { antialias:true, alpha:false, powerPreference:'high-performance' });
+if (!gl){
+  document.body.innerHTML = '<div style="color:#fff;padding:40px;font-family:monospace">WebGL2 required.</div>';
+  return;
+}
+
+// ============================================================
+// CONFIG
+// ============================================================
+const MAX_BULLETS = 10000;
+const MAX_PLAYER_SHOTS = 800;
+const MAX_PARTICLES = 1500;
+const PLAY = { w: 1280, h: 720 };  // logical play area in arena units
+const BOSS_POSITIONS = [
+  { x: -PLAY.w*0.40, y:  PLAY.h*0.36, hue: 0.85 },
+  { x:  0.0,         y:  PLAY.h*0.40, hue: 0.55 },
+  { x:  PLAY.w*0.40, y:  PLAY.h*0.36, hue: 0.10 },
+  { x: -PLAY.w*0.42, y: -PLAY.h*0.10, hue: 0.30 },
+  { x:  PLAY.w*0.42, y: -PLAY.h*0.10, hue: 0.70 },
+];
+const ARENA = { w: PLAY.w, h: PLAY.h, halfW: PLAY.w/2, halfH: PLAY.h/2 };
+
+// ============================================================
+// CANVAS RESIZE
+// ============================================================
+let DPR = Math.min(window.devicePixelRatio || 1, 2);
+let viewW = 0, viewH = 0;
+let viewScale = 1, viewOffsetX = 0, viewOffsetY = 0;
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.width  = Math.floor(w * DPR);
+  canvas.height = Math.floor(h * DPR);
+  viewW = canvas.width;
+  viewH = canvas.height;
+  // fit play area in window keeping aspect
+  const sx = viewW / ARENA.w;
+  const sy = viewH / ARENA.h;
+  viewScale = Math.min(sx, sy) * 0.95;
+  viewOffsetX = viewW * 0.5;
+  viewOffsetY = viewH * 0.5;
+  gl.viewport(0,0, viewW, viewH);
+}
+window.addEventListener('resize', resize);
+resize();
+
+function screenToWorld(px, py){
+  // px,py in CSS pixels. Need to convert to world.
+  const cx = px * DPR;
+  const cy = py * DPR;
+  const wx = (cx - viewOffsetX) / viewScale;
+  const wy = -(cy - viewOffsetY) / viewScale;
+  return { x: wx, y: wy };
+}
+
+// ============================================================
+// SHADER UTILS
+// ============================================================
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error('Shader error:', gl.getShaderInfoLog(s), src);
+  }
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)){
+    console.error('Link error:', gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+// ============================================================
+// GRID BACKGROUND
+// ============================================================
+const gridVS = `#version 300 es
+in vec2 a_pos;
+out vec2 v_uv;
+void main(){
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+const gridFS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+uniform vec2 u_res;
+uniform vec2 u_arenaHalf;
+uniform vec2 u_offset;
+uniform float u_scale;
+uniform float u_time;
+uniform float u_pulse;
+void main(){
+  vec2 frag = gl_FragCoord.xy;
+  // convert frag to world coords
+  vec2 world = vec2((frag.x - u_offset.x), (frag.y - u_offset.y)) / u_scale;
+  world.y = -world.y;
+  vec2 inArena = abs(world) - u_arenaHalf;
+  float arenaMask = step(max(inArena.x, inArena.y), 0.0);
+
+  // grid
+  vec2 g = abs(fract(world / 50.0 + 0.5) - 0.5);
+  float line = min(g.x, g.y);
+  float grid = smoothstep(0.02, 0.0, line) * 0.25;
+
+  // bigger grid
+  vec2 g2 = abs(fract(world / 200.0 + 0.5) - 0.5);
+  float line2 = min(g2.x, g2.y);
+  float grid2 = smoothstep(0.01, 0.0, line2) * 0.5;
+
+  vec3 col = vec3(0.02, 0.0, 0.05);
+  col += vec3(0.15, 0.05, 0.30) * grid * arenaMask;
+  col += vec3(0.20, 0.10, 0.45) * grid2 * arenaMask;
+
+  // arena border glow
+  float edge = max(abs(world.x) - u_arenaHalf.x, abs(world.y) - u_arenaHalf.y);
+  float border = smoothstep(8.0, 0.0, abs(edge));
+  col += vec3(0.6, 0.2, 0.9) * border * (0.7 + 0.3*sin(u_time*2.0));
+
+  // outside arena darken
+  col *= mix(0.4, 1.0, arenaMask);
+
+  // bomb pulse flash
+  col += vec3(1.0, 0.8, 0.2) * u_pulse * 0.6;
+
+  // vignette
+  vec2 cv = (v_uv - 0.5);
+  float vig = 1.0 - dot(cv, cv) * 0.7;
+  col *= vig;
+
+  outColor = vec4(col, 1.0);
+}`;
+
+const gridProg = program(gridVS, gridFS);
+const fullscreenBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, fullscreenBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const gridVAO = gl.createVertexArray();
+gl.bindVertexArray(gridVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER, fullscreenBuf);
+const gridPosLoc = gl.getAttribLocation(gridProg, 'a_pos');
+gl.enableVertexAttribArray(gridPosLoc);
+gl.vertexAttribPointer(gridPosLoc, 2, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+const u_grid = {
+  res: gl.getUniformLocation(gridProg, 'u_res'),
+  half: gl.getUniformLocation(gridProg, 'u_arenaHalf'),
+  off: gl.getUniformLocation(gridProg, 'u_offset'),
+  scale: gl.getUniformLocation(gridProg, 'u_scale'),
+  time: gl.getUniformLocation(gridProg, 'u_time'),
+  pulse: gl.getUniformLocation(gridProg, 'u_pulse')
+};
+
+// ============================================================
+// INSTANCED BULLET RENDERER (works for enemy bullets, player shots, particles)
+// Each instance: offset(x,y), size, rot, color(r,g,b,a)
+// ============================================================
+const instVS = `#version 300 es
+in vec2 a_quad;
+in vec4 i_posSize;   // x, y, size, rot
+in vec4 i_color;     // r,g,b,a
+out vec2 v_uv;
+out vec4 v_color;
+uniform vec2 u_res;
+uniform vec2 u_offset;
+uniform float u_scale;
+void main(){
+  v_uv = a_quad;
+  v_color = i_color;
+  float c = cos(i_posSize.w);
+  float s = sin(i_posSize.w);
+  vec2 p = a_quad * i_posSize.z;
+  vec2 r = vec2(p.x*c - p.y*s, p.x*s + p.y*c);
+  vec2 world = i_posSize.xy + r;
+  // world -> screen
+  vec2 screen = vec2(world.x * u_scale + u_offset.x, -world.y * u_scale + u_offset.y);
+  vec2 ndc = vec2(screen.x / u_res.x * 2.0 - 1.0, 1.0 - screen.y / u_res.y * 2.0);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+}`;
+
+const instFS_bullet = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+in vec4 v_color;
+out vec4 outColor;
+void main(){
+  // glowing bullet
+  float d = length(v_uv);
+  if (d > 1.0) discard;
+  float core = smoothstep(0.6, 0.0, d);
+  float glow = pow(1.0 - d, 2.0);
+  vec3 base = v_color.rgb;
+  vec3 col = base * glow + vec3(1.0) * core * 0.9;
+  float a = (glow * 0.85 + core) * v_color.a;
+  outColor = vec4(col * a, a);
+}`;
+
+const instFS_particle = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+in vec4 v_color;
+out vec4 outColor;
+void main(){
+  float d = length(v_uv);
+  if (d > 1.0) discard;
+  float k = pow(1.0 - d, 1.5);
+  outColor = vec4(v_color.rgb * k * v_color.a, k * v_color.a);
+}`;
+
+const bulletProg = program(instVS, instFS_bullet);
+const particleProg = program(instVS, instFS_particle);
+
+function makeInstancedRenderer(prog, maxInst){
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  // quad
+  const quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1,-1,  1,-1, -1, 1,
+    -1, 1,  1,-1,  1, 1
+  ]), gl.STATIC_DRAW);
+  const quadLoc = gl.getAttribLocation(prog, 'a_quad');
+  gl.enableVertexAttribArray(quadLoc);
+  gl.vertexAttribPointer(quadLoc, 2, gl.FLOAT, false, 0, 0);
+
+  // instance posSize
+  const posBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, maxInst * 4 * 4, gl.DYNAMIC_DRAW);
+  const posLoc = gl.getAttribLocation(prog, 'i_posSize');
+  gl.enableVertexAttribArray(posLoc);
+  gl.vertexAttribPointer(posLoc, 4, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(posLoc, 1);
+
+  // instance color
+  const colBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, maxInst * 4 * 4, gl.DYNAMIC_DRAW);
+  const colLoc = gl.getAttribLocation(prog, 'i_color');
+  gl.enableVertexAttribArray(colLoc);
+  gl.vertexAttribPointer(colLoc, 4, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(colLoc, 1);
+
+  gl.bindVertexArray(null);
+
+  return {
+    prog: prog,
+    vao: vao,
+    posBuf: posBuf,
+    colBuf: colBuf,
+    u_res: gl.getUniformLocation(prog, 'u_res'),
+    u_off: gl.getUniformLocation(prog, 'u_offset'),
+    u_scale: gl.getUniformLocation(prog, 'u_scale')
+  };
+}
+
+const bulletRenderer = makeInstancedRenderer(bulletProg, MAX_BULLETS + MAX_PLAYER_SHOTS);
+const particleRenderer = makeInstancedRenderer(particleProg, MAX_PARTICLES);
+
+// CPU buffers
+const bulletPos = new Float32Array((MAX_BULLETS + MAX_PLAYER_SHOTS) * 4);
+const bulletCol = new Float32Array((MAX_BULLETS + MAX_PLAYER_SHOTS) * 4);
+const partPos = new Float32Array(MAX_PARTICLES * 4);
+const partCol = new Float32Array(MAX_PARTICLES * 4);
+
+// ============================================================
+// SHIP / BOSSES PROGRAM (simple solid colored triangles via uniforms)
+// ============================================================
+const shapeVS = `#version 300 es
+in vec2 a_pos;
+uniform vec2 u_res;
+uniform vec2 u_offset;
+uniform float u_scale;
+uniform vec2 u_pos;
+uniform float u_size;
+uniform float u_rot;
+void main(){
+  float c = cos(u_rot);
+  float s = sin(u_rot);
+  vec2 p = a_pos * u_size;
+  vec2 r = vec2(p.x*c - p.y*s, p.x*s + p.y*c);
+  vec2 world = u_pos + r;
+  vec2 screen = vec2(world.x * u_scale + u_offset.x, -world.y * u_scale + u_offset.y);
+  vec2 ndc = vec2(screen.x / u_res.x * 2.0 - 1.0, 1.0 - screen.y / u_res.y * 2.0);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+}`;
+const shapeFS = `#version 300 es
+precision highp float;
+out vec4 outColor;
+uniform vec4 u_color;
+void main(){
+  outColor = u_color;
+}`;
+
+const shapeProg = program(shapeVS, shapeFS);
+const u_shape = {
+  res: gl.getUniformLocation(shapeProg, 'u_res'),
+  off: gl.getUniformLocation(shapeProg, 'u_offset'),
+  scale: gl.getUniformLocation(shapeProg, 'u_scale'),
+  pos: gl.getUniformLocation(shapeProg, 'u_pos'),
+  size: gl.getUniformLocation(shapeProg, 'u_size'),
+  rot: gl.getUniformLocation(shapeProg, 'u_rot'),
+  col: gl.getUniformLocation(shapeProg, 'u_color')
+};
+const a_shape = gl.getAttribLocation(shapeProg, 'a_pos');
+
+function makeShapeBuffer(verts){
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(a_shape);
+  gl.vertexAttribPointer(a_shape, 2, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+  return { vao, count: verts.length / 2 };
+}
+// player triangle (pointing +X for rotation alignment)
+const shipShape = makeShapeBuffer([
+   1.0, 0.0,
+  -0.7, 0.7,
+  -0.4, 0.0,
+  -0.7,-0.7,
+   1.0, 0.0,
+  -0.4, 0.0
+]);
+// player core dot
+const dotShape = makeShapeBuffer((function(){
+  const v=[0,0]; const N=12;
+  for (let i=0;i<=N;i++){
+    const a = (i/N)*Math.PI*2;
+    v.push(Math.cos(a), Math.sin(a));
+  }
+  return v;
+})());
+// boss hex
+const hexShape = makeShapeBuffer((function(){
+  const v=[0,0]; const N=6;
+  for (let i=0;i<=N;i++){
+    const a = (i/N)*Math.PI*2;
+    v.push(Math.cos(a), Math.sin(a));
+  }
+  return v;
+})());
+// ring (outline) - we'll fake outline by drawing larger then smaller hex
+const ringShape = makeShapeBuffer((function(){
+  const v=[]; const N=32;
+  for (let i=0;i<N;i++){
+    const a0 = (i/N)*Math.PI*2;
+    const a1 = ((i+1)/N)*Math.PI*2;
+    const r0 = 0.85, r1 = 1.0;
+    v.push(Math.cos(a0)*r0, Math.sin(a0)*r0);
+    v.push(Math.cos(a1)*r0, Math.sin(a1)*r0);
+    v.push(Math.cos(a0)*r1, Math.sin(a0)*r1);
+    v.push(Math.cos(a0)*r1, Math.sin(a0)*r1);
+    v.push(Math.cos(a1)*r0, Math.sin(a1)*r0);
+    v.push(Math.cos(a1)*r1, Math.sin(a1)*r1);
+  }
+  return v;
+})());
+
+function drawShape(shape, x, y, size, rot, r, g, b, a){
+  gl.bindVertexArray(shape.vao);
+  gl.uniform2f(u_shape.pos, x, y);
+  gl.uniform1f(u_shape.size, size);
+  gl.uniform1f(u_shape.rot, rot);
+  gl.uniform4f(u_shape.col, r*a, g*a, b*a, a);
+  gl.drawArrays(gl.TRIANGLES, 0, shape.count);
+}
+
+// ============================================================
+// HSL -> RGB
+// ============================================================
+function hsl(h, s, l){
+  function f(n){
+    const k = (n + h*12) % 12;
+    const a = s * Math.min(l, 1-l);
+    return l - a * Math.max(-1, Math.min(Math.min(k-3, 9-k), 1));
+  }
+  return [f(0), f(8), f(4)];
+}
+
+// ============================================================
+// AUDIO
+// ============================================================
+let actx = null;
+let masterGain = null;
+let musicGain = null;
+let sfxGain = null;
+let musicStarted = false;
+let nextBeat = 0;
+let beatCount = 0;
+const BPM = 140;
+const SPB = 60 / BPM;
+
+function initAudio(){
+  if (actx) return;
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = actx.createGain();
+    masterGain.gain.value = 0.6;
+    masterGain.connect(actx.destination);
+    musicGain = actx.createGain();
+    musicGain.gain.value = 0.35;
+    musicGain.connect(masterGain);
+    sfxGain = actx.createGain();
+    sfxGain.gain.value = 0.6;
+    sfxGain.connect(masterGain);
+  } catch(e) {}
+}
+
+function envGain(time, attack, decay, peak){
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.exponentialRampToValueAtTime(peak, time + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, time + attack + decay);
+  return g;
+}
+
+function playerShot(){
+  if (!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(880, t);
+  o.frequency.exponentialRampToValueAtTime(220, t+0.07);
+  const g = envGain(t, 0.005, 0.07, 0.18);
+  o.connect(g); g.connect(sfxGain);
+  o.start(t); o.stop(t+0.1);
+}
+
+function bossShot(){
+  if (!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator();
+  o.type='sawtooth';
+  o.frequency.setValueAtTime(180, t);
+  o.frequency.exponentialRampToValueAtTime(60, t+0.18);
+  const g = envGain(t, 0.01, 0.2, 0.12);
+  const f = actx.createBiquadFilter();
+  f.type='lowpass'; f.frequency.value=900;
+  o.connect(f); f.connect(g); g.connect(sfxGain);
+  o.start(t); o.stop(t+0.25);
+}
+
+function bombSfx(){
+  if (!actx) return;
+  const t = actx.currentTime;
+  // boom
+  const noise = actx.createBuffer(1, actx.sampleRate * 0.6, actx.sampleRate);
+  const data = noise.getChannelData(0);
+  for (let i=0;i<data.length;i++) data[i] = (Math.random()*2-1) * Math.pow(1 - i/data.length, 2);
+  const src = actx.createBufferSource();
+  src.buffer = noise;
+  const f = actx.createBiquadFilter();
+  f.type='lowpass'; f.frequency.value=400;
+  const g = envGain(t, 0.005, 0.5, 0.7);
+  src.connect(f); f.connect(g); g.connect(sfxGain);
+  src.start(t);
+  // sub thump
+  const o = actx.createOscillator();
+  o.type='sine';
+  o.frequency.setValueAtTime(120, t);
+  o.frequency.exponentialRampToValueAtTime(40, t+0.4);
+  const g2 = envGain(t, 0.005, 0.5, 0.5);
+  o.connect(g2); g2.connect(sfxGain);
+  o.start(t); o.stop(t+0.6);
+}
+
+function deathSfx(){
+  if (!actx) return;
+  const t = actx.currentTime;
+  for (let i=0;i<6;i++){
+    const o = actx.createOscillator();
+    o.type = 'square';
+    const f = 440 + Math.random()*1200;
+    o.frequency.setValueAtTime(f, t + i*0.04);
+    o.frequency.exponentialRampToValueAtTime(60, t + i*0.04 + 0.15);
+    const g = envGain(t + i*0.04, 0.003, 0.14, 0.1);
+    o.connect(g); g.connect(sfxGain);
+    o.start(t + i*0.04); o.stop(t + i*0.04 + 0.2);
+  }
+}
+
+function grazeSfx(){
+  if (!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator();
+  o.type='triangle';
+  o.frequency.setValueAtTime(2400, t);
+  o.frequency.exponentialRampToValueAtTime(1800, t+0.06);
+  const g = envGain(t, 0.002, 0.05, 0.08);
+  o.connect(g); g.connect(sfxGain);
+  o.start(t); o.stop(t+0.07);
+}
+
+// Music: synthwave bass + chip lead, 140 BPM
+const SCALE = [0, 3, 5, 7, 10, 12, 15]; // minor pentatonic-ish
+const BASS_PATTERN = [0, 0, 7, 0, 5, 0, 7, 3];
+const LEAD_PATTERN = [12, 15, 19, 15, 17, 15, 12, 10, 12, 15, 19, 22, 19, 17, 15, 12];
+
+function midiToFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+
+function scheduleMusic(){
+  if (!actx || !musicGain) return;
+  const lookahead = 0.15;
+  while (nextBeat < actx.currentTime + lookahead){
+    const t = nextBeat;
+    const beat = beatCount;
+    // bass on every beat
+    const bassNote = 33 + BASS_PATTERN[beat % BASS_PATTERN.length];
+    const o = actx.createOscillator();
+    o.type='sawtooth';
+    o.frequency.value = midiToFreq(bassNote);
+    const f = actx.createBiquadFilter();
+    f.type='lowpass';
+    f.frequency.setValueAtTime(300, t);
+    f.frequency.exponentialRampToValueAtTime(1200, t+0.1);
+    f.frequency.exponentialRampToValueAtTime(200, t+SPB*0.9);
+    f.Q.value = 6;
+    const g = envGain(t, 0.005, SPB*0.85, 0.18);
+    o.connect(f); f.connect(g); g.connect(musicGain);
+    o.start(t); o.stop(t+SPB);
+
+    // lead on offbeat eighths sometimes
+    if (beat % 2 === 0 || Math.random() < 0.5){
+      const leadNote = 57 + LEAD_PATTERN[(beat*2) % LEAD_PATTERN.length];
+      const o2 = actx.createOscillator();
+      o2.type='square';
+      o2.frequency.value = midiToFreq(leadNote);
+      const g2 = envGain(t, 0.003, SPB*0.45, 0.07);
+      o2.connect(g2); g2.connect(musicGain);
+      o2.start(t); o2.stop(t+SPB*0.5);
+    }
+    if (beat % 2 === 1){
+      const leadNote = 57 + LEAD_PATTERN[(beat*2+1) % LEAD_PATTERN.length];
+      const o3 = actx.createOscillator();
+      o3.type='triangle';
+      o3.frequency.value = midiToFreq(leadNote);
+      const g3 = envGain(t+SPB*0.5, 0.003, SPB*0.4, 0.06);
+      o3.connect(g3); g3.connect(musicGain);
+      o3.start(t+SPB*0.5); o3.stop(t+SPB);
+    }
+
+    // hi-hat noise on offbeats
+    const hatBuf = actx.createBuffer(1, actx.sampleRate * 0.05, actx.sampleRate);
+    const hd = hatBuf.getChannelData(0);
+    for (let i=0;i<hd.length;i++) hd[i] = (Math.random()*2-1);
+    const hsrc = actx.createBufferSource();
+    hsrc.buffer = hatBuf;
+    const hf = actx.createBiquadFilter();
+    hf.type='highpass'; hf.frequency.value=6000;
+    const hg = envGain(t+SPB*0.5, 0.001, 0.04, 0.05);
+    hsrc.connect(hf); hf.connect(hg); hg.connect(musicGain);
+    hsrc.start(t+SPB*0.5);
+
+    // kick on 1 and 3
+    if (beat % 4 === 0 || beat % 4 === 2){
+      const k = actx.createOscillator();
+      k.type='sine';
+      k.frequency.setValueAtTime(120, t);
+      k.frequency.exponentialRampToValueAtTime(40, t+0.12);
+      const kg = envGain(t, 0.003, 0.18, 0.4);
+      k.connect(kg); kg.connect(musicGain);
+      k.start(t); k.stop(t+0.2);
+    }
+
+    nextBeat += SPB;
+    beatCount++;
+  }
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const game = {
+  state: 'menu',        // 'menu','playing','dead','win','gameover'
+  time: 0,              // wall time in arena
+  survivalTime: 300,    // 5 min
+  remaining: 300,
+  score: 0,
+  lives: 3,
+  bombs: 2,
+  graze: 0,
+  difficulty: 0,        // escalates every 30s
+  invulnTime: 0,
+  bombFlash: 0,
+  shake: 0,
+  shakeX: 0, shakeY: 0,
+  player: {
+    x: 0, y: -PLAY.h*0.30,
+    vx:0, vy:0,
+    aimx: 1, aimy: 0,
+    fireCooldown: 0,
+    radius: 14, // sprite size, NOT hitbox
+  },
+  bossesAlive: 5,
+  bosses: BOSS_POSITIONS.map((p,i)=>({
+    x: p.x, y: p.y, baseX: p.x, baseY: p.y, hue: p.hue,
+    hp: 200 + i*30,
+    maxHp: 200 + i*30,
+    alive: true,
+    size: 32,
+    rot: 0,
+    patterns: [],     // pattern timers
+    nextFire: 0.5 + Math.random()*1.0
+  })),
+  enemyBullets: { count: 0, x:new Float32Array(MAX_BULLETS), y:new Float32Array(MAX_BULLETS),
+    vx:new Float32Array(MAX_BULLETS), vy:new Float32Array(MAX_BULLETS),
+    r:new Float32Array(MAX_BULLETS), g:new Float32Array(MAX_BULLETS), b:new Float32Array(MAX_BULLETS),
+    size:new Float32Array(MAX_BULLETS), life:new Float32Array(MAX_BULLETS), grazeFlag:new Uint8Array(MAX_BULLETS),
+    spin:new Float32Array(MAX_BULLETS) },
+  playerBullets: { count: 0, x:new Float32Array(MAX_PLAYER_SHOTS), y:new Float32Array(MAX_PLAYER_SHOTS),
+    vx:new Float32Array(MAX_PLAYER_SHOTS), vy:new Float32Array(MAX_PLAYER_SHOTS),
+    life:new Float32Array(MAX_PLAYER_SHOTS), dmg:new Float32Array(MAX_PLAYER_SHOTS) },
+  particles: { count: 0, x:new Float32Array(MAX_PARTICLES), y:new Float32Array(MAX_PARTICLES),
+    vx:new Float32Array(MAX_PARTICLES), vy:new Float32Array(MAX_PARTICLES),
+    r:new Float32Array(MAX_PARTICLES), g:new Float32Array(MAX_PARTICLES), b:new Float32Array(MAX_PARTICLES),
+    size:new Float32Array(MAX_PARTICLES), life:new Float32Array(MAX_PARTICLES), maxLife:new Float32Array(MAX_PARTICLES) },
+};
+
+const eb = game.enemyBullets;
+const pb = game.playerBullets;
+const pt = game.particles;
+
+function spawnEnemyBullet(x,y,vx,vy,r,g,b,size,life,spin){
+  if (eb.count >= MAX_BULLETS) {
+    // overwrite oldest by random
+    const i = (Math.random()*MAX_BULLETS)|0;
+    eb.x[i]=x; eb.y[i]=y; eb.vx[i]=vx; eb.vy[i]=vy;
+    eb.r[i]=r; eb.g[i]=g; eb.b[i]=b; eb.size[i]=size; eb.life[i]=life; eb.grazeFlag[i]=0;
+    eb.spin[i]=spin||0;
+    return;
+  }
+  const i = eb.count++;
+  eb.x[i]=x; eb.y[i]=y; eb.vx[i]=vx; eb.vy[i]=vy;
+  eb.r[i]=r; eb.g[i]=g; eb.b[i]=b; eb.size[i]=size; eb.life[i]=life; eb.grazeFlag[i]=0;
+  eb.spin[i]=spin||0;
+}
+function removeEnemyBullet(i){
+  const last = --eb.count;
+  if (i !== last){
+    eb.x[i]=eb.x[last]; eb.y[i]=eb.y[last]; eb.vx[i]=eb.vx[last]; eb.vy[i]=eb.vy[last];
+    eb.r[i]=eb.r[last]; eb.g[i]=eb.g[last]; eb.b[i]=eb.b[last];
+    eb.size[i]=eb.size[last]; eb.life[i]=eb.life[last]; eb.grazeFlag[i]=eb.grazeFlag[last];
+    eb.spin[i]=eb.spin[last];
+  }
+}
+function spawnPlayerBullet(x,y,vx,vy){
+  if (pb.count >= MAX_PLAYER_SHOTS) return;
+  const i = pb.count++;
+  pb.x[i]=x; pb.y[i]=y; pb.vx[i]=vx; pb.vy[i]=vy; pb.life[i]=1.5; pb.dmg[i]=4;
+}
+function removePlayerBullet(i){
+  const last = --pb.count;
+  if (i !== last){
+    pb.x[i]=pb.x[last]; pb.y[i]=pb.y[last]; pb.vx[i]=pb.vx[last]; pb.vy[i]=pb.vy[last];
+    pb.life[i]=pb.life[last]; pb.dmg[i]=pb.dmg[last];
+  }
+}
+function spawnParticle(x,y,vx,vy,r,g,b,size,life){
+  if (pt.count >= MAX_PARTICLES){
+    const i = (Math.random()*MAX_PARTICLES)|0;
+    pt.x[i]=x; pt.y[i]=y; pt.vx[i]=vx; pt.vy[i]=vy;
+    pt.r[i]=r; pt.g[i]=g; pt.b[i]=b; pt.size[i]=size; pt.life[i]=life; pt.maxLife[i]=life;
+    return;
+  }
+  const i = pt.count++;
+  pt.x[i]=x; pt.y[i]=y; pt.vx[i]=vx; pt.vy[i]=vy;
+  pt.r[i]=r; pt.g[i]=g; pt.b[i]=b; pt.size[i]=size; pt.life[i]=life; pt.maxLife[i]=life;
+}
+function removeParticle(i){
+  const last = --pt.count;
+  if (i !== last){
+    pt.x[i]=pt.x[last]; pt.y[i]=pt.y[last]; pt.vx[i]=pt.vx[last]; pt.vy[i]=pt.vy[last];
+    pt.r[i]=pt.r[last]; pt.g[i]=pt.g[last]; pt.b[i]=pt.b[last];
+    pt.size[i]=pt.size[last]; pt.life[i]=pt.life[last]; pt.maxLife[i]=pt.maxLife[last];
+  }
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+const keys = {};
+window.addEventListener('keydown', e=>{
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === 'f' && game.state === 'playing') useBomb();
+});
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+let mouseX = 0, mouseY = 0;
+canvas.addEventListener('mousemove', e=>{
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+});
+
+overlay.addEventListener('click', startGame);
+window.addEventListener('keydown', e=>{
+  if ((e.key === 'Enter' || e.key === ' ') && (game.state === 'menu' || game.state === 'gameover' || game.state === 'win')){
+    startGame();
+  }
+});
+
+function startGame(){
+  initAudio();
+  if (actx && actx.state === 'suspended') actx.resume();
+  if (!musicStarted && actx){
+    nextBeat = actx.currentTime + 0.1;
+    musicStarted = true;
+  }
+  resetGame();
+  game.state = 'playing';
+  overlay.classList.add('hidden');
+}
+
+function resetGame(){
+  game.time = 0;
+  game.remaining = game.survivalTime;
+  game.score = 0;
+  game.lives = 3;
+  game.bombs = 2;
+  game.graze = 0;
+  game.difficulty = 0;
+  game.invulnTime = 1.5;
+  game.bombFlash = 0;
+  game.shake = 0;
+  game.bossesAlive = 5;
+  for (let i=0;i<game.bosses.length;i++){
+    const b = game.bosses[i];
+    b.alive = true;
+    b.hp = b.maxHp;
+    b.x = b.baseX; b.y = b.baseY;
+    b.rot = Math.random()*Math.PI*2;
+    b.nextFire = 0.6 + Math.random()*1.2;
+  }
+  game.player.x = 0;
+  game.player.y = -PLAY.h*0.30;
+  game.player.vx = 0;
+  game.player.vy = 0;
+  game.player.fireCooldown = 0;
+  eb.count = 0;
+  pb.count = 0;
+  pt.count = 0;
+}
+
+function useBomb(){
+  if (game.bombs <= 0) return;
+  game.bombs--;
+  game.bombFlash = 0.45;
+  game.shake = 18;
+  // particles for each bullet, then clear
+  const limit = Math.min(eb.count, 600);
+  for (let i=0;i<limit;i++){
+    const ang = Math.random()*Math.PI*2;
+    const sp = 80 + Math.random()*200;
+    spawnParticle(eb.x[i], eb.y[i], Math.cos(ang)*sp, Math.sin(ang)*sp,
+      eb.r[i], eb.g[i], eb.b[i], eb.size[i]*1.5, 0.6);
+  }
+  eb.count = 0;
+  bombSfx();
+  flash(0.6, '#ffeeaa');
+}
+
+function flash(intensity, color){
+  flashEl.style.background = color || '#ffffff';
+  flashEl.style.opacity = intensity.toString();
+  setTimeout(()=>{ flashEl.style.opacity = '0'; }, 80);
+}
+
+// ============================================================
+// PATTERN GENERATORS
+// ============================================================
+const PATTERNS = ['spiral','wall','fan','ring','aimed'];
+
+function chooseBossPattern(boss, idx){
+  // higher difficulty = pick denser patterns more often
+  const d = game.difficulty;
+  const r = Math.random();
+  if (d >= 4 && r < 0.25) return 'spiral';
+  if (d >= 3 && r < 0.40) return 'wall';
+  if (d >= 2 && r < 0.55) return 'fan';
+  if (r < 0.75) return 'ring';
+  return 'aimed';
+}
+
+function fireBossPattern(boss, dt){
+  boss.nextFire -= dt;
+  if (boss.nextFire > 0) return;
+
+  const p = chooseBossPattern(boss);
+  const pcol = hsl(boss.hue, 0.95, 0.55);
+  const cr = pcol[0], cg = pcol[1], cb = pcol[2];
+  const px = game.player.x, py = game.player.y;
+  const dx0 = px - boss.x, dy0 = py - boss.y;
+  const dist = Math.sqrt(dx0*dx0 + dy0*dy0) || 1;
+  const aim = Math.atan2(dy0, dx0);
+
+  const D = game.difficulty;
+
+  if (p === 'spiral'){
+    const arms = 4 + Math.min(8, D);
+    const speed = 110 + D*18;
+    boss.spiralAngle = (boss.spiralAngle || 0) + 0.55;
+    for (let a=0;a<arms;a++){
+      const ang = boss.spiralAngle + (a/arms)*Math.PI*2;
+      spawnEnemyBullet(boss.x, boss.y,
+        Math.cos(ang)*speed, Math.sin(ang)*speed,
+        cr, cg, cb, 6, 8.0, 0);
+    }
+    boss.nextFire = Math.max(0.06, 0.18 - D*0.012);
+  } else if (p === 'wall'){
+    const w = ARENA.w;
+    const count = 18 + D*2;
+    const vy0 = (boss.y > 0) ? -160 - D*15 : 160 + D*15;
+    const sweep = (Math.random() < 0.5) ? -1 : 1;
+    for (let i=0;i<count;i++){
+      const t = i/(count-1);
+      const x = -w*0.45 + t*w*0.9;
+      const skew = sweep * (i - count/2) * 4;
+      spawnEnemyBullet(x, boss.y, skew, vy0, cr, cg, cb, 7, 7.0, 0);
+    }
+    boss.nextFire = 1.6 - D*0.08;
+    bossShot();
+  } else if (p === 'fan'){
+    const count = 7 + D*2;
+    const spread = 0.7;
+    const speed = 220 + D*15;
+    for (let i=0;i<count;i++){
+      const t = (count === 1) ? 0 : (i/(count-1) - 0.5)*spread;
+      const ang = aim + t;
+      spawnEnemyBullet(boss.x, boss.y,
+        Math.cos(ang)*speed, Math.sin(ang)*speed,
+        cr, cg, cb, 7, 6.0, 0);
+    }
+    boss.nextFire = 0.55 - D*0.02;
+    bossShot();
+  } else if (p === 'ring'){
+    const count = 18 + D*4;
+    const speed = 130 + D*12;
+    const off = Math.random()*Math.PI*2;
+    for (let i=0;i<count;i++){
+      const ang = off + (i/count)*Math.PI*2;
+      spawnEnemyBullet(boss.x, boss.y,
+        Math.cos(ang)*speed, Math.sin(ang)*speed,
+        cr, cg, cb, 6, 7.0, 0);
+    }
+    // sometimes second offset ring
+    if (D >= 2){
+      const off2 = off + Math.PI/count;
+      const speed2 = speed*0.7;
+      for (let i=0;i<count;i++){
+        const ang = off2 + (i/count)*Math.PI*2;
+        spawnEnemyBullet(boss.x, boss.y,
+          Math.cos(ang)*speed2, Math.sin(ang)*speed2,
+          cr*0.7, cg*0.7, cb*1.2, 5, 7.0, 0);
+      }
+    }
+    boss.nextFire = 1.8 - D*0.1;
+    bossShot();
+  } else if (p === 'aimed'){
+    const count = 1 + Math.min(3, D);
+    const speed = 380 + D*25;
+    for (let i=0;i<count;i++){
+      const ang = aim + (i - (count-1)/2)*0.06;
+      spawnEnemyBullet(boss.x, boss.y,
+        Math.cos(ang)*speed, Math.sin(ang)*speed,
+        1.0, 0.9, 0.4, 8, 4.0, 0);
+    }
+    boss.nextFire = 0.45 - D*0.02;
+    bossShot();
+  }
+  if (boss.nextFire < 0.05) boss.nextFire = 0.05;
+}
+
+// ============================================================
+// UPDATE
+// ============================================================
+function update(dt){
+  if (game.state !== 'playing') return;
+  game.time += dt;
+  game.remaining -= dt;
+
+  // difficulty escalates every 30s
+  game.difficulty = Math.floor(game.time / 30);
+
+  if (game.remaining <= 0){
+    game.state = 'win';
+    showOverlay('SURVIVED', 'YOU MASTERED THE STORM', game.score);
+    return;
+  }
+
+  if (game.invulnTime > 0) game.invulnTime -= dt;
+  if (game.bombFlash > 0) game.bombFlash -= dt;
+  if (game.shake > 0){
+    game.shake *= Math.pow(0.001, dt);
+    game.shakeX = (Math.random()*2-1) * game.shake;
+    game.shakeY = (Math.random()*2-1) * game.shake;
+    if (game.shake < 0.3) { game.shake = 0; game.shakeX = 0; game.shakeY = 0; }
+  }
+
+  // PLAYER
+  const p = game.player;
+  let mx = 0, my = 0;
+  if (keys['w'] || keys['arrowup']) my += 1;
+  if (keys['s'] || keys['arrowdown']) my -= 1;
+  if (keys['a'] || keys['arrowleft']) mx -= 1;
+  if (keys['d'] || keys['arrowright']) mx += 1;
+  const ml = Math.hypot(mx, my);
+  if (ml > 0){ mx/=ml; my/=ml; }
+  const speed = 320;
+  p.x += mx * speed * dt;
+  p.y += my * speed * dt;
+  if (p.x < -ARENA.halfW+10) p.x = -ARENA.halfW+10;
+  if (p.x >  ARENA.halfW-10) p.x =  ARENA.halfW-10;
+  if (p.y < -ARENA.halfH+10) p.y = -ARENA.halfH+10;
+  if (p.y >  ARENA.halfH-10) p.y =  ARENA.halfH-10;
+
+  // aim
+  const w = screenToWorld(mouseX, mouseY);
+  const adx = w.x - p.x, ady = w.y - p.y;
+  const al = Math.hypot(adx, ady) || 1;
+  p.aimx = adx/al; p.aimy = ady/al;
+
+  // fire
+  p.fireCooldown -= dt;
+  if (p.fireCooldown <= 0){
+    p.fireCooldown = 0.07;
+    const sp = 760;
+    spawnPlayerBullet(p.x + p.aimx*16, p.y + p.aimy*16, p.aimx*sp, p.aimy*sp);
+    spawnPlayerBullet(p.x + p.aimx*16 + (-p.aimy)*6, p.y + p.aimy*16 + p.aimx*6, p.aimx*sp, p.aimy*sp);
+    spawnPlayerBullet(p.x + p.aimx*16 - (-p.aimy)*6, p.y + p.aimy*16 - p.aimx*6, p.aimx*sp, p.aimy*sp);
+    playerShot();
+  }
+
+  // BOSSES
+  for (let i=0;i<game.bosses.length;i++){
+    const b = game.bosses[i];
+    if (!b.alive) continue;
+    // gentle bob
+    b.x = b.baseX + Math.sin(game.time*0.7 + i)*16;
+    b.y = b.baseY + Math.cos(game.time*1.1 + i*0.7)*10;
+    b.rot += dt * (0.4 + i*0.1);
+    fireBossPattern(b, dt);
+  }
+
+  // ENEMY BULLETS update + collision
+  const px = p.x, py = p.y;
+  const grazeR2 = 30 * 30;
+  const hitR2 = 1.4 * 1.4; // ONE PIXEL hitbox (a tiny radius)
+  for (let i=0;i<eb.count;i++){
+    eb.x[i] += eb.vx[i] * dt;
+    eb.y[i] += eb.vy[i] * dt;
+    eb.life[i] -= dt;
+    if (eb.spin[i]){
+      const c = Math.cos(eb.spin[i]*dt), s = Math.sin(eb.spin[i]*dt);
+      const vx = eb.vx[i], vy = eb.vy[i];
+      eb.vx[i] = vx*c - vy*s;
+      eb.vy[i] = vx*s + vy*c;
+    }
+    // out of arena (with margin) or expired
+    if (eb.life[i] <= 0 || eb.x[i] < -ARENA.halfW-50 || eb.x[i] > ARENA.halfW+50 ||
+        eb.y[i] < -ARENA.halfH-50 || eb.y[i] > ARENA.halfH+50){
+      removeEnemyBullet(i); i--; continue;
+    }
+    const dx = eb.x[i] - px, dy = eb.y[i] - py;
+    const d2 = dx*dx + dy*dy;
+    if (d2 < hitR2 && game.invulnTime <= 0){
+      // hit player
+      playerHit();
+      removeEnemyBullet(i); i--; continue;
+    } else if (d2 < grazeR2 && !eb.grazeFlag[i]){
+      eb.grazeFlag[i] = 1;
+      game.graze++;
+      game.score += 10;
+      // graze sparks
+      for (let k=0;k<3;k++){
+        const ang = Math.atan2(dy,dx) + (Math.random()-0.5)*1.2;
+        const sp = 80 + Math.random()*120;
+        spawnParticle(eb.x[i], eb.y[i], Math.cos(ang)*sp, Math.sin(ang)*sp,
+          0.9, 0.3, 1.0, 4, 0.4);
+      }
+      grazeSfx();
+    }
+  }
+
+  // PLAYER BULLETS update + collision with bosses
+  for (let i=0;i<pb.count;i++){
+    pb.x[i] += pb.vx[i] * dt;
+    pb.y[i] += pb.vy[i] * dt;
+    pb.life[i] -= dt;
+    if (pb.life[i] <= 0 || pb.x[i] < -ARENA.halfW-30 || pb.x[i] > ARENA.halfW+30 ||
+        pb.y[i] < -ARENA.halfH-30 || pb.y[i] > ARENA.halfH+30){
+      removePlayerBullet(i); i--; continue;
+    }
+    // check bosses
+    for (let j=0;j<game.bosses.length;j++){
+      const b = game.bosses[j];
+      if (!b.alive) continue;
+      const dx = pb.x[i]-b.x, dy = pb.y[i]-b.y;
+      if (dx*dx + dy*dy < b.size*b.size){
+        b.hp -= pb.dmg[i];
+        for (let k=0;k<3;k++){
+          const ang = Math.random()*Math.PI*2;
+          const sp = 60 + Math.random()*120;
+          const c = hsl(b.hue, 1.0, 0.55);
+          spawnParticle(pb.x[i], pb.y[i], Math.cos(ang)*sp, Math.sin(ang)*sp,
+            c[0], c[1], c[2], 4, 0.4);
+        }
+        if (b.hp <= 0){
+          killBoss(j);
+        }
+        removePlayerBullet(i); i--;
+        break;
+      }
+    }
+  }
+
+  // PARTICLES
+  for (let i=0;i<pt.count;i++){
+    pt.x[i] += pt.vx[i] * dt;
+    pt.y[i] += pt.vy[i] * dt;
+    pt.vx[i] *= 0.96;
+    pt.vy[i] *= 0.96;
+    pt.life[i] -= dt;
+    if (pt.life[i] <= 0){ removeParticle(i); i--; }
+  }
+
+  // SCORE per second
+  game.score += dt; // 1 per second
+
+  // boss respawn after delay
+  for (let i=0;i<game.bosses.length;i++){
+    const b = game.bosses[i];
+    if (!b.alive){
+      b.respawn -= dt;
+      if (b.respawn <= 0){
+        b.alive = true;
+        b.hp = b.maxHp;
+        b.size = 32;
+        game.bossesAlive++;
+      }
+    }
+  }
+}
+
+function killBoss(j){
+  const b = game.bosses[j];
+  if (!b.alive) return;
+  b.alive = false;
+  b.respawn = 6 + Math.random()*4;
+  game.bossesAlive--;
+  game.score += 100;
+  game.shake = Math.max(game.shake, 14);
+  // explosion
+  const c = hsl(b.hue, 1.0, 0.6);
+  for (let k=0;k<60;k++){
+    const ang = Math.random()*Math.PI*2;
+    const sp = 100 + Math.random()*300;
+    spawnParticle(b.x, b.y, Math.cos(ang)*sp, Math.sin(ang)*sp,
+      c[0], c[1], c[2], 5, 0.6 + Math.random()*0.5);
+  }
+  bombSfx();
+  flash(0.4, '#ffaaff');
+}
+
+function playerHit(){
+  game.lives--;
+  game.invulnTime = 2.0;
+  game.shake = Math.max(game.shake, 20);
+  const p = game.player;
+  // explosion
+  for (let k=0;k<40;k++){
+    const ang = Math.random()*Math.PI*2;
+    const sp = 80 + Math.random()*220;
+    spawnParticle(p.x, p.y, Math.cos(ang)*sp, Math.sin(ang)*sp,
+      1.0, 0.4, 0.8, 5, 0.5 + Math.random()*0.4);
+  }
+  // clear half the bullets so it's recoverable
+  const half = (eb.count * 0.5) | 0;
+  eb.count = half;
+  deathSfx();
+  flash(0.5, '#ff4488');
+  if (game.lives <= 0){
+    game.state = 'gameover';
+    showOverlay('GAME OVER', 'THE NEON TOOK YOU', game.score);
+    return;
+  }
+  p.x = 0; p.y = -PLAY.h*0.30;
+  p.vx = 0; p.vy = 0;
+}
+
+function showOverlay(title, sub, score){
+  overlay.querySelector('h1').textContent = title;
+  overlay.querySelector('h2').textContent = sub;
+  overlay.querySelector('p').innerHTML =
+    'Final Score: <span style="color:#0ff">' + (score|0) + '</span><br>' +
+    'Bosses defeated: <span style="color:#ff0">' + (5 - game.bossesAlive) + '</span><br>' +
+    'Grazes: <span style="color:#f0f">' + game.graze + '</span>';
+  overlay.querySelector('.blink').textContent = 'CLICK TO RESTART';
+  overlay.classList.remove('hidden');
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function render(){
+  // clear
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  const offX = viewOffsetX + game.shakeX;
+  const offY = viewOffsetY + game.shakeY;
+
+  // grid background
+  gl.useProgram(gridProg);
+  gl.uniform2f(u_grid.res, viewW, viewH);
+  gl.uniform2f(u_grid.half, ARENA.halfW, ARENA.halfH);
+  gl.uniform2f(u_grid.off, offX, offY);
+  gl.uniform1f(u_grid.scale, viewScale);
+  gl.uniform1f(u_grid.time, game.time);
+  gl.uniform1f(u_grid.pulse, Math.max(0, game.bombFlash));
+  gl.bindVertexArray(gridVAO);
+  gl.disable(gl.BLEND);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // additive blending for everything else
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+
+  // SHIP & BOSSES
+  gl.useProgram(shapeProg);
+  gl.uniform2f(u_shape.res, viewW, viewH);
+  gl.uniform2f(u_shape.off, offX, offY);
+  gl.uniform1f(u_shape.scale, viewScale);
+
+  // bosses
+  for (let i=0;i<game.bosses.length;i++){
+    const b = game.bosses[i];
+    if (!b.alive) continue;
+    const c = hsl(b.hue, 1.0, 0.55);
+    const pulse = 1 + Math.sin(game.time*4 + i)*0.15;
+    // outer ring
+    drawShape(ringShape, b.x, b.y, b.size*1.4*pulse, b.rot*0.5, c[0], c[1], c[2], 0.6);
+    // inner hex
+    drawShape(hexShape, b.x, b.y, b.size*0.9*pulse, b.rot, c[0]*0.8, c[1]*0.8, c[2]*0.8, 0.5);
+    // core dot
+    drawShape(dotShape, b.x, b.y, 6, 0, 1, 1, 1, 0.9);
+    // hp bar (mini ring)
+    const hpFrac = b.hp / b.maxHp;
+    drawShape(dotShape, b.x, b.y - b.size*1.7, 4 * hpFrac + 1, 0, 1.0, 0.4, 0.4, 0.7);
+  }
+
+  // player ship
+  if (game.state === 'playing' || game.state === 'menu'){
+    const p = game.player;
+    const ang = Math.atan2(p.aimy, p.aimx);
+    const flicker = (game.invulnTime > 0) ? (Math.sin(game.time*30) > 0 ? 0.3 : 1.0) : 1.0;
+    drawShape(shipShape, p.x, p.y, p.radius, ang, 1, 1, 1, 0.8 * flicker);
+    // glowing core (the actual hitbox indicator)
+    drawShape(dotShape, p.x, p.y, 3, 0, 1.0, 0.3, 0.9, 1.0);
+    drawShape(dotShape, p.x, p.y, 1.5, 0, 1.0, 1.0, 1.0, 1.0);
+  }
+
+  // BULLETS via instancing
+  // Pack player bullets first (cyan), then enemy bullets
+  let total = 0;
+  // player bullets
+  for (let i=0;i<pb.count;i++){
+    const o = total*4;
+    bulletPos[o]   = pb.x[i];
+    bulletPos[o+1] = pb.y[i];
+    bulletPos[o+2] = 7;
+    bulletPos[o+3] = Math.atan2(pb.vy[i], pb.vx[i]);
+    bulletCol[o]   = 0.4;
+    bulletCol[o+1] = 1.0;
+    bulletCol[o+2] = 1.0;
+    bulletCol[o+3] = 1.0;
+    total++;
+  }
+  // enemy bullets
+  for (let i=0;i<eb.count;i++){
+    const o = total*4;
+    bulletPos[o]   = eb.x[i];
+    bulletPos[o+1] = eb.y[i];
+    bulletPos[o+2] = eb.size[i];
+    bulletPos[o+3] = 0;
+    bulletCol[o]   = eb.r[i];
+    bulletCol[o+1] = eb.g[i];
+    bulletCol[o+2] = eb.b[i];
+    bulletCol[o+3] = 1.0;
+    total++;
+  }
+  if (total > 0){
+    gl.useProgram(bulletRenderer.prog);
+    gl.uniform2f(bulletRenderer.u_res, viewW, viewH);
+    gl.uniform2f(bulletRenderer.u_off, offX, offY);
+    gl.uniform1f(bulletRenderer.u_scale, viewScale);
+    gl.bindVertexArray(bulletRenderer.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bulletRenderer.posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, bulletPos.subarray(0, total*4));
+    gl.bindBuffer(gl.ARRAY_BUFFER, bulletRenderer.colBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, bulletCol.subarray(0, total*4));
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, total);
+  }
+
+  // PARTICLES
+  if (pt.count > 0){
+    for (let i=0;i<pt.count;i++){
+      const o = i*4;
+      const fade = pt.life[i] / pt.maxLife[i];
+      partPos[o]   = pt.x[i];
+      partPos[o+1] = pt.y[i];
+      partPos[o+2] = pt.size[i] * (0.5 + fade*0.8);
+      partPos[o+3] = 0;
+      partCol[o]   = pt.r[i];
+      partCol[o+1] = pt.g[i];
+      partCol[o+2] = pt.b[i];
+      partCol[o+3] = fade;
+    }
+    gl.useProgram(particleRenderer.prog);
+    gl.uniform2f(particleRenderer.u_res, viewW, viewH);
+    gl.uniform2f(particleRenderer.u_off, offX, offY);
+    gl.uniform1f(particleRenderer.u_scale, viewScale);
+    gl.bindVertexArray(particleRenderer.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, particleRenderer.posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, partPos.subarray(0, pt.count*4));
+    gl.bindBuffer(gl.ARRAY_BUFFER, particleRenderer.colBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, partCol.subarray(0, pt.count*4));
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, pt.count);
+  }
+
+  gl.disable(gl.BLEND);
+}
+
+// ============================================================
+// UI UPDATE
+// ============================================================
+function romanLives(n){ return ['','I','II','III','IIII','V'][Math.max(0,Math.min(5,n))] || '0'; }
+function updateUI(){
+  ui.score.textContent = (game.score|0).toString();
+  ui.lives.textContent = romanLives(game.lives);
+  ui.bombs.textContent = romanLives(game.bombs);
+  const t = Math.max(0, game.remaining);
+  const m = Math.floor(t/60);
+  const s = Math.floor(t - m*60);
+  ui.time.textContent = m + ':' + (s<10?'0':'')+s;
+  ui.bcount.textContent = (eb.count + pb.count).toString();
+  ui.graze.textContent = game.graze.toString();
+  if (game.lives <= 1) ui.lives.classList.add('red'); else ui.lives.classList.remove('red');
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+let last = performance.now();
+function frame(now){
+  let dt = (now - last) / 1000;
+  if (dt > 0.1) dt = 0.1;
+  last = now;
+  update(dt);
+  scheduleMusic();
+  render();
+  updateUI();
+  requestAnimationFrame(frame);
+}
+
+// pre-fill some bullets so user sees activity within 1s
+function primeAction(){
+  // spawn a few sparks for visual immediately
+  for (let k=0;k<40;k++){
+    const ang = Math.random()*Math.PI*2;
+    const sp = 50 + Math.random()*120;
+    spawnParticle((Math.random()-0.5)*ARENA.w*0.6, (Math.random()-0.5)*ARENA.h*0.6,
+      Math.cos(ang)*sp, Math.sin(ang)*sp,
+      Math.random()*0.5+0.4, Math.random()*0.4, Math.random()*0.5+0.5,
+      4, 0.8);
+  }
+}
+primeAction();
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

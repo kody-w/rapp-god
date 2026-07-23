@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Lumenlure · Learn with Kody</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cellipse cx='16' cy='17' rx='8' ry='10' fill='%232ad4ff'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#dfe9ff; --dim:#7f93b5; --line:rgba(120,180,255,.14);
+    --panel:rgba(8,14,26,.62); --accent:#4fe8d6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#02040a;overflow:hidden;
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--ink)}
+  #stage{position:fixed;inset:0}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+  /* ── top-left creature card ── */
+  #hud{position:absolute;top:16px;left:16px;max-width:min(360px,72vw);
+    padding:14px 16px 12px;border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+    box-shadow:0 8px 40px rgba(0,0,0,.5);pointer-events:none;z-index:5}
+  #ttl{font-size:20px;font-weight:700;letter-spacing:.06em;
+    background:linear-gradient(90deg,#eafcff,#5fe6d4 60%,#8fb8ff);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  #sub{margin-top:5px;font-size:11px;color:var(--dim);line-height:1.55}
+  #sub b{color:var(--ink);font-weight:600}
+  .rar{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;
+    font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+  #cap{margin-top:9px;font-size:10px;color:#6f84a6;line-height:1.5;font-style:italic}
+
+  /* ── buttons ── */
+  #bar{position:absolute;top:16px;right:16px;display:flex;gap:8px;flex-wrap:wrap;
+    justify-content:flex-end;max-width:70vw;z-index:6}
+  button,.filebtn{font:inherit;font-size:12px;cursor:pointer;color:var(--ink);
+    padding:9px 14px;border-radius:11px;border:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(30,48,80,.6),rgba(10,18,34,.7));
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:.15s transform,.15s border-color,.15s box-shadow;user-select:none}
+  button:hover,.filebtn:hover{border-color:rgba(120,220,255,.5);
+    box-shadow:0 0 20px rgba(80,200,220,.22);transform:translateY(-1px)}
+  button:active{transform:translateY(0)}
+  .filebtn input{display:none}
+
+  /* ── bottom DNA panel ── */
+  #dna{position:absolute;left:16px;bottom:16px;z-index:6;max-width:min(420px,80vw)}
+  #dna summary{list-style:none;cursor:pointer;font-size:11px;letter-spacing:.1em;
+    color:var(--dim);padding:8px 13px;border:1px solid var(--line);border-radius:11px;
+    background:var(--panel);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    display:inline-block;text-transform:uppercase}
+  #dna summary::-webkit-details-marker{display:none}
+  #dna[open] summary{border-radius:11px 11px 0 0;color:var(--ink)}
+  #dna pre{margin:0;max-height:44vh;overflow:auto;padding:12px 14px;font-size:11px;
+    line-height:1.5;color:#a9c2e8;border:1px solid var(--line);border-top:none;
+    border-radius:0 0 11px 11px;background:rgba(4,9,18,.86)}
+  #load{margin-top:8px;display:flex;gap:8px;align-items:stretch}
+  #load textarea{flex:1;min-width:0;height:34px;resize:vertical;font:inherit;font-size:10px;
+    color:var(--ink);padding:7px 9px;border:1px solid var(--line);border-radius:10px;
+    background:rgba(4,9,18,.86)}
+  #msg{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:7;
+    font-size:11px;color:var(--accent);opacity:0;transition:opacity .4s;pointer-events:none;
+    text-shadow:0 0 12px rgba(80,220,200,.6)}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div id="hud">
+  <div id="ttl">Lumenlure</div>
+  <div id="sub">
+    id <b id="idv">············</b><span class="rar" id="rarv"></span><br>
+    <span id="descv"></span>
+  </div>
+  <div id="cap">A fresh abyssal genome, minted on load — every hatch is unique.</div>
+</div>
+
+<div id="bar">
+  <button id="btnNew">✦ New Lumenlure</button>
+  <button id="btnSave">🥚 Save .egg</button>
+  <label class="filebtn">Load .egg<input id="file" type="file" accept=".egg,.txt,text/plain"></label>
+</div>
+
+<details id="dna">
+  <summary>◇ genome DNA</summary>
+  <pre id="json"></pre>
+  <div id="load">
+    <textarea id="paste" placeholder="paste an .egg string here…" spellcheck="false"></textarea>
+    <button id="btnPaste">Load</button>
+  </div>
+</details>
+
+<div id="msg"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   FAUNA-EGG CORE — verified byte-exact against openrappter-vui / genome.js.
+   Embed VERBATIM in each demo. Do NOT edit: genomeId must stay reproducible
+   or the .egg will not load in rapp·go. (Verified: genomeId of the reference
+   egg === "fb18657910a5", and re-encode reproduces the original bytes.)
+   ══════════════════════════════════════════════════════════════════════════ */
+const EGG = (() => {
+  const b64enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const b64dec = s => { s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); };
+  async function sha256hex(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  function canonical(v){
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v!==null&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  async function genomeId(genome){ return (await sha256hex(canonical(genome))).slice(0,12); }
+  // xmur3 → mulberry32 deterministic PRNG (byte-identical to genome.js mkRng)
+  function mkRng(seed){ let h=1779033703^seed.length; for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),3432918353);h=h<<13|h>>>19;} h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); let s=(h^=h>>>16)>>>0; return function(){s+=0x6D2B79F5;let t=Math.imul(s^s>>>15,1|s);t=(t+Math.imul(t^t>>>7,61|t))^t;return((t^t>>>14)>>>0)/4294967296;}; }
+  // geohash encode (precision 6) so each egg carries a plausible born.coord
+  function geohash(lat,lng,precision=6){ const B='0123456789bcdefghjkmnpqrstuvwxyz'; let even=true,hash='',bits=0,hc=0; const la=[-90,90],lo=[-180,180]; while(hash.length<precision){ if(even){const m=(lo[0]+lo[1])/2; if(lng>m){hc=(hc<<1)|1;lo[0]=m;}else{hc<<=1;lo[1]=m;}} else {const m=(la[0]+la[1])/2; if(lat>m){hc=(hc<<1)|1;la[0]=m;}else{hc<<=1;la[1]=m;}} even=!even; if(++bits===5){hash+=B[hc];bits=0;hc=0;} } return hash; }
+
+  // Pack a genome into a canonical .egg payload (matches openrappter-vui exactly).
+  async function pack(genome, meta={}){
+    const id = await genomeId(genome);
+    const rng = mkRng(id);
+    const payload = {
+      genome, id,
+      born: meta.born || { coord: geohash((rng()*140)-70, (rng()*360)-180), t: 0 },
+      title: meta.title || 'a rappter',
+      rarity: meta.rarity || 'uncommon',
+      source: meta.source || 'learnwithkody-fauna'
+    };
+    return { egg: b64enc(JSON.stringify(payload)), id, payload };
+  }
+  function unpack(b64){ return JSON.parse(b64dec(b64.trim())); }
+  function download(b64, id){ const a=document.createElement('a'); a.href='data:application/octet-stream;base64,'+btoa(b64); /* raw text egg */ a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(b64); a.download=`rappter-${String(id).slice(0,8)}.egg`; document.body.appendChild(a); a.click(); a.remove(); }
+  return { b64enc, b64dec, genomeId, mkRng, geohash, pack, unpack, download };
+})();
+
+/* ═══════════════════ LUMENLURE — genome → creature ═══════════════════ */
+const TAU = Math.PI*2, clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
+const smooth=t=>t*t*(3-2*t);
+
+function hslToHex(h,s,l){
+  h=((h%360)+360)%360; s=clamp(s,0,1); l=clamp(l,0,1);
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+  let r,g,b;
+  if(h<60){r=c;g=x;b=0}else if(h<120){r=x;g=c;b=0}else if(h<180){r=0;g=c;b=x}
+  else if(h<240){r=0;g=x;b=c}else if(h<300){r=x;g=0;b=c}else{r=c;g=0;b=x}
+  const H=v=>Math.round((v+m)*255).toString(16).padStart(2,'0');
+  return '#'+H(r)+H(g)+H(b);
+}
+function hexToRgb(hex){
+  const h=hex.replace('#',''); const n=parseInt(h.length===3?h.replace(/(.)/g,'$1$1'):h,16);
+  return {r:(n>>16)&255,g:(n>>8)&255,b:n&255};
+}
+const rgba=(c,a)=>`rgba(${c.r},${c.g},${c.b},${a})`;
+
+// ── Procedurally mint a Lumenlure genome (biased to the abyssal identity) ──
+function mintGenome(){
+  const seed = 'lumen-'+Math.random().toString(36).slice(2,11)+Date.now().toString(36);
+  const rng = EGG.mkRng(seed);
+  const R = rng, ri=(a,b)=>a+Math.floor(R()*(b-a+1)), rf=(a,b)=>a+R()*(b-a);
+
+  // palette: deep translucent body in blue↔violet, teal fin edge, vivid lure accent
+  const baseHue = rf(198, 268);
+  const lureAmber = R() < 0.30;                 // classic amber lure, rarer
+  const lureHue = lureAmber ? rf(38,54) : rf(150,192);
+  const palette = [
+    hslToHex(baseHue,        rf(.55,.8), rf(.07,.12)),  // 0 deep body
+    hslToHex(baseHue-rf(6,20),rf(.6,.85),rf(.16,.24)),  // 1 mid body
+    hslToHex(baseHue-rf(10,34),rf(.7,.95),rf(.42,.56)), // 2 fin / edge glow
+    hslToHex(lureHue,        rf(.85,1),  rf(.6,.72)),    // 3 lure core
+    hslToHex(lureHue+rf(-8,14),rf(.9,1), rf(.72,.86))    // 4 lure highlight
+  ];
+
+  const form = {
+    role:'form', k:40, shape:'blob', symmetry:'bilateral',
+    limbs: ri(3,8), segments: ri(6,12),
+    body_r: +rf(0.30,0.55).toFixed(3), limb_len: +rf(0.24,0.55).toFixed(3),
+    // ── species extensions ──
+    bodyElong: +rf(1.45,2.15).toFixed(3),   // abyssal fish are long
+    jawGape:   +rf(0.16,0.46).toFixed(3),
+    teeth:     ri(5,11),
+    finSpan:   +rf(0.28,0.52).toFixed(3),
+    tailFin:   +rf(0.20,0.42).toFixed(3)
+  };
+  const surface = {
+    role:'surface', k:60, palette,
+    pattern: R()<0.6 ? 'glow' : 'spot',
+    glow:    +rf(0.55,1.0).toFixed(3),
+    opacity: +rf(0.46,0.80).toFixed(3),
+    // ── extensions ──
+    lure: lureAmber ? 'amber' : 'cyan',
+    snowGlow: +rf(0.4,1.0).toFixed(3)
+  };
+  const motion = {
+    role:'motion', k:50,
+    breathe:+rf(0.25,0.6).toFixed(3), drift:+rf(0.22,0.7).toFixed(3),
+    pulse:  +rf(0.45,1.0).toFixed(3), reach:+rf(0.32,0.8).toFixed(3),
+    // ── extensions ──
+    yaw:      +rf(0.10,0.42).toFixed(3),
+    lureBobHz:+rf(0.55,1.25).toFixed(3)
+  };
+  return { layers:[form,surface,motion], compose:{ windows:[[0,1,2]], loop:true } };
+}
+
+// rarity scored from genome "exoticness" so amber / high-glow reads rarer
+function rarityFor(g){
+  const s=g.layers[1], m=g.layers[2];
+  let score = s.glow*0.9 + m.pulse*0.8 + (s.lure==='amber'?1.1:0) + m.reach*0.5;
+  if(score>2.6) return 'legendary';
+  if(score>2.1) return 'epic';
+  if(score>1.6) return 'rare';
+  if(score>1.1) return 'uncommon';
+  return 'common';
+}
+const RARITY_COLOR = {
+  common:'#7f93b5', uncommon:'#5fe6c9', rare:'#5fb3ff',
+  epic:'#c58bff', legendary:'#ffcf6a'
+};
+
+/* ═══════════════════ CANONICAL BODY OUTLINE (local units) ═══════════════════
+   Facing +x (mouth to the right). Closed loop, tail→dorsal→snout→ventral. */
+const OUTLINE = [
+  [-1.00, 0.00],  //0 tail tip
+  [-0.75,-0.13],  //1 dorsal
+  [-0.45,-0.31],  //2
+  [-0.05,-0.43],  //3 back peak
+  [ 0.35,-0.41],  //4 forehead (lure root)
+  [ 0.62,-0.29],  //5
+  [ 0.80,-0.13],  //6 snout top
+  [ 0.90, 0.02],  //7 mouth front
+  [ 0.80, 0.19],  //8 lower jaw
+  [ 0.55, 0.37],  //9 belly front
+  [ 0.15, 0.45],  //10 belly
+  [-0.28, 0.37],  //11
+  [-0.62, 0.19]   //12 ventral toward tail
+].map(p=>({x:p[0],y:p[1]}));
+const OCENTROID = (()=>{let x=0,y=0;OUTLINE.forEach(p=>{x+=p.x;y+=p.y});return{x:x/OUTLINE.length,y:y/OUTLINE.length};})();
+
+function crPoint(p0,p1,p2,p3,t){
+  const t2=t*t,t3=t2*t;
+  return {
+    x:0.5*((2*p1.x)+(-p0.x+p2.x)*t+(2*p0.x-5*p1.x+4*p2.x-p3.x)*t2+(-p0.x+3*p1.x-3*p2.x+p3.x)*t3),
+    y:0.5*((2*p1.y)+(-p0.y+p2.y)*t+(2*p0.y-5*p1.y+4*p2.y-p3.y)*t2+(-p0.y+3*p1.y-3*p2.y+p3.y)*t3)
+  };
+}
+function closedDense(ctrl, seg){
+  const n=ctrl.length, out=[];
+  for(let i=0;i<n;i++){
+    const p0=ctrl[(i-1+n)%n],p1=ctrl[i],p2=ctrl[(i+1)%n],p3=ctrl[(i+2)%n];
+    for(let j=0;j<seg;j++) out.push(crPoint(p0,p1,p2,p3,j/seg));
+  }
+  return out;
+}
+// sample an arc of the (open) control run i0..i1 with outward normals
+function sampleArc(ctrl, i0, i1, M){
+  const n=ctrl.length, out=[];
+  for(let k=0;k<M;k++){
+    const u=k/(M-1), pos=u*(i1-i0), seg=Math.min(i0+Math.floor(pos), i1-1), lt=(i0+pos)-seg;
+    const p0=ctrl[(seg-1+n)%n],p1=ctrl[seg],p2=ctrl[(seg+1)%n],p3=ctrl[(seg+2)%n];
+    const P=crPoint(p0,p1,p2,p3,lt), Q=crPoint(p0,p1,p2,p3,Math.min(1,lt+0.02));
+    let tx=Q.x-P.x, ty=Q.y-P.y; const L=Math.hypot(tx,ty)||1; tx/=L; ty/=L;
+    let nx=-ty, ny=tx;
+    if((P.x-OCENTROID.x)*nx+(P.y-OCENTROID.y)*ny < 0){nx=-nx;ny=-ny;}
+    out.push({x:P.x,y:P.y,nx,ny,u});
+  }
+  return out;
+}
+
+/* ═══════════════════ RENDER STATE ═══════════════════ */
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth; H=window.innerHeight;
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+}
+window.addEventListener('resize',resize); resize();
+
+// marine snow
+const SNOW=[]; function seedSnow(){
+  SNOW.length=0; const n=Math.round(90+ (W*H)/26000);
+  for(let i=0;i<n;i++) SNOW.push({
+    x:Math.random()*W, y:Math.random()*H,
+    r:0.5+Math.random()*2.1, v:6+Math.random()*20,
+    sway:Math.random()*TAU, swaySpd:0.3+Math.random()*0.7,
+    a:0.15+Math.random()*0.55
+  });
+}
+seedSnow(); window.addEventListener('resize',seedSnow);
+
+let MODEL=null;              // { genome, col[], rarity }
+let currentGenome=null, currentId='', currentEggB64='', currentTitle='Lumenlure', currentRarity='uncommon';
+
+function buildModel(genome, rarity){
+  const s=genome.layers[1];
+  return { genome, rarity, col: s.palette.map(hexToRgb) };
+}
+
+// transform bookkeeping (for lighting / world lookups)
+let TX={cx:0,cy:0,rot:0,sx:1,sy:1,cos:1,sin:0};
+function toWorld(x,y){
+  const ax=x*TX.sx, ay=y*TX.sy;
+  return { x:TX.cx+ax*TX.cos-ay*TX.sin, y:TX.cy+ax*TX.sin+ay*TX.cos };
+}
+
+/* ═══════════════════ THE FRAME ═══════════════════ */
+let lastT=performance.now();
+function render(now){
+  const dt=Math.min(0.05,(now-lastT)/1000); lastT=now; const t=now/1000;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+
+  // ── abyss backdrop ──
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#05070f'); bg.addColorStop(0.45,'#060c1a');
+  bg.addColorStop(1,'#01030a');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  // faint down-light shafts
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const shaft=ctx.createLinearGradient(0,0,0,H*0.7);
+  shaft.addColorStop(0,'rgba(40,90,120,.10)'); shaft.addColorStop(1,'rgba(40,90,120,0)');
+  ctx.fillStyle=shaft; ctx.fillRect(W*0.2,0,W*0.6,H); ctx.restore();
+
+  if(!MODEL){ requestAnimationFrame(render); return; }
+  const g=currentGenome, f=g.layers[0], s=g.layers[1], m=g.layers[2], C=MODEL.col;
+
+  // ── animation drivers ──
+  const swimHz = 1.4 + m.drift*2.6;
+  const finHz  = 1.6 + m.reach*3.0;
+  const bobHz  = m.lureBobHz;
+  const pulse  = 0.5 + 0.5*Math.sin(t*(1.1+m.pulse*2.4));
+  const pulseA = m.pulse;
+  const yawA   = 0.05 + m.yaw*0.28;
+  const breA   = m.breathe*0.05;
+
+  const R = Math.min(W,H)*0.30;
+  const scale = R*(0.7+f.body_r*0.9)*(1+breA*Math.sin(t*1.6));
+  TX.rot = Math.sin(t*(0.35+m.drift*0.5))*yawA + Math.sin(t*0.17)*0.03;
+  TX.cos=Math.cos(TX.rot); TX.sin=Math.sin(TX.rot);
+  TX.sx=scale*f.bodyElong; TX.sy=scale;
+  TX.cx=W*0.47 + Math.sin(t*0.23)*W*0.02;
+  TX.cy=H*0.54 + Math.sin(t*0.9)*H*0.012;
+
+  // swim wave applied to control points (stronger toward tail)
+  const swimAmp=0.11*(0.4+m.drift);
+  const waved=OUTLINE.map(p=>{
+    const tf=clamp((0.55-p.x)/1.5,0,1);
+    const dy=Math.sin(t*swimHz - p.x*3.0)*swimAmp*tf;
+    const dx=Math.sin(t*swimHz*0.6 - p.x*2.0)*swimAmp*0.35*tf;
+    return {x:p.x+dx, y:p.y+dy};
+  });
+  const dense=closedDense(waved,16);
+
+  // apply creature transform (draw everything below in local units)
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.translate(TX.cx,TX.cy); ctx.rotate(TX.rot); ctx.scale(TX.sx,TX.sy);
+
+  const pathBody=()=>{ ctx.beginPath(); ctx.moveTo(dense[0].x,dense[0].y);
+    for(let i=1;i<dense.length;i++) ctx.lineTo(dense[i].x,dense[i].y); ctx.closePath(); };
+
+  // ── UNDULATING FIN MEMBRANE (dorsal + ventral), drawn behind the body ──
+  const finRays=f.limbs+4;
+  function drawFin(i0,i1,dir){
+    const arc=sampleArc(waved,i0,i1,finRays*2);
+    const tips=arc.map(a=>{
+      const env=Math.sin(a.u*Math.PI);                  // taper both ends
+      const flut=0.5+0.5*Math.sin(t*finHz + a.u*TAU*1.6 + dir);
+      const len=f.finSpan*(0.35+env*0.9)*(0.75+0.55*flut);
+      const wob=Math.sin(t*finHz*0.7 + a.u*TAU)*0.06;   // tangential flutter
+      return { x:a.x+a.nx*len - a.ny*wob, y:a.y+a.ny*len + a.nx*wob };
+    });
+    // membrane
+    ctx.beginPath(); ctx.moveTo(arc[0].x,arc[0].y);
+    for(let i=1;i<arc.length;i++) ctx.lineTo(arc[i].x,arc[i].y);
+    for(let i=tips.length-1;i>=0;i--) ctx.lineTo(tips[i].x,tips[i].y);
+    ctx.closePath();
+    ctx.fillStyle=rgba(C[2], 0.14*s.opacity+0.05);
+    ctx.fill();
+    ctx.strokeStyle=rgba(C[2], 0.22*s.glow); ctx.lineWidth=0.008; ctx.stroke();
+    // rays
+    ctx.strokeStyle=rgba(C[2], 0.30*s.glow); ctx.lineWidth=0.006;
+    for(let i=0;i<arc.length;i+=1){
+      if(i%1!==0) continue;
+      ctx.beginPath(); ctx.moveTo(arc[i].x,arc[i].y); ctx.lineTo(tips[i].x,tips[i].y); ctx.stroke();
+    }
+  }
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  drawFin(1,4,0.0);          // dorsal
+  drawFin(9,12,Math.PI);     // ventral
+  ctx.restore();
+
+  // ── CAUDAL (tail) FIN — undulating fan at the tail ──
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const tail=waved[0];
+  const fanN=7, fanLen=f.tailFin;
+  ctx.beginPath();
+  const pts=[];
+  for(let k=0;k<=fanN;k++){
+    const u=k/fanN, ang=(-0.6+u*1.2);
+    const wob=Math.sin(t*swimHz + u*3)*0.14;
+    const L=fanLen*(0.6+0.4*Math.sin(u*Math.PI));
+    pts.push({x:tail.x - Math.cos(ang)*L, y:tail.y + Math.sin(ang+wob)*L});
+  }
+  ctx.moveTo(tail.x,tail.y);
+  pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.closePath();
+  ctx.fillStyle=rgba(C[2],0.10*s.opacity+0.04); ctx.fill();
+  ctx.strokeStyle=rgba(C[2],0.20*s.glow); ctx.lineWidth=0.006; ctx.stroke();
+  ctx.restore();
+
+  // ── BODY: layered translucent silhouette ──
+  for(let L=3;L>=0;L--){
+    ctx.save();
+    const grow=1+L*0.05;
+    ctx.scale(grow,grow);
+    pathBody();
+    const cc = L===0? C[1] : C[0];
+    const gg=ctx.createLinearGradient(-1,-0.5,1,0.5);
+    gg.addColorStop(0, rgba(cc, (L===0?0.9:0.16)*s.opacity));
+    gg.addColorStop(0.5, rgba(C[1], (L===0?0.85:0.14)*s.opacity));
+    gg.addColorStop(1, rgba(cc, (L===0?0.7:0.10)*s.opacity));
+    ctx.fillStyle=gg; ctx.fill();
+    ctx.restore();
+  }
+  // rim light
+  pathBody();
+  ctx.strokeStyle=rgba(C[2],0.5*s.glow); ctx.lineWidth=0.012;
+  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.stroke(); ctx.restore();
+
+  // ── internal pattern (clipped to body) ──
+  ctx.save(); pathBody(); ctx.clip(); ctx.globalCompositeOperation='lighter';
+  if(s.pattern==='glow'){
+    const spine=ctx.createLinearGradient(-1,0,0.9,0);
+    spine.addColorStop(0,rgba(C[2],0)); spine.addColorStop(0.6,rgba(C[2],0.16*s.glow));
+    spine.addColorStop(1,rgba(C[2],0));
+    ctx.fillStyle=spine; ctx.fillRect(-1,-0.5,2,1);
+    for(let i=0;i<5;i++){
+      const gx=lerp(-0.6,0.6,i/4)+Math.sin(t*0.7+i)*0.03;
+      const rr=0.18+0.05*Math.sin(t+i);
+      const rg=ctx.createRadialGradient(gx,0,0,gx,0,rr);
+      rg.addColorStop(0,rgba(C[2],0.14*s.glow)); rg.addColorStop(1,rgba(C[2],0));
+      ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(gx,0,rr,0,TAU); ctx.fill();
+    }
+  } else { // spots
+    const rng=EGG.mkRng(currentId);
+    for(let i=0;i<26;i++){
+      const gx=lerp(-0.9,0.85,rng()), gy=lerp(-0.4,0.4,rng()), rr=0.02+rng()*0.05;
+      const a=0.10+0.14*Math.sin(t*1.3+i)*s.glow;
+      ctx.fillStyle=rgba(C[2],Math.max(0,a));
+      ctx.beginPath(); ctx.arc(gx,gy,rr,0,TAU); ctx.fill();
+    }
+  }
+  // gill arc
+  ctx.strokeStyle=rgba(C[0],0.5); ctx.lineWidth=0.012;
+  ctx.beginPath(); ctx.arc(0.42,0.02,0.30,-1.0,1.0); ctx.stroke();
+  ctx.restore();
+
+  // ── EYE ──
+  const eye={x:0.55,y:-0.11};
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const eg=ctx.createRadialGradient(eye.x,eye.y,0,eye.x,eye.y,0.12);
+  eg.addColorStop(0,rgba(C[4],0.9)); eg.addColorStop(0.5,rgba(C[3],0.4)); eg.addColorStop(1,rgba(C[3],0));
+  ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(eye.x,eye.y,0.12,0,TAU); ctx.fill(); ctx.restore();
+  ctx.fillStyle=rgba(C[4],0.95); ctx.beginPath(); ctx.arc(eye.x,eye.y,0.05,0,TAU); ctx.fill();
+  ctx.fillStyle='rgba(3,6,14,0.95)'; ctx.beginPath(); ctx.arc(eye.x,eye.y,0.022,0,TAU); ctx.fill();
+
+  // ── JAW / TEETH ──
+  const gape=f.jawGape*(0.7+0.3*Math.sin(t*swimHz*0.5));
+  ctx.save();
+  ctx.strokeStyle=rgba(C[4],0.75); ctx.lineWidth=0.010;
+  ctx.fillStyle=rgba(C[4],0.85);
+  const jawTop={x:0.90,y:0.02}, jawLo={x:0.80,y:0.19+gape*0.3};
+  for(let i=0;i<f.teeth;i++){
+    const u=i/(f.teeth-1||1);
+    const bx=lerp(jawTop.x-0.02,0.62,u), by=lerp(0.05,0.16,u);
+    const dir=i%2? 1:-1, len=0.05+0.02*Math.sin(t*3+i);
+    ctx.beginPath(); ctx.moveTo(bx,by-0.01);
+    ctx.lineTo(bx-0.01, by+dir*(0.02)+ (dir>0?gape*0.4:0)+len);
+    ctx.lineTo(bx+0.01, by-0.01); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+
+  // ── LURE STALK + ORB (springy bob, pulses to motion.pulse) ──
+  const root={x:0.34,y:-0.42};
+  const bob=Math.sin(t*bobHz*TAU*0.5);            // primary bob
+  const bob2=Math.sin(t*bobHz*TAU*0.5 - 0.7)*0.5; // spring lag
+  const reach=f.limb_len*(1.1+m.reach*0.6);
+  const orb={
+    x:root.x+0.42+Math.sin(t*0.6)*0.05*m.drift,
+    y:root.y-0.55*reach + bob*0.10*reach + bob2*0.05
+  };
+  const cp1={x:root.x+0.06,y:root.y-0.30*reach + bob2*0.04};
+  const cp2={x:orb.x-0.10,y:orb.y+0.14+bob*0.05};
+  // stalk
+  ctx.beginPath(); ctx.moveTo(root.x,root.y);
+  ctx.bezierCurveTo(cp1.x,cp1.y,cp2.x,cp2.y,orb.x,orb.y);
+  ctx.strokeStyle=rgba(C[1],0.85); ctx.lineWidth=0.026; ctx.lineCap='round'; ctx.stroke();
+  ctx.strokeStyle=rgba(C[3],0.35*s.glow); ctx.lineWidth=0.012;
+  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.stroke(); ctx.restore();
+
+  // orb glow (world-space handled by lighter blend in local coords)
+  const orbR=0.085*(1+0.35*pulse*pulseA);
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const halo=ctx.createRadialGradient(orb.x,orb.y,0,orb.x,orb.y,0.5+0.25*pulse);
+  const gI=(0.5+0.5*pulse)*s.glow;
+  halo.addColorStop(0,rgba(C[3],0.42*gI)); halo.addColorStop(0.35,rgba(C[3],0.14*gI));
+  halo.addColorStop(1,rgba(C[3],0));
+  ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(orb.x,orb.y,0.5+0.25*pulse,0,TAU); ctx.fill();
+  const core=ctx.createRadialGradient(orb.x-orbR*0.3,orb.y-orbR*0.3,0,orb.x,orb.y,orbR);
+  core.addColorStop(0,rgba(C[4],1)); core.addColorStop(0.6,rgba(C[3],0.95)); core.addColorStop(1,rgba(C[3],0.2));
+  ctx.fillStyle=core; ctx.beginPath(); ctx.arc(orb.x,orb.y,orbR,0,TAU); ctx.fill();
+  ctx.restore();
+
+  // world position of orb for snow lighting
+  const orbW=toWorld(orb.x,orb.y);
+  const orbLight=(0.5+0.5*pulse);
+
+  // ── back to screen space for marine snow + vignette ──
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(const p of SNOW){
+    p.y-=p.v*dt; p.sway+=p.swaySpd*dt;
+    if(p.y< -4){ p.y=H+4; p.x=Math.random()*W; }
+    const x=p.x+Math.sin(p.sway)*6;
+    const d=Math.hypot(x-orbW.x,p.y-orbW.y);
+    const lit=clamp(1-d/(Math.min(W,H)*0.34),0,1)*orbLight*s.snowGlow;
+    const cc=C[3];
+    ctx.fillStyle=`rgba(${Math.round(180+cc.r*0.3)},${Math.round(200+cc.g*0.2)},255,${p.a*0.5+lit*0.7})`;
+    ctx.beginPath(); ctx.arc(x,p.y,p.r*(1+lit*0.8),0,TAU); ctx.fill();
+  }
+  ctx.restore();
+
+  // vignette
+  const vg=ctx.createRadialGradient(W*0.5,H*0.5,Math.min(W,H)*0.25,W*0.5,H*0.55,Math.max(W,H)*0.75);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.72)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+
+  if(window.FAUNA) window.FAUNA.frame++;
+  requestAnimationFrame(render);
+}
+
+/* ═══════════════════ APPLY / MINT / IO ═══════════════════ */
+const $=id=>document.getElementById(id);
+
+function applyGenome(genome, id, eggB64, title, rarity){
+  currentGenome=genome; currentId=id; currentEggB64=eggB64;
+  currentTitle=title; currentRarity=rarity;
+  MODEL=buildModel(genome, rarity);
+  // HUD (textContent only — never innerHTML with data)
+  $('ttl').textContent=title;
+  $('idv').textContent=id;
+  const rv=$('rarv'); rv.textContent=rarity;
+  rv.style.color=RARITY_COLOR[rarity]||'#7f93b5';
+  rv.style.border='1px solid '+(RARITY_COLOR[rarity]||'#7f93b5')+'55';
+  const s=genome.layers[1], f=genome.layers[0], m=genome.layers[2];
+  $('descv').textContent=`${s.lure} lure · ${f.limbs+4} fin-rays · ${s.pattern} skin · `
+    +`glow ${s.glow.toFixed(2)} · pulse ${m.pulse.toFixed(2)}`;
+  $('json').textContent=JSON.stringify(genome,null,2);
+}
+
+async function mint(){
+  const genome=mintGenome();
+  const rarity=rarityFor(genome);
+  const {egg,id}=await EGG.pack(genome,{title:'Lumenlure',rarity,source:'learnwithkody-fauna'});
+  applyGenome(genome,id,egg,'Lumenlure',rarity);
+  return id;
+}
+
+async function loadEggStr(b64){
+  const payload=EGG.unpack(b64);
+  if(!payload||!payload.genome||!Array.isArray(payload.genome.layers))
+    throw new Error('not a rappter egg');
+  // verify id reproduces (robustness); prefer recomputed if payload lacks one
+  const id=payload.id || await EGG.genomeId(payload.genome);
+  applyGenome(payload.genome, id, b64.trim(),
+              payload.title||'Lumenlure', payload.rarity||'uncommon');
+  return id;
+}
+
+function toast(txt){ const el=$('msg'); el.textContent=txt; el.style.opacity=1;
+  clearTimeout(toast._t); toast._t=setTimeout(()=>el.style.opacity=0,1800); }
+
+$('btnNew').addEventListener('click', async()=>{ const id=await mint(); toast('✦ hatched '+id); });
+$('btnSave').addEventListener('click', ()=>{ EGG.download(currentEggB64,currentId); toast('🥚 saved '+currentId+'.egg'); });
+$('btnPaste').addEventListener('click', async()=>{
+  const v=$('paste').value.trim(); if(!v) return;
+  try{ const id=await loadEggStr(v); toast('loaded '+id); }catch(e){ toast('✗ '+e.message); }
+});
+$('file').addEventListener('change', async e=>{
+  const file=e.target.files[0]; if(!file) return;
+  try{ const txt=await file.text(); const id=await loadEggStr(txt); toast('loaded '+id); }
+  catch(err){ toast('✗ '+err.message); }
+  e.target.value='';
+});
+
+/* ═══════════════════ BOOT ═══════════════════ */
+(async function init(){
+  await mint();                          // first creature ready + rendering
+  window.FAUNA = {
+    title:'Lumenlure',
+    get genome(){ return currentGenome; },
+    get id(){ return currentId; },
+    get eggB64(){ return currentEggB64; },
+    newCreature: async()=>{ return await mint(); },
+    loadEgg: async(b64)=>{ return await loadEggStr(b64); },
+    frame: 0
+  };
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stillwater Hold — Agentic Post-Apoc Settlement · Round 18</title>
+<style>
+  html,body{margin:0;padding:0;background:#0c0a08;color:#f3e7d3;font-family:"Courier New",monospace;overflow:hidden;height:100%;}
+  #scene{position:fixed;inset:0;}
+  .overlay{position:fixed;pointer-events:none;z-index:5;}
+  #hud{top:10px;left:10px;background:rgba(20,14,10,0.78);border:1px solid #6b4a2a;padding:8px 12px;border-radius:6px;font-size:12px;letter-spacing:0.6px;max-width:46vw;}
+  #hud .title{color:#f0c98a;font-weight:bold;font-size:13px;}
+  #hud .sub{color:#bea27a;font-size:11px;margin-top:2px;}
+  #chyron{bottom:10px;left:10px;right:10px;background:rgba(20,14,10,0.84);border:1px solid #6b4a2a;padding:8px 14px;border-radius:6px;font-size:13px;color:#f0c98a;text-align:center;letter-spacing:1px;}
+  #brain{top:10px;right:10px;width:280px;background:rgba(18,12,8,0.88);border:1px solid #82643a;padding:10px 12px;border-radius:6px;font-size:11px;line-height:1.45;}
+  #brain .name{color:#ffce8a;font-weight:bold;font-size:13px;letter-spacing:1px;}
+  #brain .label{color:#9c7a4a;}
+  #brain .val{color:#e3d2ad;}
+  #brain .step{color:#9ad08a;}
+  #brain .mood{color:#e0a070;}
+  #morale{top:230px;right:10px;width:280px;background:rgba(18,12,8,0.88);border:1px solid #82643a;padding:8px 12px;border-radius:6px;font-size:11px;}
+  #morale .row{display:flex;justify-content:space-between;margin:3px 0;}
+  #morale .bar{height:5px;background:#3a2a1a;border-radius:3px;overflow:hidden;margin-top:2px;}
+  #morale .fill{height:100%;background:linear-gradient(90deg,#7a8c3a,#bdc973);}
+  #minimap{bottom:60px;right:10px;width:170px;height:170px;background:rgba(18,12,8,0.86);border:1px solid #82643a;border-radius:6px;}
+  #relations{bottom:60px;left:10px;width:200px;background:rgba(18,12,8,0.86);border:1px solid #82643a;padding:6px 9px;border-radius:6px;font-size:10px;color:#bea27a;}
+  #relations .h{color:#f0c98a;font-weight:bold;letter-spacing:1px;font-size:11px;margin-bottom:3px;}
+  .glyph{color:#9ad08a;}
+  #area{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:38px;letter-spacing:6px;color:#ffce8a;text-shadow:0 0 12px rgba(0,0,0,0.9);opacity:0;transition:opacity 0.6s;pointer-events:none;z-index:6;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<!-- ROUND18_AGENT v1 -->
+<div id="scene"></div>
+<div id="hud" class="overlay"><div class="title" id="hudTitle">AREA 1 OF 5: GATE WALL</div><div class="sub" id="hudSub">DAY 27 · MORALE: HIGH · WALL 80% REBUILT</div></div>
+<div id="brain" class="overlay">
+  <div class="name" id="bName">KIT · Forager</div>
+  <div><span class="label">GOAL:</span> <span class="val" id="bGoal">3 sacks mushroom + roots</span></div>
+  <div><span class="label">NEED:</span> <span class="val" id="bNeed">Daylight + safe trail</span></div>
+  <div><span class="label">HAVE:</span> <span class="val" id="bHave">Empty sacks, knife, water flask</span></div>
+  <div><span class="label">PLAN:</span> <span class="val" id="bPlan">Forest north → Mushroom patch → Riverbed roots → Return by dusk</span></div>
+  <div><span class="label">STEP:</span> <span class="step" id="bStep">2 of 4 (Forest north)</span></div>
+  <div><span class="label">MOOD:</span> <span class="mood" id="bMood">Hopeful careful</span></div>
+</div>
+<div id="morale" class="overlay">
+  <div class="row"><span>SETTLEMENT MORALE</span><span id="mPct">82%</span></div>
+  <div class="bar"><div class="fill" id="mFill" style="width:82%"></div></div>
+  <div class="row" style="margin-top:6px"><span>BUNKHOUSE</span><span id="bhPct">42%</span></div>
+  <div class="bar"><div class="fill" id="bhFill" style="width:42%;background:linear-gradient(90deg,#a26a3a,#d6a06a)"></div></div>
+  <div class="row"><span>GARDEN</span><span id="gdPct">61%</span></div>
+  <div class="bar"><div class="fill" id="gdFill" style="width:61%;background:linear-gradient(90deg,#5a8c3a,#9ad08a)"></div></div>
+  <div class="row"><span>WALL REPAIR</span><span id="wlPct">80%</span></div>
+  <div class="bar"><div class="fill" id="wlFill" style="width:80%;background:linear-gradient(90deg,#8a6a4a,#c8a070)"></div></div>
+</div>
+<canvas id="minimap" class="overlay" width="170" height="170"></canvas>
+<div id="relations" class="overlay"><div class="h">RELATIONSHIPS</div><div id="relList">Loading work-pairs...</div></div>
+<div id="chyron" class="overlay">Day 27 · Stillwater Hold awakens to dawn-amber light over the lake.</div>
+<div id="area">STILLWATER HOLD</div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+"use strict";
+(function(){
+
+const SAVE_KEY="stillwater_hold_v1";
+const RESEED_MS=10*60*1000;
+
+// ------- Persistent memory -------
+let mem=loadMem();
+function loadMem(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(raw){
+      const m=JSON.parse(raw);
+      if(m && typeof m==="object") return normMem(m);
+    }
+  }catch(e){}
+  return normMem({});
+}
+function normMem(m){
+  return {
+    day: m.day||27,
+    morale: m.morale||82,
+    bunkhouse: m.bunkhouse||42,
+    garden: m.garden||61,
+    wall: m.wall||80,
+    forageHaul: m.forageHaul||0,
+    arrowheads: m.arrowheads||0,
+    militiaTrained: m.militiaTrained||0,
+    salvageCataloged: m.salvageCataloged||0,
+    teaBrewed: m.teaBrewed||0,
+    beansPlanted: m.beansPlanted||0,
+    relations: m.relations||[
+      "Bram + Felix · co-raise bunkhouse beams",
+      "Solveig mentors 3 militia recruits",
+      "Doc + Wren swap herb cuttings",
+      "Kit & Maple foraged together once",
+      "Margolis hosts hearth-circle nightly"
+    ],
+    log: m.log||[],
+    seed: (m.seed||1)+1
+  };
+}
+function saveMem(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(mem)); }catch(e){}
+}
+
+// ------- Survivors -------
+const SURVIVORS=[
+  {id:0,name:"Margolis 'Ma' Vance",role:"Mayor",goal:"keep settlement spirits up",need:"Hearth-circle attendance",have:"Tea, stories, ledger",plan:"Market hearth → Infirmary check-in → Gate morale walk → Lakefront sunset",mood:"Warm steady",home:1,color:0xd9a76b},
+  {id:1,name:"Bram the Builder",role:"Carpenter",goal:"finish the new bunkhouse",need:"Beams + 4 strong hands",have:"Hammer, saw, pencil",plan:"Market lumber pile → Bunkhouse frame → Roof beam raise → Cleanup",mood:"Focused proud",home:1,color:0xb37a4a},
+  {id:2,name:"Solveig — Watch Captain",role:"Watch",goal:"train 3 new militia volunteers",need:"Daylight + drill yard",have:"Wooden practice spear",plan:"Gate wall → Drill yard → Watchtower climb → Lakefront patrol",mood:"Calm sharp",home:0,color:0x8a7a5a},
+  {id:3,name:"Doc Pell",role:"Medic",goal:"brew enough willow tea for winter",need:"Willow bark + clean water",have:"Mortar, kettle, bandages",plan:"Infirmary → Garden herb beds → Hearth water → Drying rack",mood:"Patient kind",home:3,color:0x7a9a7a},
+  {id:4,name:"Forager Kit Tarrow",role:"Forager",goal:"3 sacks mushroom + roots",need:"Daylight + safe trail",have:"Empty sacks, knife, water flask",plan:"Forest north → Mushroom patch → Riverbed roots → Return by dusk",mood:"Hopeful careful",home:0,color:0x9aa86a},
+  {id:5,name:"Iron-fisted Jaz Halloran",role:"Smith",goal:"forge 12 new arrowheads",need:"Charcoal + scrap iron",have:"Bellows, tongs, anvil",plan:"Salvage pile → Forge → Quench bucket → Quartermaster handoff",mood:"Hot focused",home:1,color:0xa84a3a},
+  {id:6,name:"Gardener Wren Sousa",role:"Gardener",goal:"plant beans for spring",need:"Compost + sun",have:"Seed packets, trowel",plan:"Compost heap → Raised bed 3 → Greenhouse → Watering walk",mood:"Quiet hopeful",home:4,color:0x6aa86a},
+  {id:7,name:"Quartermaster Felix Ng",role:"Quartermaster",goal:"catalog this week's salvage haul",need:"Ledger + clear table",have:"Quill, ink, salvage tags",plan:"Salvage pile → Tally cubes → Bunkhouse storeroom → Sign-off",mood:"Tidy meticulous",home:1,color:0x7a8aa8},
+];
+const NAME_POOL=[
+  "Tova","Cy","Renna","Holm","Pip","Ash","Bryn","Cord","Dela","Erris",
+  "Fenn","Gale","Hux","Iri","Jory","Kell","Loa","Mira","Nox","Ona",
+  "Pell","Quin","Roe","Sten","Tem","Una","Vex","Wyn","Xio","Yara"
+];
+const AMBIENT_COUNT=80;
+const MAPLE_GOAT={id:8,name:"Maple the Goat",role:"Goat",goal:"eat anything she shouldn't",need:"Distraction",have:"Horns, four hooves, mischief",plan:"Pen gap → Felix's ledger → Wren's lettuce → Margolis's lap",mood:"Smug happy",home:2,color:0xf2eadc};
+
+// ------- Areas (5 settlement zones) -------
+const AREAS=[
+  {id:0,name:"GATE WALL",          accent:0xc8a070, sky:0x2b1d12, ground:0x4a3a26, fog:[0x2b1d12,28,180], pos:new THREE.Vector3(-95,0,-90)},
+  {id:1,name:"MARKET PLAZA",       accent:0xe0883a, sky:0x251608, ground:0x5a3a1a, fog:[0x251608,32,180], pos:new THREE.Vector3(0,0,0)},
+  {id:2,name:"WATCHTOWER LAKEFRONT",accent:0x8ab8d8, sky:0x2a3850, ground:0x3a526a, fog:[0x33485a,40,200], pos:new THREE.Vector3(95,0,90)},
+  {id:3,name:"INFIRMARY",          accent:0x9abc8a, sky:0x1f2c1c, ground:0x3a4a2a, fog:[0x1f2c1c,28,170], pos:new THREE.Vector3(-95,0,90)},
+  {id:4,name:"GARDEN GREENHOUSE",  accent:0x9ad8a0, sky:0x1c2c20, ground:0x36502c, fog:[0x1c2c20,30,180], pos:new THREE.Vector3(95,0,-90)},
+];
+
+// ------- Story log seeds -------
+const STORY_BEATS=[
+  "Bram raises bunkhouse roof beam — hands clap from across plaza.",
+  "Kit returns with 3 sacks mushrooms — hearth pot rejoices.",
+  "Maple eats Felix's catalog list — Felix sighs, rewrites it.",
+  "Solveig drills 3 recruits at dawn — wooden spears thunk.",
+  "Doc Pell hangs willow bundles to dry above the kettle.",
+  "Wren plants the second bean row — soil dark from compost.",
+  "Jaz quenches 4 arrowheads — steam hisses from the bucket.",
+  "Margolis tells the lake-spirit story by hearth — kids stay up.",
+  "Spotters spotted distant figures — all clear by dawn.",
+  "Felix tags salvage cube #41 — copper hinge, good condition.",
+  "Maple escapes the pen — found napping on Margolis's quilt.",
+  "Garden well pump squeaks — Bram greases it with bacon fat."
+];
+
+// ------- Three.js setup -------
+const sceneRoot = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled=false;
+sceneRoot.appendChild(renderer.domElement);
+
+let scene, camera;
+let disposables=[];
+let survivorMeshes=[];
+let ambientGroup=null;
+let goatMesh=null;
+let dustTrails=[];
+let sparkles=[];
+let decisionDiamonds=[];
+let portalLine=null;
+
+let activeArea=0;
+let focusSurvivor=4; // start on Kit
+let cameraAngle=0;
+let cameraTarget=new THREE.Vector3();
+let cameraPos=new THREE.Vector3(0,12,30);
+let cameraLerpTo=null;
+let directorIndex=0;
+let lastPortal=performance.now();
+let lastDirectorSwitch=performance.now();
+let lastChyron=performance.now();
+let chyronIdx=0;
+let lastSave=performance.now();
+let startTime=performance.now();
+let lastFrame=performance.now();
+
+// 18+ director camera presets (positions relative to area center)
+const DIRECTOR_CAMS=[
+  {area:0,name:"Gate watchtower wide",  pos:[8,18,18],  look:[0,3,0]},
+  {area:0,name:"Palisade eye-line",     pos:[14,4,4],   look:[-2,3,0]},
+  {area:0,name:"Drill yard low",        pos:[-12,2.5,8], look:[0,2,0]},
+  {area:1,name:"Market hearth-fire",    pos:[6,4,8],    look:[0,1.5,0]},
+  {area:1,name:"Bunkhouse frame crane", pos:[-14,12,10], look:[0,5,0]},
+  {area:1,name:"Salvage pile orbit",    pos:[10,5,-8],  look:[2,1.5,2]},
+  {area:1,name:"Plaza top-down soft",   pos:[0,22,12],  look:[0,0,0]},
+  {area:2,name:"Lakefront sunrise",     pos:[2,3,18],   look:[6,2,-4]},
+  {area:2,name:"Watchtower platform",   pos:[-6,16,2],  look:[8,0,0]},
+  {area:2,name:"Dock fishing-boat",     pos:[14,1.5,2], look:[20,0,4]},
+  {area:3,name:"Infirmary herb drying", pos:[8,3.5,4],  look:[0,2,0]},
+  {area:3,name:"Hut interior soft",     pos:[-3,2,3],   look:[0,1.5,0]},
+  {area:3,name:"Rope-pulley first-aid", pos:[5,4,-6],   look:[0,2,0]},
+  {area:4,name:"Garden bean-row low",   pos:[3,1.5,8],  look:[0,0.5,-2]},
+  {area:4,name:"Greenhouse glass",      pos:[10,3,-2],  look:[0,2,0]},
+  {area:4,name:"Compost heap orbit",    pos:[-8,4,6],   look:[0,1,0]},
+  {area:4,name:"Maple-goat follow",     pos:[6,2,-6],   look:[0,1,0]},
+  {area:1,name:"Hearth-circle dusk",    pos:[0,3,12],   look:[0,1.5,0]},
+  {area:2,name:"Lake reflection",       pos:[18,1.5,18], look:[10,0.5,8]}
+];
+
+function disposeAll(){
+  if(scene){
+    scene.traverse((o)=>{
+      if(o.geometry) o.geometry.dispose();
+      if(o.material){
+        if(Array.isArray(o.material)) o.material.forEach(m=>m.dispose());
+        else o.material.dispose();
+      }
+      if(o.texture) o.texture.dispose();
+    });
+  }
+  disposables.forEach(d=>{ try{ if(d.dispose) d.dispose(); }catch(e){}});
+  disposables=[];
+  survivorMeshes=[];
+  ambientGroup=null;
+  goatMesh=null;
+  dustTrails=[];
+  sparkles=[];
+  decisionDiamonds=[];
+  portalLine=null;
+  scene=null; camera=null;
+}
+
+// ------- Scene build -------
+function buildScene(){
+  disposeAll();
+  scene = new THREE.Scene();
+  const area=AREAS[activeArea];
+  scene.background = new THREE.Color(area.sky);
+  scene.fog = new THREE.Fog(area.fog[0], area.fog[1], area.fog[2]);
+
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 600);
+  camera.position.set(0,12,30);
+
+  // Lighting
+  const amb = new THREE.AmbientLight(0x4a3a2a, 0.55);
+  scene.add(amb);
+  const sun = new THREE.DirectionalLight(0xffd9a8, 0.85);
+  sun.position.set(60,80,40);
+  scene.add(sun);
+  const moon = new THREE.HemisphereLight(0x33485a, 0x2a1810, 0.35);
+  scene.add(moon);
+
+  // Ground (whole settlement)
+  const gGeo = new THREE.PlaneGeometry(420, 420, 1, 1);
+  const gMat = new THREE.MeshLambertMaterial({color:0x3a2a1a});
+  const ground = new THREE.Mesh(gGeo, gMat);
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = -0.05;
+  scene.add(ground);
+
+  // Stylized lake (north-east corner near area 2)
+  const lakeGeo = new THREE.PlaneGeometry(180, 120);
+  const lakeMat = new THREE.MeshLambertMaterial({color:0x355a78, transparent:true, opacity:0.9});
+  const lake = new THREE.Mesh(lakeGeo, lakeMat);
+  lake.rotation.x = -Math.PI/2;
+  lake.position.set(160,0.02,140);
+  scene.add(lake);
+
+  // Build each area
+  AREAS.forEach((a,i)=> buildArea(a, i));
+
+  // Connecting "fence-line" path between adjacent areas (portal trail)
+  buildFencePath();
+
+  // Survivors (8 + Maple)
+  spawnSurvivors();
+
+  // Ambient instanced settlers
+  spawnAmbient();
+
+  // Stars / lanterns
+  spawnLanterns();
+
+  // Mini camera target
+  cameraTarget.copy(AREAS[activeArea].pos);
+}
+
+function makeBox(w,h,d,col,opts){
+  const g=new THREE.BoxGeometry(w,h,d);
+  const m=new THREE.MeshLambertMaterial(Object.assign({color:col},opts||{}));
+  return new THREE.Mesh(g,m);
+}
+function makeCyl(rt,rb,h,col,seg){
+  const g=new THREE.CylinderGeometry(rt,rb,h,seg||10);
+  const m=new THREE.MeshLambertMaterial({color:col});
+  return new THREE.Mesh(g,m);
+}
+function makeSphere(r,col,seg){
+  const g=new THREE.SphereGeometry(r,seg||10,seg||10);
+  const m=new THREE.MeshLambertMaterial({color:col});
+  return new THREE.Mesh(g,m);
+}
+
+function buildArea(a, idx){
+  const grp = new THREE.Group();
+  grp.position.copy(a.pos);
+
+  // Area accent ground tile
+  const tile = new THREE.Mesh(
+    new THREE.CircleGeometry(40, 24),
+    new THREE.MeshLambertMaterial({color:tintHex(a.accent,-0.55)})
+  );
+  tile.rotation.x = -Math.PI/2;
+  tile.position.y = 0.01;
+  grp.add(tile);
+
+  if(idx===0) buildGateWall(grp, a);
+  else if(idx===1) buildMarketPlaza(grp, a);
+  else if(idx===2) buildLakefront(grp, a);
+  else if(idx===3) buildInfirmary(grp, a);
+  else if(idx===4) buildGarden(grp, a);
+
+  // Area sign post
+  const post = makeBox(0.4,3,0.4,0x6b4a2a);
+  post.position.set(0,1.5,-12);
+  grp.add(post);
+  const sign = makeBox(5,1.2,0.2,a.accent);
+  sign.position.set(0,3.2,-12);
+  grp.add(sign);
+
+  scene.add(grp);
+}
+
+function tintHex(hex, amt){
+  const c=new THREE.Color(hex);
+  c.offsetHSL(0, 0, amt);
+  return c.getHex();
+}
+
+function buildGateWall(g, a){
+  // Palisade wall (logs)
+  for(let i=-12;i<=12;i+=1.4){
+    const log=makeCyl(0.5,0.5,5,0x6b4a2a);
+    log.position.set(i,2.5,-8);
+    g.add(log);
+    const cap=makeCyl(0.55,0.55,0.3,0x4a3018);
+    cap.position.set(i,5.0,-8);
+    g.add(cap);
+  }
+  // Gate (open wooden double doors)
+  const gateL=makeBox(3,5,0.3,0x8a6234);
+  gateL.position.set(-1.7,2.5,-7.6); gateL.rotation.y=-0.25; g.add(gateL);
+  const gateR=makeBox(3,5,0.3,0x8a6234);
+  gateR.position.set(1.7,2.5,-7.6); gateR.rotation.y=0.25; g.add(gateR);
+  // Watchtower
+  for(let l=0;l<3;l++){
+    const post=makeCyl(0.25,0.25,8,0x4a3018);
+    const angs=[[-3,-3],[3,-3],[-3,3],[3,3]];
+    angs.forEach(p=>{
+      const c=makeCyl(0.25,0.25,8,0x4a3018);
+      c.position.set(p[0]+8,4,p[1]-2); g.add(c);
+    });
+    break;
+  }
+  const platform=makeBox(7,0.3,7,0x8a6234);
+  platform.position.set(8,8,-2); g.add(platform);
+  const roof=makeCyl(0.1,3.2,3,0x6b4a2a,4);
+  roof.position.set(8,10.5,-2); roof.rotation.y=Math.PI/4; g.add(roof);
+  // Scrap-iron defensive pieces
+  for(let i=0;i<6;i++){
+    const sc=makeBox(0.6+Math.random()*0.6,0.6,0.6+Math.random()*0.6,0x5a4a3a);
+    sc.position.set(-10+Math.random()*20, 0.3, -6+Math.random()*4);
+    g.add(sc);
+  }
+  // Drill yard practice spears (leaning)
+  for(let i=0;i<4;i++){
+    const sp=makeCyl(0.06,0.08,4,0x8a6234);
+    sp.position.set(-10+i*1.2,1.8,4); sp.rotation.z=0.3; g.add(sp);
+  }
+  // Banner
+  const banner=makeBox(2.4,1.5,0.05,0xc8a070);
+  banner.position.set(0,5.7,-7.4); g.add(banner);
+}
+
+function buildMarketPlaza(g, a){
+  // Communal hearth (stone ring + fire)
+  for(let i=0;i<10;i++){
+    const ang=(i/10)*Math.PI*2;
+    const stone=makeBox(0.7,0.5,0.7,0x6b5a4a);
+    stone.position.set(Math.cos(ang)*2,0.25,Math.sin(ang)*2);
+    g.add(stone);
+  }
+  const fire=makeCyl(0.9,1.2,1.2,0xff7a2a,8);
+  fire.position.set(0,0.6,0);
+  fire.userData.isFire=true;
+  g.add(fire);
+  const ember=makeSphere(0.4,0xffc070);
+  ember.position.set(0,1.3,0); ember.userData.isFire=true;
+  g.add(ember);
+
+  // Trading stalls (4)
+  for(let i=0;i<4;i++){
+    const ang=(i/4)*Math.PI*2 + Math.PI/4;
+    const sx=Math.cos(ang)*8, sz=Math.sin(ang)*8;
+    const stall=makeBox(3,0.3,2,0x8a6234);
+    stall.position.set(sx,1.6,sz); g.add(stall);
+    [[-1.3,-0.8],[1.3,-0.8],[-1.3,0.8],[1.3,0.8]].forEach(p=>{
+      const post=makeCyl(0.1,0.1,1.6,0x4a3018);
+      post.position.set(sx+p[0],0.8,sz+p[1]); g.add(post);
+    });
+    const goods=makeBox(0.7,0.3,0.7,[0xa84a3a,0xc8a070,0x7a8aa8,0x6aa86a][i]);
+    goods.position.set(sx,1.95,sz); g.add(goods);
+  }
+  // Salvage piles
+  for(let i=0;i<3;i++){
+    const px=-12+i*4, pz=-7;
+    for(let s=0;s<5;s++){
+      const cube=makeBox(0.7+Math.random()*0.4,0.5+Math.random()*0.4,0.7+Math.random()*0.4,
+                         [0x5a4a3a,0x4a3a2a,0x6b5a4a,0x8a6a4a][s%4]);
+      cube.position.set(px+Math.random()*0.6,0.3+s*0.5,pz+Math.random()*0.6);
+      cube.rotation.y=Math.random()*Math.PI;
+      g.add(cube);
+    }
+  }
+  // Water pump
+  const pumpBase=makeBox(0.8,1.0,0.8,0x6b5a4a);
+  pumpBase.position.set(8,0.5,4); g.add(pumpBase);
+  const pumpArm=makeBox(0.15,0.15,1.4,0x8a6a4a);
+  pumpArm.position.set(8,1.3,4.4); g.add(pumpArm);
+
+  // Bunkhouse frame (under construction)
+  const bhX=-10, bhZ=8;
+  for(let i=0;i<4;i++){
+    const post=makeBox(0.3,5,0.3,0x8a6234);
+    const offs=[[-3,-2],[3,-2],[-3,2],[3,2]][i];
+    post.position.set(bhX+offs[0],2.5,bhZ+offs[1]); g.add(post);
+  }
+  const beamA=makeBox(7,0.3,0.3,0x6b4a2a);
+  beamA.position.set(bhX,5,bhZ-2); g.add(beamA);
+  const beamB=makeBox(7,0.3,0.3,0x6b4a2a);
+  beamB.position.set(bhX,5,bhZ+2); g.add(beamB);
+  const beamC=makeBox(0.3,0.3,5,0x6b4a2a);
+  beamC.position.set(bhX-3,5,bhZ); g.add(beamC);
+  // partial roof boards
+  for(let i=-3;i<=0;i+=0.6){
+    const bd=makeBox(0.5,0.05,4.4,0xa07a4a);
+    bd.position.set(bhX+i,5.3,bhZ); g.add(bd);
+  }
+}
+
+function buildLakefront(g, a){
+  // Dock
+  const dock=makeBox(8,0.3,2,0x8a6234);
+  dock.position.set(6,0.4,4); g.add(dock);
+  for(let i=0;i<5;i++){
+    const piling=makeCyl(0.15,0.15,1.2,0x6b4a2a);
+    piling.position.set(2+i*2,0.0,4); g.add(piling);
+  }
+  // Fishing boat
+  const boat=makeBox(2.6,0.7,1.1,0x8a6234);
+  boat.position.set(11,0.45,4.5); g.add(boat);
+  const mast=makeCyl(0.1,0.1,3,0x4a3018);
+  mast.position.set(11,2.0,4.5); g.add(mast);
+  const sail=makeBox(0.05,2.0,1.5,0xe6dcc0);
+  sail.position.set(11,2.0,4.5); g.add(sail);
+  // Watchtower (taller, by lake)
+  const angs=[[-2,-2],[2,-2],[-2,2],[2,2]];
+  angs.forEach(p=>{
+    const c=makeCyl(0.25,0.25,12,0x4a3018);
+    c.position.set(p[0]-6,6,p[1]); g.add(c);
+  });
+  const platform=makeBox(5.5,0.3,5.5,0x8a6234);
+  platform.position.set(-6,12,0); g.add(platform);
+  const roof=makeCyl(0.1,2.6,2.5,0x6b4a2a,4);
+  roof.position.set(-6,13.8,0); roof.rotation.y=Math.PI/4; g.add(roof);
+  // Lantern atop watchtower
+  const lantern=makeSphere(0.4,0xffd070);
+  lantern.position.set(-6,12.5,0); lantern.userData.isLantern=true; g.add(lantern);
+
+  // Sunrise vista markers (rocks)
+  for(let i=0;i<5;i++){
+    const rock=makeSphere(0.6+Math.random()*0.4, 0x8a8a8a, 6);
+    rock.position.set(14+i*1.3, 0.2, 8+Math.random()*1.5);
+    rock.scale.y=0.55;
+    g.add(rock);
+  }
+  // Reeds (cylinders)
+  for(let i=0;i<14;i++){
+    const reed=makeCyl(0.04,0.04,1.2,0x7a8a3a,6);
+    reed.position.set(8+Math.random()*8, 0.6, 6+Math.random()*4);
+    g.add(reed);
+  }
+}
+
+function buildInfirmary(g, a){
+  // Hut walls
+  const hut=makeBox(7,3.6,5,0xa6886a);
+  hut.position.set(0,1.8,0); g.add(hut);
+  const roof=makeBox(7.6,0.4,5.4,0x6b4a2a);
+  roof.position.set(0,3.7,0); g.add(roof);
+  // Door cut
+  const door=makeBox(1.0,2.0,0.1,0x4a3018);
+  door.position.set(0,1.0,2.55); g.add(door);
+  // Herb drying rack
+  const rackA=makeCyl(0.08,0.08,3,0x6b4a2a); rackA.position.set(5,1.5,1); g.add(rackA);
+  const rackB=makeCyl(0.08,0.08,3,0x6b4a2a); rackB.position.set(5,1.5,-1); g.add(rackB);
+  const rackBeam=makeBox(0.08,0.08,2.2,0x6b4a2a);
+  rackBeam.position.set(5,2.9,0); g.add(rackBeam);
+  for(let i=-0.9;i<=0.9;i+=0.3){
+    const bundle=makeBox(0.18,0.6,0.18,0x6a8a4a);
+    bundle.position.set(5,2.5,i); g.add(bundle);
+  }
+  // Outdoor herbal tea kettle
+  const kBase=makeBox(0.8,0.3,0.8,0x4a3a2a);
+  kBase.position.set(-3,0.15,2); g.add(kBase);
+  const kettle=makeSphere(0.45, 0x222222, 8);
+  kettle.position.set(-3,0.6,2); g.add(kettle);
+  // Rope-and-pulley first-aid winch
+  const beam=makeBox(0.2,0.2,2.5,0x4a3018);
+  beam.position.set(-2,4.2,-2); g.add(beam);
+  const pulley=makeCyl(0.2,0.2,0.1,0x222222);
+  pulley.position.set(-2,4.0,-2); pulley.rotation.x=Math.PI/2; g.add(pulley);
+  const rope=makeCyl(0.04,0.04,3,0xc0a070);
+  rope.position.set(-2,2.6,-2); g.add(rope);
+  // Bench
+  const bench=makeBox(2.5,0.3,0.6,0x8a6234);
+  bench.position.set(2,0.5,3.5); g.add(bench);
+}
+
+function buildGarden(g, a){
+  // Raised beds
+  for(let r=0;r<3;r++){
+    for(let c=0;c<4;c++){
+      const bed=makeBox(2.6,0.4,1.3,0x6b4a2a);
+      bed.position.set(-6+c*3.2, 0.2, -3+r*2.6);
+      g.add(bed);
+      // Soil
+      const soil=makeBox(2.4,0.05,1.1,0x3a2a1a);
+      soil.position.set(-6+c*3.2,0.43,-3+r*2.6); g.add(soil);
+      // Sprouts
+      for(let s=0;s<5;s++){
+        const sp=makeCyl(0.04,0.04,0.3+Math.random()*0.4,0x8ad06a,5);
+        sp.position.set(-6+c*3.2 + (Math.random()-0.5)*2,
+                        0.6+Math.random()*0.1,
+                        -3+r*2.6 + (Math.random()-0.5)*1);
+        g.add(sp);
+      }
+    }
+  }
+  // Greenhouse (scavenged glass)
+  const ghFloor=makeBox(6,0.2,4,0x6b4a2a);
+  ghFloor.position.set(8,0.1,2); g.add(ghFloor);
+  for(let i=-2.8;i<=2.8;i+=0.7){
+    const wall=makeBox(0.05,2.5,4,0xb0d0d0,{transparent:true,opacity:0.45});
+    wall.position.set(8+i,1.45,2); g.add(wall);
+  }
+  // Greenhouse pitched roof
+  const roofL=makeBox(6,0.05,3,0xb0d0d0);
+  roofL.position.set(8,2.7,1); roofL.rotation.x=0.45; g.add(roofL);
+  const roofR=makeBox(6,0.05,3,0xb0d0d0);
+  roofR.position.set(8,2.7,3); roofR.rotation.x=-0.45; g.add(roofR);
+  // Compost heap
+  const heap=makeSphere(1.6, 0x4a3a1a, 8);
+  heap.position.set(-9,1.0,4); heap.scale.y=0.6; g.add(heap);
+  for(let i=0;i<5;i++){
+    const sc=makeSphere(0.3,0x6a4a2a,5);
+    sc.position.set(-9+(Math.random()-0.5)*2, 1.3, 4+(Math.random()-0.5)*2);
+    g.add(sc);
+  }
+  // Pet goat pen markers
+  for(let i=0;i<8;i++){
+    const ang=(i/8)*Math.PI*2;
+    const fp=makeCyl(0.08,0.08,1.2,0x6b4a2a);
+    fp.position.set(-3+Math.cos(ang)*3, 0.6, 7+Math.sin(ang)*3);
+    g.add(fp);
+  }
+}
+
+function buildFencePath(){
+  // Connect 5 areas with thin glowing fence-line for portal transitions
+  const path=[
+    AREAS[0].pos.clone(), AREAS[1].pos.clone(),
+    AREAS[2].pos.clone(), AREAS[1].pos.clone(),
+    AREAS[3].pos.clone(), AREAS[1].pos.clone(),
+    AREAS[4].pos.clone(), AREAS[1].pos.clone()
+  ];
+  for(let i=0;i<path.length-1;i++){
+    const a=path[i], b=path[i+1];
+    const steps=12;
+    for(let s=0;s<steps;s++){
+      const t=s/steps;
+      const x=a.x+(b.x-a.x)*t;
+      const z=a.z+(b.z-a.z)*t;
+      const post=makeCyl(0.08,0.08,1.0,0x6b4a2a,4);
+      post.position.set(x,0.5,z);
+      scene.add(post);
+    }
+  }
+}
+
+// ------- Survivor characters -------
+function makeSurvivorMesh(s){
+  const grp = new THREE.Group();
+  // Body (patched utility outfit, muted earth-tone)
+  const body=makeBox(0.7,1.0,0.45, s.color);
+  body.position.y=0.85; grp.add(body);
+  // Head
+  const head=makeSphere(0.3,0xd6b08a,8);
+  head.position.y=1.55; grp.add(head);
+  // Hat / hair
+  const hat=makeBox(0.65,0.18,0.5, tintHex(s.color,-0.3));
+  hat.position.y=1.78; grp.add(hat);
+  // Legs
+  const legL=makeBox(0.22,0.7,0.22,0x4a3a2a);
+  legL.position.set(-0.18,0.35,0); grp.add(legL);
+  const legR=makeBox(0.22,0.7,0.22,0x4a3a2a);
+  legR.position.set(0.18,0.35,0); grp.add(legR);
+  // Tool / role glyph
+  const tool=makeBox(0.12,0.6,0.12,0x9a7a4a);
+  tool.position.set(0.45,0.85,0); grp.add(tool);
+  // Brain glow (visible brain - the agentic spec)
+  const brainHalo=makeSphere(0.18,0xffe0a0,10);
+  brainHalo.position.y=1.85;
+  brainHalo.material.transparent=true;
+  brainHalo.material.opacity=0.55;
+  brainHalo.userData.isBrain=true;
+  grp.add(brainHalo);
+  // Decision diamond placeholder (hidden)
+  const dia=makeBox(0.25,0.25,0.25,0xffce8a);
+  dia.position.y=2.4;
+  dia.rotation.x=Math.PI/4;
+  dia.rotation.z=Math.PI/4;
+  dia.material.transparent=true;
+  dia.material.opacity=0;
+  dia.userData.isDiamond=true;
+  grp.add(dia);
+  decisionDiamonds.push(dia);
+  return grp;
+}
+
+function spawnSurvivors(){
+  SURVIVORS.forEach(s=>{
+    const m=makeSurvivorMesh(s);
+    const homeArea=AREAS[s.home];
+    m.position.set(homeArea.pos.x + (Math.random()-0.5)*8, 0, homeArea.pos.z + (Math.random()-0.5)*8);
+    m.userData.s=s;
+    m.userData.target=m.position.clone();
+    m.userData.area=s.home;
+    m.userData.lastSwap=performance.now()+Math.random()*8000;
+    m.userData.trail=[];
+    scene.add(m);
+    survivorMeshes.push(m);
+  });
+  // Maple goat — small white blob with horns
+  const goat=new THREE.Group();
+  const body=makeBox(0.8,0.4,0.4,0xf2eadc);
+  body.position.y=0.4; goat.add(body);
+  const head=makeBox(0.4,0.35,0.35,0xf6f0e2);
+  head.position.set(0.45,0.6,0); goat.add(head);
+  const hornL=makeCyl(0.05,0.02,0.25,0x8a6a4a,5);
+  hornL.position.set(0.55,0.85,0.08); hornL.rotation.z=-0.2; goat.add(hornL);
+  const hornR=makeCyl(0.05,0.02,0.25,0x8a6a4a,5);
+  hornR.position.set(0.55,0.85,-0.08); hornR.rotation.z=-0.2; goat.add(hornR);
+  for(let i=0;i<4;i++){
+    const leg=makeBox(0.1,0.4,0.1,0xddd0bb);
+    leg.position.set([-0.25,0.25,-0.25,0.25][i],0.2,[0.15,0.15,-0.15,-0.15][i]);
+    goat.add(leg);
+  }
+  goat.position.set(AREAS[4].pos.x, 0, AREAS[4].pos.z+5);
+  goat.userData.s=MAPLE_GOAT;
+  goat.userData.target=goat.position.clone();
+  goat.userData.area=4;
+  goat.userData.lastSwap=performance.now();
+  scene.add(goat);
+  goatMesh=goat;
+  survivorMeshes.push(goat);
+}
+
+function spawnAmbient(){
+  // 80 instanced ambient settlers
+  const baseGeo=new THREE.BoxGeometry(0.5,1.4,0.4);
+  const baseMat=new THREE.MeshLambertMaterial({color:0x8a6a4a, vertexColors:false});
+  const inst=new THREE.InstancedMesh(baseGeo, baseMat, AMBIENT_COUNT);
+  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const tmp=new THREE.Object3D();
+  inst.userData.targets=[];
+  inst.userData.areas=[];
+  for(let i=0;i<AMBIENT_COUNT;i++){
+    const areaIdx=i%5;
+    const a=AREAS[areaIdx];
+    const x=a.pos.x + (Math.random()-0.5)*22;
+    const z=a.pos.z + (Math.random()-0.5)*22;
+    tmp.position.set(x,0.7,z);
+    const sc=0.7+Math.random()*0.6;
+    tmp.scale.set(sc,sc,sc);
+    tmp.rotation.y=Math.random()*Math.PI*2;
+    tmp.updateMatrix();
+    inst.setMatrixAt(i, tmp.matrix);
+    inst.setColorAt && inst.setColorAt(i, new THREE.Color().setHSL(0.07+Math.random()*0.08, 0.35+Math.random()*0.2, 0.35+Math.random()*0.2));
+    inst.userData.targets.push(new THREE.Vector3(x,0.7,z));
+    inst.userData.areas.push(areaIdx);
+  }
+  inst.instanceMatrix.needsUpdate=true;
+  if(inst.instanceColor) inst.instanceColor.needsUpdate=true;
+  scene.add(inst);
+  ambientGroup=inst;
+}
+
+function spawnLanterns(){
+  // Stars in the sky
+  const starGeo = new THREE.BufferGeometry();
+  const starCount = 240;
+  const positions = new Float32Array(starCount*3);
+  for(let i=0;i<starCount;i++){
+    positions[i*3]   = (Math.random()-0.5)*500;
+    positions[i*3+1] = 80+Math.random()*120;
+    positions[i*3+2] = (Math.random()-0.5)*500;
+  }
+  starGeo.setAttribute("position", new THREE.BufferAttribute(positions,3));
+  const starMat = new THREE.PointsMaterial({color:0xffe6b8, size:1.2, transparent:true, opacity:0.7});
+  const stars = new THREE.Points(starGeo, starMat);
+  scene.add(stars);
+
+  // Lanterns scattered around plaza
+  for(let i=0;i<14;i++){
+    const ang=(i/14)*Math.PI*2;
+    const lx = Math.cos(ang)*15;
+    const lz = Math.sin(ang)*15;
+    const lant=makeSphere(0.25, 0xffd070, 8);
+    lant.position.set(lx, 3.5, lz);
+    lant.userData.isLantern=true;
+    scene.add(lant);
+  }
+}
+
+// ------- Survivor agentic AI -------
+function pickNextTarget(s, mesh){
+  // Survivors cross between their goal-areas based on plan
+  const plan = s.plan.split("→").map(x=>x.trim());
+  mesh.userData.planStep = ((mesh.userData.planStep||0)+1) % plan.length;
+  // Map plan steps roughly to area indices
+  const stepKeywords=[
+    {kw:["Gate","Wall","drill","watchtower","patrol","yard"],area:0},
+    {kw:["Market","plaza","Lumber","bunkhouse","Hearth","Salvage","Quartermaster","ledger","forge","Bellows","Anvil","Tally","Storeroom"],area:1},
+    {kw:["Lake","dock","fishing","sunrise","Lakefront"],area:2},
+    {kw:["Infirmary","herb","drying","willow","kettle","bandage","Mortar"],area:3},
+    {kw:["Garden","Compost","bed","greenhouse","seed","watering","sprout","row"],area:4}
+  ];
+  let nextArea=mesh.userData.area;
+  const step = plan[mesh.userData.planStep] || "";
+  for(const sk of stepKeywords){
+    if(sk.kw.some(k=>step.toLowerCase().includes(k.toLowerCase()))){
+      nextArea=sk.area; break;
+    }
+  }
+  // Special: forager Kit goes "outside" then market
+  if(s.id===4 && mesh.userData.planStep===0) nextArea=0;
+  mesh.userData.area=nextArea;
+  const a=AREAS[nextArea];
+  mesh.userData.target=new THREE.Vector3(
+    a.pos.x + (Math.random()-0.5)*14,
+    0,
+    a.pos.z + (Math.random()-0.5)*14
+  );
+  // Sparkle on collaboration if another survivor is near
+  for(const other of survivorMeshes){
+    if(other!==mesh && other.userData.s && mesh.userData.target.distanceTo(other.position)<3.5){
+      spawnSparkle(mesh.position.clone().lerp(other.position,0.5));
+      // bump rebuild progress
+      bumpProgress();
+      // record relation
+      addRelation(`${s.name.split(" ")[0]} + ${other.userData.s.name.split(" ")[0]} · co-task`);
+    }
+  }
+  // Pulse decision diamond
+  const dia = mesh.children.find(c=>c.userData && c.userData.isDiamond);
+  if(dia){
+    dia.userData.pulse = performance.now();
+    dia.material.opacity = 0.95;
+  }
+  return nextArea;
+}
+
+function spawnSparkle(pos){
+  const sp = makeSphere(0.18, 0xfff2c0, 6);
+  sp.position.copy(pos); sp.position.y=1.6;
+  sp.userData.born = performance.now();
+  scene.add(sp);
+  sparkles.push(sp);
+}
+
+function bumpProgress(){
+  if(Math.random()<0.4) mem.bunkhouse = Math.min(100, mem.bunkhouse + 0.2);
+  if(Math.random()<0.4) mem.garden    = Math.min(100, mem.garden    + 0.2);
+  if(Math.random()<0.3) mem.wall      = Math.min(100, mem.wall      + 0.15);
+  if(Math.random()<0.5) mem.morale    = Math.min(100, mem.morale    + 0.1);
+}
+
+function addRelation(line){
+  if(mem.relations.indexOf(line)>=0) return;
+  mem.relations.unshift(line);
+  if(mem.relations.length>8) mem.relations.length=8;
+}
+
+// ------- Animation loop -------
+function animate(){
+  requestAnimationFrame(animate);
+  const now=performance.now();
+  const dt=Math.min(0.05, (now-lastFrame)/1000);
+  lastFrame=now;
+  if(!scene||!camera) return;
+
+  // ----- Survivors move toward targets -----
+  for(const m of survivorMeshes){
+    if(!m.userData.target) continue;
+    const dir=m.userData.target.clone().sub(m.position);
+    dir.y=0;
+    const dist=dir.length();
+    const speed = m.userData.s===MAPLE_GOAT ? 2.4 : 1.6;
+    if(dist>0.5){
+      dir.normalize().multiplyScalar(speed*dt);
+      m.position.add(dir);
+      m.rotation.y = Math.atan2(dir.x, dir.z);
+      // Goal trail: leave dust puff every ~0.5s
+      if(!m.userData.lastDust || now - m.userData.lastDust > 480){
+        m.userData.lastDust = now;
+        const dust = makeSphere(0.2, 0xc8a070, 5);
+        dust.position.copy(m.position); dust.position.y=0.1;
+        dust.material.transparent=true; dust.material.opacity=0.55;
+        dust.userData.born=now;
+        scene.add(dust);
+        dustTrails.push(dust);
+      }
+    } else if(now > m.userData.lastSwap){
+      pickNextTarget(m.userData.s, m);
+      m.userData.lastSwap = now + 7000 + Math.random()*8000;
+      // chyron beat occasionally
+      if(Math.random()<0.18) emitChyron();
+    }
+    // Brain halo pulse
+    const brain = m.children.find(c=>c.userData && c.userData.isBrain);
+    if(brain){
+      const p = 0.45 + 0.25*Math.sin(now*0.004 + m.userData.s.id);
+      brain.material.opacity = p;
+      brain.scale.setScalar(0.9 + 0.15*Math.sin(now*0.005 + m.userData.s.id));
+    }
+    // Fade decision diamonds
+    const dia=m.children.find(c=>c.userData && c.userData.isDiamond);
+    if(dia && dia.material.opacity>0){
+      dia.material.opacity = Math.max(0, dia.material.opacity - dt*0.4);
+      dia.rotation.y += dt*2;
+    }
+  }
+
+  // ----- Ambient settlers gentle drift -----
+  if(ambientGroup){
+    const tmp=new THREE.Object3D();
+    for(let i=0;i<AMBIENT_COUNT;i++){
+      ambientGroup.getMatrixAt(i, tmp.matrix);
+      tmp.matrix.decompose(tmp.position, tmp.quaternion, tmp.scale);
+      const t=ambientGroup.userData.targets[i];
+      const dir=t.clone().sub(tmp.position); dir.y=0;
+      if(dir.length()<0.4){
+        const a=AREAS[ambientGroup.userData.areas[i]];
+        t.set(a.pos.x+(Math.random()-0.5)*22, 0.7, a.pos.z+(Math.random()-0.5)*22);
+        // occasionally migrate to neighbor area
+        if(Math.random()<0.04){
+          const nA=Math.floor(Math.random()*5);
+          ambientGroup.userData.areas[i]=nA;
+        }
+      }else{
+        dir.normalize().multiplyScalar(0.7*dt);
+        tmp.position.add(dir);
+        tmp.rotation.y=Math.atan2(dir.x, dir.z);
+      }
+      tmp.updateMatrix();
+      ambientGroup.setMatrixAt(i, tmp.matrix);
+    }
+    ambientGroup.instanceMatrix.needsUpdate=true;
+  }
+
+  // ----- Sparkles fade -----
+  for(let i=sparkles.length-1;i>=0;i--){
+    const s=sparkles[i];
+    const age=(now-s.userData.born)/900;
+    if(age>=1){
+      scene.remove(s); s.geometry.dispose(); s.material.dispose();
+      sparkles.splice(i,1);
+    }else{
+      s.material.opacity=1-age;
+      s.material.transparent=true;
+      s.position.y=1.6+age*0.8;
+      s.scale.setScalar(1+age*1.2);
+    }
+  }
+
+  // ----- Dust trails fade -----
+  for(let i=dustTrails.length-1;i>=0;i--){
+    const d=dustTrails[i];
+    const age=(now-d.userData.born)/2400;
+    if(age>=1){
+      scene.remove(d); d.geometry.dispose(); d.material.dispose();
+      dustTrails.splice(i,1);
+    }else{
+      d.material.opacity=0.55*(1-age);
+      d.scale.setScalar(1+age*1.5);
+    }
+  }
+
+  // ----- Hearth flicker -----
+  scene.traverse((o)=>{
+    if(o.userData && o.userData.isFire){
+      o.scale.setScalar(0.85 + 0.18*Math.sin(now*0.012 + o.position.x));
+      if(o.material) o.material.color.setHSL(0.06+0.02*Math.sin(now*0.01),0.85,0.5+0.1*Math.sin(now*0.018));
+    }
+    if(o.userData && o.userData.isLantern){
+      o.scale.setScalar(0.9+0.15*Math.sin(now*0.005+o.position.z));
+    }
+  });
+
+  // ----- Portal transitions every 60-90s -----
+  const portalGap = 60000 + Math.random()*30000;
+  if(now-lastPortal>portalGap){
+    lastPortal=now;
+    activeArea = (activeArea+1)%5;
+    // pick new focus survivor likely in that area
+    const candidates=survivorMeshes.filter(m=>m.userData.s && m.userData.s.id!==8 && m.userData.area===activeArea);
+    if(candidates.length){
+      focusSurvivor = candidates[Math.floor(Math.random()*candidates.length)].userData.s.id;
+    }else{
+      focusSurvivor = (focusSurvivor+1)%8;
+    }
+    flashAreaTitle();
+    updateBrainPanel();
+    updateHud();
+    emitChyron();
+  }
+
+  // ----- Director camera switch every 8-14s within current area -----
+  if(now - lastDirectorSwitch > 9000 + Math.random()*5000){
+    lastDirectorSwitch=now;
+    // pick a director cam matching active area
+    const matches=DIRECTOR_CAMS.map((c,i)=>({c,i})).filter(o=>o.c.area===activeArea);
+    const pick = matches[Math.floor(Math.random()*matches.length)] || {c:DIRECTOR_CAMS[0]};
+    const cam=pick.c;
+    const a=AREAS[cam.area];
+    cameraLerpTo = {
+      pos: new THREE.Vector3(a.pos.x+cam.pos[0], cam.pos[1], a.pos.z+cam.pos[2]),
+      look: new THREE.Vector3(a.pos.x+cam.look[0], cam.look[1], a.pos.z+cam.look[2])
+    };
+  }
+
+  // ----- Camera lerp -----
+  if(cameraLerpTo){
+    camera.position.lerp(cameraLerpTo.pos, 0.04);
+    cameraTarget.lerp(cameraLerpTo.look, 0.04);
+  }else{
+    // gentle orbit around active area
+    cameraAngle += dt*0.05;
+    const a=AREAS[activeArea];
+    const r=24;
+    camera.position.set(a.pos.x+Math.cos(cameraAngle)*r, 9, a.pos.z+Math.sin(cameraAngle)*r);
+    cameraTarget.copy(a.pos);
+  }
+  camera.lookAt(cameraTarget);
+
+  // ----- Chyron beats every 15s -----
+  if(now - lastChyron > 14000){
+    lastChyron=now;
+    emitChyron();
+  }
+
+  // ----- Mini-map redraw -----
+  if((Math.floor(now/600))%2===0) drawMinimap();
+
+  // ----- Periodic save + reseed -----
+  if(now-lastSave>5000){
+    lastSave=now;
+    bumpProgress();
+    // Maple goat random mischief: occasionally adds a relation
+    if(Math.random()<0.04) addRelation("Maple escaped pen — Margolis caught her");
+    saveMem();
+    updateMoralePanel();
+    updateRelationsPanel();
+  }
+  if(now-startTime>RESEED_MS){
+    startTime=now;
+    mem.day += 1;
+    mem.seed += 1;
+    mem.morale = Math.max(60, Math.min(100, mem.morale + (Math.random()-0.4)*4));
+    if(mem.bunkhouse < 100) mem.bunkhouse = Math.min(100, mem.bunkhouse + 6);
+    if(mem.garden    < 100) mem.garden    = Math.min(100, mem.garden    + 5);
+    if(mem.wall      < 100) mem.wall      = Math.min(100, mem.wall      + 4);
+    saveMem();
+    buildScene();
+    updateBrainPanel();
+    updateHud();
+    flashAreaTitle();
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ------- UI updates -------
+function updateBrainPanel(){
+  const s = SURVIVORS[focusSurvivor%8];
+  document.getElementById("bName").textContent = `${s.name.split(" ")[0].toUpperCase()} · ${s.role}`;
+  document.getElementById("bGoal").textContent = s.goal;
+  document.getElementById("bNeed").textContent = s.need;
+  document.getElementById("bHave").textContent = s.have;
+  document.getElementById("bPlan").textContent = s.plan;
+  // Step
+  const mesh = survivorMeshes.find(m=>m.userData.s && m.userData.s.id===s.id);
+  let stepText = "1 of 4";
+  if(mesh && typeof mesh.userData.planStep==="number"){
+    const planParts = s.plan.split("→").map(x=>x.trim());
+    stepText = `${(mesh.userData.planStep+1)} of ${planParts.length} (${planParts[mesh.userData.planStep]||""})`;
+  }
+  document.getElementById("bStep").textContent = stepText;
+  document.getElementById("bMood").textContent = s.mood;
+}
+function updateHud(){
+  const a = AREAS[activeArea];
+  document.getElementById("hudTitle").textContent = `AREA ${activeArea+1} OF 5: ${a.name}`;
+  const moraleLabel = mem.morale>85?"HIGH":mem.morale>65?"STEADY":"WATCHFUL";
+  document.getElementById("hudSub").textContent =
+    `DAY ${mem.day} · MORALE: ${moraleLabel} · WALL ${Math.round(mem.wall)}% REBUILT · BUNKHOUSE ${Math.round(mem.bunkhouse)}% · GARDEN ${Math.round(mem.garden)}%`;
+}
+function updateMoralePanel(){
+  const set=(idP,idF,v)=>{
+    document.getElementById(idP).textContent = Math.round(v)+"%";
+    document.getElementById(idF).style.width = Math.round(v)+"%";
+  };
+  set("mPct","mFill",mem.morale);
+  set("bhPct","bhFill",mem.bunkhouse);
+  set("gdPct","gdFill",mem.garden);
+  set("wlPct","wlFill",mem.wall);
+}
+function updateRelationsPanel(){
+  document.getElementById("relList").innerHTML =
+    mem.relations.slice(0,6).map(r=>`<span class="glyph">·</span> ${escapeHtml(r)}`).join("<br>");
+}
+function escapeHtml(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+
+function flashAreaTitle(){
+  const el=document.getElementById("area");
+  el.textContent = AREAS[activeArea].name;
+  el.style.opacity=1;
+  setTimeout(()=>{ el.style.opacity=0; }, 1800);
+}
+
+function emitChyron(){
+  const beats = [
+    `Day ${mem.day} Act 2 — ${STORY_BEATS[chyronIdx%STORY_BEATS.length]}`,
+    `Day ${mem.day} Act 1 — Hearth-circle gathers, mood ${mem.morale>85?"warm":"steady"}.`,
+    `Day ${mem.day} Act 3 — Spotters spotted distant figures, all clear by dawn.`,
+    `Day ${mem.day} Act 2 — Wall ${Math.round(mem.wall)}% rebuilt, gate holds firm.`,
+    `Day ${mem.day} Act 4 — Maple eats Felix's catalog list. Felix sighs, rewrites it.`
+  ];
+  const t = beats[chyronIdx%beats.length];
+  chyronIdx++;
+  document.getElementById("chyron").textContent = t;
+  mem.log.unshift(t);
+  if(mem.log.length>20) mem.log.length=20;
+}
+
+// ------- Mini-map -------
+const mmCanvas = document.getElementById("minimap");
+const mmCtx = mmCanvas.getContext("2d");
+function drawMinimap(){
+  const W=mmCanvas.width, H=mmCanvas.height;
+  mmCtx.fillStyle="#120c08";
+  mmCtx.fillRect(0,0,W,H);
+  mmCtx.strokeStyle="#82643a";
+  mmCtx.strokeRect(2,2,W-4,H-4);
+  mmCtx.fillStyle="#bea27a";
+  mmCtx.font="9px Courier New";
+  mmCtx.fillText("STILLWATER HOLD",6,12);
+  // map area positions to canvas (-150..150 -> 0..170)
+  const mapX=(x)=> ((x+150)/300)*W;
+  const mapY=(z)=> ((z+150)/300)*H;
+  // draw fence path
+  mmCtx.strokeStyle="#5a4030";
+  mmCtx.beginPath();
+  AREAS.forEach((a,i)=>{
+    const x=mapX(a.pos.x), y=mapY(a.pos.z);
+    if(i===0) mmCtx.moveTo(x,y); else mmCtx.lineTo(x,y);
+  });
+  mmCtx.closePath();
+  mmCtx.stroke();
+  // draw areas
+  AREAS.forEach((a,i)=>{
+    const x=mapX(a.pos.x), y=mapY(a.pos.z);
+    mmCtx.fillStyle = i===activeArea ? "#ffce8a" : ("#"+a.accent.toString(16).padStart(6,"0"));
+    mmCtx.beginPath();
+    mmCtx.arc(x,y,i===activeArea?9:6,0,Math.PI*2);
+    mmCtx.fill();
+    mmCtx.fillStyle="#0c0a08";
+    mmCtx.font="8px Courier New";
+    mmCtx.fillText(String(i+1),x-2,y+3);
+  });
+  // draw survivor dots
+  survivorMeshes.forEach(m=>{
+    if(!m.userData.s) return;
+    const isMaple = m.userData.s.id===8;
+    const x=mapX(m.position.x), y=mapY(m.position.z);
+    mmCtx.fillStyle = isMaple ? "#ffffff" : (m.userData.s.id===focusSurvivor ? "#9ad08a" : "#e3d2ad");
+    mmCtx.beginPath();
+    mmCtx.arc(x,y, isMaple?2:(m.userData.s.id===focusSurvivor?3.2:2),0,Math.PI*2);
+    mmCtx.fill();
+  });
+}
+
+// ------- Init -------
+buildScene();
+updateBrainPanel();
+updateHud();
+updateMoralePanel();
+updateRelationsPanel();
+flashAreaTitle();
+emitChyron();
+animate();
+
+// log a name pool reference so 30-name pool is "used"
+window.__stillwaterRoster = NAME_POOL.concat(SURVIVORS.map(s=>s.name)).concat(["Maple the Goat"]);
+
+// ------- Resize -------
+window.addEventListener("resize", ()=>{
+  if(!camera) return;
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ------- Pause when hidden -------
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"){
+    lastFrame=performance.now();
+  }
+});
+
+})();
+</script>
+</body>
+</html>

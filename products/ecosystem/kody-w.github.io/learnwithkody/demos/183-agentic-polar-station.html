@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Antarctic Base ECHO — Round 18 · Agentic Polar Station</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;padding:0;background:#06121f;color:#dfeaf2;font-family:'Helvetica Neue',Arial,sans-serif;overflow:hidden;height:100%;}
+  #stage{position:fixed;inset:0;}
+  canvas{display:block;}
+  .panel{position:fixed;background:rgba(8,18,32,0.78);border:1px solid #8fd0ff;color:#e3f2ff;
+    padding:9px 12px;border-radius:6px;font-size:12px;line-height:1.4;letter-spacing:0.2px;
+    backdrop-filter:blur(4px);box-shadow:0 0 16px rgba(143,208,255,0.12) inset;}
+  #hud{top:10px;left:10px;max-width:340px;}
+  #hud b{color:#ffd58a;}
+  #hud .crit{color:#ff9a9a;}
+  #hud .ok{color:#a4ffb1;}
+  #weather{top:10px;left:360px;max-width:240px;font-family:'Courier New',monospace;font-size:11px;
+    background:rgba(8,18,40,0.78);border-color:#a8e3ff;}
+  #weather .lbl{color:#9ec9ff;display:inline-block;width:80px;}
+  #weather .val{color:#ffd58a;}
+  #brain{top:10px;right:10px;max-width:312px;font-family:'Courier New',monospace;font-size:11px;
+    background:rgba(8,12,28,0.86);border-color:#ffd58a;}
+  #brain h4{margin:0 0 6px 0;color:#ffd58a;font-family:'Helvetica Neue',Arial,sans-serif;letter-spacing:0.6px;font-size:13px;}
+  #brain .row{margin:2px 0;color:#e9eaf0;}
+  #brain .lbl{color:#86d4ff;display:inline-block;width:50px;}
+  #brain .icon{font-size:14px;margin-right:6px;}
+  #cast{bottom:170px;left:10px;max-width:240px;font-size:11px;}
+  #cast .nm{color:#ffd58a;}
+  #cast .gl{color:#a6c8ff;}
+  #map{position:fixed;bottom:10px;right:10px;width:220px;height:148px;
+    background:rgba(6,14,28,0.85);border:1px solid #8fd0ff;border-radius:6px;}
+  #mapTitle{position:fixed;bottom:160px;right:10px;font-size:10px;color:#9ec9ff;letter-spacing:0.6px;
+    background:rgba(6,14,28,0.7);padding:2px 6px;border-radius:3px;}
+  #graph{position:fixed;bottom:10px;left:260px;width:460px;height:230px;
+    background:rgba(6,14,28,0.78);border:1px solid #8fd0ff;border-radius:6px;}
+  #graphTitle{position:fixed;bottom:243px;left:260px;font-size:10px;color:#9ec9ff;letter-spacing:0.6px;
+    background:rgba(6,14,28,0.7);padding:2px 6px;border-radius:3px;}
+  #chyron{bottom:255px;left:50%;transform:translateX(-50%);max-width:820px;text-align:center;
+    font-style:italic;color:#fff7d8;background:rgba(8,12,28,0.82);border-color:#ffd58a;font-size:13px;}
+  #toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:22px;color:#fff;
+    background:rgba(6,12,24,0.82);padding:14px 22px;border-radius:8px;border:1px solid #8fd0ff;
+    pointer-events:none;opacity:0;transition:opacity 0.5s;letter-spacing:1px;}
+  #fever{position:fixed;top:46px;left:10px;font-family:'Courier New',monospace;font-size:11px;
+    background:rgba(8,12,28,0.82);border:1px solid #ff9a9a;color:#ffd0d0;
+    padding:5px 10px;border-radius:4px;}
+  #fever .bar{display:inline-block;width:90px;height:8px;background:#222;border:1px solid #555;
+    vertical-align:middle;margin:0 5px;position:relative;}
+  #fever .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#a4ffb1,#ffe28a,#ff7a7a);}
+  .credits{position:fixed;top:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#7fa8c4;
+    letter-spacing:2px;font-family:'Courier New',monospace;background:rgba(6,12,24,0.7);
+    padding:3px 10px;border-radius:3px;}
+</style>
+</head>
+<body>
+<!-- ROUND18_AGENT v1 -->
+<div id="stage"></div>
+<div class="credits">ANTARCTIC BASE ECHO · FICTIONAL POLAR STATION</div>
+<div class="panel" id="hud">Booting station ECHO…</div>
+<div class="panel" id="weather">Reading weather mast…</div>
+<div class="panel" id="brain">Reading researcher's mind…</div>
+<div id="fever">STIR-CRAZY <span class="bar"><span class="fill" id="feverFill" style="width:20%"></span></span> <span id="feverPct">20%</span> <span id="feverTag">GOOD</span></div>
+<div class="panel" id="cast"></div>
+<canvas id="map" width="220" height="148"></canvas>
+<div id="mapTitle">STATION FLOOR PLAN</div>
+<canvas id="graph" width="460" height="230"></canvas>
+<div id="graphTitle">RELATIONSHIPS · BOARD-GAME · COCOA · BELLY-RUBS</div>
+<div class="panel" id="chyron">Antarctic Base ECHO · the long polar night settles in.</div>
+<div id="toast"></div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  if (typeof THREE === 'undefined') {
+    document.getElementById('hud').textContent = 'three.js failed to load.';
+    return;
+  }
+
+  // ---------- Memory ----------
+  var MEM_KEY = 'echo_base_v1';
+  var memory = (function(){
+    try {
+      var raw = localStorage.getItem(MEM_KEY);
+      if (raw) {
+        var m = JSON.parse(raw);
+        if (m && typeof m === 'object') return m;
+      }
+    } catch(e){}
+    return null;
+  })();
+  if (!memory) {
+    memory = {
+      day: 100 + Math.floor(Math.random()*40),
+      seasons: 0,
+      iceCoreDepth: 120 + Math.floor(Math.random()*180),
+      penguinsCounted: 240 + Math.floor(Math.random()*60),
+      auroraSightings: 7 + Math.floor(Math.random()*5),
+      bellyRubs: 188 + Math.floor(Math.random()*30),
+      boardScores: {Hilda:14,Yves:11,Bram:9,Sookie:13,Maud:10,Tomas:8},
+      boardGames: ['Catan','Scrabble','Chess','Risk','Settlers','Cribbage'],
+      cocoaPairs: 20 + Math.floor(Math.random()*8),
+      vitDChecks: 50 + Math.floor(Math.random()*15),
+      fuelBarrels: 24,
+      stirCrazy: 18 + Math.floor(Math.random()*15),
+      reseeds: 0,
+      weatherLogs: 0,
+      lastNote: 'Day '+(100+Math.floor(Math.random()*40))+' begins quietly.'
+    };
+  } else {
+    memory.day = (memory.day||120) + 1;
+    memory.seasons = (memory.seasons||0) + ((memory.day%30===0)?1:0);
+    memory.reseeds = (memory.reseeds||0) + 1;
+    memory.iceCoreDepth = Math.min(800, (memory.iceCoreDepth||0) + 30 + Math.floor(Math.random()*40));
+    memory.penguinsCounted = (memory.penguinsCounted||0) + Math.floor(Math.random()*8) - 2;
+    memory.auroraSightings = (memory.auroraSightings||0) + (Math.random()<0.7?1:0);
+    memory.bellyRubs = (memory.bellyRubs||0) + 6 + Math.floor(Math.random()*9);
+    memory.cocoaPairs = (memory.cocoaPairs||0) + Math.floor(Math.random()*3);
+    memory.vitDChecks = (memory.vitDChecks||0) + Math.floor(Math.random()*4);
+    memory.weatherLogs = (memory.weatherLogs||0) + 1;
+    memory.stirCrazy = Math.max(8, Math.min(62, (memory.stirCrazy||20) + Math.floor(Math.random()*7) - 3));
+    if (!memory.boardScores) memory.boardScores = {Hilda:14,Yves:11,Bram:9,Sookie:13,Maud:10,Tomas:8};
+    if (!memory.boardGames) memory.boardGames = ['Catan','Scrabble','Chess','Risk','Settlers','Cribbage'];
+    var who = ['Hilda','Yves','Bram','Sookie','Maud','Tomas'][Math.floor(Math.random()*6)];
+    memory.boardScores[who] = (memory.boardScores[who]||0) + Math.floor(Math.random()*3);
+  }
+  function saveMem(){ try{ localStorage.setItem(MEM_KEY, JSON.stringify(memory)); }catch(e){} }
+  saveMem();
+
+  // ---------- Scene ----------
+  var stage = document.getElementById('stage');
+  var renderer = new THREE.WebGLRenderer({antialias:true,alpha:false});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 1.7));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x06121f, 1);
+  stage.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x0a1830, 22, 90);
+  var camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 400);
+  camera.position.set(0, 5, 18);
+
+  var disposables = [];
+  function track(o){ disposables.push(o); return o; }
+  function disposeAll(){
+    for (var i=0;i<disposables.length;i++){
+      var o = disposables[i];
+      try {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material){
+          if (Array.isArray(o.material)) o.material.forEach(function(m){m.dispose && m.dispose();});
+          else o.material.dispose && o.material.dispose();
+        }
+        if (o.texture) o.texture.dispose && o.texture.dispose();
+      } catch(e){}
+    }
+    disposables.length = 0;
+    while (scene.children.length) scene.remove(scene.children[0]);
+  }
+
+  // ---------- Lights ----------
+  var hemi = new THREE.HemisphereLight(0xa6c8ff, 0x0b1828, 0.55);
+  scene.add(hemi);
+  var moon = new THREE.DirectionalLight(0xbcd4ff, 0.35);
+  moon.position.set(-12, 18, 8);
+  scene.add(moon);
+  var auroraLight = new THREE.PointLight(0x9affd1, 0.6, 80);
+  auroraLight.position.set(0, 14, 0);
+  scene.add(auroraLight);
+
+  // ---------- Module Definitions ----------
+  // Each module is a small interior built around a center point in world space.
+  var modules = [
+    { id:0, name:'MESS HALL',     center:new THREE.Vector3(-22,0,-2), warm:0xffc080, accent:0x6b3a18, palette:'WARM AMBER',     fog:0x2a1a10 },
+    { id:1, name:'RESEARCH LAB',  center:new THREE.Vector3(  0,0,-22), warm:0xb8e3ff, accent:0x214b6b, palette:'COOL FLUORESCENT',fog:0x0c1a2a },
+    { id:2, name:'DORM POD',      center:new THREE.Vector3( 22,0,-2), warm:0xf6c068, accent:0x2a1a30, palette:'DIM LAMP',         fog:0x18101e },
+    { id:3, name:'GENERATOR ROOM',center:new THREE.Vector3(  0,0, 18), warm:0xffc44a, accent:0x4a3a18, palette:'INDUSTRIAL YELLOW',fog:0x281a08 },
+    { id:4, name:'SNOW TUNNEL',   center:new THREE.Vector3(  0,0, 0), warm:0x9ad6ff, accent:0x1a3a5a, palette:'BLUE ICE + AURORA', fog:0x0a1a32 }
+  ];
+
+  function makeBoxOutline(w,h,d, col){
+    var g = new THREE.BoxGeometry(w,h,d);
+    var m = new THREE.MeshStandardMaterial({color:col, roughness:0.65, metalness:0.05});
+    var mesh = new THREE.Mesh(g,m);
+    track(mesh); return mesh;
+  }
+
+  // ---------- Snow ground ----------
+  function buildSnow(){
+    var g = new THREE.PlaneGeometry(220, 220, 24, 24);
+    var pos = g.attributes.position;
+    for (var i=0;i<pos.count;i++){
+      var x = pos.getX(i), y = pos.getY(i);
+      var dz = Math.sin(x*0.15)*0.18 + Math.cos(y*0.18)*0.16 + (Math.random()-0.5)*0.12;
+      pos.setZ(i, dz);
+    }
+    g.computeVertexNormals();
+    g.rotateX(-Math.PI/2);
+    var m = new THREE.MeshStandardMaterial({color:0xeaf3ff, roughness:0.95, metalness:0.0});
+    var snow = new THREE.Mesh(g,m);
+    snow.position.y = -0.2;
+    track(snow); scene.add(snow);
+  }
+  buildSnow();
+
+  // ---------- Module rooms ----------
+  function buildMessHall(c){
+    var grp = new THREE.Group();
+    var floor = makeBoxOutline(10,0.2,8, 0x6b4a30); floor.position.set(0,0,0); grp.add(floor);
+    var wallN = makeBoxOutline(10,3,0.2, 0x8a5a30); wallN.position.set(0,1.5,-4); grp.add(wallN);
+    var wallS = makeBoxOutline(10,3,0.2, 0x8a5a30); wallS.position.set(0,1.5, 4); grp.add(wallS);
+    var wallE = makeBoxOutline(0.2,3,8, 0x8a5a30); wallE.position.set(5,1.5, 0); grp.add(wallE);
+    var wallW = makeBoxOutline(0.2,3,8, 0x8a5a30); wallW.position.set(-5,1.5,0); grp.add(wallW);
+    var ceil = makeBoxOutline(10,0.15,8, 0x4a3018); ceil.position.set(0,3,0); grp.add(ceil);
+    // Long table
+    var table = makeBoxOutline(6, 0.18, 1.4, 0x8a5a3a); table.position.set(0,1.0,0); grp.add(table);
+    for (var t=-2.5;t<=2.5;t+=2.5){
+      var leg = makeBoxOutline(0.18,1,0.18, 0x4a2a18); leg.position.set(t,0.5, 0.5); grp.add(leg);
+      var leg2 = makeBoxOutline(0.18,1,0.18, 0x4a2a18); leg2.position.set(t,0.5,-0.5); grp.add(leg2);
+    }
+    // Mugs of cocoa
+    for (var i=-2;i<=2;i++){
+      var mug = makeBoxOutline(0.22,0.28,0.22, 0xfff7d8); mug.position.set(i*1.05, 1.27, 0); grp.add(mug);
+    }
+    // Board game pile
+    var bg = makeBoxOutline(0.9,0.18,0.9, 0xff7a4a); bg.position.set(-3.5, 1.18, 0); grp.add(bg);
+    var bg2 = makeBoxOutline(0.85,0.16,0.85, 0x6cc9ff); bg2.position.set(-3.5, 1.36, 0); grp.add(bg2);
+    // Kitchen counter
+    var k = makeBoxOutline(2.5,1.0,1.0, 0xc0cfd8); k.position.set(3.5, 0.5, -3); grp.add(k);
+    var pot = makeBoxOutline(0.55,0.45,0.55, 0x222222); pot.position.set(3.0, 1.25, -3); grp.add(pot);
+    // Lights (warm orbs)
+    for (var li=0; li<3; li++){
+      var lamp = makeBoxOutline(0.4,0.18,0.4, 0xffe1a0); lamp.position.set(-3+li*3, 2.85, 0);
+      grp.add(lamp);
+      var pl = new THREE.PointLight(0xffb060, 0.55, 9);
+      pl.position.set(-3+li*3, 2.6, 0);
+      grp.add(pl);
+    }
+    grp.position.copy(c);
+    scene.add(grp);
+    return grp;
+  }
+  function buildLab(c){
+    var grp = new THREE.Group();
+    var floor = makeBoxOutline(10,0.2,8, 0xc0d8e8); floor.position.set(0,0,0); grp.add(floor);
+    var wallN = makeBoxOutline(10,3,0.2, 0xa6c8e0); wallN.position.set(0,1.5,-4); grp.add(wallN);
+    var wallS = makeBoxOutline(10,3,0.2, 0xa6c8e0); wallS.position.set(0,1.5, 4); grp.add(wallS);
+    var wallE = makeBoxOutline(0.2,3,8, 0xa6c8e0); wallE.position.set(5,1.5, 0); grp.add(wallE);
+    var wallW = makeBoxOutline(0.2,3,8, 0xa6c8e0); wallW.position.set(-5,1.5,0); grp.add(wallW);
+    var ceil = makeBoxOutline(10,0.15,8, 0x6688aa); ceil.position.set(0,3,0); grp.add(ceil);
+    // Microscope station
+    var bench = makeBoxOutline(3.0, 0.9, 1.0, 0xdde7f0); bench.position.set(-2.5, 0.45, 0); grp.add(bench);
+    var scope = makeBoxOutline(0.4,0.8,0.4, 0x222d3a); scope.position.set(-2.5, 1.3, 0); grp.add(scope);
+    var scopeArm = makeBoxOutline(0.18,0.4,0.18, 0x222d3a); scopeArm.position.set(-2.4, 1.6, 0.05); grp.add(scopeArm);
+    // Sample freezer
+    var fz = makeBoxOutline(1.6, 2.0, 1.0, 0xbfd6e8); fz.position.set(2.0, 1.0, -3.0); grp.add(fz);
+    var fzD = makeBoxOutline(1.4, 1.8, 0.06, 0x88a8c0); fzD.position.set(2.0, 1.0, -2.45); grp.add(fzD);
+    // Ice core rack
+    for (var ic=0; ic<6; ic++){
+      var core = makeBoxOutline(0.16, 1.4, 0.16, 0xeaf6ff);
+      core.position.set(2.0 + (ic%3)*0.4 - 0.4, 0.7, 1.5 + Math.floor(ic/3)*0.4);
+      grp.add(core);
+    }
+    // Weather instruments shelf
+    var sh = makeBoxOutline(2.4, 0.1, 0.6, 0xa0b8cc); sh.position.set(-2.5, 1.95, -3.6); grp.add(sh);
+    for (var wi=0; wi<4; wi++){
+      var inst = makeBoxOutline(0.3,0.3,0.3, [0x66ccff,0xffd66e,0xff8e8e,0x8ce6a8][wi]);
+      inst.position.set(-3.5 + wi*0.65, 2.15, -3.6);
+      grp.add(inst);
+    }
+    // Fluorescent ceiling lights
+    for (var fl=0; fl<2; fl++){
+      var f = makeBoxOutline(2.4, 0.06, 0.3, 0xeaf6ff); f.position.set(-2 + fl*4, 2.92, 0); grp.add(f);
+      var pl = new THREE.PointLight(0xb6e8ff, 0.55, 9); pl.position.set(-2+fl*4, 2.6, 0); grp.add(pl);
+    }
+    grp.position.copy(c);
+    scene.add(grp);
+    return grp;
+  }
+  function buildDorm(c){
+    var grp = new THREE.Group();
+    var floor = makeBoxOutline(10,0.2,8, 0x4a382a); floor.position.set(0,0,0); grp.add(floor);
+    var wallN = makeBoxOutline(10,3,0.2, 0x6a4a3a); wallN.position.set(0,1.5,-4); grp.add(wallN);
+    var wallS = makeBoxOutline(10,3,0.2, 0x6a4a3a); wallS.position.set(0,1.5, 4); grp.add(wallS);
+    var wallE = makeBoxOutline(0.2,3,8, 0x6a4a3a); wallE.position.set(5,1.5, 0); grp.add(wallE);
+    var wallW = makeBoxOutline(0.2,3,8, 0x6a4a3a); wallW.position.set(-5,1.5,0); grp.add(wallW);
+    var ceil = makeBoxOutline(10,0.15,8, 0x2a1a14); ceil.position.set(0,3,0); grp.add(ceil);
+    // 6 bunks (3 stacks of 2)
+    var bunkPos = [[-3.6,-3.0],[-1.2,-3.0],[1.2,-3.0],[3.6,-3.0],[-3.6,3.0],[-1.2,3.0]];
+    // we'll do stacks: bottom + top
+    var spots = [
+      [-4, -3.0],[-4, 3.0],
+      [ 0, -3.0],[ 0, 3.0],
+      [ 4, -3.0],[ 4, 3.0]
+    ];
+    for (var b=0;b<spots.length;b++){
+      var px = spots[b][0], pz = spots[b][1];
+      var bunkB = makeBoxOutline(1.6,0.25,2.0, 0xaa5a4a); bunkB.position.set(px, 0.6, pz); grp.add(bunkB);
+      var matt = makeBoxOutline(1.5,0.18,1.8, 0xeae0c0); matt.position.set(px, 0.78, pz); grp.add(matt);
+      var pillow = makeBoxOutline(0.6,0.2,0.4, 0xfff0d0); pillow.position.set(px, 0.92, pz<0?pz-0.7:pz+0.7); grp.add(pillow);
+      // Reading lamp
+      var lamp = makeBoxOutline(0.18,0.3,0.18, 0xffd58a); lamp.position.set(px+0.6, 1.2, pz); grp.add(lamp);
+      var pl = new THREE.PointLight(0xffb060, 0.18, 3); pl.position.set(px+0.6, 1.05, pz); grp.add(pl);
+      // locker
+      var lk = makeBoxOutline(0.5, 1.4, 0.4, 0x506070); lk.position.set(px-0.85, 0.7, pz); grp.add(lk);
+    }
+    // Posters (small panels on north wall)
+    for (var ps=0; ps<3; ps++){
+      var ptr = makeBoxOutline(1.0, 0.7, 0.04, [0x7a8eff,0xff8aa6,0xffd58a][ps]);
+      ptr.position.set(-3 + ps*3, 2.0, -3.85);
+      grp.add(ptr);
+    }
+    grp.position.copy(c);
+    scene.add(grp);
+    return grp;
+  }
+  function buildGenerator(c){
+    var grp = new THREE.Group();
+    var floor = makeBoxOutline(10,0.2,8, 0x3a3a40); floor.position.set(0,0,0); grp.add(floor);
+    var wallN = makeBoxOutline(10,3,0.2, 0x4a4a4a); wallN.position.set(0,1.5,-4); grp.add(wallN);
+    var wallS = makeBoxOutline(10,3,0.2, 0x4a4a4a); wallS.position.set(0,1.5, 4); grp.add(wallS);
+    var wallE = makeBoxOutline(0.2,3,8, 0x4a4a4a); wallE.position.set(5,1.5, 0); grp.add(wallE);
+    var wallW = makeBoxOutline(0.2,3,8, 0x4a4a4a); wallW.position.set(-5,1.5,0); grp.add(wallW);
+    var ceil = makeBoxOutline(10,0.15,8, 0x222226); ceil.position.set(0,3,0); grp.add(ceil);
+    // Generator body
+    var gen = makeBoxOutline(2.2,1.6,3.0, 0xffc44a); gen.position.set(-2.0, 0.9, 0); grp.add(gen);
+    var stack = makeBoxOutline(0.4,1.2,0.4, 0x3a2a18); stack.position.set(-2.0, 2.1, 1.4); grp.add(stack);
+    // Fuel barrels
+    for (var bb=0; bb<6; bb++){
+      var barrel = makeBoxOutline(0.7, 1.1, 0.7, 0xc04030);
+      barrel.position.set(2.5 - (bb%3)*0.85, 0.6, -2.5 + Math.floor(bb/3)*1.0);
+      grp.add(barrel);
+    }
+    // Switchgear
+    var sw = makeBoxOutline(1.0, 1.4, 0.4, 0x303a4a); sw.position.set(2.5, 0.8, 3.0); grp.add(sw);
+    for (var d=0; d<6; d++){
+      var dial = makeBoxOutline(0.18,0.18,0.05, [0xff5050,0xffd550,0x50ff80,0x50c8ff,0xc080ff,0xff80c0][d]);
+      dial.position.set(2.0 + (d%3)*0.5, 1.1 + Math.floor(d/3)*0.3, 3.22);
+      grp.add(dial);
+    }
+    // Headphones on hook
+    var hp = makeBoxOutline(0.4,0.2,0.18, 0x222222); hp.position.set(0, 1.8, 3.85); grp.add(hp);
+    // Industrial light
+    var il = makeBoxOutline(0.6, 0.18, 0.6, 0xffd66e); il.position.set(0, 2.85, 0); grp.add(il);
+    var pl = new THREE.PointLight(0xffc24a, 0.7, 12); pl.position.set(0, 2.5, 0); grp.add(pl);
+    // steam particles (small puffs)
+    for (var sp=0; sp<5; sp++){
+      var puf = makeBoxOutline(0.25,0.25,0.25, 0xeaf6ff);
+      puf.material.transparent = true; puf.material.opacity = 0.45 - sp*0.06;
+      puf.position.set(-2.0, 2.4 + sp*0.3, 1.4);
+      puf.userData.steam = sp;
+      grp.add(puf);
+    }
+    grp.position.copy(c);
+    scene.add(grp);
+    return grp;
+  }
+  function buildTunnel(c){
+    var grp = new THREE.Group();
+    // 4 spokes from center towards each module
+    var spokes = [
+      {dir:new THREE.Vector3(-1,0,0), len:14, name:'mess'},
+      {dir:new THREE.Vector3( 0,0,-1), len:14, name:'lab'},
+      {dir:new THREE.Vector3( 1,0,0), len:14, name:'dorm'},
+      {dir:new THREE.Vector3( 0,0, 1), len:14, name:'gen'}
+    ];
+    for (var s=0; s<spokes.length; s++){
+      var sp = spokes[s];
+      var len = sp.len;
+      var seg = new THREE.Group();
+      var floor = makeBoxOutline(2.4, 0.2, len, 0x9ad6ff); floor.position.set(0,0,-len/2); seg.add(floor);
+      var wallA = makeBoxOutline(0.2, 2.4, len, 0xb6e3ff); wallA.position.set(-1.2, 1.2, -len/2); seg.add(wallA);
+      var wallB = makeBoxOutline(0.2, 2.4, len, 0xb6e3ff); wallB.position.set( 1.2, 1.2, -len/2); seg.add(wallB);
+      var roof = makeBoxOutline(2.4, 0.15, len, 0x6cb6ee); roof.position.set(0, 2.4, -len/2); seg.add(roof);
+      // blue glow lights
+      for (var li=0; li<4; li++){
+        var pl = new THREE.PointLight(0x6cc9ff, 0.45, 5);
+        pl.position.set(0, 2.0, -1 -li*(len/4));
+        seg.add(pl);
+        var orb = makeBoxOutline(0.28,0.05,0.28, 0x9affff); orb.position.set(0, 2.32, -1 -li*(len/4)); seg.add(orb);
+      }
+      // Penguin window (in mess and gen tunnels)
+      if (sp.name === 'mess' || sp.name === 'gen'){
+        var win = makeBoxOutline(0.05, 1.4, 1.6, 0xeaf6ff);
+        win.material.transparent = true; win.material.opacity = 0.45;
+        win.position.set(1.18, 1.4, -len*0.55);
+        seg.add(win);
+      }
+      // Aurora viewport (in lab and dorm tunnels)
+      if (sp.name === 'lab' || sp.name === 'dorm'){
+        var vp = makeBoxOutline(0.05, 1.6, 2.0, 0x9affd1);
+        vp.material.transparent = true; vp.material.opacity = 0.55;
+        vp.position.set(-1.18, 1.45, -len*0.6);
+        seg.add(vp);
+      }
+      // orient seg
+      var rot = Math.atan2(sp.dir.x, sp.dir.z) + Math.PI;
+      seg.rotation.y = rot;
+      grp.add(seg);
+    }
+    // central hub
+    var hub = makeBoxOutline(3.4, 0.2, 3.4, 0x9ad6ff); hub.position.set(0,0,0); grp.add(hub);
+    var hubR = makeBoxOutline(3.4, 0.15, 3.4, 0x6cb6ee); hubR.position.set(0,2.4,0); grp.add(hubR);
+    var hubLight = new THREE.PointLight(0x9affff, 0.55, 9);
+    hubLight.position.set(0, 2.0, 0); grp.add(hubLight);
+    grp.position.copy(c);
+    scene.add(grp);
+    return grp;
+  }
+
+  modules[0].group = buildMessHall(modules[0].center);
+  modules[1].group = buildLab(modules[1].center);
+  modules[2].group = buildDorm(modules[2].center);
+  modules[3].group = buildGenerator(modules[3].center);
+  modules[4].group = buildTunnel(modules[4].center);
+
+  // ---------- Aurora ----------
+  var aurora;
+  (function buildAurora(){
+    var pts = [];
+    for (var i=0; i<=80; i++){
+      var t = i/80;
+      pts.push(new THREE.Vector3(-40+t*80, 12 + Math.sin(t*4)*1.8, -36 + Math.sin(t*7)*4));
+    }
+    var curve = new THREE.CatmullRomCurve3(pts);
+    var g = new THREE.TubeGeometry(curve, 200, 0.6, 8, false);
+    var colors = new Float32Array(g.attributes.position.count*3);
+    for (var c=0; c<g.attributes.position.count; c++){
+      var k = c / g.attributes.position.count;
+      var col = new THREE.Color().setHSL(0.32 + Math.sin(k*Math.PI*2)*0.18, 0.85, 0.55);
+      colors[c*3] = col.r; colors[c*3+1] = col.g; colors[c*3+2] = col.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    var m = new THREE.MeshBasicMaterial({vertexColors:true, transparent:true, opacity:0.6, side:THREE.DoubleSide});
+    aurora = new THREE.Mesh(g,m);
+    track(aurora); scene.add(aurora);
+    // second ribbon
+    var pts2 = [];
+    for (var i2=0; i2<=80; i2++){
+      var t2 = i2/80;
+      pts2.push(new THREE.Vector3(-44+t2*88, 14 + Math.cos(t2*3)*2.0, -40 + Math.cos(t2*5)*5));
+    }
+    var curve2 = new THREE.CatmullRomCurve3(pts2);
+    var g2 = new THREE.TubeGeometry(curve2, 200, 0.5, 8, false);
+    var col2 = new Float32Array(g2.attributes.position.count*3);
+    for (var c2=0; c2<g2.attributes.position.count; c2++){
+      var k2 = c2 / g2.attributes.position.count;
+      var c2c = new THREE.Color().setHSL(0.78 + Math.sin(k2*Math.PI*2)*0.12, 0.85, 0.55);
+      col2[c2*3] = c2c.r; col2[c2*3+1] = c2c.g; col2[c2*3+2] = c2c.b;
+    }
+    g2.setAttribute('color', new THREE.BufferAttribute(col2, 3));
+    var m2 = new THREE.MeshBasicMaterial({vertexColors:true, transparent:true, opacity:0.5, side:THREE.DoubleSide});
+    var a2 = new THREE.Mesh(g2,m2);
+    track(a2); scene.add(a2);
+    aurora.userData.partner = a2;
+  })();
+
+  // Stars
+  (function buildStars(){
+    var sc = 600;
+    var sgeom = new THREE.BufferGeometry();
+    var pos = new Float32Array(sc*3);
+    for (var i=0;i<sc;i++){
+      var th = Math.random()*Math.PI*2;
+      var ph = Math.random()*Math.PI*0.45 + 0.05;
+      var r = 80 + Math.random()*40;
+      pos[i*3]   = r*Math.cos(th)*Math.sin(ph);
+      pos[i*3+1] = r*Math.cos(ph) + 8;
+      pos[i*3+2] = r*Math.sin(th)*Math.sin(ph);
+    }
+    sgeom.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    var smat = new THREE.PointsMaterial({color:0xeaf6ff, size:0.5, sizeAttenuation:true, transparent:true, opacity:0.85});
+    var stars = new THREE.Points(sgeom, smat);
+    track(stars); scene.add(stars);
+  })();
+
+  // ---------- Researchers + Husky ----------
+  var researchers = [
+    { id:'Hilda',  name:'Dr. Hilda Trondheim', role:'Glaciologist · Station Chief',
+      goal:'Drill ice core to 800m', module:1, parka:0xff7a4a, pants:0x3a2a18, hair:0xb38f5a,
+      step:0, stepCount:5, mood:'focused calm',
+      plan:['Suit up','Walk lab','Calibrate auger','Drill 30m','Log depth'] },
+    { id:'Yves',   name:'Dr. Yves Lachapelle', role:'Climatologist',
+      goal:'Log 24hr weather data', module:1, parka:0x6cc9ff, pants:0x1a2a3a, hair:0x6a4a30,
+      step:0, stepCount:4, mood:'meticulous', plan:['Read mast','Check anemometer','Log temp','Save dataset'] },
+    { id:'Bram',   name:'Dr. Bram Foxworth',   role:'Biologist',
+      goal:'Count emperor penguin colony', module:0, parka:0x8ce6a8, pants:0x2a3a18, hair:0x4a3018,
+      step:0, stepCount:5, mood:'cheerful', plan:['Pack thermos','Leave mess','Cross tunnel','Spot colony','Tally'] },
+    { id:'Sookie', name:'Dr. Sookie Park',     role:'Astrophysicist',
+      goal:'Observe aurora at 03:00', module:2, parka:0xc08aff, pants:0x2a1a3a, hair:0x222222,
+      step:0, stepCount:4, mood:'patient excitement', plan:['Bundle up','Viewport','Photograph','Log data'] },
+    { id:'Maud',   name:'Engineer Maud Salonen', role:'Engineer',
+      goal:'Rotate generator fuel barrels', module:3, parka:0xffd66e, pants:0x3a3018, hair:0xc09080,
+      step:0, stepCount:4, mood:'businesslike', plan:['Don ear-pro','Inspect barrels','Rotate stock','Log levels'] },
+    { id:'Tomas',  name:'Dr. Tomás Iguarra',   role:'Station Medic',
+      goal:'Check everyone\'s vitamin D', module:0, parka:0xff8aa6, pants:0x301826, hair:0x222222,
+      step:0, stepCount:4, mood:'caring', plan:['Open med kit','Round mess','Round dorm','Note levels'] }
+  ];
+  var husky = { id:'Crunch', name:'Captain Crunch', role:'Husky · Morale Officer',
+    goal:'Chase the penguins (gently)', module:4, fur:0xeaf3ff, paws:0x444444,
+    step:0, stepCount:4, mood:'tail-wag joyful', plan:['Ear flop','Trot tunnel','Spot penguin','Polite herd'] };
+
+  function makeResearcher(r){
+    var g = new THREE.Group();
+    // body (parka)
+    var torso = makeBoxOutline(0.7, 1.0, 0.5, r.parka);
+    torso.position.y = 1.2; g.add(torso);
+    // head
+    var head = makeBoxOutline(0.42, 0.42, 0.42, 0xf6d3b4);
+    head.position.y = 1.95; g.add(head);
+    // hat
+    var hat = makeBoxOutline(0.5, 0.18, 0.5, r.parka);
+    hat.position.y = 2.22; g.add(hat);
+    // hair fringe
+    var hair = makeBoxOutline(0.5, 0.06, 0.5, r.hair);
+    hair.position.y = 2.13; g.add(hair);
+    // legs (pants)
+    var lL = makeBoxOutline(0.28, 0.7, 0.28, r.pants); lL.position.set(-0.16, 0.35, 0); g.add(lL);
+    var lR = makeBoxOutline(0.28, 0.7, 0.28, r.pants); lR.position.set( 0.16, 0.35, 0); g.add(lR);
+    // boots
+    var bL = makeBoxOutline(0.32, 0.18, 0.36, 0x222222); bL.position.set(-0.16, 0.05, 0.04); g.add(bL);
+    var bR = makeBoxOutline(0.32, 0.18, 0.36, 0x222222); bR.position.set( 0.16, 0.05, 0.04); g.add(bR);
+    // arms
+    var aL = makeBoxOutline(0.24, 0.7, 0.24, r.parka); aL.position.set(-0.5, 1.3, 0); g.add(aL);
+    var aR = makeBoxOutline(0.24, 0.7, 0.24, r.parka); aR.position.set( 0.5, 1.3, 0); g.add(aR);
+    // name tag
+    var tag = makeBoxOutline(0.46, 0.12, 0.04, 0xfff7d8); tag.position.set(0, 1.4, 0.27); g.add(tag);
+    g.userData.parts = {torso:torso, head:head, lL:lL, lR:lR, aL:aL, aR:aR};
+    var modCenter = modules[r.module].center;
+    var ang = Math.random()*Math.PI*2;
+    g.position.set(modCenter.x + Math.cos(ang)*1.6, 0, modCenter.z + Math.sin(ang)*1.4);
+    scene.add(g);
+    r.mesh = g;
+    r.target = g.position.clone();
+    r.timer = 1 + Math.random()*3;
+    r.path = []; // breadcrumbs
+    r.lastDecide = 0;
+  }
+  researchers.forEach(makeResearcher);
+
+  // Husky — small white-grey blob
+  function makeHusky(){
+    var g = new THREE.Group();
+    var body = makeBoxOutline(0.7, 0.4, 0.3, husky.fur); body.position.set(0, 0.45, 0); g.add(body);
+    var head = makeBoxOutline(0.32, 0.32, 0.32, husky.fur); head.position.set(0.42, 0.55, 0); g.add(head);
+    var snout = makeBoxOutline(0.18, 0.16, 0.18, 0xc8d0d8); snout.position.set(0.6, 0.5, 0); g.add(snout);
+    var earL = makeBoxOutline(0.1, 0.18, 0.06, 0x8088a0); earL.position.set(0.36, 0.78, 0.12); g.add(earL);
+    var earR = makeBoxOutline(0.1, 0.18, 0.06, 0x8088a0); earR.position.set(0.36, 0.78,-0.12); g.add(earR);
+    var tail = makeBoxOutline(0.08, 0.12, 0.32, husky.fur); tail.position.set(-0.4, 0.55, 0); g.add(tail);
+    // legs
+    var leg1 = makeBoxOutline(0.1, 0.22, 0.1, husky.paws); leg1.position.set(0.22, 0.18, 0.12); g.add(leg1);
+    var leg2 = makeBoxOutline(0.1, 0.22, 0.1, husky.paws); leg2.position.set(0.22, 0.18,-0.12); g.add(leg2);
+    var leg3 = makeBoxOutline(0.1, 0.22, 0.1, husky.paws); leg3.position.set(-0.22, 0.18, 0.12); g.add(leg3);
+    var leg4 = makeBoxOutline(0.1, 0.22, 0.1, husky.paws); leg4.position.set(-0.22, 0.18,-0.12); g.add(leg4);
+    g.userData.parts = {body:body, tail:tail, head:head};
+    g.position.set(modules[4].center.x + 1.0, 0, modules[4].center.z + 0.3);
+    scene.add(g);
+    husky.mesh = g;
+    husky.target = g.position.clone();
+    husky.timer = 1.5;
+    husky.path = [];
+    husky.lastDecide = 0;
+  }
+  makeHusky();
+
+  // ---------- Penguins ----------
+  var penguinNames = [
+    'Pip','Pomf','Skiddoo','Bowtie','Mochi','Tux','Waddles','Gus','Captain Tofu','Bingo',
+    'Snorkel','Penny','Boots','Mochaccino','Gertrude','Pickle','Mr. Floof','Doc','Arnie','Pebble',
+    'Quill','Tango','Sushi','Marble','Rumpus','Glacier','Eggbert','Sleek','Fjord','Aurora-the-penguin'
+  ];
+  var penguins = [];
+  function makePenguin(name, basePos){
+    var g = new THREE.Group();
+    var body = makeBoxOutline(0.32, 0.6, 0.26, 0x222226);
+    body.position.y = 0.3; g.add(body);
+    var belly = makeBoxOutline(0.22, 0.45, 0.05, 0xeaf6ff); belly.position.set(0,0.32,0.14); g.add(belly);
+    var head = makeBoxOutline(0.26, 0.24, 0.22, 0x222226); head.position.y = 0.72; g.add(head);
+    var beak = makeBoxOutline(0.06, 0.05, 0.12, 0xffae5a); beak.position.set(0,0.68,0.18); g.add(beak);
+    var fL = makeBoxOutline(0.06, 0.4, 0.16, 0x222226); fL.position.set(-0.18, 0.34, 0); g.add(fL);
+    var fR = makeBoxOutline(0.06, 0.4, 0.16, 0x222226); fR.position.set( 0.18, 0.34, 0); g.add(fR);
+    var fL2 = makeBoxOutline(0.12, 0.06, 0.18, 0xffae5a); fL2.position.set(-0.08, 0.02, 0.04); g.add(fL2);
+    var fR2 = makeBoxOutline(0.12, 0.06, 0.18, 0xffae5a); fR2.position.set( 0.08, 0.02, 0.04); g.add(fR2);
+    g.position.copy(basePos);
+    scene.add(g);
+    return {name:name, mesh:g, base:basePos.clone(), waddle:Math.random()*Math.PI*2, speed:0.3 + Math.random()*0.3, dir:new THREE.Vector3(Math.random()*2-1,0,Math.random()*2-1).normalize()};
+  }
+  // 30 named penguins on the snow outside
+  for (var pi=0; pi<30; pi++){
+    var ang = (pi/30)*Math.PI*2;
+    var rad = 32 + Math.random()*8;
+    var px = Math.cos(ang)*rad;
+    var pz = Math.sin(ang)*rad - 4;
+    penguins.push(makePenguin(penguinNames[pi], new THREE.Vector3(px, 0, pz)));
+  }
+  // 60 instanced ambient penguins (tinier little black blocks)
+  var ambGroup = new THREE.Group();
+  scene.add(ambGroup);
+  var ambPenguins = [];
+  for (var ap=0; ap<60; ap++){
+    var ag = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.36, 0.16),
+      new THREE.MeshStandardMaterial({color:0x222226, roughness:0.8})
+    );
+    track(ag);
+    var aang = Math.random()*Math.PI*2;
+    var arad = 38 + Math.random()*22;
+    ag.position.set(Math.cos(aang)*arad, 0.18, Math.sin(aang)*arad - 6);
+    ambGroup.add(ag);
+    var bg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.28, 0.04),
+      new THREE.MeshStandardMaterial({color:0xeaf6ff, roughness:0.8})
+    );
+    track(bg);
+    bg.position.set(0,0,0.09);
+    ag.add(bg);
+    ambPenguins.push({mesh:ag, base:ag.position.clone(), phase:Math.random()*Math.PI*2});
+  }
+
+  // 30-name pool of researchers/penguins for chyron variety
+  var namePool = [
+    'Hilda','Yves','Bram','Sookie','Maud','Tomás','Crunch','Pip','Pomf','Skiddoo',
+    'Bowtie','Mochi','Tux','Waddles','Gus','Bingo','Snorkel','Penny','Boots','Doc',
+    'Arnie','Pebble','Quill','Tango','Sushi','Marble','Rumpus','Glacier','Eggbert','Sleek'
+  ];
+
+  // ---------- Camera Director ----------
+  // 18+ named camera shots
+  var camShots = [
+    {name:'Mess Hall · Warm Wide',       module:0, pos:new THREE.Vector3(-22,3.0,7),    look:new THREE.Vector3(-22,1.4,-2)},
+    {name:'Mess Hall · Cocoa Close',     module:0, pos:new THREE.Vector3(-22,1.6,2.8),  look:new THREE.Vector3(-22,1.2,-1)},
+    {name:'Mess Hall · Board Games',     module:0, pos:new THREE.Vector3(-25,1.5,1.0),  look:new THREE.Vector3(-22,1.2,0)},
+    {name:'Lab · Microscope Close',      module:1, pos:new THREE.Vector3(-2.4,1.6,-19),  look:new THREE.Vector3(-2.5,1.3,-22)},
+    {name:'Lab · Sample Freezer',        module:1, pos:new THREE.Vector3( 2.0,1.4,-19), look:new THREE.Vector3( 2.0,1.0,-25)},
+    {name:'Lab · Ice-Core Rack',         module:1, pos:new THREE.Vector3( 2.5,1.3,-22.5),  look:new THREE.Vector3( 2.0,0.7,-20.5)},
+    {name:'Lab · Wide Cool',             module:1, pos:new THREE.Vector3( 0,3.6,-15),    look:new THREE.Vector3( 0,1.4,-22)},
+    {name:'Dorm · Reading Lamp',         module:2, pos:new THREE.Vector3( 21,1.2,-1.5),  look:new THREE.Vector3( 22,0.9,-3.0)},
+    {name:'Dorm · Bunk Stack',           module:2, pos:new THREE.Vector3( 25,1.6,-3.0),  look:new THREE.Vector3( 22,0.9,-3.0)},
+    {name:'Dorm · Posters Wall',         module:2, pos:new THREE.Vector3( 22,2.0, 0.5),  look:new THREE.Vector3( 22,2.0,-3.8)},
+    {name:'Generator · Gauge Close',     module:3, pos:new THREE.Vector3( 2.4,1.2, 21),  look:new THREE.Vector3( 2.5,1.0, 21.0)},
+    {name:'Generator · Barrel Stack',    module:3, pos:new THREE.Vector3( 2.5,1.3, 14.5),  look:new THREE.Vector3( 2.5,0.7, 16)},
+    {name:'Generator · Industrial Wide', module:3, pos:new THREE.Vector3(-3.0,2.6, 21),  look:new THREE.Vector3( 0,1.0, 18)},
+    {name:'Tunnel · Blue Glide',         module:4, pos:new THREE.Vector3( 0,1.6, 5),     look:new THREE.Vector3( 0,1.6,-2)},
+    {name:'Tunnel · Penguin Window',     module:4, pos:new THREE.Vector3(-7,1.6,-2),     look:new THREE.Vector3(-13,1.4,-2)},
+    {name:'Tunnel · Aurora Viewport',    module:4, pos:new THREE.Vector3( 0,1.7,-7),     look:new THREE.Vector3( -2,1.5,-13)},
+    {name:'Outside · Penguin Colony',    module:-1, pos:new THREE.Vector3( 18,1.5,-30),  look:new THREE.Vector3(  0,0.5,-30)},
+    {name:'Outside · Aurora Sky',        module:-1, pos:new THREE.Vector3(  0,4.0,-12),  look:new THREE.Vector3( 0, 14, -36)},
+    {name:'Outside · Husky Trot',        module:-1, pos:new THREE.Vector3(  0,1.0, 10),  look:new THREE.Vector3( 0,0.4, 0)},
+    {name:'Crane · Whole Station',       module:-1, pos:new THREE.Vector3( -32,18, 30),  look:new THREE.Vector3( 0,0,0)}
+  ];
+  var currentShot = 0, shotTimer = 0, shotDuration = 7;
+  var camPos = new THREE.Vector3(); camPos.copy(camShots[0].pos);
+  var camLook = new THREE.Vector3(); camLook.copy(camShots[0].look);
+  var targetPos = camShots[0].pos.clone();
+  var targetLook = camShots[0].look.clone();
+
+  function pickShot(){
+    var prev = currentShot;
+    var next = currentShot;
+    var attempts = 0;
+    while ((next === prev) && attempts<6){
+      next = Math.floor(Math.random()*camShots.length);
+      attempts++;
+    }
+    currentShot = next;
+    targetPos.copy(camShots[next].pos);
+    targetLook.copy(camShots[next].look);
+    shotTimer = 0;
+    shotDuration = 6 + Math.random()*4;
+    activeModule = camShots[next].module;
+    if (activeModule >= 0) {
+      lastModuleName = modules[activeModule].name;
+      lastPalette = modules[activeModule].palette;
+    } else {
+      lastModuleName = camShots[next].name.split(' · ')[0];
+      lastPalette = 'OUTSIDE · POLAR';
+    }
+    onShotChange();
+  }
+  var activeModule = 4;
+  var lastModuleName = 'TUNNEL';
+  var lastPalette = 'BLUE ICE + AURORA';
+
+  // ---------- HUD/Brain UI ----------
+  var hud = document.getElementById('hud');
+  var weatherEl = document.getElementById('weather');
+  var brainEl = document.getElementById('brain');
+  var castEl = document.getElementById('cast');
+  var chyronEl = document.getElementById('chyron');
+  var toastEl = document.getElementById('toast');
+  var feverFill = document.getElementById('feverFill');
+  var feverPct = document.getElementById('feverPct');
+  var feverTag = document.getElementById('feverTag');
+
+  function popToast(t){
+    toastEl.textContent = t;
+    toastEl.style.opacity = 1;
+    setTimeout(function(){ toastEl.style.opacity = 0; }, 2400);
+  }
+  // Weather
+  var weather = {
+    temp: -38 - Math.floor(Math.random()*15),
+    wind: 8 + Math.floor(Math.random()*22),
+    cloud: 10 + Math.floor(Math.random()*70),
+    pressure: 970 + Math.floor(Math.random()*40),
+    hour: Math.floor(Math.random()*24)
+  };
+  function updateWeatherUI(){
+    var clr = weather.cloud<30 ? '#a4ffb1' : (weather.cloud<70 ? '#ffd58a' : '#ff9a9a');
+    weatherEl.innerHTML =
+      '<b style="color:#a8e3ff">WEATHER MAST</b><br>'+
+      '<span class="lbl">TEMP</span><span class="val">'+weather.temp+'°C</span><br>'+
+      '<span class="lbl">WIND</span><span class="val">'+weather.wind+' kt</span><br>'+
+      '<span class="lbl">CLOUDS</span><span style="color:'+clr+'">'+weather.cloud+'%</span><br>'+
+      '<span class="lbl">PRESS.</span><span class="val">'+weather.pressure+' hPa</span><br>'+
+      '<span class="lbl">HOUR</span><span class="val">'+(weather.hour<10?'0':'')+weather.hour+':00</span>';
+  }
+  updateWeatherUI();
+
+  // Cast list
+  function renderCast(){
+    var lines = ['<b style="color:#a8e3ff">CREW · 7 SOULS</b>'];
+    researchers.forEach(function(r){
+      lines.push('<span class="nm">'+r.name.replace(/^Dr\. |^Engineer /,'')+'</span> · <span class="gl">'+r.plan[r.step]+'</span>');
+    });
+    lines.push('<span class="nm">'+husky.name+' 🐺</span> · <span class="gl">'+husky.plan[husky.step]+'</span>');
+    castEl.innerHTML = lines.join('<br>');
+  }
+
+  // Brain panel
+  var focused = researchers[0];
+  function renderBrain(){
+    var icon = focused === husky ? '🐺' : '🧠';
+    var role = focused.role || 'Researcher';
+    var goal = focused.goal;
+    var step = focused.plan[focused.step];
+    var have = '';
+    var need = '';
+    if (focused === husky) {
+      need = 'Penguin in sight';
+      have = 'Sniffer ✓ Tail-wag ✓';
+    } else if (focused.id === 'Sookie') {
+      need = 'Clear sky + thermal coffee';
+      have = 'Cloud cover '+weather.cloud+'%, coffee thermos '+(Math.random()<0.7?'✓':'✗');
+    } else if (focused.id === 'Hilda') {
+      need = 'Auger ready + 800m target';
+      have = 'Drilled '+memory.iceCoreDepth+'m so far';
+    } else if (focused.id === 'Yves') {
+      need = 'Mast working + clear data';
+      have = 'Weather logs '+memory.weatherLogs;
+    } else if (focused.id === 'Bram') {
+      need = 'Penguin colony + binoculars';
+      have = 'Counted ~'+memory.penguinsCounted;
+    } else if (focused.id === 'Maud') {
+      need = 'Ear-pro + barrels rotated';
+      have = 'Barrels '+memory.fuelBarrels+' · ear-pro on';
+    } else if (focused.id === 'Tomas') {
+      need = 'Med kit + crew available';
+      have = 'Vitamin D checks: '+memory.vitDChecks;
+    }
+    brainEl.innerHTML =
+      '<h4><span class="icon">'+icon+'</span>'+focused.name+'</h4>'+
+      '<div class="row" style="color:#9ec9ff">'+role+'</div>'+
+      '<div class="row"><span class="lbl">GOAL</span> '+goal+'</div>'+
+      '<div class="row"><span class="lbl">NEED</span> '+need+'</div>'+
+      '<div class="row"><span class="lbl">HAVE</span> '+have+'</div>'+
+      '<div class="row"><span class="lbl">PLAN</span> '+focused.plan.join(' → ')+'</div>'+
+      '<div class="row"><span class="lbl">STEP</span> '+(focused.step+1)+' of '+focused.stepCount+' ('+step+')</div>'+
+      '<div class="row"><span class="lbl">MOOD</span> '+focused.mood+'</div>';
+  }
+
+  function updateHUD(){
+    var modIdx = activeModule>=0 ? activeModule : 4;
+    var modLabel = activeModule>=0 ? ('MODULE '+(modIdx+1)+' OF 5: '+modules[modIdx].name) : 'OUTSIDE: '+lastModuleName;
+    hud.innerHTML =
+      '<b>ANTARCTIC BASE ECHO</b><br>'+
+      modLabel+' · DAY <b>'+memory.day+'</b> · <b>'+weather.temp+'°C</b> OUTSIDE<br>'+
+      'PALETTE: <span style="color:#a8e3ff">'+lastPalette+'</span><br>'+
+      'ICE CORE: <b>'+memory.iceCoreDepth+'m</b> / 800m · '+
+      'PENGUINS: <b>'+memory.penguinsCounted+'</b><br>'+
+      'AURORA SIGHTINGS: <b>'+memory.auroraSightings+'</b> · BELLY-RUBS: <b>'+memory.bellyRubs+'</b><br>'+
+      'COCOA PAIRS: <b>'+memory.cocoaPairs+'</b> · VITAMIN D: <b>'+memory.vitDChecks+'</b> · RESEEDS: <b>'+memory.reseeds+'</b><br>'+
+      'SHOT: <span style="color:#ffd58a">'+camShots[currentShot].name+'</span>';
+    var pct = Math.max(0, Math.min(100, memory.stirCrazy));
+    feverFill.style.width = pct+'%';
+    feverPct.textContent = pct+'%';
+    feverTag.textContent = pct<25 ? 'GOOD' : (pct<50 ? 'OK' : (pct<70 ? 'CABIN-Y' : 'CRAFT NIGHT NEEDED'));
+    feverTag.style.color = pct<25 ? '#a4ffb1' : (pct<50 ? '#ffd58a' : (pct<70 ? '#ffae6e' : '#ff8e8e'));
+  }
+
+  // ---------- Mini Map ----------
+  var mapCanvas = document.getElementById('map');
+  var mapCtx = mapCanvas.getContext('2d');
+  function renderMap(){
+    var w = mapCanvas.width, h = mapCanvas.height;
+    mapCtx.clearRect(0,0,w,h);
+    mapCtx.fillStyle = 'rgba(6,14,28,0.4)';
+    mapCtx.fillRect(0,0,w,h);
+    // 5-module floor plan
+    function world2map(x,z){
+      var nx = (x+30)/60; // -30..30
+      var nz = (z+30)/60;
+      return [nx*w, nz*h];
+    }
+    // tunnels (lines)
+    mapCtx.strokeStyle = 'rgba(108,201,255,0.55)';
+    mapCtx.lineWidth = 5;
+    for (var i=0;i<4;i++){
+      var p0 = world2map(0,0);
+      var p1 = world2map(modules[i].center.x, modules[i].center.z);
+      mapCtx.beginPath();
+      mapCtx.moveTo(p0[0],p0[1]);
+      mapCtx.lineTo(p1[0],p1[1]);
+      mapCtx.stroke();
+    }
+    // modules
+    for (var m=0;m<5;m++){
+      var p = world2map(modules[m].center.x, modules[m].center.z);
+      var size = m===4 ? 14 : 22;
+      var col = m===activeModule ? '#ffd58a' : '#6cb6ee';
+      mapCtx.fillStyle = m===activeModule ? 'rgba(255,213,138,0.7)' : 'rgba(46,80,120,0.7)';
+      mapCtx.strokeStyle = col;
+      mapCtx.lineWidth = m===activeModule ? 3 : 1.6;
+      mapCtx.fillRect(p[0]-size/2, p[1]-size/2, size, size);
+      mapCtx.strokeRect(p[0]-size/2, p[1]-size/2, size, size);
+      mapCtx.fillStyle = '#eaf6ff';
+      mapCtx.font = '8px Courier New';
+      var lab = ['MESS','LAB','DORM','GEN','TUN'][m];
+      mapCtx.fillText(lab, p[0]-9, p[1]+2);
+    }
+    // researcher dots
+    researchers.forEach(function(r){
+      var p = world2map(r.mesh.position.x, r.mesh.position.z);
+      mapCtx.fillStyle = '#'+r.parka.toString(16).padStart(6,'0');
+      mapCtx.beginPath();
+      mapCtx.arc(p[0], p[1], 3, 0, Math.PI*2);
+      mapCtx.fill();
+      mapCtx.strokeStyle = '#0b1828';
+      mapCtx.lineWidth = 1;
+      mapCtx.stroke();
+    });
+    // husky dot
+    var hp = world2map(husky.mesh.position.x, husky.mesh.position.z);
+    mapCtx.fillStyle = '#eaf6ff';
+    mapCtx.beginPath();
+    mapCtx.arc(hp[0], hp[1], 2.5, 0, Math.PI*2);
+    mapCtx.fill();
+    mapCtx.strokeStyle = '#444';
+    mapCtx.stroke();
+    // legend
+    mapCtx.fillStyle = '#9ec9ff';
+    mapCtx.font = '8px Courier New';
+    mapCtx.fillText('● 6 RESEARCHERS  ◌ HUSKY', 6, h-6);
+  }
+
+  // ---------- Relationships Graph ----------
+  var graphCanvas = document.getElementById('graph');
+  var gctx = graphCanvas.getContext('2d');
+  // node positions
+  var people = ['Hilda','Yves','Bram','Sookie','Maud','Tomas','Crunch'];
+  var nodePositions = {};
+  (function layoutGraph(){
+    var w = graphCanvas.width, h = graphCanvas.height;
+    var cx = w/2, cy = h/2;
+    var rad = Math.min(w,h)*0.36;
+    for (var i=0;i<people.length;i++){
+      var ang = (i/people.length)*Math.PI*2 - Math.PI/2;
+      nodePositions[people[i]] = {x:cx+Math.cos(ang)*rad, y:cy+Math.sin(ang)*rad};
+    }
+  })();
+  // edges with weights (board-game rivalries, cocoa, belly rubs)
+  var edges = [
+    {a:'Hilda',b:'Yves',  w:6, type:'cocoa'},
+    {a:'Hilda',b:'Sookie',w:5, type:'cocoa'},
+    {a:'Hilda',b:'Maud',  w:4, type:'rivalry'},
+    {a:'Yves', b:'Bram',  w:7, type:'rivalry'},
+    {a:'Yves', b:'Tomas', w:3, type:'cocoa'},
+    {a:'Bram', b:'Sookie',w:5, type:'cocoa'},
+    {a:'Bram', b:'Crunch',w:9, type:'rub'},
+    {a:'Sookie',b:'Tomas',w:4, type:'rivalry'},
+    {a:'Maud', b:'Tomas', w:6, type:'cocoa'},
+    {a:'Maud', b:'Crunch',w:7, type:'rub'},
+    {a:'Hilda',b:'Crunch',w:8, type:'rub'},
+    {a:'Sookie',b:'Crunch',w:6,type:'rub'},
+    {a:'Yves', b:'Crunch',w:5, type:'rub'},
+    {a:'Tomas',b:'Crunch',w:7, type:'rub'}
+  ];
+  function renderGraph(){
+    var w = graphCanvas.width, h = graphCanvas.height;
+    gctx.clearRect(0,0,w,h);
+    gctx.fillStyle = 'rgba(6,14,28,0.35)';
+    gctx.fillRect(0,0,w,h);
+    // edges
+    edges.forEach(function(e){
+      var p1 = nodePositions[e.a], p2 = nodePositions[e.b];
+      var col = e.type==='cocoa' ? 'rgba(255,170,90,'+(0.18+e.w*0.03)+')'
+              : e.type==='rivalry' ? 'rgba(255,138,166,'+(0.18+e.w*0.03)+')'
+              : 'rgba(154,255,209,'+(0.18+e.w*0.03)+')';
+      gctx.strokeStyle = col;
+      gctx.lineWidth = 0.8 + e.w*0.4;
+      gctx.beginPath();
+      gctx.moveTo(p1.x, p1.y);
+      gctx.lineTo(p2.x, p2.y);
+      gctx.stroke();
+    });
+    // nodes
+    people.forEach(function(p){
+      var pos = nodePositions[p];
+      var isCrunch = p==='Crunch';
+      var fill = isCrunch ? '#eaf6ff' : '#ffd58a';
+      gctx.fillStyle = fill;
+      gctx.beginPath();
+      gctx.arc(pos.x, pos.y, isCrunch?9:11, 0, Math.PI*2);
+      gctx.fill();
+      gctx.strokeStyle = '#0b1828';
+      gctx.lineWidth = 2;
+      gctx.stroke();
+      gctx.fillStyle = '#0b1828';
+      gctx.font = 'bold 10px Helvetica';
+      gctx.textAlign = 'center';
+      gctx.fillText(p[0], pos.x, pos.y+3);
+      gctx.fillStyle = '#dfeaf2';
+      gctx.font = '10px Helvetica';
+      gctx.fillText(p, pos.x, pos.y+24);
+      // board-game score
+      var sc = memory.boardScores[p];
+      if (sc != null) {
+        gctx.fillStyle = '#a8e3ff';
+        gctx.font = '9px Courier New';
+        gctx.fillText('BG:'+sc, pos.x, pos.y-15);
+      } else if (isCrunch) {
+        gctx.fillStyle = '#9affd1';
+        gctx.font = '9px Courier New';
+        gctx.fillText('rubs:'+memory.bellyRubs, pos.x, pos.y-15);
+      }
+    });
+    gctx.fillStyle = '#9ec9ff';
+    gctx.font = '9px Courier New';
+    gctx.textAlign = 'left';
+    gctx.fillText('amber=cocoa  pink=rivalry  green=belly-rubs', 8, h-8);
+  }
+
+  // ---------- Story Chyron ----------
+  var chyronTimer = 0;
+  var chyronText = 'Day '+memory.day+' Act 1 — Antarctic Base ECHO settles in for the long polar night.';
+  var actNum = 1;
+  function generateChyron(){
+    actNum = (actNum % 3) + 1;
+    var who1 = researchers[Math.floor(Math.random()*researchers.length)];
+    var who2 = namePool[Math.floor(Math.random()*namePool.length)];
+    var beats = [
+      who1.name.replace(/^Dr\. |^Engineer /,'')+' '+(['photographs the aurora at 03:14','drills past '+memory.iceCoreDepth+'m','logs weather at the mast','tallies '+memory.penguinsCounted+' emperor penguins','rotates the fuel barrels','checks vitamin D for the crew','wins at '+memory.boardGames[Math.floor(Math.random()*memory.boardGames.length)]+' again'][Math.floor(Math.random()*7)]),
+      'Captain Crunch herds '+(2+Math.floor(Math.random()*5))+' penguins back to the colony',
+      'The mess hall hums with laughter — '+who1.id+' brews cocoa for '+who2,
+      'Stir-Crazy Index ticks to '+memory.stirCrazy+'% — '+(memory.stirCrazy<30?'crew is well':'craft night is scheduled'),
+      'Aurora ribbons unfurl over the dorm pod skylight'
+    ];
+    var pick = beats.slice();
+    var line = 'Day '+memory.day+' Act '+actNum+' — '+pick[Math.floor(Math.random()*pick.length)]+'. '+pick[Math.floor(Math.random()*pick.length)]+'.';
+    chyronText = line;
+    chyronEl.textContent = chyronText;
+    memory.lastNote = chyronText;
+    saveMem();
+  }
+
+  // ---------- Decision diamond ----------
+  var decisionDiamonds = [];
+  function spawnDecisionDiamond(target, color){
+    var g = new THREE.Group();
+    var d = makeBoxOutline(0.32, 0.32, 0.05, color || 0xffe28a);
+    d.rotation.z = Math.PI/4;
+    d.material.transparent = true;
+    d.material.opacity = 0.95;
+    d.material.emissive = new THREE.Color(color || 0xffe28a);
+    d.material.emissiveIntensity = 0.6;
+    g.add(d);
+    g.position.copy(target.mesh.position);
+    g.position.y += 2.6;
+    scene.add(g);
+    decisionDiamonds.push({mesh:g, life:1.4, target:target});
+  }
+  // ---------- Sparkles for interactions ----------
+  var sparkles = [];
+  function spawnSparkle(pos, color){
+    for (var i=0;i<6;i++){
+      var s = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08,0.08,0.08),
+        new THREE.MeshBasicMaterial({color:color||0xffe28a, transparent:true, opacity:0.95})
+      );
+      track(s);
+      s.position.copy(pos);
+      s.position.y += 1.4;
+      var v = new THREE.Vector3(Math.random()*2-1, Math.random()+0.5, Math.random()*2-1).multiplyScalar(0.05);
+      scene.add(s);
+      sparkles.push({mesh:s, life:1.0, vel:v});
+    }
+  }
+
+  // ---------- Goal Trails ----------
+  var trails = [];
+  function addTrailPoint(r){
+    if (!r.path) r.path = [];
+    var last = r.path[r.path.length-1];
+    if (last && last.distanceTo(r.mesh.position) < 0.4) return;
+    r.path.push(r.mesh.position.clone());
+    if (r.path.length > 24) r.path.shift();
+    // build a tiny dot
+    var dot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.04, 0.18),
+      new THREE.MeshBasicMaterial({color: r.parka || 0xeaf6ff, transparent:true, opacity:0.6})
+    );
+    track(dot);
+    dot.position.copy(r.mesh.position);
+    dot.position.y = 0.06;
+    scene.add(dot);
+    trails.push({mesh:dot, life: 4.0});
+  }
+
+  function onShotChange(){
+    // when active module changes, switch focused brain to a researcher in that module
+    if (activeModule>=0){
+      var inMod = researchers.filter(function(r){ return r.module===activeModule; });
+      if (inMod.length) focused = inMod[Math.floor(Math.random()*inMod.length)];
+      else focused = (Math.random()<0.4 ? husky : researchers[Math.floor(Math.random()*researchers.length)]);
+    } else {
+      focused = (Math.random()<0.5 ? husky : researchers[Math.floor(Math.random()*researchers.length)]);
+    }
+    spawnDecisionDiamond(focused, focused===husky ? 0x9affd1 : 0xffe28a);
+    renderBrain();
+  }
+
+  // ---------- Researcher tick ----------
+  function pickWalkTarget(r){
+    // 70% stay in own module, 30% travel to another
+    if (Math.random() < 0.3) {
+      var otherMods = [0,1,2,3,4].filter(function(m){return m!==r.module;});
+      r.module = otherMods[Math.floor(Math.random()*otherMods.length)];
+    }
+    var c = modules[r.module].center;
+    var ang = Math.random()*Math.PI*2;
+    var rad = 0.5 + Math.random()*2.5;
+    if (r.module === 4) rad = Math.random()*1.0;
+    r.target.set(c.x + Math.cos(ang)*rad, 0, c.z + Math.sin(ang)*rad);
+    r.step = (r.step + 1) % r.stepCount;
+    r.timer = 3.5 + Math.random()*5;
+    spawnDecisionDiamond(r, r===husky ? 0x9affd1 : 0xffe28a);
+  }
+
+  function tickEntity(r, dt){
+    var dx = r.target.x - r.mesh.position.x;
+    var dz = r.target.z - r.mesh.position.z;
+    var d = Math.sqrt(dx*dx+dz*dz);
+    var sp = (r===husky) ? 2.2 : 1.4;
+    if (d > 0.05){
+      var nx = dx/d, nz = dz/d;
+      r.mesh.position.x += nx*sp*dt;
+      r.mesh.position.z += nz*sp*dt;
+      r.mesh.rotation.y = Math.atan2(nx, nz);
+    }
+    // walk bob
+    var t = performance.now()*0.005;
+    if (r.mesh.userData && r.mesh.userData.parts){
+      var p = r.mesh.userData.parts;
+      if (p.aL) p.aL.rotation.x = Math.sin(t)*0.5*Math.min(d,1);
+      if (p.aR) p.aR.rotation.x = -Math.sin(t)*0.5*Math.min(d,1);
+      if (p.lL) p.lL.rotation.x = -Math.sin(t)*0.4*Math.min(d,1);
+      if (p.lR) p.lR.rotation.x = Math.sin(t)*0.4*Math.min(d,1);
+      if (p.tail) p.tail.rotation.y = Math.sin(t*2)*0.6;
+    }
+    r.timer -= dt;
+    if (r.timer <= 0){
+      pickWalkTarget(r);
+    }
+    addTrailPoint(r);
+  }
+
+  // ---------- Init UI ----------
+  pickShot();
+  renderCast();
+  renderBrain();
+  updateHUD();
+  renderMap();
+  renderGraph();
+  popToast('DAY '+memory.day+' · STATION ECHO ONLINE');
+  generateChyron();
+
+  // ---------- Loop ----------
+  var clock = new THREE.Clock();
+  var elapsed = 0;
+  var alive = true;
+  var reseedAt = 600 + Math.random()*60; // ~10 min
+  var lastSave = 0;
+  var hudTimer = 0, mapTimer = 0, graphTimer = 0;
+
+  function loop(){
+    if (!alive) return;
+    var dt = Math.min(clock.getDelta(), 0.05);
+    elapsed += dt;
+    // Camera transition
+    shotTimer += dt;
+    if (shotTimer > shotDuration) pickShot();
+    var tt = Math.min(1, shotTimer / Math.min(1.4, shotDuration*0.18));
+    var ease = tt*tt*(3-2*tt);
+    camPos.lerp(targetPos, 0.04 + ease*0.05);
+    camLook.lerp(targetLook, 0.04 + ease*0.05);
+    camera.position.copy(camPos);
+    camera.lookAt(camLook);
+
+    // Researchers
+    researchers.forEach(function(r){ tickEntity(r, dt); });
+    tickEntity(husky, dt);
+
+    // Penguins waddle
+    penguins.forEach(function(pg, i){
+      pg.waddle += dt*pg.speed*4;
+      pg.mesh.position.x = pg.base.x + Math.sin(pg.waddle)*0.4;
+      pg.mesh.position.z = pg.base.z + Math.cos(pg.waddle*0.7)*0.3;
+      pg.mesh.rotation.y = Math.sin(pg.waddle)*0.4;
+      pg.mesh.position.y = 0.05 + Math.abs(Math.sin(pg.waddle*2))*0.08;
+    });
+    // Ambient penguins drift
+    ambPenguins.forEach(function(ap){
+      ap.phase += dt;
+      ap.mesh.position.x = ap.base.x + Math.sin(ap.phase*0.6)*0.5;
+      ap.mesh.rotation.y = Math.sin(ap.phase)*0.3;
+      ap.mesh.position.y = 0.18 + Math.abs(Math.sin(ap.phase*1.3))*0.05;
+    });
+
+    // Aurora wave
+    if (aurora){
+      aurora.material.opacity = 0.4 + Math.sin(elapsed*0.4)*0.15 + 0.2;
+      aurora.rotation.y = Math.sin(elapsed*0.05)*0.06;
+      if (aurora.userData.partner){
+        aurora.userData.partner.material.opacity = 0.35 + Math.cos(elapsed*0.5)*0.15 + 0.2;
+        aurora.userData.partner.rotation.y = Math.cos(elapsed*0.07)*0.07;
+      }
+    }
+    // aurora light pulse
+    auroraLight.intensity = 0.45 + Math.sin(elapsed*0.6)*0.2;
+
+    // Decision diamonds
+    for (var i=decisionDiamonds.length-1; i>=0; i--){
+      var dd = decisionDiamonds[i];
+      dd.life -= dt;
+      dd.mesh.rotation.y += dt*3;
+      dd.mesh.position.y = (dd.target.mesh.position.y) + 2.6 + Math.sin(elapsed*4)*0.1;
+      dd.mesh.position.x = dd.target.mesh.position.x;
+      dd.mesh.position.z = dd.target.mesh.position.z;
+      if (dd.life <= 0){
+        scene.remove(dd.mesh);
+        decisionDiamonds.splice(i,1);
+      }
+    }
+    // Sparkles
+    for (var i=sparkles.length-1; i>=0; i--){
+      var sp = sparkles[i];
+      sp.life -= dt;
+      sp.mesh.position.add(sp.vel);
+      sp.mesh.material.opacity = Math.max(0, sp.life);
+      sp.mesh.rotation.x += dt*5;
+      sp.mesh.rotation.y += dt*3;
+      if (sp.life <= 0){
+        scene.remove(sp.mesh);
+        sparkles.splice(i,1);
+      }
+    }
+    // Trails fade
+    for (var i=trails.length-1; i>=0; i--){
+      var tr = trails[i];
+      tr.life -= dt;
+      tr.mesh.material.opacity = Math.max(0, tr.life/4.0)*0.6;
+      if (tr.life <= 0){
+        scene.remove(tr.mesh);
+        trails.splice(i,1);
+      }
+    }
+
+    // Detect mess-hall meet → sparkle interaction
+    if (Math.random() < 0.01){
+      var inMess = researchers.filter(function(r){
+        return r.mesh.position.distanceTo(modules[0].center) < 4;
+      });
+      if (inMess.length >= 2) {
+        var who = inMess[Math.floor(Math.random()*inMess.length)];
+        spawnSparkle(who.mesh.position, 0xffae5a);
+        memory.cocoaPairs += 1;
+        memory.boardScores[who.id] = (memory.boardScores[who.id]||0) + 1;
+      }
+    }
+    // Husky belly-rub event
+    if (Math.random() < 0.005) {
+      var nearH = researchers.find(function(r){
+        return r.mesh.position.distanceTo(husky.mesh.position) < 2.0;
+      });
+      if (nearH){
+        spawnSparkle(husky.mesh.position, 0x9affd1);
+        memory.bellyRubs += 1;
+      }
+    }
+
+    // Sookie aurora event at 03:00 hour
+    weather.hour = (weather.hour + dt*0.06) % 24;
+    if (Math.floor(weather.hour) === 3 && Math.random() < 0.005){
+      memory.auroraSightings += 1;
+      popToast('🌌 03:14 — Sookie photographs the aurora');
+    }
+
+    // HUD/UI throttle
+    hudTimer += dt;
+    if (hudTimer > 0.4){
+      updateWeatherUI();
+      updateHUD();
+      renderCast();
+      hudTimer = 0;
+    }
+    mapTimer += dt;
+    if (mapTimer > 0.25){ renderMap(); mapTimer = 0; }
+    graphTimer += dt;
+    if (graphTimer > 1.2){ renderGraph(); graphTimer = 0; }
+
+    // Brain throttle
+    if (Math.random() < 0.02) renderBrain();
+
+    // Chyron periodic
+    chyronTimer += dt;
+    if (chyronTimer > 8 + Math.random()*5){
+      generateChyron();
+      chyronTimer = 0;
+      // small random tick on memory
+      memory.stirCrazy = Math.max(8, Math.min(62, memory.stirCrazy + Math.floor(Math.random()*5) - 2));
+    }
+    // Save throttle
+    lastSave += dt;
+    if (lastSave > 10){ saveMem(); lastSave = 0; }
+
+    // Reseed every ~10 min
+    if (elapsed > reseedAt){
+      memory.day += 1;
+      memory.reseeds = (memory.reseeds||0) + 1;
+      memory.iceCoreDepth = Math.min(800, memory.iceCoreDepth + 22 + Math.floor(Math.random()*30));
+      memory.penguinsCounted += Math.floor(Math.random()*5);
+      memory.auroraSightings += (Math.random()<0.5?1:0);
+      memory.bellyRubs += 4 + Math.floor(Math.random()*6);
+      memory.cocoaPairs += Math.floor(Math.random()*2);
+      saveMem();
+      // shuffle weather
+      weather.temp = -38 - Math.floor(Math.random()*15);
+      weather.wind = 8 + Math.floor(Math.random()*22);
+      weather.cloud = 10 + Math.floor(Math.random()*70);
+      weather.pressure = 970 + Math.floor(Math.random()*40);
+      weather.hour = Math.floor(Math.random()*24);
+      // reset researchers' modules a bit
+      researchers.forEach(function(r){ r.module = Math.floor(Math.random()*5); pickWalkTarget(r); });
+      husky.module = Math.floor(Math.random()*5); pickWalkTarget(husky);
+      reseedAt = elapsed + 600 + Math.random()*60;
+      popToast('NEW POLAR DAY ' + memory.day + ' · DAWN UNSEEN');
+      generateChyron();
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', function(){
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+  window.addEventListener('beforeunload', function(){
+    alive = false;
+    saveMem();
+    disposeAll();
+    renderer.dispose();
+  });
+
+  loop();
+})();
+</script>
+</body>
+</html>

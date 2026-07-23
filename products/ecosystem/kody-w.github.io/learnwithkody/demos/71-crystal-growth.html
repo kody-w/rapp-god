@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DLA · Crystal Growth — vibe coding</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: #05060a;
+    color: #ddd;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Mono", "Menlo", Monaco, monospace;
+    overflow: hidden;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(ellipse at 50% 50%, rgba(40,80,140,0.18), rgba(0,0,0,0) 60%),
+      #000;
+  }
+  canvas#c {
+    background: #000;
+    box-shadow:
+      0 0 80px rgba(120,180,255,0.18),
+      0 0 240px rgba(140,90,255,0.10),
+      inset 0 0 0 1px rgba(120,180,255,0.10);
+    border-radius: 4px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+  #panel {
+    position: fixed; top: 14px; left: 14px;
+    width: 280px;
+    background: rgba(10,12,18, 0.78);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(120,180,255,0.18);
+    border-radius: 12px;
+    padding: 14px 14px 12px;
+    font-size: 12px;
+    user-select: none;
+    z-index: 10;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  #panel h1 {
+    margin: 0 0 4px 0;
+    font-size: 13px;
+    letter-spacing: 0.16em;
+    color: #aacfff;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  #panel .small {
+    color: #8aa5c4; font-size: 11px; line-height: 1.45; margin-bottom: 6px;
+  }
+  fieldset {
+    border: 1px solid rgba(120,180,255,0.15);
+    border-radius: 8px;
+    padding: 6px 10px 8px;
+    margin: 8px 0;
+  }
+  legend {
+    color: #aacfff;
+    padding: 0 6px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+  label.row { display: flex; flex-direction: column; gap: 3px; margin: 7px 0 3px; }
+  label.row .lab { display: flex; justify-content: space-between; color: #cdddee; font-size: 11px; }
+  label.row .lab span:last-child { color: #fff; font-weight: 600; }
+  label.row input[type=range] { width: 100%; accent-color: #6cf; }
+  .modes label { display: block; padding: 3px 0; cursor: pointer; color: #cdddee; }
+  .modes input { accent-color: #6cf; margin-right: 6px; }
+  .stat { display: flex; justify-content: space-between; padding: 2px 0; color: #cdddee; }
+  .stat .v { color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .btnrow { display: flex; gap: 6px; margin-top: 10px; }
+  button {
+    flex: 1;
+    background: rgba(80,140,220,0.16);
+    border: 1px solid rgba(120,180,255,0.32);
+    color: #cdf;
+    padding: 7px 4px;
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button:hover { background: rgba(80,160,255,0.28); border-color: #8cf; color: #fff; }
+  button.active { background: rgba(220,90,90,0.28); border-color: #f99; color: #fee; }
+  #hint {
+    position: fixed; bottom: 12px; right: 14px;
+    color: rgba(180,200,230,0.45);
+    font-size: 11px;
+    text-align: right;
+    pointer-events: none;
+    z-index: 5;
+    letter-spacing: 0.04em;
+  }
+  #hint b { color: rgba(200,220,255,0.7); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="c" width="800" height="800"></canvas>
+</div>
+
+<div id="panel">
+  <h1>DLA · Crystal Growth</h1>
+  <div class="small">Random walkers spawn near the crystal's rim, drift, and stick on contact. Color encodes deposit time.</div>
+
+  <fieldset class="modes">
+    <legend>Mode</legend>
+    <label><input type="radio" name="mode" value="free" checked> Free DLA — snowflake arms</label>
+    <label><input type="radio" name="mode" value="boundary"> Boundary — lightning trees</label>
+    <label><input type="radio" name="mode" value="gravity"> Gravity — mineral strata</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Parameters</legend>
+    <label class="row">
+      <span class="lab"><span>Stickiness</span><span id="vStick">0.85</span></span>
+      <input id="sStick" type="range" min="0.05" max="1" step="0.01" value="0.85">
+    </label>
+    <label class="row">
+      <span class="lab"><span>Walk speed</span><span id="vSpeed">40</span></span>
+      <input id="sSpeed" type="range" min="1" max="100" step="1" value="40">
+    </label>
+    <label class="row">
+      <span class="lab"><span>Rim distance</span><span id="vRim">12</span></span>
+      <input id="sRim" type="range" min="3" max="60" step="1" value="12">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Stats</legend>
+    <div class="stat"><span>Particles</span><span class="v" id="sP">0</span></div>
+    <div class="stat"><span>Branches (leaves)</span><span class="v" id="sB">0</span></div>
+    <div class="stat"><span>Fractal dim&nbsp;≈</span><span class="v" id="sD">—</span></div>
+  </fieldset>
+
+  <div class="btnrow">
+    <button id="bPause">Pause</button>
+    <button id="bReset">Reset</button>
+    <button id="bSave">Save PNG</button>
+  </div>
+</div>
+
+<div id="hint"><b>diffusion-limited aggregation</b> · single file · no deps</div>
+
+<script>
+'use strict';
+(() => {
+  // ---------- Setup ----------
+  const W = 800, H = 800;
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d', { alpha: false });
+  ctx.imageSmoothingEnabled = false;
+
+  // Offscreen canvas: holds only the crystal pixels (transparent elsewhere)
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const octx = off.getContext('2d');
+  let imgData = octx.createImageData(W, H);
+
+  // Grid: 0 = empty; nonzero = occupied (low bits of deposit count)
+  let grid = new Uint16Array(W * H);
+
+  // ---------- State ----------
+  const CX = W >> 1, CY = H >> 1;
+  let depositCount = 0;
+  let maxR2 = 0;             // max squared radius from canvas center
+  let topY = H, bottomY = 0, leftX = W, rightX = 0;
+  let lastFracDim = NaN;
+  let lastBranches = 0;
+  let lastStatsAt = 0;
+
+  let mode = 'free';
+  let pStick = 0.85;
+  let walkSpeed = 40;
+  let rimDist = 12;
+  let paused = false;
+
+  // Walker pool: many concurrent random walkers; each respawns after deposit/kill
+  const POOL_SIZE = 100;
+  const walkers = [];
+
+  // ---------- HSL → RGB ----------
+  function hslRGB(h, s, l) {
+    h = (((h % 360) + 360) % 360) / 360;
+    let r, g, b;
+    if (s === 0) { r = g = b = l; }
+    else {
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      const f = (t) => {
+        t = ((t % 1) + 1) % 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      r = f(h + 1/3); g = f(h); b = f(h - 1/3);
+    }
+    return [r * 255 | 0, g * 255 | 0, b * 255 | 0];
+  }
+
+  // ---------- Deposit ----------
+  function deposit(x, y) {
+    if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) return false;
+    const idx = y * W + x;
+    if (grid[idx]) return false;
+    depositCount++;
+    grid[idx] = (depositCount & 0xFFFF) || 1;
+
+    // hue cycles smoothly through the rainbow as time advances
+    const hue = depositCount * 0.5;
+    const [r, g, b] = hslRGB(hue, 0.85, 0.6);
+    const di = idx * 4;
+    imgData.data[di]     = r;
+    imgData.data[di + 1] = g;
+    imgData.data[di + 2] = b;
+    imgData.data[di + 3] = 255;
+
+    // bbox + radius track for spawn rim
+    const dx = x - CX, dy = y - CY;
+    const r2 = dx * dx + dy * dy;
+    if (r2 > maxR2) maxR2 = r2;
+    if (y < topY)    topY = y;
+    if (y > bottomY) bottomY = y;
+    if (x < leftX)   leftX = x;
+    if (x > rightX)  rightX = x;
+    return true;
+  }
+
+  // 8-neighbor occupancy check (assumes 1 <= x <= W-2 and 1 <= y <= H-2)
+  function hasNeighbor(x, y) {
+    const i = y * W + x;
+    return (
+      grid[i - W - 1] | grid[i - W] | grid[i - W + 1] |
+      grid[i - 1]                   | grid[i + 1]     |
+      grid[i + W - 1] | grid[i + W] | grid[i + W + 1]
+    ) !== 0;
+  }
+
+  // ---------- Spawn / Walk ----------
+  function spawnWalker(w) {
+    w.steps = 0;
+    if (mode === 'free') {
+      const maxR = Math.sqrt(maxR2);
+      const spawnR = Math.min(maxR + rimDist, Math.min(W, H) / 2 - 4);
+      const a = Math.random() * Math.PI * 2;
+      w.x = (CX + Math.cos(a) * spawnR) | 0;
+      w.y = (CY + Math.sin(a) * spawnR) | 0;
+      w.killR2 = (spawnR * 1.7 + 8) ** 2;
+    } else if (mode === 'boundary') {
+      // walkers come from above the topmost crystal pixel, drift down
+      const ymin = Math.max(1, topY - rimDist - ((Math.random() * 6) | 0));
+      w.x = 1 + ((Math.random() * (W - 2)) | 0);
+      w.y = ymin;
+      w.killR2 = 0;
+    } else { // gravity
+      const ymin = Math.max(1, topY - rimDist - ((Math.random() * 8) | 0));
+      w.x = 1 + ((Math.random() * (W - 2)) | 0);
+      w.y = ymin;
+      w.killR2 = 0;
+    }
+  }
+
+  function stepWalker(w) {
+    let dx, dy;
+
+    if (mode === 'free') {
+      // 8-direction uniform random walk
+      const r = (Math.random() * 8) | 0;
+      // map 0..7 to (dx,dy) excluding (0,0)
+      const m = [-1,-1, 0,-1, 1,-1, -1,0, 1,0, -1,1, 0,1, 1,1];
+      dx = m[r * 2]; dy = m[r * 2 + 1];
+    } else if (mode === 'boundary') {
+      // downward-biased random walk
+      const rd = Math.random();
+      dy = rd < 0.55 ? 1 : (rd < 0.78 ? 0 : -1);
+      dx = ((Math.random() * 3) | 0) - 1;
+    } else {
+      // gravity-biased: stronger downward pull
+      const rd = Math.random();
+      dy = rd < 0.7 ? 1 : (rd < 0.92 ? 0 : -1);
+      dx = ((Math.random() * 3) | 0) - 1;
+    }
+
+    let nx = w.x + dx, ny = w.y + dy;
+
+    if (mode === 'free') {
+      const ddx = nx - CX, ddy = ny - CY;
+      if (ddx * ddx + ddy * ddy > w.killR2 ||
+          nx < 1 || ny < 1 || nx >= W - 1 || ny >= H - 1) {
+        spawnWalker(w);
+        return false;
+      }
+    } else {
+      // wrap horizontally so walkers don't get stuck on side walls
+      if (nx < 1)       nx = W - 2;
+      else if (nx >= W - 1) nx = 1;
+      if (ny < 1 || ny >= H - 1) {
+        spawnWalker(w);
+        return false;
+      }
+    }
+
+    w.x = nx; w.y = ny;
+    w.steps++;
+    if (w.steps > 6000) { spawnWalker(w); return false; }
+
+    if (hasNeighbor(nx, ny)) {
+      let p = pStick;
+      if (mode === 'gravity') {
+        // slight cohesion: increase stick if neighbor BELOW is occupied
+        const i = ny * W + nx;
+        if (grid[i + W] || grid[i + W - 1] || grid[i + W + 1]) {
+          p = Math.min(1, p * 1.35 + 0.05);
+        }
+      }
+      if (Math.random() < p) {
+        if (deposit(nx, ny)) {
+          spawnWalker(w);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // ---------- Stats: branches + box-counting fractal dim ----------
+  function computeStats() {
+    let leaves = 0;
+    for (let y = 1; y < H - 1; y++) {
+      const row = y * W;
+      for (let x = 1; x < W - 1; x++) {
+        const i = row + x;
+        if (!grid[i]) continue;
+        let n = 0;
+        if (grid[i - W - 1]) n++;
+        if (grid[i - W])     n++;
+        if (grid[i - W + 1]) n++;
+        if (grid[i - 1])     n++;
+        if (grid[i + 1])     n++;
+        if (grid[i + W - 1]) n++;
+        if (grid[i + W])     n++;
+        if (grid[i + W + 1]) n++;
+        if (n === 1) leaves++;
+      }
+    }
+    lastBranches = leaves;
+    lastFracDim = boxCountingDimension();
+    lastStatsAt = depositCount;
+  }
+
+  function boxCountingDimension() {
+    const sizes = [2, 4, 8, 16, 32, 64];
+    const xs = [], ys = [];
+    for (let si = 0; si < sizes.length; si++) {
+      const s = sizes[si];
+      const cw = Math.ceil(W / s);
+      const ch = Math.ceil(H / s);
+      const occ = new Uint8Array(cw * ch);
+      let count = 0;
+      for (let y = 0; y < H; y++) {
+        const by = (y / s) | 0;
+        const row = y * W;
+        const rowOff = by * cw;
+        for (let x = 0; x < W; x++) {
+          if (grid[row + x]) {
+            const bi = rowOff + ((x / s) | 0);
+            if (!occ[bi]) { occ[bi] = 1; count++; }
+          }
+        }
+      }
+      if (count > 1) {
+        xs.push(Math.log(1 / s));
+        ys.push(Math.log(count));
+      }
+    }
+    if (xs.length < 3) return NaN;
+    const n = xs.length;
+    let mx = 0, my = 0;
+    for (let i = 0; i < n; i++) { mx += xs[i]; my += ys[i]; }
+    mx /= n; my /= n;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+      const ax = xs[i] - mx, ay = ys[i] - my;
+      num += ax * ay;
+      den += ax * ax;
+    }
+    return den === 0 ? NaN : num / den;
+  }
+
+  // ---------- Reset ----------
+  function reset() {
+    grid = new Uint16Array(W * H);
+    imgData = octx.createImageData(W, H);
+    depositCount = 0;
+    maxR2 = 0;
+    topY = H; bottomY = 0;
+    leftX = W; rightX = 0;
+    lastFracDim = NaN;
+    lastBranches = 0;
+    lastStatsAt = 0;
+    walkers.length = 0;
+
+    if (mode === 'free') {
+      // single seed at center; small spawn radius hits it instantly
+      deposit(CX, CY);
+    } else if (mode === 'boundary') {
+      // sparse seeds along bottom row → upward branching
+      for (let x = 0; x < W; x += 7) deposit(x, H - 2);
+    } else {
+      // gravity: full bottom seed line to anchor strata
+      for (let x = 1; x < W - 1; x++) deposit(x, H - 2);
+      // a few floaters above so seams form mid-air
+      for (let i = 0; i < 12; i++) {
+        deposit((Math.random() * (W - 4) + 2) | 0, ((H - 80) + Math.random() * 60) | 0);
+      }
+    }
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const w = { x: 0, y: 0, steps: 0, killR2: 0 };
+      spawnWalker(w);
+      walkers.push(w);
+    }
+    octx.putImageData(imgData, 0, 0);
+  }
+
+  // ---------- Render ----------
+  function render() {
+    octx.putImageData(imgData, 0, 0);
+
+    // black background
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    // halo: radial gradient hugging the crystal
+    let gx, gy, gr;
+    if (mode === 'free') {
+      gx = CX; gy = CY;
+      gr = Math.max(110, Math.sqrt(maxR2) + 80);
+    } else {
+      gx = (leftX + rightX) * 0.5 || CX;
+      gy = (topY + bottomY) * 0.5 || CY;
+      gr = Math.max(140, (bottomY - topY) * 0.6 + 120);
+    }
+    const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+    grad.addColorStop(0,    'rgba(110,170,255,0.18)');
+    grad.addColorStop(0.45, 'rgba(160,90,255,0.09)');
+    grad.addColorStop(1,    'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // crystal layer
+    ctx.drawImage(off, 0, 0);
+
+    // bloom: blurred lighter passes for the glow
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.filter = 'blur(3px)';
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(off, 0, 0);
+    ctx.filter = 'blur(9px)';
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(off, 0, 0);
+    ctx.filter = 'blur(22px)';
+    ctx.globalAlpha = 0.30;
+    ctx.drawImage(off, 0, 0);
+
+    // restore
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---------- Loop ----------
+  function tick() {
+    if (!paused) {
+      // walkSpeed = number of step-iterations per frame; each iteration steps all pool walkers once
+      const iterations = walkSpeed;
+      for (let it = 0; it < iterations; it++) {
+        for (let i = 0; i < walkers.length; i++) {
+          stepWalker(walkers[i]);
+        }
+      }
+      if (depositCount - lastStatsAt >= 1000 ||
+          (lastStatsAt === 0 && depositCount >= 250)) {
+        computeStats();
+      }
+    }
+    render();
+
+    sP.textContent = depositCount.toLocaleString();
+    sB.textContent = lastBranches.toLocaleString();
+    sD.textContent = isNaN(lastFracDim) ? '—' : lastFracDim.toFixed(3);
+
+    requestAnimationFrame(tick);
+  }
+
+  // ---------- UI wiring ----------
+  const $ = (id) => document.getElementById(id);
+  const sStick = $('sStick'), sSpeed = $('sSpeed'), sRim = $('sRim');
+  const vStick = $('vStick'), vSpeed = $('vSpeed'), vRim = $('vRim');
+  const sP = $('sP'), sB = $('sB'), sD = $('sD');
+  const bPause = $('bPause'), bReset = $('bReset'), bSave = $('bSave');
+
+  sStick.addEventListener('input', () => {
+    pStick = +sStick.value; vStick.textContent = pStick.toFixed(2);
+  });
+  sSpeed.addEventListener('input', () => {
+    walkSpeed = +sSpeed.value; vSpeed.textContent = walkSpeed;
+  });
+  sRim.addEventListener('input', () => {
+    rimDist = +sRim.value; vRim.textContent = rimDist;
+  });
+  document.querySelectorAll('input[name=mode]').forEach((r) => {
+    r.addEventListener('change', () => {
+      if (r.checked) { mode = r.value; reset(); }
+    });
+  });
+  bPause.addEventListener('click', () => {
+    paused = !paused;
+    bPause.textContent = paused ? 'Resume' : 'Pause';
+    bPause.classList.toggle('active', paused);
+  });
+  bReset.addEventListener('click', () => reset());
+  bSave.addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.download = 'dla-crystal-' + Date.now() + '.png';
+    a.href = cv.toDataURL('image/png');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+
+  // keyboard convenience
+  window.addEventListener('keydown', (e) => {
+    if (e.key === ' ') { bPause.click(); e.preventDefault(); }
+    else if (e.key === 'r' || e.key === 'R') { reset(); }
+    else if (e.key === 's' || e.key === 'S') { bSave.click(); }
+  });
+
+  // ---------- Boot ----------
+  reset();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

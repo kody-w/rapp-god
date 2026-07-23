@@ -1,0 +1,1291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ROOFTOP PARKOUR — Faith</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#000;color:#fff;font:12px/1.4 -apple-system,'SF Mono',Menlo,Consolas,monospace;overflow:hidden;cursor:none}
+  #stage{position:fixed;inset:0}
+  canvas{display:block}
+  /* Iconic ME white-card HUD with a thin red stripe */
+  #hud{position:absolute;top:18px;left:18px;background:rgba(255,255,255,.92);color:#222;border-left:3px solid #e8222f;padding:10px 16px 10px 14px;font-size:11px;letter-spacing:2px;text-transform:uppercase;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+  #hud b{color:#e8222f;font-weight:700;letter-spacing:1.2px;font-variant-numeric:tabular-nums}
+  #hud .row{display:flex;justify-content:space-between;gap:22px}
+  #hud .row+.row{margin-top:4px}
+  #combo{position:absolute;top:18px;right:18px;background:rgba(255,255,255,.92);color:#222;border-right:3px solid #e8222f;padding:10px 14px 10px 16px;font-size:11px;letter-spacing:2px;text-transform:uppercase;pointer-events:none;text-align:right;box-shadow:0 8px 24px rgba(0,0,0,.18);min-width:170px}
+  #combo .big{display:block;font-size:30px;letter-spacing:3px;color:#e8222f;font-weight:700;font-variant-numeric:tabular-nums;margin:2px 0;line-height:1}
+  #combo .lbl{opacity:.55;font-size:10px}
+  #help{position:absolute;bottom:16px;left:18px;background:rgba(255,255,255,.86);color:#333;padding:8px 12px;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;pointer-events:none;border-left:3px solid #222}
+  #help kbd{background:#222;color:#fff;border-radius:3px;padding:1px 5px;margin:0 2px;letter-spacing:1px;font:10px monospace}
+  #state{position:absolute;bottom:16px;right:18px;background:rgba(255,255,255,.86);color:#222;padding:8px 12px;font-size:10px;letter-spacing:2.5px;text-transform:uppercase;pointer-events:none;border-right:3px solid #e8222f;min-width:120px;text-align:right}
+  #state.run{color:#e8222f}
+  #stamina{height:3px;width:120px;background:rgba(255,255,255,.3);margin-top:6px;border-radius:2px;overflow:hidden}
+  #stam-fill{height:100%;width:100%;background:#e8222f;transition:width .08s linear}
+  /* Center reticle - faint and minimal, ME style */
+  #retic{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(232,34,47,.85);pointer-events:none;box-shadow:0 0 0 1px rgba(255,255,255,.35),0 0 8px rgba(232,34,47,.6)}
+  /* Falling warning - massive red wash */
+  #fall{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 30%,rgba(232,34,47,.55) 100%);opacity:0;transition:opacity .25s}
+  #fall.on{opacity:1;animation:fallpulse .6s infinite alternate}
+  #fall-msg{position:absolute;top:40%;left:0;right:0;text-align:center;color:#fff;font-size:42px;letter-spacing:14px;font-weight:700;text-shadow:0 4px 24px #000,0 0 30px #e8222f;opacity:0;transition:opacity .15s;pointer-events:none}
+  #fall.on #fall-msg{opacity:1}
+  @keyframes fallpulse{from{filter:brightness(1)}to{filter:brightness(1.25)}}
+  /* Speed lines / motion blur (CSS) */
+  #speed{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.35) 100%);opacity:0;transition:opacity .15s}
+  /* Wall-run tilt overlay — adds an at-the-edge feeling */
+  #wallhint{position:absolute;left:50%;top:55%;color:#e8222f;font-size:11px;letter-spacing:6px;text-transform:uppercase;transform:translateX(-50%);opacity:0;transition:opacity .2s;text-shadow:0 1px 6px #000;pointer-events:none}
+  #wallhint.on{opacity:.8}
+  /* Vault hint */
+  #vaulthint{position:absolute;left:50%;top:62%;color:#fff;font-size:10px;letter-spacing:5px;transform:translateX(-50%);opacity:0;transition:opacity .15s;text-shadow:0 1px 4px #000;pointer-events:none}
+  #vaulthint.on{opacity:.7}
+  /* Title splash */
+  #splash{position:absolute;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50;transition:opacity .6s;cursor:pointer}
+  #splash.hide{opacity:0;pointer-events:none}
+  #splash h1{margin:0;font-size:64px;letter-spacing:14px;color:#e8222f;font-weight:700}
+  #splash h2{margin:6px 0 30px;font-size:11px;letter-spacing:8px;color:#222;font-weight:400}
+  #splash p{font-size:11px;letter-spacing:2.5px;color:#444;margin:0;text-transform:uppercase}
+  #splash .play{margin-top:28px;border:2px solid #e8222f;color:#e8222f;padding:10px 36px;font-size:11px;letter-spacing:6px;text-transform:uppercase}
+  #splash kbd{background:#222;color:#fff;border-radius:3px;padding:1px 5px;margin:0 2px;letter-spacing:1px;font:10px monospace}
+  /* Subtle red corner accent */
+  #cornerR{position:absolute;top:0;right:0;width:80px;height:6px;background:#e8222f;pointer-events:none}
+  #cornerL{position:absolute;bottom:0;left:0;width:80px;height:6px;background:#e8222f;pointer-events:none}
+  #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="hud">
+  <div class="row"><span>Speed</span><b id="sp">0</b></div>
+  <div class="row"><span>Height</span><b id="ht">0 m</b></div>
+  <div class="row"><span>Best</span><b id="best">0.0s</b></div>
+</div>
+<div id="combo">
+  <span class="lbl">Flow</span>
+  <span class="big" id="combobig">0.0</span>
+  <span class="lbl" id="combosub">Begin</span>
+</div>
+<div id="help">
+  <kbd>WASD</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>SPACE</kbd> jump · wall-run &nbsp; <kbd>CTRL</kbd> slide &nbsp; <kbd>R</kbd> restart
+</div>
+<div id="state">Ready</div>
+<div id="speed"></div>
+<div id="retic"></div>
+<div id="wallhint">Wall Run</div>
+<div id="vaulthint">Vault</div>
+<div id="fall"><div id="fall-msg">Falling</div></div>
+<div id="cornerR"></div>
+<div id="cornerL"></div>
+<div id="flash"></div>
+<div id="splash">
+  <h1>FAITH</h1>
+  <h2>ROOFTOP PARKOUR</h2>
+  <p>Click to lock cursor &middot; chain rooftops &middot; never stop moving</p>
+  <p style="margin-top:14px;color:#e8222f">Look for <span style="color:#ffb000">yellow</span> ledges &middot; <span style="color:#e8222f">red</span> pipes are wallruns</p>
+  <div class="play">Play</div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// =========================================================================
+//  ROOFTOP PARKOUR — Mirror's Edge inspired single-file FPS
+// =========================================================================
+
+const stage = document.getElementById('stage');
+const spEl = document.getElementById('sp');
+const htEl = document.getElementById('ht');
+const bestEl = document.getElementById('best');
+const comboBig = document.getElementById('combobig');
+const comboSub = document.getElementById('combosub');
+const stateEl = document.getElementById('state');
+const speedEl = document.getElementById('speed');
+const wallhint = document.getElementById('wallhint');
+const vaulthint = document.getElementById('vaulthint');
+const fallEl = document.getElementById('fall');
+const flashEl = document.getElementById('flash');
+const splash = document.getElementById('splash');
+
+// =========================================================================
+//  RENDERER
+// =========================================================================
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.18;
+renderer.shadowMap.enabled = false;
+stage.appendChild(renderer.domElement);
+
+// =========================================================================
+//  SCENE & CAMERA
+// =========================================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x82c6ff);   // ME bright blue sky
+scene.fog = new THREE.Fog(0xb6def0, 220, 1400); // soft pale fog
+
+const camera = new THREE.PerspectiveCamera(80, innerWidth/innerHeight, 0.1, 5000);
+
+// =========================================================================
+//  LIGHTING (sun + sky)
+// =========================================================================
+const sun = new THREE.DirectionalLight(0xfff4d4, 2.0);
+sun.position.set(180, 300, 60);
+scene.add(sun);
+const skyL = new THREE.HemisphereLight(0xc7e4ff, 0xf4f3f1, 0.85);
+scene.add(skyL);
+const fillL = new THREE.DirectionalLight(0xb8d8ff, 0.25);
+fillL.position.set(-60, 80, -120);
+scene.add(fillL);
+
+// =========================================================================
+//  SKY DOME WITH CLOUDS  (built-in canvas tex, no fetches)
+// =========================================================================
+function buildSkyTexture(){
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 512;
+  const g = c.getContext('2d');
+  // gradient
+  const grd = g.createLinearGradient(0,0,0,512);
+  grd.addColorStop(0,'#5cb1ec');
+  grd.addColorStop(0.45,'#a3d6f4');
+  grd.addColorStop(1,'#e5f1f8');
+  g.fillStyle = grd; g.fillRect(0,0,1024,512);
+  // sun glare
+  const sg = g.createRadialGradient(780,90,5,780,90,260);
+  sg.addColorStop(0,'rgba(255,250,235,1)');
+  sg.addColorStop(0.18,'rgba(255,238,200,.95)');
+  sg.addColorStop(0.45,'rgba(255,225,170,.25)');
+  sg.addColorStop(1,'rgba(255,225,170,0)');
+  g.fillStyle = sg; g.beginPath(); g.arc(780,90,260,0,Math.PI*2); g.fill();
+  // cloud puffs
+  for(let i=0;i<28;i++){
+    const x = Math.random()*1024, y = 60+Math.random()*240;
+    const rx = 60+Math.random()*180, ry = 14+Math.random()*22;
+    const cg = g.createRadialGradient(x,y,2,x,y,Math.max(rx,ry));
+    cg.addColorStop(0,'rgba(255,255,255,.95)');
+    cg.addColorStop(0.5,'rgba(255,255,255,.55)');
+    cg.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle = cg;
+    g.beginPath(); g.ellipse(x,y,rx,ry,0,0,Math.PI*2); g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  return t;
+}
+scene.background = buildSkyTexture();
+
+// =========================================================================
+//  PROCEDURAL ROOFTOP CHAIN
+//  Each rooftop is a "platform" with optional features:
+//  - walls (wall-run candidates), pipes (vertical wall-run, red),
+//  - vault crates (knee-high), ledges, ramps, water tanks (red),
+//  - guard rails. Player must chain them.
+// =========================================================================
+
+// Material library — flat ME palette, slight roughness via vertex tone
+const MAT = {
+  white:   new THREE.MeshLambertMaterial({color: 0xf2f4f7}),
+  whiteB:  new THREE.MeshLambertMaterial({color: 0xeaecf0}),
+  shadow:  new THREE.MeshLambertMaterial({color: 0xc4cbd2}),
+  red:     new THREE.MeshLambertMaterial({color: 0xe8222f}),
+  redD:    new THREE.MeshLambertMaterial({color: 0xb01521}),
+  yellow:  new THREE.MeshLambertMaterial({color: 0xffb000}),
+  orange:  new THREE.MeshLambertMaterial({color: 0xff7a1f}),
+  pipe:    new THREE.MeshLambertMaterial({color: 0xd71e2a}),
+  metal:   new THREE.MeshLambertMaterial({color: 0x9ea4ad}),
+  glass:   new THREE.MeshLambertMaterial({color: 0x7fb6cf, transparent:true, opacity:0.6}),
+  dark:    new THREE.MeshLambertMaterial({color: 0x2a2a2e}),
+  gravel:  new THREE.MeshLambertMaterial({color: 0xcfcdc6}),
+};
+
+// AABBs we use for collision: {min:Vec3, max:Vec3, type:'floor'|'wall'|'vault', tag, normal}
+const colliders = [];
+const wallrunSurfaces = []; // for snapping detection {n, p, w, h, kind}
+const vaultBoxes = [];      // {min,max}
+const platformTops = [];    // {min,max,height} — where we register a "land" event
+let GROUND_Y = -260;        // street level
+
+function addBox(x,y,z, sx,sy,sz, mat, opts={}){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz), mat);
+  m.position.set(x,y,z);
+  scene.add(m);
+  if(opts.collider !== false){
+    colliders.push({
+      min: new THREE.Vector3(x-sx/2, y-sy/2, z-sz/2),
+      max: new THREE.Vector3(x+sx/2, y+sy/2, z+sz/2),
+      type: opts.type || 'solid',
+      tag: opts.tag || null
+    });
+  }
+  return m;
+}
+
+// Build a single rooftop platform with random features
+function buildRooftop(cx, cz, baseH, w, d, idx, prevTopH){
+  const topY = baseH;
+  const wallH = 1.4 + Math.random()*1.0;
+  // BUILDING BODY — long box that goes down to street
+  addBox(cx, baseH - 60, cz, w, 120, d, MAT.white, {type:'solid'});
+  // window strip detail bands (cosmetic, no collider)
+  for(let yy = -8; yy > -110; yy -= 6){
+    const stripY = baseH + yy;
+    addBox(cx, stripY, cz+d/2+0.02, w*0.92, 1.4, 0.05, MAT.dark, {collider:false});
+    addBox(cx, stripY, cz-d/2-0.02, w*0.92, 1.4, 0.05, MAT.dark, {collider:false});
+    addBox(cx+w/2+0.02, stripY, cz, 0.05, 1.4, d*0.88, MAT.dark, {collider:false});
+    addBox(cx-w/2-0.02, stripY, cz, 0.05, 1.4, d*0.88, MAT.dark, {collider:false});
+  }
+  // ROOF DECK — top plate (the floor we stand on)
+  addBox(cx, topY+0.02, cz, w, 0.04, d, MAT.gravel, {collider:false});
+  platformTops.push({
+    min:new THREE.Vector3(cx-w/2, topY-0.5, cz-d/2),
+    max:new THREE.Vector3(cx+w/2, topY+0.5, cz+d/2),
+    height: topY,
+    cx, cz, w, d
+  });
+  // Register the floor as a collider too (so vertical raycasts hit it)
+  colliders.push({
+    min:new THREE.Vector3(cx-w/2, topY-0.4, cz-d/2),
+    max:new THREE.Vector3(cx+w/2, topY+0.04, cz+d/2),
+    type:'floor', tag:'top'
+  });
+
+  // PARAPET (low wall around edge) — open the +X (forward) edge so the player can run off
+  const parH = 0.8 + Math.random()*0.4;
+  const parT = 0.3;
+  // West (back, -X) parapet
+  addBox(cx - w/2 + parT/2, topY + parH/2, cz, parT, parH, d, MAT.white);
+  // North (-Z) parapet — leave a small gap so wider chains don't trap player
+  addBox(cx, topY + parH/2, cz - d/2 + parT/2, w*0.7, parH, parT, MAT.white);
+  // South (+Z) parapet
+  addBox(cx, topY + parH/2, cz + d/2 - parT/2, w*0.7, parH, parT, MAT.white);
+  // East (+X) is OPEN — that's the forward edge. No parapet.
+  // Mark the east edge as the "exit" — yellow ledge highlight
+  const ledgeMat = MAT.yellow;
+  addBox(cx + w/2 - 0.3, topY + 0.06, cz, 0.6, 0.05, d*0.9, ledgeMat, {collider:false});
+
+  // Random feature roll
+  const feature = Math.floor(Math.random()*5);
+
+  // FEATURE 0: WATER TANK on stilts (red)
+  if(feature === 0 && idx > 0){
+    const tx = cx + (Math.random()-0.5)*w*0.4;
+    const tz = cz + (Math.random()-0.5)*d*0.5;
+    // legs
+    for(let lx=-1;lx<=1;lx+=2) for(let lz=-1;lz<=1;lz+=2){
+      addBox(tx+lx*1.2, topY+1.0, tz+lz*1.2, 0.18, 2.0, 0.18, MAT.metal);
+    }
+    // tank body
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,2.4,18), MAT.red);
+    tank.position.set(tx, topY+3.2, tz);
+    scene.add(tank);
+    colliders.push({
+      min:new THREE.Vector3(tx-1.6, topY+2.0, tz-1.6),
+      max:new THREE.Vector3(tx+1.6, topY+4.4, tz+1.6),
+      type:'solid', tag:'tank'
+    });
+    // top cap
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(1.7,0.6,18), MAT.redD);
+    cap.position.set(tx, topY+4.65, tz);
+    scene.add(cap);
+  }
+
+  // FEATURE 1: VAULT CRATES (low boxes, knee-high)
+  if(feature === 1){
+    const groups = 1 + Math.floor(Math.random()*2);
+    for(let g=0;g<groups;g++){
+      const cxv = cx + (Math.random()-0.5)*w*0.4;
+      const czv = cz + (Math.random()-0.5)*d*0.5;
+      const sw = 1.2, sh = 0.85, sd = 0.9;
+      const m = addBox(cxv, topY+sh/2, czv, sw, sh, sd, MAT.orange);
+      vaultBoxes.push({
+        min:new THREE.Vector3(cxv-sw/2, topY, czv-sd/2),
+        max:new THREE.Vector3(cxv+sw/2, topY+sh, czv+sd/2)
+      });
+      // also keep solid collider — vault auto-overrides if running fast
+      colliders[colliders.length-1].type = 'vault';
+    }
+  }
+
+  // FEATURE 2: WALL-RUN WALL (tall narrow wall along travel direction)
+  if(feature === 2 && idx > 1){
+    const wlz = cz + (Math.random()<0.5 ? -1 : 1) * (d*0.32);
+    const wlh = 4.2;
+    const wll = w * 0.8;
+    addBox(cx, topY+wlh/2, wlz, wll, wlh, 0.4, MAT.white);
+    // Red pipe alongside (the wallrun "rail")
+    const pipeY = topY + 1.2;
+    const pipeOffset = wlz > cz ? -0.3 : 0.3; // inside-facing
+    addBox(cx, pipeY, wlz+pipeOffset, wll*0.95, 0.18, 0.18, MAT.pipe, {collider:false});
+    // Register wallrun surface
+    const normal = new THREE.Vector3(0, 0, wlz > cz ? -1 : 1).normalize();
+    wallrunSurfaces.push({
+      kind:'horizontal',
+      normal,
+      origin:new THREE.Vector3(cx, topY, wlz + pipeOffset),
+      length: wll,
+      heightLow: topY + 0.6,
+      heightHigh: topY + 3.6,
+      axis: new THREE.Vector3(1,0,0), // wall extends along X
+      half: wll/2
+    });
+  }
+
+  // FEATURE 3: RAMP (slope you can run up)
+  if(feature === 3){
+    const ramp = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.2, 4.0), MAT.whiteB);
+    const rx = cx + (Math.random()-0.5)*(w*0.35);
+    const rz = cz + (Math.random()-0.5)*(d*0.35);
+    ramp.position.set(rx, topY+1.0, rz);
+    ramp.rotation.x = -0.45;
+    scene.add(ramp);
+    // approximate as raised platform colliders (stair stepping)
+    for(let s=0;s<5;s++){
+      const sh = 0.4 + s*0.4;
+      const sz = rz - 1.5 + s*0.75;
+      colliders.push({
+        min:new THREE.Vector3(rx-1.25, topY, sz-0.4),
+        max:new THREE.Vector3(rx+1.25, topY+sh, sz+0.4),
+        type:'solid', tag:'ramp'
+      });
+    }
+  }
+
+  // FEATURE 4: HVAC / AC unit clusters (low solid)
+  if(feature === 4){
+    for(let n=0;n<2;n++){
+      const ax = cx + (Math.random()-0.5)*w*0.45;
+      const az = cz + (Math.random()-0.5)*d*0.45;
+      addBox(ax, topY+0.6, az, 1.4, 1.2, 1.4, MAT.metal, {type:'solid'});
+      addBox(ax, topY+1.3, az, 1.0, 0.2, 1.0, MAT.dark, {collider:false});
+    }
+  }
+
+  // Always: a red rooftop door (visual landmark)
+  if(Math.random() < 0.55){
+    const dx = cx + (Math.random()-0.5)*(w*0.3);
+    const dz = cz - d/2 + 1.0;
+    addBox(dx, topY+1.4, dz, 1.6, 2.6, 1.0, MAT.white);
+    addBox(dx, topY+1.2, dz+0.55, 0.9, 1.9, 0.05, MAT.red, {collider:false});
+    addBox(dx, topY+2.7, dz, 1.7, 0.2, 1.05, MAT.redD); // canopy
+  }
+
+  // antennae (decoration)
+  if(Math.random()<0.35){
+    const ax = cx + (Math.random()-0.5)*w*0.3;
+    const az = cz + (Math.random()-0.5)*d*0.3;
+    addBox(ax, topY+3.0, az, 0.05, 6.0, 0.05, MAT.dark, {collider:false});
+    addBox(ax, topY+5.5, az, 0.6, 0.05, 0.05, MAT.dark, {collider:false});
+  }
+
+  return {topY, cx, cz, w, d};
+}
+
+// Build the chain
+function buildCity(){
+  let x = 0, z = 0;
+  let baseH = 0;
+  let prevH = 0;
+  const N = 28;
+  const positions = [];
+  for(let i=0;i<N;i++){
+    const w = 9 + Math.random()*5;
+    const d = 8 + Math.random()*4;
+    const r = buildRooftop(x, z, baseH, w, d, i, prevH);
+    positions.push({x, z, w, d, h: baseH});
+    // step forward (+X). Sometimes lateral wiggle.
+    const gap = 4 + Math.random()*3 + (i>5?Math.random()*2:0);
+    x += r.w/2 + gap + w/2;
+    // small Z drift
+    z += (Math.random()-0.5) * 6 * (i>2?1:0);
+    // height variation: occasionally drop or rise
+    prevH = baseH;
+    const dh = (Math.random()-0.5) * 4;
+    baseH = Math.max(-6, Math.min(8, baseH + dh));
+    if(i % 6 === 5) baseH += (Math.random()<0.5?-3:2);
+  }
+  return positions;
+}
+const cityRoofs = buildCity();
+
+// =========================================================================
+//  STREETS BELOW (for the sense of height)
+// =========================================================================
+function buildStreets(){
+  const streetMat = new THREE.MeshLambertMaterial({color:0x4a4a4d});
+  const street = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), streetMat);
+  street.rotation.x = -Math.PI/2;
+  street.position.y = GROUND_Y;
+  scene.add(street);
+
+  // road stripes for parallax
+  const stripeMat = new THREE.MeshBasicMaterial({color:0xc4c2b8});
+  for(let i=-12;i<12;i++){
+    for(let s=0;s<22;s++){
+      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.3), stripeMat);
+      stripe.rotation.x = -Math.PI/2;
+      stripe.position.set(i*22 + Math.sin(s)*0.4, GROUND_Y+0.1, -200 + s*22);
+      scene.add(stripe);
+    }
+  }
+
+  // tiny cars (animated later)
+  const carMatA = new THREE.MeshLambertMaterial({color:0xe8222f});
+  const carMatB = new THREE.MeshLambertMaterial({color:0xfff7e8});
+  const carMatC = new THREE.MeshLambertMaterial({color:0x2c5da6});
+  const cars = [];
+  for(let i=0;i<70;i++){
+    const m = [carMatA,carMatB,carMatC,carMatB,carMatB][i%5];
+    const c = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.0, 4.5), m);
+    c.position.set(-200 + Math.random()*400, GROUND_Y+0.6, -200 + Math.random()*900);
+    const dir = (Math.random()<0.5?1:-1);
+    cars.push({mesh:c, vx:0, vz: dir*(8 + Math.random()*8), lane: Math.round((c.position.x)/8)*8});
+    scene.add(c);
+  }
+
+  // tiny people walking on sidewalk
+  const personMat = new THREE.MeshLambertMaterial({color:0x222});
+  const people = [];
+  for(let i=0;i<40;i++){
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.4), personMat);
+    p.position.set(-180+Math.random()*360, GROUND_Y+0.9, -200+Math.random()*900);
+    people.push({mesh:p, vx:(Math.random()-0.5)*0.6, vz:(Math.random()-0.5)*0.6});
+    scene.add(p);
+  }
+
+  return {cars, people};
+}
+const traffic = buildStreets();
+
+// =========================================================================
+//  BACKGROUND CITY (distant skyline, just decoration)
+// =========================================================================
+function buildSkyline(){
+  const grp = new THREE.Group();
+  const colors = [0xeaeaea, 0xdadce0, 0xc8ced4, 0xb8c0c8];
+  for(let i=0;i<200;i++){
+    const ang = Math.random()*Math.PI*2;
+    const dist = 380 + Math.random()*620;
+    const w = 12+Math.random()*30;
+    const d = 12+Math.random()*30;
+    const h = 30+Math.random()*180;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({color:colors[i%4]}));
+    m.position.set(Math.cos(ang)*dist, GROUND_Y + h/2, Math.sin(ang)*dist);
+    grp.add(m);
+  }
+  scene.add(grp);
+}
+buildSkyline();
+
+// =========================================================================
+//  PLAYER & PHYSICS
+// =========================================================================
+const PLAYER_HEIGHT = 1.7;
+const PLAYER_RADIUS = 0.32;
+const player = {
+  pos: new THREE.Vector3(cityRoofs[0].x - 1, cityRoofs[0].h + PLAYER_HEIGHT, cityRoofs[0].z),
+  vel: new THREE.Vector3(),
+  yaw: 0,
+  pitch: 0,
+  onGround: true,
+  isSprinting:false,
+  isSliding:false,
+  slideTimer:0,
+  isVaulting:false,
+  vaultTimer:0,
+  vaultStart: new THREE.Vector3(),
+  vaultEnd: new THREE.Vector3(),
+  isWallRun:false,
+  wallrun: null,
+  wallrunTimer:0,
+  wallrunSide: 0,    // -1 left / +1 right
+  stamina: 1.0,
+  fov: 80,
+  cameraRoll: 0,
+  cameraBob: 0,
+  bobPhase: 0,
+  airborneTime: 0,
+  lastGroundY: 0,
+  fallingHard: false,
+  groundContactSurface: 'concrete',
+  // arms
+  armPhase: 0,
+  armReach: 0,
+};
+camera.position.copy(player.pos);
+let yaw = Math.PI/2, pitch = 0; // face +X (rooftops chain in +X direction)
+
+// =========================================================================
+//  HANDS / FOV ARMS (first-person body presence, ME signature)
+// =========================================================================
+const hands = new THREE.Group();
+camera.add(hands);
+scene.add(camera);
+
+const handMat = new THREE.MeshLambertMaterial({color: 0xf3d8c4}); // skin
+const sleeveMat = new THREE.MeshLambertMaterial({color: 0xf2f4f7}); // white
+const watchMat = new THREE.MeshLambertMaterial({color: 0xe8222f}); // red wristband
+
+function buildHand(side){
+  // side: -1 left, +1 right
+  const g = new THREE.Group();
+  const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.10, 0.30), sleeveMat);
+  sleeve.position.set(0, 0, -0.18);
+  g.add(sleeve);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.105, 0.04), watchMat);
+  band.position.set(0, 0, -0.04);
+  g.add(band);
+  const fist = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.13), handMat);
+  fist.position.set(0, -0.005, 0.05);
+  g.add(fist);
+  g.position.set(side * 0.22, -0.20, -0.36);
+  return g;
+}
+const handL = buildHand(-1);
+const handR = buildHand(1);
+hands.add(handL); hands.add(handR);
+
+// =========================================================================
+//  AUDIO — Web Audio synth (footsteps, wind, whoosh, breath, music)
+// =========================================================================
+const audio = {
+  ctx: null,
+  master: null,
+  musicGain: null,
+  windGain: null,
+  windNode: null,
+  breathGain: null,
+  initialized: false
+};
+
+function initAudio(){
+  if(audio.initialized) return;
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  audio.ctx = ctx;
+  audio.master = ctx.createGain();
+  audio.master.gain.value = 0.6;
+  audio.master.connect(ctx.destination);
+
+  // -----  WIND (white noise → bandpass) -----
+  const bufferSize = 2 * ctx.sampleRate;
+  const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const out = noiseBuffer.getChannelData(0);
+  for(let i=0;i<bufferSize;i++) out[i] = Math.random()*2-1;
+  const wn = ctx.createBufferSource();
+  wn.buffer = noiseBuffer; wn.loop = true;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'lowpass';
+  bp.frequency.value = 700;
+  const wg = ctx.createGain();
+  wg.gain.value = 0.05;
+  wn.connect(bp); bp.connect(wg); wg.connect(audio.master);
+  wn.start();
+  audio.windGain = wg;
+  audio.windFilter = bp;
+
+  // ----- BREATH (slow filtered noise burst, gain modulated) -----
+  const bg = ctx.createGain(); bg.gain.value = 0;
+  const breath = ctx.createBufferSource();
+  breath.buffer = noiseBuffer; breath.loop = true;
+  const bbf = ctx.createBiquadFilter();
+  bbf.type = 'bandpass'; bbf.frequency.value = 380; bbf.Q.value = 1;
+  breath.connect(bbf); bbf.connect(bg); bg.connect(audio.master);
+  breath.start();
+  audio.breathGain = bg;
+
+  // ----- MUSIC: minimalist DnB-lite via web audio -----
+  // bass arpeggio + closed-hat shuffle + occasional pad swell.
+  const musicGain = ctx.createGain();
+  musicGain.gain.value = 0.18;
+  musicGain.connect(audio.master);
+  audio.musicGain = musicGain;
+
+  // bassline
+  const bassNotes = [55, 55, 73.42, 65.41, 55, 82.41, 73.42, 65.41]; // A1, A1, D2, C2, A1, E2, D2, C2
+  let step = 0;
+  const bpm = 158;
+  const stepDur = 60/bpm/2; // 16th notes
+  function scheduleStep(){
+    const t = ctx.currentTime;
+    // kick on 1, 5
+    if(step % 8 === 0 || step % 8 === 6){
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type='sine'; o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(45, t+0.13);
+      g.gain.setValueAtTime(0.95, t); g.gain.exponentialRampToValueAtTime(0.001, t+0.14);
+      o.connect(g); g.connect(musicGain);
+      o.start(t); o.stop(t+0.16);
+    }
+    // snare on 3, 7
+    if(step % 8 === 4){
+      const sn = ctx.createBufferSource(); sn.buffer = noiseBuffer;
+      const sg = ctx.createGain();
+      const sf = ctx.createBiquadFilter(); sf.type='highpass'; sf.frequency.value=1500;
+      sn.connect(sf); sf.connect(sg); sg.connect(musicGain);
+      sg.gain.setValueAtTime(0.45,t); sg.gain.exponentialRampToValueAtTime(0.001, t+0.12);
+      sn.start(t); sn.stop(t+0.14);
+    }
+    // hat
+    if(step % 2 === 1){
+      const h = ctx.createBufferSource(); h.buffer = noiseBuffer;
+      const hg = ctx.createGain();
+      const hf = ctx.createBiquadFilter(); hf.type='highpass'; hf.frequency.value=6500;
+      h.connect(hf); hf.connect(hg); hg.connect(musicGain);
+      hg.gain.setValueAtTime(0.10,t); hg.gain.exponentialRampToValueAtTime(0.001, t+0.04);
+      h.start(t); h.stop(t+0.05);
+    }
+    // bass arp
+    if(step % 2 === 0){
+      const f = bassNotes[(step/2|0) % bassNotes.length];
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      const lo = ctx.createBiquadFilter(); lo.type='lowpass'; lo.frequency.value = 700;
+      o.type='sawtooth'; o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t+0.35);
+      o.connect(lo); lo.connect(g); g.connect(musicGain);
+      o.start(t); o.stop(t+0.36);
+    }
+    // pad swell every 16 steps
+    if(step % 32 === 0){
+      const o = ctx.createOscillator(); const o2 = ctx.createOscillator();
+      const g = ctx.createGain();
+      const lo = ctx.createBiquadFilter(); lo.type='lowpass'; lo.frequency.value = 1200;
+      o.type='sawtooth'; o.frequency.value = 220;
+      o2.type='sawtooth'; o2.frequency.value = 277.18;
+      o.connect(lo); o2.connect(lo); lo.connect(g); g.connect(musicGain);
+      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.08, t+1.4); g.gain.linearRampToValueAtTime(0, t+3.2);
+      o.start(t); o2.start(t); o.stop(t+3.4); o2.stop(t+3.4);
+    }
+    step++;
+  }
+  setInterval(scheduleStep, stepDur*1000);
+
+  audio.initialized = true;
+}
+
+// One-shot SFX
+function playFootstep(surface){
+  if(!audio.ctx) return;
+  const t = audio.ctx.currentTime;
+  const buf = audio.ctx.createBuffer(1, audio.ctx.sampleRate*0.08, audio.ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/d.length, 2);
+  const src = audio.ctx.createBufferSource(); src.buffer = buf;
+  const g = audio.ctx.createGain();
+  const f = audio.ctx.createBiquadFilter();
+  if(surface === 'slide'){
+    f.type='lowpass'; f.frequency.value = 1800; g.gain.value = 0.20;
+  } else if(surface === 'wallrun'){
+    f.type='bandpass'; f.frequency.value = 1200; g.gain.value = 0.18;
+  } else {
+    f.type='lowpass'; f.frequency.value = 600; g.gain.value = 0.12;
+  }
+  src.connect(f); f.connect(g); g.connect(audio.master);
+  src.start(t); src.stop(t+0.09);
+}
+
+function playWhoosh(){
+  if(!audio.ctx) return;
+  const t = audio.ctx.currentTime;
+  const buf = audio.ctx.createBuffer(1, audio.ctx.sampleRate*0.6, audio.ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * Math.exp(-i/(d.length*0.4));
+  const src = audio.ctx.createBufferSource(); src.buffer = buf;
+  const g = audio.ctx.createGain(); g.gain.value = 0.32;
+  const f = audio.ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value = 900;
+  // sweep filter for "whoosh"
+  f.frequency.setValueAtTime(280, t);
+  f.frequency.exponentialRampToValueAtTime(2400, t+0.35);
+  src.connect(f); f.connect(g); g.connect(audio.master);
+  src.start(t); src.stop(t+0.5);
+}
+
+function playJump(){
+  if(!audio.ctx) return;
+  const t = audio.ctx.currentTime;
+  const buf = audio.ctx.createBuffer(1, audio.ctx.sampleRate*0.18, audio.ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/d.length, 1.5);
+  const src = audio.ctx.createBufferSource(); src.buffer = buf;
+  const f = audio.ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value = 380;
+  const g = audio.ctx.createGain(); g.gain.value = 0.18;
+  src.connect(f); f.connect(g); g.connect(audio.master);
+  src.start(t); src.stop(t+0.2);
+}
+
+function playLand(hard){
+  if(!audio.ctx) return;
+  const t = audio.ctx.currentTime;
+  const o = audio.ctx.createOscillator();
+  const g = audio.ctx.createGain();
+  o.type='sine'; o.frequency.setValueAtTime(hard?60:90, t);
+  o.frequency.exponentialRampToValueAtTime(40, t+0.18);
+  g.gain.setValueAtTime(hard?0.55:0.28, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t+0.22);
+  o.connect(g); g.connect(audio.master);
+  o.start(t); o.stop(t+0.24);
+}
+
+// =========================================================================
+//  INPUT
+// =========================================================================
+const keys = {};
+addEventListener('keydown', e=>{ keys[e.code]=true; if(['Space','ShiftLeft','ControlLeft','KeyR'].includes(e.code)) e.preventDefault(); });
+addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+let pointerLocked = false;
+addEventListener('mousemove', e=>{
+  if(!pointerLocked) return;
+  yaw -= e.movementX * 0.0024;
+  pitch -= e.movementY * 0.0024;
+  pitch = Math.max(-Math.PI/2 + 0.05, Math.min(Math.PI/2 - 0.05, pitch));
+});
+function lockPointer(){
+  renderer.domElement.requestPointerLock?.();
+}
+document.addEventListener('pointerlockchange', ()=>{
+  pointerLocked = (document.pointerLockElement === renderer.domElement);
+});
+
+splash.addEventListener('click', ()=>{
+  splash.classList.add('hide');
+  initAudio();
+  if(audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume();
+  lockPointer();
+});
+
+// =========================================================================
+//  COLLISION HELPERS
+// =========================================================================
+function pointInBox(p, b){ return p.x >= b.min.x && p.x <= b.max.x && p.y >= b.min.y && p.y <= b.max.y && p.z >= b.min.z && p.z <= b.max.z; }
+
+// Collide a vertical capsule (the player) against AABBs by axis separation
+function moveAndCollide(dt){
+  const r = PLAYER_RADIUS;
+  const h = PLAYER_HEIGHT;
+  // x axis
+  player.pos.x += player.vel.x * dt;
+  resolveAxis('x');
+  // z axis
+  player.pos.z += player.vel.z * dt;
+  resolveAxis('z');
+  // y axis
+  player.pos.y += player.vel.y * dt;
+  const grounded = resolveAxis('y');
+  return grounded;
+}
+function resolveAxis(axis){
+  const r = PLAYER_RADIUS;
+  const headY = player.pos.y;
+  const footY = player.pos.y - PLAYER_HEIGHT + (player.isSliding?0.7:0);
+  const torsoY = player.pos.y - PLAYER_HEIGHT/2;
+  let grounded = false;
+  for(const b of colliders){
+    // capsule lower/upper bound
+    const lowY = footY;
+    const highY = headY;
+    if(highY < b.min.y || lowY > b.max.y) continue;
+    if(player.pos.x + r < b.min.x || player.pos.x - r > b.max.x) continue;
+    if(player.pos.z + r < b.min.z || player.pos.z - r > b.max.z) continue;
+
+    if(axis === 'y'){
+      if(player.vel.y <= 0){
+        // landing: set foot to top of box
+        const topY = b.max.y;
+        const newY = topY + PLAYER_HEIGHT;
+        if(player.pos.y - PLAYER_HEIGHT < topY && player.pos.y - PLAYER_HEIGHT > topY - 0.6){
+          player.pos.y = newY;
+          player.vel.y = 0;
+          grounded = true;
+        }
+      } else {
+        // bonk head
+        if(headY > b.min.y && headY - 0.4 < b.min.y){
+          player.pos.y = b.min.y - 0.05;
+          player.vel.y = 0;
+        }
+      }
+    } else if(axis === 'x'){
+      // resolve only if the player center is below the top (i.e. didn't already land)
+      if(highY > b.min.y + 0.05 && lowY < b.max.y - 0.05){
+        if(player.vel.x > 0){ player.pos.x = b.min.x - r; }
+        else if(player.vel.x < 0){ player.pos.x = b.max.x + r; }
+        // we'll mark for wall snap later
+        player.lastWallNormal = new THREE.Vector3(player.vel.x>0?-1:1, 0, 0);
+        player.lastWallY = (b.min.y + b.max.y) / 2;
+        player.lastWallTag = b.tag;
+        // kill x velocity into wall (wall-run state will reuse)
+        if(!player.isWallRun) player.vel.x = 0;
+      }
+    } else if(axis === 'z'){
+      if(highY > b.min.y + 0.05 && lowY < b.max.y - 0.05){
+        if(player.vel.z > 0){ player.pos.z = b.min.z - r; }
+        else if(player.vel.z < 0){ player.pos.z = b.max.z + r; }
+        player.lastWallNormal = new THREE.Vector3(0,0,player.vel.z>0?-1:1);
+        player.lastWallY = (b.min.y+b.max.y)/2;
+        player.lastWallTag = b.tag;
+        if(!player.isWallRun) player.vel.z = 0;
+      }
+    }
+  }
+  return grounded;
+}
+
+// =========================================================================
+//  WALL-RUN DETECTION
+//  For a wallrun we need: airborne or coyote-frame, holding W and Space,
+//  and a wall within ~0.6m to either side.
+// =========================================================================
+function detectWallrun(){
+  // Sample left & right rays at torso height
+  const torsoY = player.pos.y - PLAYER_HEIGHT/2;
+  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+  const right = new THREE.Vector3(Math.sin(yaw - Math.PI/2), 0, Math.cos(yaw - Math.PI/2)).normalize();
+
+  for(const side of [-1, 1]){
+    const samplePos = new THREE.Vector3().copy(player.pos);
+    samplePos.y = torsoY;
+    samplePos.addScaledVector(right, side * 0.7);
+    // Check if a collider is touching this point
+    for(const b of colliders){
+      if(b.type === 'floor') continue;
+      if(samplePos.x < b.min.x - 0.05 || samplePos.x > b.max.x + 0.05) continue;
+      if(samplePos.z < b.min.z - 0.05 || samplePos.z > b.max.z + 0.05) continue;
+      if(samplePos.y < b.min.y || samplePos.y > b.max.y) continue;
+      // box must be tall enough
+      if((b.max.y - b.min.y) < 1.6) continue;
+      // make sure the wall is roughly perpendicular to forward direction
+      const cx = (b.min.x+b.max.x)/2, cz = (b.min.z+b.max.z)/2;
+      const wallNormal = new THREE.Vector3(player.pos.x - cx, 0, player.pos.z - cz).normalize();
+      // forward dot wallNormal should be near zero (we're moving along the wall)
+      const fdot = Math.abs(forward.dot(wallNormal));
+      if(fdot > 0.85) continue; // wall is in front of us, not parallel
+      return {side, wallNormal, box:b, samplePos:samplePos.clone()};
+    }
+  }
+  return null;
+}
+
+// =========================================================================
+//  VAULT DETECTION
+//  Forward at chest height, see a vault box close. Trigger smooth move over.
+// =========================================================================
+function detectVault(){
+  if(player.isVaulting) return null;
+  if(player.vel.length() < 4) return null;
+  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+  const probe = player.pos.clone().addScaledVector(forward, 0.7);
+  for(const v of vaultBoxes){
+    if(probe.x < v.min.x-0.1 || probe.x > v.max.x+0.1) continue;
+    if(probe.z < v.min.z-0.1 || probe.z > v.max.z+0.1) continue;
+    // box top must be near hip height
+    const topY = v.max.y;
+    const hipY = player.pos.y - 0.9;
+    if(topY > hipY + 0.4 || topY < hipY - 0.6) continue;
+    return v;
+  }
+  return null;
+}
+
+// =========================================================================
+//  COMBO SYSTEM
+// =========================================================================
+const combo = {
+  active:false,
+  startedAt:0,
+  duration:0,
+  best: parseFloat(localStorage.getItem('parkourBest')||'0'),
+  lastFlowEvent:0
+};
+
+function feedFlow(){
+  combo.lastFlowEvent = performance.now();
+  if(!combo.active){
+    combo.active = true;
+    combo.startedAt = performance.now();
+  }
+}
+function breakCombo(reason){
+  if(combo.active){
+    if(combo.duration > combo.best){
+      combo.best = combo.duration;
+      localStorage.setItem('parkourBest', combo.best.toFixed(2));
+      flashFlow();
+    }
+  }
+  combo.active = false;
+  combo.duration = 0;
+  comboSub.textContent = reason || 'Stopped';
+}
+function flashFlow(){
+  flashEl.style.opacity = 1;
+  setTimeout(()=>flashEl.style.opacity = 0, 160);
+}
+
+// =========================================================================
+//  RESPAWN / FALL
+// =========================================================================
+function respawn(){
+  player.pos.set(cityRoofs[0].x - 1, cityRoofs[0].h + PLAYER_HEIGHT, cityRoofs[0].z);
+  player.vel.set(0,0,0);
+  player.isWallRun = false; player.isSliding = false; player.isVaulting = false;
+  player.fallingHard = false;
+  fallEl.classList.remove('on');
+  yaw = Math.PI/2; pitch = 0;
+  breakCombo('Restart');
+}
+
+// =========================================================================
+//  MAIN LOOP
+// =========================================================================
+let last = performance.now();
+let footTimer = 0;
+
+function tick(now){
+  const dt = Math.min(0.040, (now - last)/1000);
+  last = now;
+
+  // ----- INPUT VECTOR (camera-relative) -----
+  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+  const right = new THREE.Vector3(Math.sin(yaw - Math.PI/2), 0, Math.cos(yaw - Math.PI/2)).normalize();
+  const wish = new THREE.Vector3();
+  if(keys['KeyW']) wish.add(forward);
+  if(keys['KeyS']) wish.sub(forward);
+  if(keys['KeyD']) wish.add(right);
+  if(keys['KeyA']) wish.sub(right);
+  const wishSpeed = wish.length();
+  if(wishSpeed > 0) wish.normalize();
+
+  player.isSprinting = !!keys['ShiftLeft'] && wishSpeed > 0.1;
+
+  // -----  WALL RUN INITIATE -----
+  if(!player.onGround && !player.isWallRun && keys['Space'] && keys['KeyW']){
+    const wr = detectWallrun();
+    if(wr && player.vel.y < 4 && new THREE.Vector2(player.vel.x, player.vel.z).length() > 4){
+      player.isWallRun = true;
+      player.wallrun = wr;
+      player.wallrunSide = wr.side;
+      player.wallrunTimer = 1.6; // seconds max
+      player.vel.y = Math.max(player.vel.y, 1.2);
+      // align velocity along the wall (project onto wall plane)
+      const v = player.vel.clone();
+      const n = wr.wallNormal;
+      const t = v.clone().sub(n.clone().multiplyScalar(v.dot(n)));
+      t.y = 0;
+      const speed = Math.max(8, t.length());
+      t.normalize().multiplyScalar(speed);
+      player.vel.x = t.x;
+      player.vel.z = t.z;
+      playWhoosh();
+      feedFlow();
+    }
+  }
+
+  // ----- WALL RUN UPDATE -----
+  if(player.isWallRun){
+    player.wallrunTimer -= dt;
+    // Reduced gravity, slight pull toward wall, slight upward boost early
+    player.vel.y -= 6.0 * dt;
+    if(player.wallrunTimer > 1.3) player.vel.y = Math.max(player.vel.y, 2.5);
+    // Apply pull
+    player.vel.x += -player.wallrun.wallNormal.x * 4 * dt;
+    player.vel.z += -player.wallrun.wallNormal.z * 4 * dt;
+    // Camera roll
+    player.cameraRoll += (player.wallrunSide * 0.18 - player.cameraRoll) * 0.18;
+    // Hint
+    wallhint.classList.add('on');
+    // Footsteps
+    footTimer -= dt;
+    if(footTimer <= 0){ playFootstep('wallrun'); footTimer = 0.22; }
+    // Exit conditions: timer, look away from wall, hit ground, jump press release
+    const lookAway = forward.dot(new THREE.Vector3(-player.wallrun.wallNormal.x, 0, -player.wallrun.wallNormal.z)) < 0.0;
+    if(player.wallrunTimer <= 0 || lookAway || player.onGround || !keys['KeyW']){
+      player.isWallRun = false;
+      // little jump off if pressing space
+      if(keys['Space']){
+        player.vel.y = 7.5;
+        player.vel.x += player.wallrun.wallNormal.x * 5;
+        player.vel.z += player.wallrun.wallNormal.z * 5;
+        playJump();
+      }
+      player.wallrun = null;
+    }
+  } else {
+    wallhint.classList.remove('on');
+    player.cameraRoll += (0 - player.cameraRoll) * 0.16;
+  }
+
+  // ----- VAULT DETECTION -----
+  const vaultable = detectVault();
+  if(vaultable && wishSpeed > 0 && !player.isWallRun){
+    vaulthint.classList.add('on');
+    if(!player.isVaulting){
+      player.isVaulting = true;
+      player.vaultTimer = 0.34;
+      player.vaultStart.copy(player.pos);
+      const fwd = new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+      player.vaultEnd.copy(player.pos).addScaledVector(fwd, 1.7);
+      player.vaultEnd.y = vaultable.max.y + PLAYER_HEIGHT + 0.05;
+      playFootstep('slide');
+      feedFlow();
+    }
+  } else {
+    vaulthint.classList.remove('on');
+  }
+  if(player.isVaulting){
+    player.vaultTimer -= dt;
+    const t = 1 - Math.max(0, player.vaultTimer / 0.34);
+    const ease = t<0.5 ? 2*t*t : 1 - Math.pow(-2*t+2,2)/2;
+    player.pos.lerpVectors(player.vaultStart, player.vaultEnd, ease);
+    player.vel.y = 0;
+    // hands reach forward
+    player.armReach = Math.max(player.armReach, 1.0);
+    if(player.vaultTimer <= 0){
+      player.isVaulting = false;
+      const fwd = new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw)).multiplyScalar(8);
+      player.vel.x = fwd.x; player.vel.z = fwd.z;
+    }
+  }
+
+  // ----- SLIDE -----
+  if(!player.isSliding && !player.isWallRun && player.onGround && keys['ControlLeft'] && new THREE.Vector2(player.vel.x, player.vel.z).length() > 5){
+    player.isSliding = true;
+    player.slideTimer = 0.85;
+    feedFlow();
+    playFootstep('slide');
+  }
+  if(player.isSliding){
+    player.slideTimer -= dt;
+    // friction lighter than walking; preserve speed
+    const horiz = new THREE.Vector2(player.vel.x, player.vel.z);
+    horiz.multiplyScalar(0.985);
+    player.vel.x = horiz.x; player.vel.z = horiz.y;
+    if(player.slideTimer <= 0 || !player.onGround || !keys['ControlLeft']){
+      player.isSliding = false;
+    }
+  }
+
+  // ----- HORIZONTAL MOVEMENT -----
+  if(!player.isVaulting && !player.isWallRun){
+    let maxSpd = player.isSprinting ? 12 : 7;
+    if(player.isSliding) maxSpd = 10;
+    const accel = player.onGround ? 60 : 14; // air control
+    const horiz = new THREE.Vector3(player.vel.x, 0, player.vel.z);
+    const target = wish.clone().multiplyScalar(maxSpd);
+    const delta = target.clone().sub(horiz).multiplyScalar(Math.min(1, accel*dt/Math.max(1,target.length())));
+    if(player.onGround && !player.isSliding){
+      player.vel.x = horiz.x + delta.x;
+      player.vel.z = horiz.z + delta.z;
+      // ground friction when no input
+      if(wishSpeed === 0){
+        player.vel.x *= 0.85;
+        player.vel.z *= 0.85;
+      }
+    } else if(!player.isSliding){
+      // air control: lighter influence, but preserve momentum
+      player.vel.x += wish.x * 12 * dt;
+      player.vel.z += wish.z * 12 * dt;
+      // soft cap in air
+      const hsp = Math.hypot(player.vel.x, player.vel.z);
+      const cap = Math.max(maxSpd, hsp); // never reduce
+      const k = cap/Math.max(0.001, hsp);
+      // Don't actively cap; just don't grow above starting speed when accelerated by air control alone
+    }
+  }
+
+  // ----- JUMP -----
+  if(keys['Space'] && player.onGround && !player.isWallRun && !player.isSliding){
+    player.vel.y = 8.0;
+    player.onGround = false;
+    playJump();
+    if(new THREE.Vector2(player.vel.x, player.vel.z).length() > 5) feedFlow();
+  }
+
+  // ----- GRAVITY -----
+  if(!player.isWallRun && !player.isVaulting){
+    player.vel.y -= 22.0 * dt;
+    if(player.vel.y < -55) player.vel.y = -55;
+  }
+
+  // ----- COLLIDE & MOVE -----
+  if(!player.isVaulting){
+    const wasGround = player.onGround;
+    const grounded = moveAndCollide(dt);
+    player.onGround = grounded;
+    if(grounded && !wasGround){
+      // landing
+      const fallY = player.lastGroundY - player.pos.y;
+      const hard = player.airborneTime > 0.35;
+      playLand(hard);
+      // momentum preservation: don't kill horizontal speed (already preserved)
+      if(combo.active && new THREE.Vector2(player.vel.x, player.vel.z).length() > 4){
+        // keep flow alive on smooth landings
+      }
+      player.airborneTime = 0;
+    } else if(!grounded){
+      player.airborneTime += dt;
+    } else {
+      player.airborneTime = 0;
+    }
+    if(grounded) player.lastGroundY = player.pos.y;
+  }
+
+  // ----- FALL DETECTION -----
+  const isFalling = (player.pos.y - PLAYER_HEIGHT) < (GROUND_Y + 50) && player.vel.y < -1;
+  if(isFalling){
+    fallEl.classList.add('on');
+    player.fallingHard = true;
+  } else {
+    fallEl.classList.remove('on');
+  }
+  if(player.pos.y < GROUND_Y + 5){
+    // splat & respawn
+    setTimeout(respawn, 250);
+    flashEl.style.background = '#e8222f';
+    flashEl.style.opacity = 1;
+    setTimeout(()=>{ flashEl.style.opacity = 0; flashEl.style.background = '#fff'; }, 350);
+  }
+
+  if(keys['KeyR']){
+    keys['KeyR'] = false;
+    respawn();
+  }
+
+  // ----- COMBO -----
+  if(combo.active){
+    combo.duration = (performance.now() - combo.startedAt) / 1000;
+    // break if standing still
+    const speed = Math.hypot(player.vel.x, player.vel.z);
+    const sinceFlow = (performance.now() - combo.lastFlowEvent)/1000;
+    if(speed < 1.2 && player.onGround && sinceFlow > 0.6){
+      breakCombo('Stopped');
+    }
+  } else if(player.isSprinting && player.onGround) {
+    // sprint feeds the flow gradually
+    feedFlow();
+  }
+
+  // ----- FOOTSTEP TIMING (ground) -----
+  if(player.onGround && !player.isSliding && !player.isWallRun){
+    const sp = Math.hypot(player.vel.x, player.vel.z);
+    if(sp > 1.5){
+      footTimer -= dt * (sp/8);
+      if(footTimer <= 0){
+        playFootstep('concrete');
+        footTimer = player.isSprinting ? 0.28 : 0.42;
+      }
+    }
+  }
+
+  // ----- AUDIO modulation -----
+  if(audio.initialized){
+    // wind based on height
+    const heightAboveGround = player.pos.y - GROUND_Y;
+    const windFactor = Math.min(1, heightAboveGround / 350);
+    audio.windGain.gain.value = 0.05 + windFactor * 0.18 + (Math.hypot(player.vel.x,player.vel.z)/20)*0.05;
+    audio.windFilter.frequency.value = 500 + windFactor * 800;
+    // breathing scales with sprint + stamina
+    const sprintLoad = player.isSprinting ? 1 : 0;
+    player.stamina += (1 - sprintLoad*0.5 - 0.5) * dt * 0.4;
+    player.stamina = Math.max(0, Math.min(1, player.stamina));
+    audio.breathGain.gain.value = (player.isSprinting?0.10:0.04) * (1 - player.stamina*0.5);
+  }
+
+  // ----- FOV WIDENING WITH SPEED -----
+  const speed = Math.hypot(player.vel.x, player.vel.z);
+  const targetFov = 80 + Math.min(20, speed * 0.6) + (player.isWallRun?6:0) + (player.isSliding?4:0);
+  player.fov += (targetFov - player.fov) * Math.min(1, dt*6);
+  camera.fov = player.fov;
+  camera.updateProjectionMatrix();
+  speedEl.style.opacity = Math.min(0.7, (speed-7)/14);
+
+  // ----- CAMERA POSITION + BOB -----
+  player.bobPhase += dt * (player.onGround ? speed * 1.6 : 0);
+  const bobY = Math.sin(player.bobPhase) * 0.04 * Math.min(1, speed/10);
+  const bobX = Math.cos(player.bobPhase*0.5) * 0.03 * Math.min(1, speed/10);
+  camera.position.copy(player.pos);
+  camera.position.y += bobY - (player.isSliding ? 0.5 : 0);
+  camera.position.x += bobX * 0.3;
+  // look
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+  camera.rotation.z = player.cameraRoll;
+
+  // ----- HANDS ANIMATION -----
+  player.armReach += (0 - player.armReach) * 0.14;
+  // bob hands with steps
+  const handBob = Math.sin(player.bobPhase + Math.PI/2) * 0.04 * Math.min(1, speed/10);
+  handL.position.set(-0.22, -0.20 + handBob, -0.36 - player.armReach*0.18);
+  handR.position.set( 0.22, -0.20 - handBob, -0.36 - player.armReach*0.18);
+  // wallrun arm extension
+  if(player.isWallRun){
+    if(player.wallrunSide < 0){
+      handL.position.set(-0.30, -0.05, -0.32);
+      handL.rotation.z = 0.6;
+    } else {
+      handR.position.set(0.30, -0.05, -0.32);
+      handR.rotation.z = -0.6;
+    }
+  } else {
+    handL.rotation.z = 0; handR.rotation.z = 0;
+  }
+  // vault: both hands forward
+  if(player.isVaulting){
+    handL.position.set(-0.18, -0.05, -0.55);
+    handR.position.set( 0.18, -0.05, -0.55);
+    handL.rotation.x = -0.6; handR.rotation.x = -0.6;
+  } else {
+    handL.rotation.x = 0; handR.rotation.x = 0;
+  }
+
+  // ----- TRAFFIC ANIMATION -----
+  for(const c of traffic.cars){
+    c.mesh.position.z += c.vz * dt;
+    if(c.mesh.position.z > 700) c.mesh.position.z = -200;
+    if(c.mesh.position.z < -200) c.mesh.position.z = 700;
+  }
+  for(const p of traffic.people){
+    p.mesh.position.x += p.vx * dt;
+    p.mesh.position.z += p.vz * dt;
+    if(Math.random()<0.005){ p.vx = (Math.random()-0.5)*0.6; p.vz = (Math.random()-0.5)*0.6; }
+  }
+
+  // ----- HUD -----
+  spEl.textContent = (speed * 3.6).toFixed(0);
+  htEl.textContent = (player.pos.y - GROUND_Y).toFixed(0) + ' m';
+  bestEl.textContent = combo.best.toFixed(1) + 's';
+  comboBig.textContent = combo.duration.toFixed(1);
+  if(combo.active){
+    comboSub.textContent = 'Flowing';
+    comboBig.style.color = '#e8222f';
+  } else {
+    comboBig.style.color = '#888';
+    if(comboSub.textContent === 'Begin' && speed > 1) comboSub.textContent = 'Start running';
+  }
+  if(player.isWallRun) stateEl.textContent = 'Wall Run';
+  else if(player.isSliding) stateEl.textContent = 'Slide';
+  else if(player.isVaulting) stateEl.textContent = 'Vault';
+  else if(!player.onGround) stateEl.textContent = 'Air';
+  else if(player.isSprinting) stateEl.textContent = 'Sprint';
+  else if(speed > 0.5) stateEl.textContent = 'Run';
+  else stateEl.textContent = 'Ready';
+  stateEl.classList.toggle('run', combo.active);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// ----- RESIZE -----
+addEventListener('resize', ()=>{
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// Show splash; user clicks to begin (audio + pointer lock require gesture)

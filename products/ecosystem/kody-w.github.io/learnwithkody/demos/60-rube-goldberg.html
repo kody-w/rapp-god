@@ -1,0 +1,1880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rube Goldberg Sandbox - Learn with Kody</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --paper:#f4ecd8;
+    --paper2:#ebe1c6;
+    --ink:#3a2f24;
+    --ink2:#5a4a36;
+    --accent:#c8472b;
+    --accent2:#e0a93b;
+    --good:#3a8a55;
+    --bad:#a23a3a;
+  }
+  * { box-sizing:border-box; user-select:none; -webkit-user-select:none; }
+  html,body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; font-family: 'Comic Sans MS', 'Marker Felt', cursive, sans-serif; background:var(--paper); color:var(--ink); }
+  #app { position:absolute; inset:0; display:flex; }
+  #sidebar {
+    width:200px; background:rgba(245,235,210,0.95);
+    border-right:3px dashed var(--ink); padding:10px;
+    overflow-y:auto; z-index:10;
+    box-shadow: 4px 0 12px rgba(0,0,0,0.08);
+  }
+  #sidebar h2 { font-size:14px; margin:6px 0 4px; color:var(--ink); border-bottom:2px dotted var(--ink2); padding-bottom:2px; letter-spacing:1px; }
+  #sidebar h1 { font-size:18px; margin:4px 0; color:var(--accent); letter-spacing:1px; text-shadow:1px 1px 0 rgba(0,0,0,0.05); }
+  .palette { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; }
+  .pitem {
+    background:rgba(255,255,255,0.5);
+    border:2px solid var(--ink2);
+    border-radius:8px; padding:6px;
+    cursor:grab; text-align:center; font-size:11px;
+    transition:transform 0.1s, background 0.1s;
+    position:relative; min-height:54px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+  }
+  .pitem:hover { background:rgba(255,255,255,0.8); transform:scale(1.04); }
+  .pitem:active { cursor:grabbing; }
+  .pitem canvas { display:block; pointer-events:none; }
+  .pitem span { display:block; margin-top:2px; font-size:10px; }
+  #controls { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+  button.ctrl {
+    background:var(--accent); color:#fff; border:2px solid var(--ink);
+    padding:8px; border-radius:8px; cursor:pointer; font-family:inherit;
+    font-size:13px; font-weight:bold; letter-spacing:1px;
+    box-shadow: 2px 2px 0 var(--ink);
+    transition: transform 0.05s;
+  }
+  button.ctrl:hover { transform:translate(-1px,-1px); box-shadow: 3px 3px 0 var(--ink); }
+  button.ctrl:active { transform:translate(1px,1px); box-shadow: 1px 1px 0 var(--ink); }
+  button.ctrl.alt { background:var(--accent2); color:var(--ink); }
+  button.ctrl.go { background:var(--good); }
+  button.ctrl.small { padding:4px; font-size:10px; }
+  #stage { flex:1; position:relative; overflow:hidden; }
+  canvas#scene { position:absolute; inset:0; width:100%; height:100%; cursor:crosshair; }
+  #hud {
+    position:absolute; top:10px; right:10px;
+    background:rgba(245,235,210,0.92); border:2px dashed var(--ink);
+    padding:8px 12px; border-radius:10px; font-size:12px; max-width:280px;
+    z-index:5;
+  }
+  #hud h3 { margin:0 0 4px; font-size:14px; color:var(--accent); }
+  #hud p { margin:2px 0; }
+  #status {
+    position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+    background:rgba(245,235,210,0.92); border:2px dashed var(--ink);
+    padding:6px 14px; border-radius:20px; font-size:12px;
+    z-index:5; pointer-events:none;
+  }
+  #puzzleSel {
+    width:100%; padding:6px; border:2px solid var(--ink2); background:rgba(255,255,255,0.6);
+    border-radius:6px; font-family:inherit; font-size:11px; margin-bottom:6px;
+  }
+  #winOverlay {
+    position:absolute; inset:0; background:rgba(244,236,216,0.95);
+    display:none; align-items:center; justify-content:center; z-index:50;
+    flex-direction:column;
+  }
+  #winOverlay h1 { font-size:60px; color:var(--accent); margin:10px; text-shadow: 3px 3px 0 var(--accent2); animation: bob 1s ease infinite alternate; }
+  #winOverlay p { font-size:20px; color:var(--ink); margin:5px; }
+  #winOverlay button { margin-top:20px; }
+  @keyframes bob { from { transform: rotate(-3deg) scale(1); } to { transform: rotate(3deg) scale(1.05); } }
+  .pitem.selected { background:var(--accent2); border-color:var(--accent); }
+  .modeIndicator {
+    display:inline-block; padding:2px 8px; border-radius:10px;
+    font-weight:bold; font-size:11px;
+  }
+  .modeBuild { background:var(--accent2); color:var(--ink); }
+  .modeRun { background:var(--good); color:#fff; }
+  #helpText { font-size:10px; color:var(--ink2); margin-top:6px; line-height:1.3; }
+  ::-webkit-scrollbar { width:8px; }
+  ::-webkit-scrollbar-thumb { background:var(--ink2); border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <h1>RUBE.G</h1>
+    <h2>PUZZLE</h2>
+    <select id="puzzleSel"></select>
+    <h2>SHAPES</h2>
+    <div class="palette" id="palShapes"></div>
+    <h2>OBJECTS</h2>
+    <div class="palette" id="palObjects"></div>
+    <h2>TOOLS</h2>
+    <div class="palette" id="palTools"></div>
+    <div id="controls">
+      <button class="ctrl go" id="btnRun">BUILD &amp; RUN</button>
+      <button class="ctrl alt" id="btnReset">RESET</button>
+      <button class="ctrl small" id="btnClear">Clear Canvas</button>
+      <button class="ctrl small" id="btnAudio">Audio: ON</button>
+    </div>
+    <div id="helpText">
+      <b>Edit Mode:</b> drag from palette into scene. Click empty area &amp; drag to draw a wall. Click an object to select. Backspace deletes. Hinge tool: click two shapes. Rope tool: click two shapes.
+      <br><br><b>Run Mode:</b> physics simulates! Solve puzzles or just play.
+    </div>
+  </div>
+  <div id="stage">
+    <canvas id="scene"></canvas>
+    <div id="hud">
+      <h3 id="puzzleTitle">Sandbox</h3>
+      <p id="puzzleDesc">Build whatever you want!</p>
+      <p>Mode: <span id="modeInd" class="modeIndicator modeBuild">BUILD</span></p>
+      <p>Pieces placed: <span id="pieceCount">0</span></p>
+    </div>
+    <div id="status">Drag a shape from the palette to begin</div>
+    <div id="winOverlay">
+      <h1>YOU WIN!</h1>
+      <p id="winMsg">Puzzle solved!</p>
+      <p id="winScore"></p>
+      <button class="ctrl go" id="btnNext">Next Puzzle</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// AUDIO ENGINE
+// ============================================================
+const Audio = (function() {
+  let ctx = null;
+  let enabled = true;
+  let lastSounds = {};
+  function ensure() {
+    if (!ctx) {
+      try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ enabled=false; }
+    }
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function impact(velocity) {
+    if (!enabled) return;
+    const c = ensure(); if (!c) return;
+    const now = c.currentTime;
+    if (lastSounds.impact && now - lastSounds.impact < 0.02) return;
+    lastSounds.impact = now;
+    const v = Math.min(1, velocity/600);
+    if (v < 0.05) return;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.frequency.setValueAtTime(80 + v*200, now);
+    o.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+    o.type = 'square';
+    g.gain.setValueAtTime(v*0.15, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    o.connect(g).connect(c.destination);
+    o.start(now); o.stop(now + 0.1);
+  }
+  function bell() {
+    if (!enabled) return;
+    const c = ensure(); if (!c) return;
+    const now = c.currentTime;
+    [880, 1320, 1760].forEach((f, i) => {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.frequency.value = f;
+      o.type = 'sine';
+      g.gain.setValueAtTime(0, now);
+      g.gain.linearRampToValueAtTime(0.2 / (i+1), now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+      o.connect(g).connect(c.destination);
+      o.start(now); o.stop(now + 1.3);
+    });
+  }
+  function dominoClick() {
+    if (!enabled) return;
+    const c = ensure(); if (!c) return;
+    const now = c.currentTime;
+    if (lastSounds.domino && now - lastSounds.domino < 0.04) return;
+    lastSounds.domino = now;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.frequency.value = 300 + Math.random()*150;
+    o.type = 'triangle';
+    g.gain.setValueAtTime(0.1, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    o.connect(g).connect(c.destination);
+    o.start(now); o.stop(now + 0.06);
+  }
+  function fan() {
+    if (!enabled) return;
+    const c = ensure(); if (!c) return;
+    const now = c.currentTime;
+    if (lastSounds.fan && now - lastSounds.fan < 0.3) return;
+    lastSounds.fan = now;
+    const buf = c.createBuffer(1, c.sampleRate * 0.4, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++) d[i] = (Math.random()*2-1)*Math.exp(-i/(d.length*0.4));
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const filt = c.createBiquadFilter();
+    filt.type = 'bandpass'; filt.frequency.value = 600;
+    const g = c.createGain();
+    g.gain.value = 0.06;
+    src.connect(filt).connect(g).connect(c.destination);
+    src.start(now);
+  }
+  function chime() {
+    if (!enabled) return;
+    const c = ensure(); if (!c) return;
+    const now = c.currentTime;
+    [523, 659, 784, 1047, 1318].forEach((f, i) => {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.frequency.value = f;
+      o.type = 'sine';
+      const t = now + i*0.08;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.18, t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+      o.connect(g).connect(c.destination);
+      o.start(t); o.stop(t + 0.7);
+    });
+  }
+  function toggle() { enabled = !enabled; return enabled; }
+  return { impact, bell, dominoClick, fan, chime, toggle, ensure, get enabled(){return enabled;} };
+})();
+
+// ============================================================
+// VECTOR MATH
+// ============================================================
+const V = {
+  add: (a,b) => ({x:a.x+b.x, y:a.y+b.y}),
+  sub: (a,b) => ({x:a.x-b.x, y:a.y-b.y}),
+  mul: (a,s) => ({x:a.x*s, y:a.y*s}),
+  dot: (a,b) => a.x*b.x + a.y*b.y,
+  cross: (a,b) => a.x*b.y - a.y*b.x,
+  crossSV: (s,v) => ({x:-s*v.y, y:s*v.x}),
+  crossVS: (v,s) => ({x:s*v.y, y:-s*v.x}),
+  len: (a) => Math.hypot(a.x, a.y),
+  len2: (a) => a.x*a.x + a.y*a.y,
+  norm: (a) => { const l = Math.hypot(a.x,a.y) || 1; return {x:a.x/l, y:a.y/l}; },
+  perp: (a) => ({x:-a.y, y:a.x}),
+  rot: (a, ang) => { const c=Math.cos(ang), s=Math.sin(ang); return {x:a.x*c - a.y*s, y:a.x*s + a.y*c}; },
+  neg: (a) => ({x:-a.x, y:-a.y}),
+};
+
+// ============================================================
+// PHYSICS BODY
+// ============================================================
+let nextBodyId = 1;
+class Body {
+  constructor(opts) {
+    this.id = nextBodyId++;
+    this.type = opts.type || 'rectangle'; // circle|rectangle|triangle|ramp|beam
+    this.kind = opts.kind || 'wall'; // wall|ball|domino|seesaw|bumper|fan|peg|basket|bell|target
+    this.x = opts.x || 0;
+    this.y = opts.y || 0;
+    this.angle = opts.angle || 0;
+    this.vx = 0; this.vy = 0; this.va = 0;
+    this.fill = opts.fill || '#bca77a';
+    this.stroke = opts.stroke || '#3a2f24';
+    this.static = !!opts.static;
+    this.restitution = opts.restitution !== undefined ? opts.restitution : 0.2;
+    this.friction = opts.friction !== undefined ? opts.friction : 0.4;
+    this.density = opts.density || 1;
+    // shape-specific
+    if (this.type === 'circle') {
+      this.r = opts.r || 20;
+    } else if (this.type === 'rectangle' || this.type === 'beam' || this.type === 'domino') {
+      this.w = opts.w || 50;
+      this.h = opts.h || 50;
+    } else if (this.type === 'triangle' || this.type === 'ramp') {
+      this.w = opts.w || 60;
+      this.h = opts.h || 50;
+    }
+    this.computeMass();
+    // Save design state for reset
+    this.savedX = this.x; this.savedY = this.y; this.savedAngle = this.angle;
+    this.trail = [];
+    this.glow = opts.glow || false;
+    this.collidedThisFrame = false;
+    this.lastImpactSpeed = 0;
+    this.fanForce = opts.fanForce || 0;
+    this.fanDir = opts.fanDir || 0; // angle of force
+    this.struck = false; // for bell
+    this.strikeTime = 0;
+    this.tippedOver = false; // for dominoes
+    this.constraints = [];
+  }
+  computeMass() {
+    if (this.static) {
+      this.mass = Infinity;
+      this.invMass = 0;
+      this.inertia = Infinity;
+      this.invInertia = 0;
+      return;
+    }
+    let A;
+    if (this.type === 'circle') {
+      A = Math.PI * this.r * this.r;
+      this.mass = A * this.density * 0.001;
+      this.inertia = 0.5 * this.mass * this.r * this.r;
+    } else {
+      A = this.w * this.h;
+      this.mass = A * this.density * 0.001;
+      this.inertia = (this.mass * (this.w*this.w + this.h*this.h)) / 12;
+    }
+    this.invMass = 1 / this.mass;
+    this.invInertia = 1 / this.inertia;
+  }
+  saveDesign() {
+    this.savedX = this.x; this.savedY = this.y; this.savedAngle = this.angle;
+  }
+  reset() {
+    this.x = this.savedX; this.y = this.savedY; this.angle = this.savedAngle;
+    this.vx = 0; this.vy = 0; this.va = 0;
+    this.trail = [];
+    this.struck = false;
+    this.tippedOver = false;
+  }
+  // Get vertices in world space (polygon shapes)
+  getVertices() {
+    if (this.type === 'circle') return null;
+    let local;
+    if (this.type === 'rectangle' || this.type === 'beam' || this.type === 'domino') {
+      const hw = this.w/2, hh = this.h/2;
+      local = [{x:-hw,y:-hh},{x:hw,y:-hh},{x:hw,y:hh},{x:-hw,y:hh}];
+    } else if (this.type === 'ramp') {
+      // right triangle: hypotenuse from top-left to bottom-right
+      const hw = this.w/2, hh = this.h/2;
+      local = [{x:-hw,y:hh},{x:hw,y:hh},{x:hw,y:-hh}];
+    } else if (this.type === 'triangle') {
+      const hw = this.w/2, hh = this.h/2;
+      local = [{x:0,y:-hh},{x:hw,y:hh},{x:-hw,y:hh}];
+    }
+    return local.map(p => {
+      const r = V.rot(p, this.angle);
+      return {x: r.x + this.x, y: r.y + this.y};
+    });
+  }
+  // AABB
+  getAABB() {
+    if (this.type === 'circle') {
+      return {minX:this.x-this.r, minY:this.y-this.r, maxX:this.x+this.r, maxY:this.y+this.r};
+    }
+    const verts = this.getVertices();
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const v of verts) {
+      if (v.x < minX) minX = v.x;
+      if (v.x > maxX) maxX = v.x;
+      if (v.y < minY) minY = v.y;
+      if (v.y > maxY) maxY = v.y;
+    }
+    return {minX, minY, maxX, maxY};
+  }
+  containsPoint(px, py) {
+    if (this.type === 'circle') {
+      const dx = px-this.x, dy = py-this.y;
+      return dx*dx + dy*dy <= this.r*this.r;
+    }
+    const verts = this.getVertices();
+    let inside = false;
+    for (let i=0,j=verts.length-1;i<verts.length;j=i++) {
+      const xi = verts[i].x, yi = verts[i].y;
+      const xj = verts[j].x, yj = verts[j].y;
+      if ((yi>py) !== (yj>py) && px < (xj-xi)*(py-yi)/(yj-yi+1e-9)+xi) inside = !inside;
+    }
+    return inside;
+  }
+}
+
+// ============================================================
+// CONSTRAINTS
+// ============================================================
+class Hinge {
+  constructor(bodyA, bodyB, worldX, worldY) {
+    this.a = bodyA; this.b = bodyB;
+    // Local anchor points
+    this.la = this.toLocal(bodyA, worldX, worldY);
+    this.lb = bodyB ? this.toLocal(bodyB, worldX, worldY) : {x:worldX, y:worldY};
+    this.savedLa = {...this.la};
+    this.savedLb = {...this.lb};
+  }
+  toLocal(body, wx, wy) {
+    const dx = wx - body.x, dy = wy - body.y;
+    return V.rot({x:dx,y:dy}, -body.angle);
+  }
+  getWorldA() {
+    const r = V.rot(this.la, this.a.angle);
+    return {x: this.a.x + r.x, y: this.a.y + r.y};
+  }
+  getWorldB() {
+    if (!this.b) return this.lb;
+    const r = V.rot(this.lb, this.b.angle);
+    return {x: this.b.x + r.x, y: this.b.y + r.y};
+  }
+  solve() {
+    const a = this.a, b = this.b;
+    const wa = this.getWorldA();
+    const wb = this.getWorldB();
+    const ra = {x: wa.x - a.x, y: wa.y - a.y};
+    const rb = b ? {x: wb.x - b.x, y: wb.y - b.y} : {x:0,y:0};
+    const va = {x: a.vx + V.crossSV(a.va, ra).x, y: a.vy + V.crossSV(a.va, ra).y};
+    const vb = b ? {x: b.vx + V.crossSV(b.va, rb).x, y: b.vy + V.crossSV(b.va, rb).y} : {x:0,y:0};
+    const relV = V.sub(vb, va);
+    const positionError = V.sub(wb, wa);
+    // Baumgarte position correction
+    const beta = 0.2;
+    const dt = 1/60;
+    const bias = V.mul(positionError, beta/dt);
+    const desiredV = V.add(relV, bias);
+    // Effective mass matrix (2x2). For simplicity solve x and y separately as scalars
+    // Iterative: solve each axis
+    for (let axis=0; axis<2; axis++) {
+      const n = axis === 0 ? {x:1,y:0} : {x:0,y:1};
+      const rA = V.cross(ra, n);
+      const rB = b ? V.cross(rb, n) : 0;
+      const k = a.invMass + (b ? b.invMass : 0) + rA*rA*a.invInertia + (b ? rB*rB*b.invInertia : 0);
+      if (k <= 0) continue;
+      const dvA = axis === 0 ? desiredV.x : desiredV.y;
+      const lambda = -dvA / k;
+      const impulse = V.mul(n, lambda);
+      a.vx -= impulse.x * a.invMass;
+      a.vy -= impulse.y * a.invMass;
+      a.va -= V.cross(ra, impulse) * a.invInertia;
+      if (b) {
+        b.vx += impulse.x * b.invMass;
+        b.vy += impulse.y * b.invMass;
+        b.va += V.cross(rb, impulse) * b.invInertia;
+      }
+      // Update desiredV for next axis (rough - acceptable)
+    }
+    // Direct positional correction pass
+    const wa2 = this.getWorldA();
+    const wb2 = this.getWorldB();
+    const err = V.sub(wb2, wa2);
+    if (V.len(err) > 0.5) {
+      const totalInvMass = a.invMass + (b ? b.invMass : 0);
+      if (totalInvMass > 0) {
+        const corr = V.mul(err, 0.5 / totalInvMass);
+        a.x += corr.x * a.invMass;
+        a.y += corr.y * a.invMass;
+        if (b) { b.x -= corr.x * b.invMass; b.y -= corr.y * b.invMass; }
+      }
+    }
+  }
+}
+
+class Rope {
+  constructor(bodyA, bodyB, worldA, worldB, maxLen) {
+    this.a = bodyA; this.b = bodyB;
+    this.la = this.toLocal(bodyA, worldA.x, worldA.y);
+    this.lb = bodyB ? this.toLocal(bodyB, worldB.x, worldB.y) : worldB;
+    this.maxLen = maxLen || V.len(V.sub(worldB, worldA));
+  }
+  toLocal(body, wx, wy) {
+    const dx = wx - body.x, dy = wy - body.y;
+    return V.rot({x:dx,y:dy}, -body.angle);
+  }
+  getWorldA() {
+    const r = V.rot(this.la, this.a.angle);
+    return {x: this.a.x + r.x, y: this.a.y + r.y};
+  }
+  getWorldB() {
+    if (!this.b) return this.lb;
+    const r = V.rot(this.lb, this.b.angle);
+    return {x: this.b.x + r.x, y: this.b.y + r.y};
+  }
+  solve() {
+    const a = this.a, b = this.b;
+    const wa = this.getWorldA();
+    const wb = this.getWorldB();
+    const diff = V.sub(wb, wa);
+    const dist = V.len(diff);
+    if (dist <= this.maxLen) return;
+    const n = V.norm(diff);
+    const ra = {x: wa.x - a.x, y: wa.y - a.y};
+    const rb = b ? {x: wb.x - b.x, y: wb.y - b.y} : {x:0,y:0};
+    const va = {x: a.vx + V.crossSV(a.va, ra).x, y: a.vy + V.crossSV(a.va, ra).y};
+    const vb = b ? {x: b.vx + V.crossSV(b.va, rb).x, y: b.vy + V.crossSV(b.va, rb).y} : {x:0,y:0};
+    const relVn = V.dot(V.sub(vb, va), n);
+    if (relVn > 0) return; // moving toward each other already
+    const rA = V.cross(ra, n);
+    const rB = b ? V.cross(rb, n) : 0;
+    const k = a.invMass + (b ? b.invMass : 0) + rA*rA*a.invInertia + (b ? rB*rB*b.invInertia : 0);
+    if (k <= 0) return;
+    const bias = (dist - this.maxLen) * 0.3 / (1/60);
+    const lambda = -(relVn + bias) / k;
+    const impulse = V.mul(n, lambda);
+    a.vx -= impulse.x * a.invMass;
+    a.vy -= impulse.y * a.invMass;
+    a.va -= V.cross(ra, impulse) * a.invInertia;
+    if (b) {
+      b.vx += impulse.x * b.invMass;
+      b.vy += impulse.y * b.invMass;
+      b.va += V.cross(rb, impulse) * b.invInertia;
+    }
+  }
+}
+
+// ============================================================
+// SAT COLLISION DETECTION
+// ============================================================
+function projectPoly(verts, axis) {
+  let min = V.dot(verts[0], axis), max = min;
+  for (let i=1;i<verts.length;i++) {
+    const p = V.dot(verts[i], axis);
+    if (p < min) min = p;
+    if (p > max) max = p;
+  }
+  return {min, max};
+}
+function getAxes(verts) {
+  const axes = [];
+  for (let i=0;i<verts.length;i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i+1)%verts.length];
+    const edge = V.sub(p2, p1);
+    axes.push(V.norm(V.perp(edge)));
+  }
+  return axes;
+}
+// Test if a point is inside a convex polygon (vertices in CCW or CW order)
+function pointInConvexPoly(pt, verts) {
+  // Check sign of cross product for each edge consistently
+  let sign = 0;
+  for (let i=0;i<verts.length;i++) {
+    const p1 = verts[i], p2 = verts[(i+1)%verts.length];
+    const edge = {x:p2.x-p1.x, y:p2.y-p1.y};
+    const toPt = {x:pt.x-p1.x, y:pt.y-p1.y};
+    const cr = edge.x * toPt.y - edge.y * toPt.x;
+    if (cr !== 0) {
+      if (sign === 0) sign = cr > 0 ? 1 : -1;
+      else if ((cr > 0 ? 1 : -1) !== sign) return false;
+    }
+  }
+  return true;
+}
+
+function satPolyPoly(a, b) {
+  const va = a.getVertices();
+  const vb = b.getVertices();
+  const axes = getAxes(va).concat(getAxes(vb));
+  let minOverlap = Infinity;
+  let smallestAxis = null;
+  for (const ax of axes) {
+    const pa = projectPoly(va, ax);
+    const pb = projectPoly(vb, ax);
+    const overlap = Math.min(pa.max, pb.max) - Math.max(pa.min, pb.min);
+    if (overlap <= 0) return null;
+    if (overlap < minOverlap) { minOverlap = overlap; smallestAxis = ax; }
+  }
+  // Direction: normal points from a -> b (so b should move along +normal to separate)
+  const d = V.sub({x:b.x,y:b.y}, {x:a.x,y:a.y});
+  if (V.dot(d, smallestAxis) < 0) smallestAxis = V.neg(smallestAxis);
+  // Contact: find vertices that are inside the other polygon, average them
+  const contacts = [];
+  for (const p of va) {
+    if (pointInConvexPoly(p, vb)) contacts.push(p);
+  }
+  for (const p of vb) {
+    if (pointInConvexPoly(p, va)) contacts.push(p);
+  }
+  let contact;
+  if (contacts.length > 0) {
+    // Average
+    let cx = 0, cy = 0;
+    for (const p of contacts) { cx += p.x; cy += p.y; }
+    contact = {x: cx/contacts.length, y: cy/contacts.length};
+  } else {
+    // Fallback: deepest vertex of B against A center (edge-edge case)
+    let bestVertB = null, bestProjB = Infinity;
+    for (const p of vb) {
+      const proj = V.dot(p, smallestAxis);
+      if (proj < bestProjB) { bestProjB = proj; bestVertB = p; }
+    }
+    contact = bestVertB || {x:(a.x+b.x)/2, y:(a.y+b.y)/2};
+  }
+  return {normal: smallestAxis, depth: minOverlap, contact};
+}
+function circleCircle(a, b) {
+  const d = V.sub({x:b.x,y:b.y}, {x:a.x,y:a.y});
+  const dist = V.len(d);
+  const sumR = a.r + b.r;
+  if (dist >= sumR) return null;
+  const normal = dist > 1e-6 ? V.mul(d, 1/dist) : {x:1,y:0};
+  const depth = sumR - dist;
+  const contact = {x: a.x + normal.x*a.r, y: a.y + normal.y*a.r};
+  return {normal, depth, contact};
+}
+function circlePoly(circle, poly) {
+  const verts = poly.getVertices();
+  // Find closest edge
+  let minDist = Infinity;
+  let closestNormal = null, closestPoint = null;
+  // First check if circle center is inside polygon
+  let inside = true;
+  for (let i=0;i<verts.length;i++) {
+    const p1 = verts[i], p2 = verts[(i+1)%verts.length];
+    const edge = V.sub(p2, p1);
+    const normal = V.norm(V.perp(edge));
+    const toC = V.sub({x:circle.x,y:circle.y}, p1);
+    const d = V.dot(toC, normal);
+    if (d > 0) { inside = false; }
+    // Project circle onto edge
+    const edgeLen = V.len(edge);
+    const t = Math.max(0, Math.min(edgeLen, V.dot(toC, V.mul(edge, 1/edgeLen))));
+    const closest = V.add(p1, V.mul(V.norm(edge), t));
+    const dvec = V.sub({x:circle.x,y:circle.y}, closest);
+    const dist = V.len(dvec);
+    if (dist < minDist) {
+      minDist = dist;
+      closestPoint = closest;
+      closestNormal = dist > 1e-6 ? V.mul(dvec, 1/dist) : normal;
+    }
+  }
+  if (inside) {
+    const depth = minDist + circle.r;
+    return {normal: V.neg(closestNormal), depth, contact: closestPoint};
+  }
+  if (minDist >= circle.r) return null;
+  return {normal: closestNormal, depth: circle.r - minDist, contact: closestPoint};
+}
+
+function collide(a, b) {
+  if (a.type === 'circle' && b.type === 'circle') {
+    return circleCircle(a, b);
+  } else if (a.type === 'circle') {
+    return circlePoly(a, b);
+  } else if (b.type === 'circle') {
+    const m = circlePoly(b, a);
+    if (m) m.normal = V.neg(m.normal);
+    return m;
+  } else {
+    return satPolyPoly(a, b);
+  }
+}
+
+function aabbOverlap(aa, bb) {
+  return aa.maxX > bb.minX && aa.minX < bb.maxX && aa.maxY > bb.minY && aa.minY < bb.maxY;
+}
+
+// ============================================================
+// COLLISION RESPONSE
+// ============================================================
+function resolveCollision(a, b, manifold) {
+  // Positional correction (gentle slop)
+  const percent = 0.2, slop = 0.5;
+  const totalInvMass = a.invMass + b.invMass;
+  if (totalInvMass <= 0) return;
+  const correction = Math.max(manifold.depth - slop, 0) / totalInvMass * percent;
+  const corr = V.mul(manifold.normal, correction);
+  a.x -= corr.x * a.invMass;
+  a.y -= corr.y * a.invMass;
+  b.x += corr.x * b.invMass;
+  b.y += corr.y * b.invMass;
+  // Impulse
+  const ra = {x: manifold.contact.x - a.x, y: manifold.contact.y - a.y};
+  const rb = {x: manifold.contact.x - b.x, y: manifold.contact.y - b.y};
+  const va = {x: a.vx + V.crossSV(a.va, ra).x, y: a.vy + V.crossSV(a.va, ra).y};
+  const vb = {x: b.vx + V.crossSV(b.va, rb).x, y: b.vy + V.crossSV(b.va, rb).y};
+  const rv = V.sub(vb, va);
+  const velAlongNormal = V.dot(rv, manifold.normal);
+  if (velAlongNormal > 0) return;
+  const e = Math.min(a.restitution, b.restitution);
+  const raCrossN = V.cross(ra, manifold.normal);
+  const rbCrossN = V.cross(rb, manifold.normal);
+  const invMassSum = totalInvMass + raCrossN*raCrossN*a.invInertia + rbCrossN*rbCrossN*b.invInertia;
+  let j = -(1+e) * velAlongNormal / invMassSum;
+  // Bumper bonus
+  if (a.kind === 'bumper' || b.kind === 'bumper') {
+    j *= 1.7;
+  }
+  const impulse = V.mul(manifold.normal, j);
+  a.vx -= impulse.x * a.invMass;
+  a.vy -= impulse.y * a.invMass;
+  a.va -= V.cross(ra, impulse) * a.invInertia;
+  b.vx += impulse.x * b.invMass;
+  b.vy += impulse.y * b.invMass;
+  b.va += V.cross(rb, impulse) * b.invInertia;
+  // Friction
+  const newVa = {x: a.vx + V.crossSV(a.va, ra).x, y: a.vy + V.crossSV(a.va, ra).y};
+  const newVb = {x: b.vx + V.crossSV(b.va, rb).x, y: b.vy + V.crossSV(b.va, rb).y};
+  const rvNew = V.sub(newVb, newVa);
+  let tangent = V.sub(rvNew, V.mul(manifold.normal, V.dot(rvNew, manifold.normal)));
+  const tLen = V.len(tangent);
+  if (tLen < 1e-6) {
+    // Track impact
+    triggerImpact(a, b, Math.abs(velAlongNormal));
+    return;
+  }
+  tangent = V.mul(tangent, 1/tLen);
+  const raCrossT = V.cross(ra, tangent);
+  const rbCrossT = V.cross(rb, tangent);
+  const invMassSumT = totalInvMass + raCrossT*raCrossT*a.invInertia + rbCrossT*rbCrossT*b.invInertia;
+  let jt = -V.dot(rvNew, tangent) / invMassSumT;
+  const mu = Math.sqrt(a.friction * b.friction);
+  if (Math.abs(jt) > j*mu) jt = j*mu * Math.sign(jt);
+  const ft = V.mul(tangent, jt);
+  a.vx -= ft.x * a.invMass;
+  a.vy -= ft.y * a.invMass;
+  a.va -= V.cross(ra, ft) * a.invInertia;
+  b.vx += ft.x * b.invMass;
+  b.vy += ft.y * b.invMass;
+  b.va += V.cross(rb, ft) * b.invInertia;
+  triggerImpact(a, b, Math.abs(velAlongNormal));
+}
+
+function triggerImpact(a, b, speed) {
+  if (speed < 30) return;
+  Audio.impact(speed);
+  // Bell ring detection
+  for (const body of [a, b]) {
+    if (body.kind === 'bell' && !body.struck && speed > 80) {
+      body.struck = true;
+      body.strikeTime = performance.now();
+      Audio.bell();
+      World.bellRung = true;
+    }
+    if (body.kind === 'domino' && speed > 50) {
+      Audio.dominoClick();
+    }
+  }
+}
+
+// ============================================================
+// WORLD
+// ============================================================
+const World = {
+  bodies: [],
+  constraints: [],
+  walls: [], // boundary walls
+  goal: null, // {type, ...}
+  bellRung: false,
+  basketCount: 0,
+  pieceCount: 0, // user-placed
+  init(W, H) {
+    this.bodies = [];
+    this.constraints = [];
+    this.walls = [];
+    this.bellRung = false;
+    this.basketCount = 0;
+    this.pieceCount = 0;
+    this.goal = null;
+    // Boundary walls
+    const t = 30;
+    this.bodies.push(new Body({type:'rectangle', kind:'wall', x:W/2, y:H+t/2-5, w:W*2, h:t, static:true, fill:'#8a7050'}));
+    this.bodies.push(new Body({type:'rectangle', kind:'wall', x:-t/2+5, y:H/2, w:t, h:H*2, static:true, fill:'#8a7050'}));
+    this.bodies.push(new Body({type:'rectangle', kind:'wall', x:W+t/2-5, y:H/2, w:t, h:H*2, static:true, fill:'#8a7050'}));
+    // Ceiling (off-screen, optional)
+  },
+  step(dt) {
+    const gravity = 980;
+    // Apply forces
+    for (const b of this.bodies) {
+      if (b.static) continue;
+      b.vy += gravity * dt;
+      // Damping
+      b.vx *= 0.998;
+      b.vy *= 0.998;
+      b.va *= 0.99;
+    }
+    // Apply fan forces
+    for (const fan of this.bodies) {
+      if (fan.kind !== 'fan') continue;
+      // Cone of wind in fan direction
+      const dir = V.rot({x:1,y:0}, fan.angle);
+      const range = 280;
+      for (const b of this.bodies) {
+        if (b.static || b === fan) continue;
+        const rel = V.sub({x:b.x,y:b.y}, {x:fan.x,y:fan.y});
+        const along = V.dot(rel, dir);
+        if (along < 0 || along > range) continue;
+        const perp = Math.abs(V.cross(rel, dir));
+        const coneWidth = 30 + along*0.5;
+        if (perp > coneWidth) continue;
+        const strength = (1 - along/range) * 1500;
+        b.vx += dir.x * strength * dt;
+        b.vy += dir.y * strength * dt;
+      }
+      // Sound
+      if (Math.random() < 0.05) Audio.fan();
+    }
+    // Integrate positions
+    for (const b of this.bodies) {
+      if (b.static) continue;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.angle += b.va * dt;
+      // Trail
+      if (b.kind === 'ball' || b.kind === 'bumper') {
+        b.trail.push({x:b.x, y:b.y, t:performance.now()});
+        if (b.trail.length > 30) b.trail.shift();
+      }
+    }
+    // Broad phase: AABBs
+    const aabbs = this.bodies.map(b => b.getAABB());
+    // Build pair list once
+    const pairs = [];
+    for (let i=0;i<this.bodies.length;i++) {
+      for (let j=i+1;j<this.bodies.length;j++) {
+        const a = this.bodies[i], b = this.bodies[j];
+        if (a.static && b.static) continue;
+        if (!aabbOverlap(aabbs[i], aabbs[j])) continue;
+        pairs.push([i, j]);
+      }
+    }
+    // Iterate solver for stability (impulse + position correction interleaved)
+    const iters = 6;
+    for (let it=0; it<iters; it++) {
+      for (const [i, j] of pairs) {
+        const a = this.bodies[i], b = this.bodies[j];
+        const m = collide(a, b);
+        if (m) resolveCollision(a, b, m);
+      }
+      // Constraints
+      for (const c of this.constraints) c.solve();
+    }
+    // Check goal conditions
+    this.checkGoal();
+    // Domino check
+    for (const b of this.bodies) {
+      if (b.kind === 'domino') {
+        const angDiff = Math.abs(((b.angle - b.savedAngle) + Math.PI*3) % (Math.PI*2) - Math.PI);
+        if (angDiff > Math.PI/3) b.tippedOver = true;
+      }
+    }
+  },
+  checkGoal() {
+    if (!this.goal) return;
+    const g = this.goal;
+    if (g.type === 'basket') {
+      // Check if any ball is inside basket region
+      for (const b of this.bodies) {
+        if (b.kind !== 'ball') continue;
+        if (b.x > g.x - g.w/2 && b.x < g.x + g.w/2 && b.y > g.y - g.h/2 && b.y < g.y + g.h/2) {
+          UI.win('Ball in the basket!');
+          return;
+        }
+      }
+    } else if (g.type === 'bell') {
+      if (this.bellRung) UI.win('Bell rung!');
+    } else if (g.type === 'dominoes') {
+      const dominos = this.bodies.filter(b => b.kind === 'domino');
+      if (dominos.length === 0) return;
+      const tipped = dominos.filter(b => b.tippedOver).length;
+      if (tipped === dominos.length && dominos.length > 0) UI.win(`All ${dominos.length} dominoes tipped!`);
+    } else if (g.type === 'target') {
+      // Ball must hit target body
+      for (const b of this.bodies) {
+        if (b.kind === 'ball') {
+          const tx = g.x, ty = g.y;
+          const d = Math.hypot(b.x-tx, b.y-ty);
+          if (d < g.r + b.r) UI.win('Bullseye!');
+        }
+      }
+    } else if (g.type === 'reach') {
+      for (const b of this.bodies) {
+        if (b.kind !== 'ball') continue;
+        if (b.y > g.y && b.x > g.x - g.w/2 && b.x < g.x + g.w/2) UI.win('Ball reached the goal zone!');
+      }
+    }
+  },
+  reset() {
+    for (const b of this.bodies) b.reset();
+    this.bellRung = false;
+    this.basketCount = 0;
+    for (const b of this.bodies) b.tippedOver = false;
+  }
+};
+
+// ============================================================
+// PUZZLES
+// ============================================================
+const Puzzles = [
+  {
+    name: 'Sandbox',
+    desc: 'Free play - build whatever!',
+    setup(W, H) { /* nothing */ }
+  },
+  {
+    name: 'Drop the Ball',
+    desc: 'Get the red ball into the basket. Place ramps to guide it.',
+    setup(W, H) {
+      // Ball at top-left
+      const ball = new Body({type:'circle', kind:'ball', x:120, y:80, r:18, fill:'#c8472b', restitution:0.5, glow:true});
+      World.bodies.push(ball);
+      // Basket at bottom-right
+      const bx = W - 150, by = H - 80;
+      // Basket walls
+      World.bodies.push(new Body({type:'rectangle', kind:'wall', x:bx-50, y:by, w:8, h:80, static:true, fill:'#8a4a2b'}));
+      World.bodies.push(new Body({type:'rectangle', kind:'wall', x:bx+50, y:by, w:8, h:80, static:true, fill:'#8a4a2b'}));
+      World.bodies.push(new Body({type:'rectangle', kind:'wall', x:bx, y:by+40, w:108, h:8, static:true, fill:'#8a4a2b'}));
+      World.goal = {type:'basket', x:bx, y:by, w:80, h:80};
+    }
+  },
+  {
+    name: 'Ring the Bell',
+    desc: 'Make the ball strike the bell with enough force.',
+    setup(W, H) {
+      const ball = new Body({type:'circle', kind:'ball', x:100, y:100, r:18, fill:'#c8472b', restitution:0.5, glow:true});
+      World.bodies.push(ball);
+      // Some scattered platforms for hint
+      World.bodies.push(new Body({type:'rectangle', kind:'wall', x:200, y:250, w:120, h:10, angle:0.3, static:true, fill:'#8a7050'}));
+      // Bell on right
+      const bell = new Body({type:'circle', kind:'bell', x:W-100, y:H-200, r:35, fill:'#ffd44d', stroke:'#a07a20', static:true, restitution:0.6});
+      World.bodies.push(bell);
+      World.goal = {type:'bell'};
+    }
+  },
+  {
+    name: 'Domino Cascade',
+    desc: 'Tip all 5 dominoes. They start standing up.',
+    setup(W, H) {
+      const ball = new Body({type:'circle', kind:'ball', x:100, y:100, r:18, fill:'#c8472b', restitution:0.4, glow:true});
+      World.bodies.push(ball);
+      // Floor for dominoes
+      World.bodies.push(new Body({type:'rectangle', kind:'wall', x:W/2, y:H-60, w:W*0.7, h:8, static:true, fill:'#8a7050'}));
+      // 5 dominoes
+      for (let i=0; i<5; i++) {
+        const dx = W/2 - 100 + i*50;
+        const dom = new Body({type:'rectangle', kind:'domino', x:dx, y:H-100, w:14, h:70, fill:'#dcc78a', stroke:'#5a4a36'});
+        World.bodies.push(dom);
+      }
+      World.goal = {type:'dominoes'};
+    }
+  },
+  {
+    name: 'Pendulum Smash',
+    desc: 'A swinging pendulum—use it to push the ball into the goal zone.',
+    setup(W, H) {
+      // Anchor peg
+      const pegX = W/2 - 100, pegY = 80;
+      const peg = new Body({type:'circle', kind:'peg', x:pegX, y:pegY, r:8, static:true, fill:'#5a4a36'});
+      World.bodies.push(peg);
+      // Pendulum bob
+      const bob = new Body({type:'circle', kind:'bumper', x:pegX, y:pegY+200, r:25, fill:'#8a4a2b', stroke:'#3a2f24', restitution:0.6, density:3});
+      World.bodies.push(bob);
+      const rope = new Rope(peg, bob, {x:pegX,y:pegY}, {x:pegX, y:pegY+200}, 200);
+      World.constraints.push(rope);
+      // Ball at side
+      const ball = new Body({type:'circle', kind:'ball', x:60, y:H-100, r:18, fill:'#c8472b', restitution:0.5, glow:true});
+      World.bodies.push(ball);
+      // Goal zone on right
+      World.goal = {type:'reach', x:W-100, y:H-30, w:120, h:40};
+    }
+  },
+  {
+    name: 'Seesaw Flip',
+    desc: 'Use the seesaw to launch ball into the basket above.',
+    setup(W, H) {
+      const ball = new Body({type:'circle', kind:'ball', x:120, y:80, r:18, fill:'#c8472b', restitution:0.4, glow:true});
+      World.bodies.push(ball);
+      // Seesaw hinge in center
+      const sx = W/2, sy = H-120;
+      const peg = new Body({type:'circle', kind:'peg', x:sx, y:sy, r:8, static:true, fill:'#5a4a36'});
+      World.bodies.push(peg);
+      const beam = new Body({type:'rectangle', kind:'wall', x:sx, y:sy, w:300, h:14, fill:'#a08055', density:0.6});
+      World.bodies.push(beam);
+      const hinge = new Hinge(peg, beam, sx, sy);
+      World.constraints.push(hinge);
+      // Basket at right
+      const bx = W-130, by = 200;
+      World.bodies.push(new Body({type:'rectangle', kind:'wall', x:bx-45, y:by, w:8, h:70, static:true, fill:'#8a4a2b'}));
+      World.bodies.push(new Body({type:'rectangle', kind:'wall', x:bx+45, y:by, w:8, h:70, static:true, fill:'#8a4a2b'}));
+      World.bodies.push(new Body({type:'rectangle', kind:'wall', x:bx, y:by+35, w:98, h:8, static:true, fill:'#8a4a2b'}));
+      World.goal = {type:'basket', x:bx, y:by, w:80, h:70};
+    }
+  },
+  {
+    name: 'Wind Tunnel',
+    desc: 'There is a fan blowing. Place objects to redirect ball into the goal.',
+    setup(W, H) {
+      const ball = new Body({type:'circle', kind:'ball', x:120, y:H-100, r:16, fill:'#c8472b', restitution:0.4, glow:true});
+      World.bodies.push(ball);
+      // Pre-placed fan blowing up-right
+      const fan = new Body({type:'rectangle', kind:'fan', x:200, y:H-50, w:50, h:30, angle:-Math.PI/2 + 0.5, static:true, fill:'#3a8a55', stroke:'#1a5530'});
+      World.bodies.push(fan);
+      // Bell at top right
+      const bell = new Body({type:'circle', kind:'bell', x:W-150, y:120, r:30, fill:'#ffd44d', stroke:'#a07a20', static:true, restitution:0.6});
+      World.bodies.push(bell);
+      World.goal = {type:'bell'};
+    }
+  },
+  {
+    name: 'Target Practice',
+    desc: 'Hit the target. Use ramps and bumpers strategically.',
+    setup(W, H) {
+      const ball = new Body({type:'circle', kind:'ball', x:80, y:H-150, r:16, fill:'#c8472b', restitution:0.5, glow:true});
+      World.bodies.push(ball);
+      // Target circle (visual goal)
+      World.goal = {type:'target', x:W-100, y:H-100, r:40};
+      // Decorative ramp hint
+      World.bodies.push(new Body({type:'ramp', kind:'wall', x:W/2, y:H-80, w:160, h:40, static:true, fill:'#8a7050'}));
+    }
+  },
+];
+
+// ============================================================
+// RENDERING
+// ============================================================
+const Render = {
+  ctx: null,
+  W: 0, H: 0,
+  paperPattern: null,
+  init(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.resize();
+    // Generate sketchy paper pattern
+    this.makePattern();
+  },
+  resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = this.canvas.getBoundingClientRect();
+    this.W = rect.width;
+    this.H = rect.height;
+    this.canvas.width = rect.width * dpr;
+    this.canvas.height = rect.height * dpr;
+    this.ctx.setTransform(dpr,0,0,dpr,0,0);
+  },
+  makePattern() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 200;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#f4ecd8';
+    ctx.fillRect(0,0,200,200);
+    // Speckles
+    for (let i=0;i<150;i++) {
+      ctx.fillStyle = `rgba(90,74,54,${Math.random()*0.05})`;
+      ctx.beginPath();
+      ctx.arc(Math.random()*200, Math.random()*200, Math.random()*1.5, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // Grid lines (sketchy)
+    ctx.strokeStyle = 'rgba(90,74,54,0.07)';
+    ctx.lineWidth = 1;
+    for (let i=0;i<200;i+=20) {
+      ctx.beginPath();
+      ctx.moveTo(0, i+(Math.random()-0.5)*1.5);
+      ctx.lineTo(200, i+(Math.random()-0.5)*1.5);
+      ctx.stroke();
+    }
+    this.paperPattern = this.ctx.createPattern(c, 'repeat');
+  },
+  sketchLine(p1, p2, jitter=1.2) {
+    const ctx = this.ctx;
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const len = Math.hypot(dx,dy);
+    const segs = Math.max(2, Math.floor(len/15));
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    for (let i=1;i<=segs;i++) {
+      const t = i/segs;
+      const x = p1.x + dx*t + (Math.random()-0.5)*jitter;
+      const y = p1.y + dy*t + (Math.random()-0.5)*jitter;
+      ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  },
+  sketchPoly(verts, fill, stroke, lw=2) {
+    const ctx = this.ctx;
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (let i=1;i<verts.length;i++) ctx.lineTo(verts[i].x, verts[i].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lw;
+    ctx.lineJoin = 'round';
+    for (let i=0;i<verts.length;i++) {
+      this.sketchLine(verts[i], verts[(i+1)%verts.length], 0.8);
+    }
+  },
+  sketchCircle(x, y, r, fill, stroke, lw=2) {
+    const ctx = this.ctx;
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    const segs = 30;
+    for (let i=0;i<=segs;i++) {
+      const a = (i/segs)*Math.PI*2;
+      const rj = r + (Math.random()-0.5)*0.8;
+      const px = x + Math.cos(a)*rj, py = y + Math.sin(a)*rj;
+      if (i===0) ctx.moveTo(px,py);
+      else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+  },
+  drawBody(b) {
+    const ctx = this.ctx;
+    // Glow for ball
+    if (b.glow) {
+      const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, (b.r||30)*2);
+      g.addColorStop(0, 'rgba(255,180,80,0.4)');
+      g.addColorStop(1, 'rgba(255,180,80,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, (b.r||30)*2, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // Trail
+    if (b.trail && b.trail.length > 1) {
+      ctx.strokeStyle = b.fill + 'aa';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let i=0;i<b.trail.length;i++) {
+        const p = b.trail[i];
+        const alpha = i/b.trail.length;
+        ctx.globalAlpha = alpha * 0.5;
+        if (i===0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    if (b.type === 'circle') {
+      this.sketchCircle(b.x, b.y, b.r, b.fill, b.stroke);
+      // Bell special drawing
+      if (b.kind === 'bell') {
+        const wob = b.struck ? Math.sin((performance.now() - b.strikeTime)*0.02) * 0.1 * Math.exp(-(performance.now() - b.strikeTime)*0.001) : 0;
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.rotate(wob);
+        ctx.strokeStyle = '#5a4a36';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, b.r*0.5, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.fillStyle = '#a07a20';
+        ctx.beginPath();
+        ctx.arc(0, b.r*0.3, b.r*0.15, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+        // Sound waves when struck
+        if (b.struck) {
+          const dt = performance.now() - b.strikeTime;
+          if (dt < 1500) {
+            const radius = dt * 0.15;
+            ctx.strokeStyle = `rgba(255,212,77,${1 - dt/1500})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r + radius, 0, Math.PI*2);
+            ctx.stroke();
+          }
+        }
+      }
+      if (b.kind === 'bumper') {
+        // Star inside
+        ctx.fillStyle = '#fff';
+        ctx.font = (b.r*1.5)+'px serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('★', b.x, b.y);
+      }
+      if (b.kind === 'peg') {
+        ctx.fillStyle = '#3a2f24';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 3, 0, Math.PI*2);
+        ctx.fill();
+      }
+    } else {
+      const verts = b.getVertices();
+      this.sketchPoly(verts, b.fill, b.stroke);
+      // Domino dots
+      if (b.kind === 'domino') {
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.rotate(b.angle);
+        ctx.fillStyle = '#3a2f24';
+        ctx.beginPath();
+        ctx.arc(0, -b.h/4, 2, 0, Math.PI*2);
+        ctx.arc(0, b.h/4, 2, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      }
+      // Fan visual
+      if (b.kind === 'fan') {
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.rotate(b.angle);
+        // Fan blades (rotating)
+        const bladeAngle = performance.now() * 0.02;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        for (let k=0; k<3; k++) {
+          const a = bladeAngle + k * Math.PI*2/3;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(Math.cos(a)*15, Math.sin(a)*15);
+          ctx.stroke();
+        }
+        // Wind cone (run mode only)
+        if (UI.mode === 'run') {
+          ctx.strokeStyle = 'rgba(90,180,90,0.3)';
+          ctx.lineWidth = 1;
+          for (let k=0;k<5;k++) {
+            const t = (performance.now()*0.001 + k*0.2) % 1;
+            const x = t * 280;
+            const w = 30 + x*0.5;
+            ctx.beginPath();
+            ctx.moveTo(x, -w);
+            ctx.lineTo(x, w);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+    }
+  },
+  drawConstraint(c) {
+    const ctx = this.ctx;
+    const wa = c.getWorldA();
+    const wb = c.getWorldB();
+    if (c instanceof Hinge) {
+      ctx.fillStyle = '#3a2f24';
+      ctx.beginPath();
+      ctx.arc(wa.x, wa.y, 5, 0, Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(wa.x, wa.y, 3, 0, Math.PI*2);
+      ctx.stroke();
+    } else if (c instanceof Rope) {
+      ctx.strokeStyle = '#5a4a36';
+      ctx.lineWidth = 2;
+      const segs = 10;
+      ctx.beginPath();
+      ctx.moveTo(wa.x, wa.y);
+      const dx = wb.x - wa.x, dy = wb.y - wa.y;
+      const len = Math.hypot(dx,dy);
+      // Catenary-ish sag
+      const sag = Math.max(0, c.maxLen - len) * 0.5;
+      for (let i=1;i<=segs;i++) {
+        const t = i/segs;
+        const sagY = sag * 4 * t * (1-t);
+        ctx.lineTo(wa.x + dx*t, wa.y + dy*t + sagY);
+      }
+      ctx.stroke();
+    }
+  },
+  drawGoal() {
+    if (!World.goal) return;
+    const ctx = this.ctx;
+    const g = World.goal;
+    const pulse = Math.sin(performance.now()*0.005)*0.2 + 0.8;
+    if (g.type === 'basket') {
+      ctx.strokeStyle = `rgba(58,138,85,${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8,4]);
+      ctx.strokeRect(g.x - g.w/2, g.y - g.h/2, g.w, g.h);
+      ctx.setLineDash([]);
+      ctx.fillStyle = `rgba(58,138,85,${0.3*pulse})`;
+      ctx.font = '20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('GOAL', g.x, g.y - g.h/2 - 5);
+    } else if (g.type === 'reach') {
+      ctx.fillStyle = `rgba(58,138,85,${0.3*pulse})`;
+      ctx.fillRect(g.x - g.w/2, g.y, g.w, 30);
+      ctx.fillStyle = '#3a8a55';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('GOAL', g.x, g.y + 20);
+    } else if (g.type === 'target') {
+      const cx = g.x, cy = g.y;
+      const colors = ['#c8472b', '#fff', '#c8472b', '#fff'];
+      for (let i=0;i<4;i++) {
+        ctx.fillStyle = colors[i];
+        ctx.beginPath();
+        ctx.arc(cx, cy, g.r * (1 - i*0.2), 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = '#3a2f24';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, g.r, 0, Math.PI*2);
+      ctx.stroke();
+    } else if (g.type === 'bell') {
+      // No visual marker, the bell IS the goal
+    }
+  },
+  draw() {
+    const ctx = this.ctx;
+    ctx.fillStyle = this.paperPattern || '#f4ecd8';
+    ctx.fillRect(0,0,this.W,this.H);
+    // Goal first (background)
+    this.drawGoal();
+    // Bodies
+    for (const b of World.bodies) this.drawBody(b);
+    // Constraints
+    for (const c of World.constraints) this.drawConstraint(c);
+    // UI overlays
+    if (UI.dragging && UI.dragShape) {
+      const s = UI.dragShape;
+      ctx.globalAlpha = 0.7;
+      this.drawShapePreview(s, UI.mouse.x, UI.mouse.y);
+      ctx.globalAlpha = 1;
+    }
+    if (UI.drawingWall) {
+      ctx.strokeStyle = '#5a4a36';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([6,4]);
+      ctx.beginPath();
+      ctx.moveTo(UI.wallStart.x, UI.wallStart.y);
+      ctx.lineTo(UI.mouse.x, UI.mouse.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (UI.selected) {
+      this.drawSelectionHandles(UI.selected);
+    }
+    if (UI.toolMode === 'hinge' || UI.toolMode === 'rope') {
+      ctx.fillStyle = UI.toolMode === 'hinge' ? '#c8472b' : '#3a8a55';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'left';
+      const t = UI.toolMode === 'hinge' ? 'HINGE TOOL: click two shapes' : 'ROPE TOOL: click two shapes';
+      ctx.fillText(t, 10, 20);
+      // Highlight first selection
+      if (UI.toolFirst) {
+        const b = UI.toolFirst;
+        ctx.strokeStyle = '#c8472b';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4,4]);
+        if (b.type === 'circle') {
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r+5, 0, Math.PI*2);
+          ctx.stroke();
+        } else {
+          const aabb = b.getAABB();
+          ctx.strokeRect(aabb.minX-3, aabb.minY-3, aabb.maxX-aabb.minX+6, aabb.maxY-aabb.minY+6);
+        }
+        ctx.setLineDash([]);
+      }
+    }
+  },
+  drawShapePreview(s, x, y) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(x, y);
+    if (s.type === 'circle') {
+      this.sketchCircle(0, 0, s.r||20, s.fill||'#bca77a', '#3a2f24');
+    } else if (s.type === 'ramp') {
+      const w = s.w||60, h = s.h||50;
+      const verts = [{x:-w/2,y:h/2},{x:w/2,y:h/2},{x:w/2,y:-h/2}];
+      this.sketchPoly(verts, s.fill||'#bca77a', '#3a2f24');
+    } else if (s.type === 'triangle') {
+      const w = s.w||60, h = s.h||50;
+      const verts = [{x:0,y:-h/2},{x:w/2,y:h/2},{x:-w/2,y:h/2}];
+      this.sketchPoly(verts, s.fill||'#bca77a', '#3a2f24');
+    } else {
+      const w = s.w||50, h = s.h||50;
+      const verts = [{x:-w/2,y:-h/2},{x:w/2,y:-h/2},{x:w/2,y:h/2},{x:-w/2,y:h/2}];
+      this.sketchPoly(verts, s.fill||'#bca77a', '#3a2f24');
+    }
+    ctx.restore();
+  },
+  drawSelectionHandles(b) {
+    const ctx = this.ctx;
+    ctx.strokeStyle = '#c8472b';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4,3]);
+    if (b.type === 'circle') {
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r+8, 0, Math.PI*2);
+      ctx.stroke();
+      // Resize handle
+      ctx.fillStyle = '#c8472b';
+      ctx.fillRect(b.x + b.r + 5, b.y - 4, 8, 8);
+    } else {
+      const aabb = b.getAABB();
+      ctx.strokeRect(aabb.minX-4, aabb.minY-4, aabb.maxX-aabb.minX+8, aabb.maxY-aabb.minY+8);
+      // Corner resize handles
+      ctx.fillStyle = '#c8472b';
+      const corners = [
+        {x:aabb.minX, y:aabb.minY}, {x:aabb.maxX, y:aabb.minY},
+        {x:aabb.maxX, y:aabb.maxY}, {x:aabb.minX, y:aabb.maxY}
+      ];
+      for (const c of corners) ctx.fillRect(c.x-4, c.y-4, 8, 8);
+      // Rotation handle (top center)
+      const cx = (aabb.minX+aabb.maxX)/2;
+      ctx.beginPath();
+      ctx.moveTo(cx, aabb.minY-4);
+      ctx.lineTo(cx, aabb.minY-20);
+      ctx.stroke();
+      ctx.fillStyle = '#3a8a55';
+      ctx.beginPath();
+      ctx.arc(cx, aabb.minY-20, 6, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.setLineDash([]);
+  }
+};
+
+// ============================================================
+// UI / INPUT
+// ============================================================
+const UI = {
+  mode: 'edit', // edit | run
+  selected: null,
+  dragging: false,
+  dragShape: null,
+  draggingBody: null,
+  dragOffset: {x:0,y:0},
+  rotating: false,
+  resizing: false,
+  resizeCorner: null,
+  drawingWall: false,
+  wallStart: null,
+  mouse: {x:0,y:0},
+  toolMode: null, // null | hinge | rope
+  toolFirst: null,
+  currentPuzzle: 0,
+  audioEnabled: true,
+  init() {
+    this.canvas = document.getElementById('scene');
+    this.canvas.addEventListener('mousedown', (e) => this.onDown(e));
+    this.canvas.addEventListener('mousemove', (e) => this.onMove(e));
+    this.canvas.addEventListener('mouseup', (e) => this.onUp(e));
+    this.canvas.addEventListener('touchstart', (e) => { const t=e.touches[0]; this.onDown({clientX:t.clientX, clientY:t.clientY, button:0, preventDefault:()=>e.preventDefault()}); e.preventDefault(); });
+    this.canvas.addEventListener('touchmove', (e) => { const t=e.touches[0]; this.onMove({clientX:t.clientX, clientY:t.clientY}); e.preventDefault(); });
+    this.canvas.addEventListener('touchend', (e) => { this.onUp({}); });
+    window.addEventListener('keydown', (e) => this.onKey(e));
+    window.addEventListener('resize', () => Render.resize());
+    document.getElementById('btnRun').addEventListener('click', () => this.toggleMode());
+    document.getElementById('btnReset').addEventListener('click', () => this.reset());
+    document.getElementById('btnClear').addEventListener('click', () => this.clearUserShapes());
+    document.getElementById('btnAudio').addEventListener('click', () => {
+      const e = Audio.toggle();
+      document.getElementById('btnAudio').textContent = 'Audio: ' + (e?'ON':'OFF');
+    });
+    document.getElementById('btnNext').addEventListener('click', () => {
+      this.currentPuzzle = (this.currentPuzzle + 1) % Puzzles.length;
+      document.getElementById('puzzleSel').value = this.currentPuzzle;
+      this.loadPuzzle(this.currentPuzzle);
+      document.getElementById('winOverlay').style.display = 'none';
+    });
+    this.buildPalette();
+    this.buildPuzzleSelect();
+    this.loadPuzzle(0);
+  },
+  buildPuzzleSelect() {
+    const sel = document.getElementById('puzzleSel');
+    Puzzles.forEach((p, i) => {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = p.name;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', (e) => {
+      this.currentPuzzle = parseInt(e.target.value);
+      this.loadPuzzle(this.currentPuzzle);
+    });
+  },
+  buildPalette() {
+    const shapes = [
+      {label:'Circle', config:{type:'circle', kind:'wall', r:22, fill:'#bca77a', static:true}},
+      {label:'Box', config:{type:'rectangle', kind:'wall', w:50, h:50, fill:'#bca77a', static:true}},
+      {label:'Ramp', config:{type:'ramp', kind:'wall', w:80, h:50, fill:'#a08055', static:true}},
+      {label:'Triangle', config:{type:'triangle', kind:'wall', w:60, h:55, fill:'#a08055', static:true}},
+      {label:'Beam', config:{type:'rectangle', kind:'wall', w:120, h:14, fill:'#8a7050', static:true}},
+      {label:'Peg', config:{type:'circle', kind:'peg', r:8, fill:'#5a4a36', static:true}},
+    ];
+    const objects = [
+      {label:'Ball', config:{type:'circle', kind:'ball', r:18, fill:'#c8472b', restitution:0.5, glow:true}},
+      {label:'Domino', config:{type:'rectangle', kind:'domino', w:14, h:70, fill:'#dcc78a', stroke:'#5a4a36'}},
+      {label:'Bumper', config:{type:'circle', kind:'bumper', r:24, fill:'#c8472b', stroke:'#3a2f24', restitution:0.9, static:true}},
+      {label:'Bell', config:{type:'circle', kind:'bell', r:30, fill:'#ffd44d', stroke:'#a07a20', static:true}},
+      {label:'Fan', config:{type:'rectangle', kind:'fan', w:50, h:30, fill:'#3a8a55', stroke:'#1a5530', static:true}},
+      {label:'Heavy Box', config:{type:'rectangle', kind:'wall', w:40, h:40, fill:'#5a4a36', density:3}},
+    ];
+    const tools = [
+      {label:'Hinge', tool:'hinge'},
+      {label:'Rope', tool:'rope'},
+    ];
+    const palShapes = document.getElementById('palShapes');
+    const palObjects = document.getElementById('palObjects');
+    const palTools = document.getElementById('palTools');
+    const makeItem = (item, target, isTool) => {
+      const div = document.createElement('div');
+      div.className = 'pitem';
+      // Mini canvas preview
+      const mc = document.createElement('canvas');
+      mc.width = 50; mc.height = 30;
+      const mctx = mc.getContext('2d');
+      if (isTool) {
+        mctx.fillStyle = item.tool === 'hinge' ? '#c8472b' : '#3a8a55';
+        mctx.font = '20px sans-serif';
+        mctx.textAlign = 'center';
+        mctx.textBaseline = 'middle';
+        mctx.fillText(item.tool === 'hinge' ? 'O' : '~', 25, 15);
+      } else {
+        const c = item.config;
+        mctx.fillStyle = c.fill || '#bca77a';
+        mctx.strokeStyle = c.stroke || '#3a2f24';
+        mctx.lineWidth = 1.5;
+        if (c.type === 'circle') {
+          mctx.beginPath();
+          mctx.arc(25, 15, Math.min(12, c.r), 0, Math.PI*2);
+          mctx.fill(); mctx.stroke();
+          if (c.kind === 'bell') {
+            mctx.fillStyle = '#a07a20';
+            mctx.beginPath();
+            mctx.arc(25, 18, 2, 0, Math.PI*2);
+            mctx.fill();
+          }
+        } else if (c.type === 'ramp') {
+          mctx.beginPath();
+          mctx.moveTo(10, 25); mctx.lineTo(40, 25); mctx.lineTo(40, 5);
+          mctx.closePath();
+          mctx.fill(); mctx.stroke();
+        } else if (c.type === 'triangle') {
+          mctx.beginPath();
+          mctx.moveTo(25, 5); mctx.lineTo(40, 25); mctx.lineTo(10, 25);
+          mctx.closePath();
+          mctx.fill(); mctx.stroke();
+        } else {
+          const w = Math.min(30, c.w/2), h = Math.min(20, c.h/2);
+          mctx.fillRect(25-w, 15-h, w*2, h*2);
+          mctx.strokeRect(25-w, 15-h, w*2, h*2);
+          if (c.kind === 'fan') {
+            mctx.strokeStyle = '#fff';
+            mctx.beginPath();
+            mctx.moveTo(20, 15); mctx.lineTo(30, 15);
+            mctx.moveTo(25, 10); mctx.lineTo(25, 20);
+            mctx.stroke();
+          }
+        }
+      }
+      div.appendChild(mc);
+      const span = document.createElement('span');
+      span.textContent = item.label;
+      div.appendChild(span);
+      div.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (this.mode !== 'edit') return;
+        if (isTool) {
+          this.toolMode = item.tool;
+          this.toolFirst = null;
+          this.setStatus(item.tool === 'hinge' ? 'Click first shape to hinge' : 'Click first shape to rope');
+          document.querySelectorAll('.pitem.selected').forEach(e => e.classList.remove('selected'));
+          div.classList.add('selected');
+          return;
+        }
+        this.dragging = true;
+        this.dragShape = item.config;
+        this.toolMode = null;
+        this.toolFirst = null;
+        document.querySelectorAll('.pitem.selected').forEach(e => e.classList.remove('selected'));
+      });
+      target.appendChild(div);
+    };
+    shapes.forEach(s => makeItem(s, palShapes, false));
+    objects.forEach(s => makeItem(s, palObjects, false));
+    tools.forEach(t => makeItem(t, palTools, true));
+  },
+  loadPuzzle(idx) {
+    const p = Puzzles[idx];
+    document.getElementById('puzzleTitle').textContent = p.name;
+    document.getElementById('puzzleDesc').textContent = p.desc;
+    document.getElementById('winOverlay').style.display = 'none';
+    World.init(Render.W, Render.H);
+    p.setup(Render.W, Render.H);
+    // Save as design state
+    for (const b of World.bodies) b.saveDesign();
+    World.pieceCount = 0;
+    this.updatePieceCount();
+    this.mode = 'edit';
+    this.updateModeUI();
+    this.selected = null;
+    this.toolMode = null;
+    this.toolFirst = null;
+    this.setStatus('Drag shapes from palette. Click BUILD & RUN to start.');
+  },
+  updatePieceCount() {
+    document.getElementById('pieceCount').textContent = World.pieceCount;
+  },
+  updateModeUI() {
+    const ind = document.getElementById('modeInd');
+    if (this.mode === 'edit') {
+      ind.className = 'modeIndicator modeBuild';
+      ind.textContent = 'BUILD';
+      document.getElementById('btnRun').textContent = 'BUILD & RUN';
+      this.canvas.style.cursor = 'crosshair';
+    } else {
+      ind.className = 'modeIndicator modeRun';
+      ind.textContent = 'RUN';
+      document.getElementById('btnRun').textContent = 'STOP';
+      this.canvas.style.cursor = 'default';
+    }
+  },
+  setStatus(t) {
+    document.getElementById('status').textContent = t;
+  },
+  toggleMode() {
+    if (this.mode === 'edit') {
+      // Save design states
+      for (const b of World.bodies) b.saveDesign();
+      this.mode = 'run';
+      Audio.ensure(); // Resume audio context on user gesture
+    } else {
+      this.mode = 'edit';
+      World.reset();
+    }
+    this.updateModeUI();
+    this.selected = null;
+  },
+  reset() {
+    if (this.mode === 'run') {
+      this.mode = 'edit';
+    }
+    World.reset();
+    this.updateModeUI();
+    document.getElementById('winOverlay').style.display = 'none';
+  },
+  clearUserShapes() {
+    if (this.mode === 'run') return;
+    // Remove all non-puzzle bodies (keep originally added in puzzle.setup)
+    // Reload puzzle clears everything
+    this.loadPuzzle(this.currentPuzzle);
+  },
+  win(msg) {
+    if (this.mode !== 'run') return;
+    document.getElementById('winMsg').textContent = msg;
+    document.getElementById('winScore').textContent = `Pieces placed: ${World.pieceCount}`;
+    document.getElementById('winOverlay').style.display = 'flex';
+    this.mode = 'edit';
+    this.updateModeUI();
+    Audio.chime();
+  },
+  getMousePos(e) {
+    const r = this.canvas.getBoundingClientRect();
+    return {x: e.clientX - r.left, y: e.clientY - r.top};
+  },
+  bodyAt(x, y) {
+    // Iterate top-down (last drawn first)
+    for (let i=World.bodies.length-1; i>=0; i--) {
+      const b = World.bodies[i];
+      // Skip boundary walls (the first 3 added)
+      if (b.kind === 'wall' && b.static && (b.w > Render.W*1.5 || b.h > Render.H*1.5)) continue;
+      if (b.containsPoint(x, y)) return b;
+    }
+    return null;
+  },
+  handleAt(b, x, y) {
+    // Returns 'rotate' | 'resize-N' | null
+    if (b.type === 'circle') {
+      // Resize handle to right
+      if (Math.abs(x - (b.x + b.r + 9)) < 8 && Math.abs(y - b.y) < 8) return 'resize-r';
+    } else {
+      const aabb = b.getAABB();
+      const cx = (aabb.minX+aabb.maxX)/2;
+      // Rotate
+      if (Math.hypot(x - cx, y - (aabb.minY-20)) < 8) return 'rotate';
+      // Corners
+      const corners = [
+        {n:'tl', x:aabb.minX, y:aabb.minY}, {n:'tr', x:aabb.maxX, y:aabb.minY},
+        {n:'br', x:aabb.maxX, y:aabb.maxY}, {n:'bl', x:aabb.minX, y:aabb.maxY}
+      ];
+      for (const c of corners) {
+        if (Math.abs(x - c.x) < 8 && Math.abs(y - c.y) < 8) return 'resize-' + c.n;
+      }
+    }
+    return null;
+  },
+  onDown(e) {
+    const m = this.getMousePos(e);
+    this.mouse = m;
+    if (this.mode === 'run') {
+      // Click to "poke" objects
+      const b = this.bodyAt(m.x, m.y);
+      if (b && !b.static) {
+        b.vy -= 200;
+        b.vx += (Math.random()-0.5)*100;
+      }
+      return;
+    }
+    // Edit mode
+    if (this.dragging && this.dragShape) {
+      // Place from palette
+      const cfg = {...this.dragShape, x:m.x, y:m.y};
+      const b = new Body(cfg);
+      b.saveDesign();
+      World.bodies.push(b);
+      World.pieceCount++;
+      this.updatePieceCount();
+      this.dragging = false;
+      this.dragShape = null;
+      return;
+    }
+    if (this.toolMode) {
+      const b = this.bodyAt(m.x, m.y);
+      if (!b) { this.toolMode = null; this.toolFirst = null; return; }
+      if (!this.toolFirst) {
+        this.toolFirst = b;
+        this.setStatus('Click second shape (or click outside to anchor to world)');
+      } else {
+        const a = this.toolFirst;
+        if (a === b) { this.toolFirst = null; return; }
+        // Pin location: midpoint between centers
+        const px = (a.x + b.x)/2, py = (a.y + b.y)/2;
+        if (this.toolMode === 'hinge') {
+          // Anchor at b's location actually - or click pos. We use mouse pos
+          const hx = m.x, hy = m.y;
+          // If clicking on body, anchor at point
+          World.constraints.push(new Hinge(a, b, hx, hy));
+        } else {
+          World.constraints.push(new Rope(a, b, {x:a.x, y:a.y}, {x:b.x, y:b.y}));
+        }
+        this.toolMode = null;
+        this.toolFirst = null;
+        document.querySelectorAll('.pitem.selected').forEach(e => e.classList.remove('selected'));
+        this.setStatus('Constraint added!');
+      }
+      return;
+    }
+    // Selection / handle drag
+    if (this.selected) {
+      const handle = this.handleAt(this.selected, m.x, m.y);
+      if (handle === 'rotate') {
+        this.rotating = true;
+        return;
+      }
+      if (handle && handle.startsWith('resize')) {
+        this.resizing = true;
+        this.resizeCorner = handle.slice(7);
+        return;
+      }
+    }
+    const b = this.bodyAt(m.x, m.y);
+    if (b) {
+      this.selected = b;
+      this.draggingBody = b;
+      this.dragOffset = {x: m.x - b.x, y: m.y - b.y};
+    } else {
+      // Start drawing wall
+      this.selected = null;
+      this.drawingWall = true;
+      this.wallStart = m;
+    }
+  },
+  onMove(e) {
+    const m = this.getMousePos(e);
+    this.mouse = m;
+    if (this.draggingBody && this.mode === 'edit') {
+      this.draggingBody.x = m.x - this.dragOffset.x;
+      this.draggingBody.y = m.y - this.dragOffset.y;
+      this.draggingBody.saveDesign();
+    }
+    if (this.rotating && this.selected) {
+      const dx = m.x - this.selected.x;
+      const dy = m.y - this.selected.y;
+      this.selected.angle = Math.atan2(dy, dx) + Math.PI/2;
+      this.selected.saveDesign();
+    }
+    if (this.resizing && this.selected) {
+      const b = this.selected;
+      if (b.type === 'circle') {
+        const r = Math.max(8, Math.hypot(m.x - b.x, m.y - b.y));
+        b.r = r;
+      } else {
+        // Resize from corner
+        const aabb = b.getAABB();
+        // Compute new w, h based on dragged corner
+        let nw, nh;
+        if (this.resizeCorner === 'tl' || this.resizeCorner === 'bl') {
+          nw = Math.max(15, aabb.maxX - m.x);
+        } else {
+          nw = Math.max(15, m.x - aabb.minX);
+        }
+        if (this.resizeCorner === 'tl' || this.resizeCorner === 'tr') {
+          nh = Math.max(8, aabb.maxY - m.y);
+        } else {
+          nh = Math.max(8, m.y - aabb.minY);
+        }
+        // Scale relative; ignore rotation for simplicity (resize works best at angle 0)
+        b.w = Math.abs(nw);
+        b.h = Math.abs(nh);
+      }
+      b.computeMass();
+      b.saveDesign();
+    }
+  },
+  onUp(e) {
+    if (this.drawingWall) {
+      const m = this.mouse;
+      const dx = m.x - this.wallStart.x, dy = m.y - this.wallStart.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 15) {
+        const angle = Math.atan2(dy, dx);
+        const cx = (m.x + this.wallStart.x)/2;
+        const cy = (m.y + this.wallStart.y)/2;
+        const wall = new Body({type:'rectangle', kind:'wall', x:cx, y:cy, w:len, h:8, angle:angle, static:true, fill:'#5a4a36'});
+        wall.saveDesign();
+        World.bodies.push(wall);
+        World.pieceCount++;
+        this.updatePieceCount();
+      }
+      this.drawingWall = false;
+    }
+    this.draggingBody = null;
+    this.rotating = false;
+    this.resizing = false;
+    this.resizeCorner = null;
+  },
+  onKey(e) {
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      if (this.selected && this.mode === 'edit') {
+        // Don't delete boundary walls
+        if (this.selected.kind === 'wall' && this.selected.static && (this.selected.w > Render.W*1.5 || this.selected.h > Render.H*1.5)) return;
+        // Remove constraints involving this body
+        World.constraints = World.constraints.filter(c => c.a !== this.selected && c.b !== this.selected);
+        World.bodies = World.bodies.filter(b => b !== this.selected);
+        this.selected = null;
+        World.pieceCount = Math.max(0, World.pieceCount - 1);
+        this.updatePieceCount();
+        e.preventDefault();
+      }
+    } else if (e.key === ' ') {
+      this.toggleMode();
+      e.preventDefault();
+    } else if (e.key === 'r' || e.key === 'R') {
+      this.reset();
+    } else if (e.key === 'Escape') {
+      this.toolMode = null;
+      this.toolFirst = null;
+      this.dragging = false;
+      this.dragShape = null;
+      this.selected = null;
+      document.querySelectorAll('.pitem.selected').forEach(el => el.classList.remove('selected'));
+    }
+  }
+};
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+let lastTime = performance.now();
+function loop() {
+  const now = performance.now();
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  if (dt > 0.05) dt = 0.05; // clamp
+  if (UI.mode === 'run') {
+    // Use fixed sub-steps for stability
+    const steps = 2;
+    for (let i=0;i<steps;i++) World.step(dt/steps);
+  }
+  Render.draw();
+  requestAnimationFrame(loop);
+}
+
+// Boot
+window.addEventListener('load', () => {
+  Render.init(document.getElementById('scene'));
+  UI.init();
+  loop();
+});
+
+</script>
+</body>
+</html>

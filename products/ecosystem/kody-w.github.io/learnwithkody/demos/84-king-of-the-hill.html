@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KOTH 3v3 — Auto Match</title>
+<style>
+  html,body{margin:0;height:100%;background:#06070a;color:#dde;font-family:Consolas,'Courier New',monospace;overflow:hidden;}
+  #wrap{height:100vh;display:flex;align-items:center;justify-content:center;}
+  canvas{background:#0e1015;box-shadow:0 0 60px #0008;max-width:100vw;max-height:100vh;}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1400" height="800"></canvas></div>
+<script>
+"use strict";
+
+// ================ Setup ================
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+const W=canvas.width, H=canvas.height;
+
+const HUD_H=92, BANNER_H=54, PANEL_W=300;
+const ARENA_X=14, ARENA_Y=HUD_H+8;
+const ARENA_W=W-PANEL_W-28-14, ARENA_H=H-HUD_H-BANNER_H-16;
+const PANEL_X=W-PANEL_W-14, PANEL_Y=HUD_H+8;
+
+const RED_C='#ff4d4d', BLU_C='#4ba6ff', GOLD='#ffd84a';
+
+// ================ Helpers ================
+const rand=(a,b)=>a+Math.random()*(b-a);
+const choice=a=>a[Math.floor(Math.random()*a.length)];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+function shuffle(a){const r=a.slice();for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];}return r;}
+
+// ================ Names ================
+const RED_NAMES=['JESTER','BRAVO','KILO','RANGER','FROST','EMBER','RAVEN','FALCON','ATLAS','GOLEM','REAVER','NOMAD','MAVER','BLAZE','REX','KAIDEN','TEMPLAR','VIPER','HUNTER','ORYX'];
+const BLU_NAMES=['GLINT','ECHO','SIERRA','NOVA','PRISM','CIPHER','AXIS','ORACLE','MIRAGE','TALON','CRYO','WRAITH','RINGFALL','ZEPHYR','NEON','KESTREL','DASH','OMEN','LATCH','SAGE'];
+
+// ================ Map ================
+// Walls in arena-local coords
+const WALLS=[
+  // Top-left platform
+  {x:60,y:60,w:240,h:14},
+  {x:60,y:60,w:14,h:80},
+  {x:286,y:60,w:14,h:50},
+  // Top-right platform (sniper area moved to top-left)
+  {x:430,y:80,w:240,h:14},
+  {x:430,y:80,w:14,h:90},
+  {x:656,y:80,w:14,h:90},
+  // Center alcove walls (overshield)
+  {x:480,y:270,w:120,h:14},
+  {x:480,y:270,w:14,h:50},
+  {x:586,y:270,w:14,h:50},
+  // Right cover blocks
+  {x:780,y:170,w:14,h:80},
+  {x:830,y:230,w:80,h:14},
+  {x:900,y:330,w:14,h:90},
+  {x:780,y:410,w:120,h:14},
+  // Left cover
+  {x:120,y:280,w:14,h:120},
+  {x:200,y:380,w:80,h:14},
+  // Bridge area
+  {x:340,y:420,w:14,h:80},
+  {x:430,y:480,w:200,h:14},
+  // Bottom alley walls
+  {x:300,y:560,w:14,h:60},
+  {x:700,y:560,w:14,h:60},
+  // Bottom right rocket cover
+  {x:920,y:540,w:80,h:14},
+  // Mid divider chunk
+  {x:660,y:340,w:14,h:60},
+];
+
+const ARENA_INNER_W=1020, ARENA_INNER_H=620; // logical map size
+
+// Explicit, safe spawn points (not inside any wall)
+const RED_SPAWNS=[
+  {x:36, y:200}, {x:36, y:330}, {x:36, y:460}
+];
+const BLU_SPAWNS=[
+  {x:984, y:200}, {x:984, y:330}, {x:984, y:460}
+];
+
+// Rate for hill-seconds accumulation (0.65 -> 100 hill-secs needs ~154s solo control => 4-6 min matches)
+const SCORE_RATE=0.65;
+
+const HILL_CANDIDATES=[
+  {x:540, y:130, name:'PLATFORM'},
+  {x:200, y:330, name:'WEST PIT'},
+  {x:880, y:330, name:'EAST ALLEY'},
+  {x:540, y:560, name:'BRIDGE'},
+  {x:540, y:340, name:'CENTER ALCOVE'},
+];
+
+const PICKUP_DEFS=[
+  {type:'SNIPER',     x:160, y:100, respawn:90,  color:'#7ad6ff', ammo:8,  weapon:'SNIPER'},
+  {type:'ROCKETS',    x:960, y:600, respawn:120, color:'#ff8a3d', ammo:4,  weapon:'ROCKETS'},
+  {type:'OVERSHIELD', x:540, y:230, respawn:60,  color:'#fff75a', ammo:0,  weapon:null},
+];
+
+// ================ Game State ================
+let bots=[], pickups=[], shots=[], explosions=[], announcements=[], killfeed=[];
+let hill, hillIdx=0, hillOrder=[], hillTimer=0, hillSoloR=0, hillSoloB=0, hillControlAnnounced={R:false,B:false};
+let scoreR=0, scoreB=0, matchTimer=0, matchPhase='COUNTDOWN', countdown=3;
+let firstBlood=false, mvpScreenTimer=0, winnerTeam=null;
+const MATCH_DURATION=360, HILL_DURATION=45, SCORE_TARGET=100;
+
+// ================ Wall collision ================
+function pointInWalls(x,y,pad=0){
+  for(const w of WALLS){
+    if(x>w.x-pad && x<w.x+w.w+pad && y>w.y-pad && y<w.y+w.h+pad) return w;
+  }
+  return null;
+}
+
+// segment vs rect intersection (Liang–Barsky-ish)
+function segRect(x1,y1,x2,y2,r){
+  const dx=x2-x1, dy=y2-y1;
+  let tmin=0, tmax=1;
+  const p=[-dx,dx,-dy,dy];
+  const q=[x1-r.x, r.x+r.w-x1, y1-r.y, r.y+r.h-y1];
+  for(let i=0;i<4;i++){
+    if(p[i]===0){ if(q[i]<0) return false; }
+    else{
+      const t=q[i]/p[i];
+      if(p[i]<0){ if(t>tmax) return false; if(t>tmin) tmin=t; }
+      else { if(t<tmin) return false; if(t<tmax) tmax=t; }
+    }
+  }
+  return true;
+}
+function los(a,b){
+  for(const w of WALLS){ if(segRect(a.x,a.y,b.x,b.y,w)) return false; }
+  return true;
+}
+
+// ================ Spartan ================
+class Spartan{
+  constructor(name,team,role,idx){
+    this.name=name; this.team=team; this.role=role; this.idx=idx;
+    this.x=0;this.y=0;this.vx=0;this.vy=0;this.angle=0;
+    this.maxHp=100; this.hp=100; this.maxShield=70; this.shield=70;
+    this.alive=true; this.respawnAt=0; this.lastDamageAt=-99;
+    this.weapon='AR'; this.weaponAmmo=0; this.fireCd=0;
+    this.kills=0; this.deaths=0; this.hillTime=0;
+    this.streak=0; this.lastKillTime=-99; this.doubles=0;
+    this.overshieldUntil=-1; this.osMaxShield=0;
+    this.speed=role==='rush'?115:(role==='support'?80:95);
+    this.target=null;
+    this.aimAt=null;
+    this.muzzleFlash=0;
+  }
+  spawn(now){
+    const arr = this.team==='R'?RED_SPAWNS:BLU_SPAWNS;
+    const sp = arr[this.idx%3];
+    this.x=sp.x+rand(-10,10); this.y=sp.y+rand(-10,10);
+    // Final safety: nudge if inside wall
+    let tries=0;
+    while(pointInWalls(this.x,this.y,4) && tries<20){
+      this.x+=rand(-15,15); this.y+=rand(-15,15);
+      this.x=clamp(this.x,18,ARENA_INNER_W-18);
+      this.y=clamp(this.y,18,ARENA_INNER_H-18);
+      tries++;
+    }
+    this.hp=this.maxHp; this.shield=this.maxShield; this.alive=true;
+    this.weapon='AR'; this.weaponAmmo=0; this.overshieldUntil=-1;
+    this.lastDamageAt=now-99;
+  }
+  takeDamage(dmg, attacker, now){
+    if(!this.alive) return;
+    this.lastDamageAt=now;
+    if(this.shield>0){
+      const a=Math.min(this.shield,dmg);
+      this.shield-=a; dmg-=a;
+    }
+    if(dmg>0) this.hp-=dmg;
+    if(this.hp<=0){
+      this.alive=false; this.deaths++;
+      this.respawnAt=now+4.5;
+      if(attacker){
+        attacker.kills++; attacker.streak++;
+        if(!firstBlood){ firstBlood=true; announce('FIRST BLOOD — '+attacker.name, attacker.team==='R'?RED_C:BLU_C); }
+        const dt=now-attacker.lastKillTime;
+        if(dt<4.0 && attacker.streak>=2 && attacker.lastKillTime>=0){
+          attacker.doubles++;
+          announce('DOUBLE KILL — '+attacker.name, attacker.team==='R'?RED_C:BLU_C);
+        }
+        if(attacker.streak===5) announce('KILLING SPREE — '+attacker.name, GOLD);
+        if(attacker.streak===10) announce('RAMPAGE — '+attacker.name, GOLD);
+        attacker.lastKillTime=now;
+      }
+      this.streak=0;
+      addKillfeed(attacker, this);
+    }
+  }
+}
+
+// ================ Spawn pickups ================
+function resetPickups(){
+  pickups=PICKUP_DEFS.map(d=>({...d, available:true, respawnAt:0, pulse:0}));
+}
+
+// ================ Match Setup ================
+function newMatch(){
+  bots=[];
+  const redRoles=shuffle(['rush','fight','support']);
+  const bluRoles=shuffle(['rush','fight','support']);
+  const redNames=shuffle(RED_NAMES).slice(0,3);
+  const bluNames=shuffle(BLU_NAMES).slice(0,3);
+  for(let i=0;i<3;i++){
+    const b=new Spartan(redNames[i],'R',redRoles[i],i);
+    b.spawn(0); bots.push(b);
+  }
+  for(let i=0;i<3;i++){
+    const b=new Spartan(bluNames[i],'B',bluRoles[i],i);
+    b.spawn(0); bots.push(b);
+  }
+  resetPickups();
+  hillOrder=shuffle([0,1,2,3,4]);
+  hillIdx=0;
+  hill={...HILL_CANDIDATES[hillOrder[0]], radius:55};
+  hillTimer=HILL_DURATION;
+  hillSoloR=0; hillSoloB=0;
+  hillControlAnnounced={R:false,B:false};
+  scoreR=0; scoreB=0; matchTimer=MATCH_DURATION;
+  shots=[]; explosions=[]; announcements=[]; killfeed=[];
+  firstBlood=false; mvpScreenTimer=0; winnerTeam=null;
+  matchPhase='COUNTDOWN'; countdown=3;
+}
+
+// ================ Killfeed ================
+function addKillfeed(attacker, victim){
+  let weaponLabel='AR';
+  if(attacker){
+    if(attacker.weapon==='SNIPER') weaponLabel='SR';
+    else if(attacker.weapon==='ROCKETS') weaponLabel='RX';
+    else weaponLabel='AR';
+  } else weaponLabel='--';
+  const a=attacker?attacker.name:'(world)';
+  const aTeam=attacker?attacker.team:null;
+  killfeed.unshift({a, weapon:weaponLabel, v:victim.name, aTeam, vTeam:victim.team, life:8});
+  if(killfeed.length>6) killfeed.length=6;
+}
+
+// ================ Announcer ================
+function announce(text, color){
+  announcements.push({text, color:color||GOLD, life:2.6, age:0});
+  if(announcements.length>5) announcements.shift();
+}
+
+// ================ Hill Logic ================
+function moveHill(){
+  hillIdx=(hillIdx+1)%hillOrder.length;
+  hill={...HILL_CANDIDATES[hillOrder[hillIdx]], radius:55};
+  hillTimer=HILL_DURATION;
+  hillSoloR=0; hillSoloB=0;
+  hillControlAnnounced={R:false,B:false};
+  announce('HILL MOVED — '+hill.name, GOLD);
+}
+function botOnHill(b){
+  if(!b.alive) return false;
+  return Math.hypot(b.x-hill.x,b.y-hill.y) < hill.radius;
+}
+
+// ================ Movement ================
+function moveBot(b, dt){
+  if(!b.alive) return;
+  const t=b.target;
+  if(!t){ b.vx*=0.85; b.vy*=0.85; return; }
+  let dx=t.x-b.x, dy=t.y-b.y;
+  const d=Math.hypot(dx,dy);
+  if(d<2){ b.vx*=0.6; b.vy*=0.6; return; }
+  dx/=d; dy/=d;
+  // Steer with simple wall avoidance: try perpendicular sides and pick the one that gets closer to the goal.
+  const probe=24;
+  if(pointInWalls(b.x+dx*probe, b.y+dy*probe, 5)){
+    const px=-dy, py=dx;
+    const opt1Free = !pointInWalls(b.x+px*probe, b.y+py*probe, 5);
+    const opt2Free = !pointInWalls(b.x-px*probe, b.y-py*probe, 5);
+    let chose=null;
+    if(opt1Free && opt2Free){
+      // pick whichever has the smaller resulting distance to target
+      const d1=Math.hypot(b.x+px*probe-t.x, b.y+py*probe-t.y);
+      const d2=Math.hypot(b.x-px*probe-t.x, b.y-py*probe-t.y);
+      chose = d1<d2 ? [px,py] : [-px,-py];
+    } else if(opt1Free) chose=[px,py];
+    else if(opt2Free) chose=[-px,-py];
+    else {
+      // Try blending diagonals
+      chose=[(dx+px)*0.5,(dy+py)*0.5];
+    }
+    dx=chose[0]; dy=chose[1];
+    const m=Math.hypot(dx,dy)||1; dx/=m; dy/=m;
+  }
+  // Strafe a bit if engaging
+  if(b.aimAt && b.alive){
+    const eDist=dist(b,b.aimAt);
+    if(eDist<260 && los(b,b.aimAt)){
+      const px=-dy, py=dx;
+      const sgn=Math.sin(performance.now()/600+b.idx*1.7+(b.team==='R'?0:1.5))>0?1:-1;
+      dx=dx*0.4+px*sgn*0.6; dy=dy*0.4+py*sgn*0.6;
+      const m=Math.hypot(dx,dy)||1; dx/=m; dy/=m;
+    }
+  }
+  const sp=b.speed * (b.urgency?1.18:1);
+  b.urgency=false;
+  let nx=b.x+dx*sp*dt, ny=b.y+dy*sp*dt;
+  // collide with walls (move in axes separately)
+  if(pointInWalls(nx,b.y,9)) nx=b.x;
+  if(pointInWalls(b.x,ny,9)) ny=b.y;
+  // arena bounds
+  nx=clamp(nx,18,ARENA_INNER_W-18);
+  ny=clamp(ny,18,ARENA_INNER_H-18);
+  b.x=nx; b.y=ny;
+  b.angle=Math.atan2(dy,dx);
+  if(b.aimAt && b.alive){
+    b.angle=Math.atan2(b.aimAt.y-b.y, b.aimAt.x-b.x);
+  }
+}
+
+// ================ AI ================
+function aiTick(b, now, dt){
+  if(!b.alive){
+    if(now>=b.respawnAt){ b.spawn(now); }
+    return;
+  }
+  // Shield regen (after 4s no damage)
+  if(now-b.lastDamageAt>4){
+    const cap = b.overshieldUntil>now? b.osMaxShield : b.maxShield;
+    b.shield=Math.min(cap, b.shield+30*dt);
+  }
+  if(b.overshieldUntil>0 && now>b.overshieldUntil){
+    b.overshieldUntil=-1;
+    b.shield=Math.min(b.maxShield,b.shield);
+    b.osMaxShield=0;
+  }
+
+  // Find best enemy
+  const enemies=bots.filter(o=>o.team!==b.team && o.alive);
+  let bestE=null, bestD=Infinity;
+  for(const e of enemies){
+    const d=dist(b,e);
+    const range = b.weapon==='SNIPER'?900:(b.weapon==='ROCKETS'?500:340);
+    if(d<range && los(b,e)){
+      if(d<bestD){ bestD=d; bestE=e; }
+    }
+  }
+  b.aimAt=bestE;
+
+  // Fire
+  if(bestE && b.fireCd<=0){
+    fire(b, bestE, now);
+  }
+
+  // Movement decision
+  const friends=bots.filter(o=>o.team===b.team && o.alive);
+  const teamOnHill=bots.filter(o=>o.team===b.team && o.alive && botOnHill(o)).length;
+  const enemyOnHill=enemies.filter(o=>botOnHill(o)).length;
+
+  // Default: go to hill
+  let goal={x:hill.x, y:hill.y};
+
+  // Power weapon attraction
+  let pwGoal=null, pwDist=Infinity;
+  for(const p of pickups){
+    if(!p.available) continue;
+    const d=dist(b,p);
+    // Higher priority for pickups based on role
+    let weight=1;
+    if(p.type==='OVERSHIELD'){
+      if(b.hp<70||b.shield<30) weight=0.4;
+      else weight=1.6;
+    } else {
+      if(b.weapon==='AR' && (b.role==='fight'||b.role==='rush')) weight=0.6;
+      else weight=1.4;
+    }
+    const w=d*weight;
+    if(w<pwDist){ pwDist=w; pwGoal={x:p.x, y:p.y, type:p.type}; }
+  }
+
+  // Hill priority logic
+  if(enemyOnHill>0 || (teamOnHill===0 && enemyOnHill===0)){
+    // Need to contest/take hill — closest 2 push, third bot may go for power weapons
+    goal={x:hill.x, y:hill.y};
+    const sortedTeam=friends.slice().sort((a,c)=>dist(a,hill)-dist(c,hill));
+    const myRank=sortedTeam.indexOf(b);
+    if(myRank>=2 && pwGoal && pwDist<240 && b.role!=='rush'){
+      goal=pwGoal;
+    }
+    // If enemy is on hill solo (we're losing it), boost speed slightly
+    if(enemyOnHill>0 && teamOnHill===0){ b.urgency=true; }
+  } else if(teamOnHill>0){
+    // We have hill solo
+    if(b.role==='rush'){
+      // push out toward enemy spawn / flank
+      goal={x:hill.x, y:hill.y};
+      if(bestE && bestD<300) goal={x:bestE.x, y:bestE.y};
+    } else if(pwGoal && pwDist<400){
+      goal=pwGoal;
+    } else {
+      // hold near hill
+      goal={x:hill.x+Math.cos(b.idx)*40, y:hill.y+Math.sin(b.idx)*40};
+    }
+  }
+
+  // Low HP retreat to overshield
+  const osPickup=pickups.find(p=>p.type==='OVERSHIELD'&&p.available);
+  if(b.hp<35 && osPickup){
+    goal={x:osPickup.x, y:osPickup.y};
+  }
+
+  // Engagement override: if enemy close & visible, focus on combat positioning (kite/strafe near)
+  if(bestE && bestD<200){
+    if(b.weapon==='SNIPER' && bestD<180){
+      // back up
+      const dx=b.x-bestE.x, dy=b.y-bestE.y;
+      goal={x:b.x+dx*0.2, y:b.y+dy*0.2};
+    }
+  }
+
+  b.target=goal;
+  moveBot(b, dt);
+
+  // Check pickup collection
+  for(const p of pickups){
+    if(p.available && Math.hypot(b.x-p.x,b.y-p.y)<22){
+      p.available=false; p.respawnAt=now+p.respawn;
+      if(p.type==='OVERSHIELD'){
+        b.overshieldUntil=now+20;
+        b.osMaxShield=170;
+        b.shield=170;
+      } else {
+        b.weapon=p.weapon;
+        b.weaponAmmo=p.ammo;
+      }
+    }
+  }
+
+  // Hill time tracking
+  if(botOnHill(b)) b.hillTime+=dt;
+
+  if(b.fireCd>0) b.fireCd-=dt;
+  if(b.muzzleFlash>0) b.muzzleFlash-=dt;
+}
+
+// ================ Combat ================
+function fire(b, target, now){
+  const w=b.weapon;
+  let dmg, range, cd, color, type;
+  if(w==='SNIPER'){ dmg=80; range=900; cd=1.4; color='#bff0ff'; type='sniper'; }
+  else if(w==='ROCKETS'){ dmg=120; range=500; cd=1.8; color='#ffb068'; type='rocket'; }
+  else { dmg=11; range=340; cd=0.18; color='#ffe2a8'; type='ar'; }
+
+  // Slight aim error
+  const err = (w==='AR')?0.06:(w==='SNIPER'?0.015:0.04);
+  const ang = Math.atan2(target.y-b.y, target.x-b.x) + (Math.random()-0.5)*err*2;
+  const tx = b.x+Math.cos(ang)*range, ty=b.y+Math.sin(ang)*range;
+  // Check actual hit with line vs target rect (small radius)
+  let hitTarget=null, hitX=tx, hitY=ty;
+  // For each enemy in line - check first hit
+  let bestT=Infinity;
+  // Walls
+  for(const ww of WALLS){
+    // Find segment-wall intersection point parametrically
+    const t = segRectT(b.x,b.y,tx,ty,ww);
+    if(t!==null && t<bestT){ bestT=t; hitTarget=null; hitX=b.x+(tx-b.x)*t; hitY=b.y+(ty-b.y)*t; }
+  }
+  // Bots
+  for(const e of bots){
+    if(e===b||!e.alive||e.team===b.team) continue;
+    const t=segCircleT(b.x,b.y,tx,ty,e.x,e.y,11);
+    if(t!==null && t<bestT){ bestT=t; hitTarget=e; hitX=b.x+(tx-b.x)*t; hitY=b.y+(ty-b.y)*t; }
+  }
+  shots.push({x1:b.x,y1:b.y,x2:hitX,y2:hitY,color,life:type==='sniper'?0.45:0.18, type});
+  b.muzzleFlash=0.08;
+
+  if(type==='rocket'){
+    explosions.push({x:hitX,y:hitY,r:8,maxR:60,life:0.45,age:0});
+    // AOE
+    for(const e of bots){
+      if(!e.alive||e.team===b.team) continue;
+      const d=Math.hypot(e.x-hitX,e.y-hitY);
+      if(d<60){
+        const fall=1-d/60;
+        e.takeDamage(dmg*fall, b, now);
+      }
+    }
+  } else if(hitTarget){
+    hitTarget.takeDamage(dmg, b, now);
+  }
+
+  b.fireCd=cd;
+  if(w!=='AR'){
+    b.weaponAmmo--;
+    if(b.weaponAmmo<=0){ b.weapon='AR'; b.weaponAmmo=0; }
+  }
+}
+
+function segRectT(x1,y1,x2,y2,r){
+  const dx=x2-x1, dy=y2-y1;
+  let tmin=0, tmax=1;
+  const p=[-dx,dx,-dy,dy];
+  const q=[x1-r.x, r.x+r.w-x1, y1-r.y, r.y+r.h-y1];
+  for(let i=0;i<4;i++){
+    if(p[i]===0){ if(q[i]<0) return null; }
+    else{
+      const t=q[i]/p[i];
+      if(p[i]<0){ if(t>tmax) return null; if(t>tmin) tmin=t; }
+      else { if(t<tmin) return null; if(t<tmax) tmax=t; }
+    }
+  }
+  return tmin>=0?tmin:null;
+}
+function segCircleT(x1,y1,x2,y2,cx,cy,r){
+  const dx=x2-x1, dy=y2-y1;
+  const fx=x1-cx, fy=y1-cy;
+  const a=dx*dx+dy*dy;
+  const b=2*(fx*dx+fy*dy);
+  const c=fx*fx+fy*fy-r*r;
+  let disc=b*b-4*a*c;
+  if(disc<0) return null;
+  disc=Math.sqrt(disc);
+  const t1=(-b-disc)/(2*a);
+  if(t1>=0 && t1<=1) return t1;
+  const t2=(-b+disc)/(2*a);
+  if(t2>=0 && t2<=1) return t2;
+  return null;
+}
+
+// ================ Update ================
+function update(dt, now){
+  if(matchPhase==='COUNTDOWN'){
+    countdown-=dt;
+    if(countdown<=0){ matchPhase='PLAYING'; announce('GO!', GOLD); }
+    return;
+  }
+  if(matchPhase==='ENDED'){
+    mvpScreenTimer-=dt;
+    if(mvpScreenTimer<=0){ newMatch(); }
+    return;
+  }
+
+  // PLAYING
+  matchTimer-=dt;
+  hillTimer-=dt;
+  if(hillTimer<=0){ moveHill(); }
+
+  // Pickups respawn
+  for(const p of pickups){
+    if(!p.available && now>=p.respawnAt){ p.available=true; }
+    p.pulse=(p.pulse||0)+dt;
+  }
+
+  // AI
+  for(const b of bots) aiTick(b, now, dt);
+
+  // Hill scoring
+  let onR=0, onB=0;
+  for(const b of bots){ if(botOnHill(b)){ if(b.team==='R') onR++; else onB++; } }
+  if(onR>0 && onB===0){
+    hillSoloR+=dt; hillSoloB=0; scoreR+=dt*SCORE_RATE;
+    if(!hillControlAnnounced.R && hillSoloR>=5){ hillControlAnnounced.R=true; announce('HILL CONTROLLED — RED', RED_C); }
+    hillControlAnnounced.B=false;
+  } else if(onB>0 && onR===0){
+    hillSoloB+=dt; hillSoloR=0; scoreB+=dt*SCORE_RATE;
+    if(!hillControlAnnounced.B && hillSoloB>=5){ hillControlAnnounced.B=true; announce('HILL CONTROLLED — BLUE', BLU_C); }
+    hillControlAnnounced.R=false;
+  } else {
+    hillSoloR*=0.6; hillSoloB*=0.6;
+  }
+
+  // FX life decay
+  for(let i=shots.length-1;i>=0;i--){ shots[i].life-=dt; if(shots[i].life<=0) shots.splice(i,1); }
+  for(let i=explosions.length-1;i>=0;i--){
+    const e=explosions[i]; e.age+=dt; e.r=8+(e.maxR-8)*(e.age/e.life);
+    if(e.age>=e.life) explosions.splice(i,1);
+  }
+  for(let i=announcements.length-1;i>=0;i--){
+    announcements[i].age+=dt; if(announcements[i].age>=announcements[i].life) announcements.splice(i,1);
+  }
+  for(let i=killfeed.length-1;i>=0;i--){
+    killfeed[i].life-=dt; if(killfeed[i].life<=-3) killfeed.splice(i,1);
+  }
+
+  // End conditions
+  if(scoreR>=SCORE_TARGET){ endMatch('R'); }
+  else if(scoreB>=SCORE_TARGET){ endMatch('B'); }
+  else if(matchTimer<=0){
+    if(scoreR>scoreB) endMatch('R');
+    else if(scoreB>scoreR) endMatch('B');
+    else endMatch(null);
+  }
+}
+
+function endMatch(winner){
+  matchPhase='ENDED';
+  winnerTeam=winner;
+  mvpScreenTimer=6.0;
+  if(winner) announce((winner==='R'?'RED':'BLUE')+' WINS!', winner==='R'?RED_C:BLU_C);
+  else announce('DRAW', GOLD);
+}
+
+// ================ Rendering ================
+function aw(x){ return ARENA_X+x*(ARENA_W/ARENA_INNER_W); }
+function ah(y){ return ARENA_Y+y*(ARENA_H/ARENA_INNER_H); }
+function asx(s){ return s*(ARENA_W/ARENA_INNER_W); }
+function asy(s){ return s*(ARENA_H/ARENA_INNER_H); }
+
+function drawBackground(){
+  // Outer arena
+  const grd=ctx.createRadialGradient(W/2-PANEL_W/2, H/2, 50, W/2-PANEL_W/2, H/2, 600);
+  grd.addColorStop(0,'#1a1d26');
+  grd.addColorStop(1,'#0a0c12');
+  ctx.fillStyle=grd;
+  ctx.fillRect(ARENA_X, ARENA_Y, ARENA_W, ARENA_H);
+
+  // grid pattern
+  ctx.strokeStyle='#1f2530'; ctx.lineWidth=1;
+  ctx.beginPath();
+  const gs=40;
+  for(let gx=0; gx<ARENA_INNER_W; gx+=gs){ ctx.moveTo(aw(gx), ah(0)); ctx.lineTo(aw(gx), ah(ARENA_INNER_H)); }
+  for(let gy=0; gy<ARENA_INNER_H; gy+=gs){ ctx.moveTo(aw(0), ah(gy)); ctx.lineTo(aw(ARENA_INNER_W), ah(gy)); }
+  ctx.stroke();
+
+  // Elevation hint zones (platforms)
+  ctx.fillStyle='rgba(80,90,110,0.18)';
+  ctx.fillRect(aw(60), ah(60), asx(240), asy(80));
+  ctx.fillRect(aw(430), ah(80), asx(240), asy(90));
+  ctx.fillRect(aw(780), ah(170), asx(140), asy(100));
+  // Pit
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.fillRect(aw(140), ah(280), asx(180), asy(120));
+  ctx.fillRect(aw(800), ah(420), asx(180), asy(120));
+
+  // Border
+  ctx.strokeStyle='#2c3548'; ctx.lineWidth=2;
+  ctx.strokeRect(ARENA_X, ARENA_Y, ARENA_W, ARENA_H);
+
+  // Walls
+  for(const w of WALLS){
+    ctx.fillStyle='#3b4357';
+    ctx.fillRect(aw(w.x), ah(w.y), asx(w.w), asy(w.h));
+    ctx.fillStyle='#5a6479';
+    ctx.fillRect(aw(w.x), ah(w.y), asx(w.w), 2);
+  }
+}
+
+function drawHill(now){
+  const t=performance.now()/1000;
+  // Determine controlling color
+  let onR=0, onB=0;
+  for(const b of bots) if(botOnHill(b)){ if(b.team==='R')onR++; else onB++; }
+  let col=GOLD;
+  if(onR>0 && onB===0) col=RED_C;
+  else if(onB>0 && onR===0) col=BLU_C;
+  else if(onR>0 && onB>0) col='#ffffff';
+
+  const r=hill.radius*Math.min(asx(1),asy(1));
+  const cx=aw(hill.x), cy=ah(hill.y);
+  const pulse=0.75+0.25*Math.sin(t*4);
+
+  // Outer halo
+  const grd=ctx.createRadialGradient(cx,cy,0,cx,cy,r*1.6);
+  grd.addColorStop(0, col+'cc');
+  grd.addColorStop(0.4, col+'55');
+  grd.addColorStop(1, col+'00');
+  ctx.fillStyle=grd;
+  ctx.beginPath(); ctx.arc(cx,cy,r*1.6,0,Math.PI*2); ctx.fill();
+
+  // Inner ring
+  ctx.strokeStyle=col;
+  ctx.lineWidth=3;
+  ctx.globalAlpha=pulse;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+  ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(cx,cy,r*0.85,0,Math.PI*2); ctx.stroke();
+  ctx.globalAlpha=1;
+
+  // Spinning arc tick
+  ctx.strokeStyle=col;
+  ctx.lineWidth=4;
+  ctx.beginPath(); ctx.arc(cx,cy,r*1.05, t*1.5, t*1.5+0.7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r*1.05, t*1.5+Math.PI, t*1.5+Math.PI+0.7); ctx.stroke();
+
+  // Label
+  ctx.fillStyle=col;
+  ctx.font='bold 11px Consolas';
+  ctx.textAlign='center';
+  ctx.fillText('HILL: '+hill.name, cx, cy-r-8);
+}
+
+function drawPickups(){
+  const t=performance.now()/300;
+  for(const p of pickups){
+    const cx=aw(p.x), cy=ah(p.y);
+    const respawnIn = p.available?0:Math.max(0,p.respawnAt-currentTime);
+    if(p.available){
+      ctx.fillStyle=p.color+'44';
+      ctx.beginPath(); ctx.arc(cx,cy,18+Math.sin(t+p.x)*2,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle=p.color; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx,cy,12,0,Math.PI*2); ctx.stroke();
+      // icon
+      ctx.fillStyle=p.color;
+      ctx.font='bold 10px Consolas'; ctx.textAlign='center';
+      const lab = p.type==='SNIPER'?'SR':(p.type==='ROCKETS'?'RX':'OS');
+      ctx.fillText(lab, cx, cy+3);
+    } else {
+      ctx.strokeStyle=p.color+'55'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(cx,cy,12,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle=p.color+'aa';
+      ctx.font='bold 9px Consolas'; ctx.textAlign='center';
+      ctx.fillText(Math.ceil(respawnIn), cx, cy+3);
+    }
+  }
+}
+
+function drawShots(){
+  for(const s of shots){
+    const a=clamp(s.life*4,0,1);
+    ctx.globalAlpha=a;
+    ctx.strokeStyle=s.color;
+    ctx.lineWidth=s.type==='sniper'?2:(s.type==='rocket'?3:1.5);
+    ctx.beginPath();
+    ctx.moveTo(aw(s.x1),ah(s.y1));
+    ctx.lineTo(aw(s.x2),ah(s.y2));
+    ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  for(const e of explosions){
+    const a=clamp(1-e.age/e.life,0,1);
+    const grd=ctx.createRadialGradient(aw(e.x),ah(e.y),0,aw(e.x),ah(e.y),asx(e.r));
+    grd.addColorStop(0,'rgba(255,200,80,'+a+')');
+    grd.addColorStop(0.5,'rgba(255,90,40,'+(a*0.6)+')');
+    grd.addColorStop(1,'rgba(120,30,10,0)');
+    ctx.fillStyle=grd;
+    ctx.beginPath(); ctx.arc(aw(e.x),ah(e.y),asx(e.r),0,Math.PI*2); ctx.fill();
+  }
+}
+
+function drawSpartans(){
+  for(const b of bots){
+    const cx=aw(b.x), cy=ah(b.y);
+    const col = b.team==='R'?RED_C:BLU_C;
+    if(!b.alive){
+      // Marker for respawn
+      ctx.strokeStyle=col+'66'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(cx,cy,8,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle=col+'88';
+      ctx.font='9px Consolas'; ctx.textAlign='center';
+      const r=Math.max(0,b.respawnAt-currentTime);
+      ctx.fillText(b.name+' '+r.toFixed(1)+'s', cx, cy-12);
+      continue;
+    }
+    // Body shadow
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.beginPath(); ctx.arc(cx+1,cy+2,11,0,Math.PI*2); ctx.fill();
+    // Body
+    ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(cx,cy,10,0,Math.PI*2); ctx.fill();
+    // Inner
+    ctx.fillStyle='#0e1015';
+    ctx.beginPath(); ctx.arc(cx,cy,5,0,Math.PI*2); ctx.fill();
+    // Direction triangle
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(b.angle);
+    ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(13,0);
+    ctx.lineTo(6,-4);
+    ctx.lineTo(6,4);
+    ctx.closePath();
+    ctx.fill();
+    if(b.muzzleFlash>0){
+      ctx.fillStyle='#ffea88';
+      ctx.beginPath();
+      ctx.arc(15,0,3+b.muzzleFlash*30,0,Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+    // Overshield ring
+    if(b.overshieldUntil>currentTime){
+      ctx.strokeStyle='#fff75a'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx,cy,13+Math.sin(performance.now()/120)*1.5,0,Math.PI*2); ctx.stroke();
+    }
+    // Weapon glow halo
+    if(b.weapon!=='AR'){
+      ctx.strokeStyle=b.weapon==='SNIPER'?'#7ad6ff':'#ff8a3d';
+      ctx.lineWidth=1.5;
+      ctx.globalAlpha=0.7;
+      ctx.beginPath(); ctx.arc(cx,cy,15,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+    // HP/Shield bars
+    const barW=24, barH=2;
+    const bx=cx-barW/2, by=cy-18;
+    // Shield (top)
+    const shieldCap = b.overshieldUntil>currentTime?b.osMaxShield:b.maxShield;
+    ctx.fillStyle='#222'; ctx.fillRect(bx,by,barW,barH);
+    ctx.fillStyle=b.overshieldUntil>currentTime?'#fff75a':'#7ec0ff';
+    ctx.fillRect(bx,by,barW*clamp(b.shield/shieldCap,0,1),barH);
+    // HP
+    ctx.fillStyle='#222'; ctx.fillRect(bx,by+barH+1,barW,barH);
+    ctx.fillStyle='#7af07a';
+    ctx.fillRect(bx,by+barH+1,barW*clamp(b.hp/b.maxHp,0,1),barH);
+    // Name
+    ctx.fillStyle='#fff';
+    ctx.font='bold 10px Consolas'; ctx.textAlign='center';
+    ctx.fillText(b.name, cx, cy-22);
+    // role tag
+    ctx.fillStyle=col;
+    ctx.font='8px Consolas';
+    const tag=b.role==='rush'?'R':(b.role==='fight'?'F':'S');
+    ctx.fillText('['+tag+']', cx, cy+22);
+  }
+}
+
+function drawHUD(){
+  // Top HUD background
+  const g=ctx.createLinearGradient(0,0,0,HUD_H);
+  g.addColorStop(0,'#171a23'); g.addColorStop(1,'#0d0f15');
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W,HUD_H);
+  ctx.strokeStyle='#2c3548'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,HUD_H); ctx.lineTo(W,HUD_H); ctx.stroke();
+
+  // Title text
+  ctx.fillStyle='#7d8696';
+  ctx.font='bold 10px Consolas'; ctx.textAlign='left';
+  ctx.fillText('RINGFALL :: KING OF THE HILL :: 3v3 :: AUTOPLAY BROADCAST', 12, 13);
+
+  const cx=W/2-PANEL_W/2;
+
+  // Team labels
+  ctx.font='bold 22px Consolas'; ctx.textAlign='left';
+  ctx.fillStyle=RED_C;
+  ctx.fillText('RED', 16, 44);
+  ctx.textAlign='right';
+  ctx.fillStyle=BLU_C;
+  ctx.fillText('BLUE', W-PANEL_W-30, 44);
+
+  // Score numbers
+  ctx.font='bold 30px Consolas';
+  ctx.textAlign='left';
+  ctx.fillStyle=RED_C;
+  ctx.fillText(Math.floor(scoreR).toString().padStart(3,'0'), 70, 48);
+  ctx.textAlign='right';
+  ctx.fillStyle=BLU_C;
+  ctx.fillText(Math.floor(scoreB).toString().padStart(3,'0'), W-PANEL_W-90, 48);
+
+  // Score bars (rising bars, top-center)
+  const barAreaX=200, barAreaW=W-PANEL_W-400;
+  const barAreaY=24;
+  // RED bar grows right-to-left from center? Let's do: red fills left, blue fills right.
+  const half=barAreaW/2;
+  ctx.fillStyle='#222'; ctx.fillRect(barAreaX, barAreaY, barAreaW, 14);
+  // Red side
+  const rFill = clamp(scoreR/SCORE_TARGET,0,1);
+  ctx.fillStyle=RED_C;
+  ctx.fillRect(barAreaX+half-half*rFill, barAreaY, half*rFill, 14);
+  // Blue side
+  const bFill = clamp(scoreB/SCORE_TARGET,0,1);
+  ctx.fillStyle=BLU_C;
+  ctx.fillRect(barAreaX+half, barAreaY, half*bFill, 14);
+  // Center marker
+  ctx.fillStyle='#000'; ctx.fillRect(barAreaX+half-1, barAreaY-2, 2, 18);
+  // Border
+  ctx.strokeStyle='#2c3548'; ctx.lineWidth=1;
+  ctx.strokeRect(barAreaX, barAreaY, barAreaW, 14);
+
+  // Match timer
+  const mins=Math.max(0,Math.floor(matchTimer/60));
+  const secs=Math.max(0,Math.floor(matchTimer%60));
+  ctx.fillStyle='#fff';
+  ctx.font='bold 22px Consolas';
+  ctx.textAlign='center';
+  ctx.fillText(mins+':'+secs.toString().padStart(2,'0'), barAreaX+barAreaW/2, 60);
+
+  // Hill timer + location
+  ctx.font='bold 12px Consolas';
+  ctx.fillStyle=GOLD;
+  ctx.textAlign='center';
+  ctx.fillText('HILL: '+hill.name+'   ('+Math.max(0,hillTimer).toFixed(1)+'s)', barAreaX+barAreaW/2, 80);
+
+  // Target indicator
+  ctx.font='10px Consolas';
+  ctx.fillStyle='#7d8696';
+  ctx.textAlign='center';
+  ctx.fillText('FIRST TO '+SCORE_TARGET, barAreaX+barAreaW/2, 14);
+}
+
+function drawPanel(){
+  // Panel background
+  ctx.fillStyle='#10131a';
+  ctx.fillRect(PANEL_X, PANEL_Y, PANEL_W, ARENA_H);
+  ctx.strokeStyle='#2c3548'; ctx.lineWidth=1;
+  ctx.strokeRect(PANEL_X, PANEL_Y, PANEL_W, ARENA_H);
+
+  // Killfeed
+  ctx.fillStyle='#7d8696';
+  ctx.font='bold 10px Consolas'; ctx.textAlign='left';
+  ctx.fillText('KILLFEED', PANEL_X+10, PANEL_Y+18);
+  ctx.strokeStyle='#2c3548';
+  ctx.beginPath();
+  ctx.moveTo(PANEL_X+10, PANEL_Y+24); ctx.lineTo(PANEL_X+PANEL_W-10, PANEL_Y+24);
+  ctx.stroke();
+
+  let y=PANEL_Y+44;
+  for(let i=0;i<killfeed.length;i++){
+    const k=killfeed[i];
+    const a=k.life>0?1:Math.max(0,1+k.life/3);
+    ctx.globalAlpha=a;
+    ctx.font='bold 12px Consolas';
+    ctx.textAlign='left';
+    ctx.fillStyle=k.aTeam==='R'?RED_C:(k.aTeam==='B'?BLU_C:'#999');
+    ctx.fillText(k.a, PANEL_X+10, y);
+    const aw_ = ctx.measureText(k.a).width;
+    ctx.fillStyle='#9aa3b3';
+    ctx.fillText('['+k.weapon+']', PANEL_X+12+aw_+3, y);
+    const bw = ctx.measureText('['+k.weapon+']').width;
+    ctx.fillStyle=k.vTeam==='R'?RED_C:BLU_C;
+    ctx.fillText(k.v, PANEL_X+15+aw_+bw+5, y);
+    ctx.globalAlpha=1;
+    y+=22;
+  }
+
+  // Pickup timers
+  const py = PANEL_Y+200;
+  ctx.fillStyle='#7d8696';
+  ctx.font='bold 10px Consolas';
+  ctx.fillText('POWER PICKUPS', PANEL_X+10, py-4);
+  ctx.beginPath();
+  ctx.moveTo(PANEL_X+10, py); ctx.lineTo(PANEL_X+PANEL_W-10, py); ctx.stroke();
+  let yy=py+18;
+  for(const p of pickups){
+    ctx.fillStyle=p.color;
+    ctx.font='bold 12px Consolas';
+    ctx.fillText(p.type, PANEL_X+18, yy);
+    ctx.fillStyle=p.available?'#7af07a':'#9aa3b3';
+    const txt=p.available?'READY':Math.ceil(p.respawnAt-currentTime)+'s';
+    ctx.textAlign='right';
+    ctx.fillText(txt, PANEL_X+PANEL_W-12, yy);
+    ctx.textAlign='left';
+    // bar
+    const bx=PANEL_X+12, by=yy+5, bw=PANEL_W-24, bh=2;
+    ctx.fillStyle='#222'; ctx.fillRect(bx,by,bw,bh);
+    if(!p.available){
+      const f = 1 - clamp((p.respawnAt-currentTime)/p.respawn, 0, 1);
+      ctx.fillStyle=p.color;
+      ctx.fillRect(bx, by, bw*f, bh);
+    } else {
+      ctx.fillStyle=p.color;
+      ctx.fillRect(bx, by, bw, bh);
+    }
+    yy+=22;
+  }
+
+  // Roster
+  const ry=py+90;
+  ctx.fillStyle='#7d8696';
+  ctx.font='bold 10px Consolas';
+  ctx.fillText('ROSTER  K / D', PANEL_X+10, ry-4);
+  ctx.beginPath();
+  ctx.moveTo(PANEL_X+10, ry); ctx.lineTo(PANEL_X+PANEL_W-10, ry); ctx.stroke();
+  let ry2=ry+16;
+  const teams=['R','B'];
+  for(const t of teams){
+    for(const b of bots.filter(o=>o.team===t)){
+      ctx.fillStyle=t==='R'?RED_C:BLU_C;
+      ctx.font='bold 11px Consolas';
+      ctx.textAlign='left';
+      ctx.fillText(b.name, PANEL_X+12, ry2);
+      ctx.fillStyle='#9aa3b3';
+      ctx.font='10px Consolas';
+      ctx.fillText('['+b.role[0].toUpperCase()+']', PANEL_X+96, ry2);
+      ctx.textAlign='right';
+      ctx.fillStyle='#fff';
+      ctx.fillText(b.kills+' / '+b.deaths, PANEL_X+PANEL_W-12, ry2);
+      // Hill seconds bar
+      ctx.textAlign='left';
+      ctx.fillStyle='#7d8696';
+      ctx.font='9px Consolas';
+      const ht=Math.floor(b.hillTime);
+      ctx.fillText(ht+'s on hill', PANEL_X+120, ry2);
+      ry2+=16;
+    }
+    ry2+=4;
+  }
+}
+
+function drawBanner(){
+  ctx.fillStyle='#0a0c12';
+  ctx.fillRect(0, H-BANNER_H, W, BANNER_H);
+  ctx.strokeStyle='#2c3548';
+  ctx.beginPath(); ctx.moveTo(0,H-BANNER_H); ctx.lineTo(W,H-BANNER_H); ctx.stroke();
+
+  if(matchPhase==='COUNTDOWN'){
+    ctx.fillStyle=GOLD; ctx.font='bold 32px Consolas'; ctx.textAlign='center';
+    ctx.fillText(Math.ceil(countdown)+'...', W/2, H-BANNER_H/2+11);
+    return;
+  }
+
+  if(announcements.length>0){
+    const a=announcements[0];
+    const fade = a.age<0.3 ? a.age/0.3 : (a.life-a.age<0.4 ? (a.life-a.age)/0.4 : 1);
+    ctx.globalAlpha=clamp(fade,0,1);
+    ctx.fillStyle=a.color;
+    ctx.font='bold 28px Consolas';
+    ctx.textAlign='center';
+    ctx.fillText(a.text, W/2, H-BANNER_H/2+10);
+    ctx.globalAlpha=1;
+  } else {
+    ctx.fillStyle='#7d8696';
+    ctx.font='12px Consolas';
+    ctx.textAlign='center';
+    ctx.fillText('LIVE — KING OF THE HILL — first to '+SCORE_TARGET+' or 6:00 timer', W/2, H-BANNER_H/2+5);
+  }
+}
+
+function drawMVP(){
+  // Dim
+  ctx.fillStyle='rgba(0,0,0,0.78)';
+  ctx.fillRect(0,0,W,H);
+  // Title
+  ctx.fillStyle=winnerTeam==='R'?RED_C:(winnerTeam==='B'?BLU_C:GOLD);
+  ctx.font='bold 56px Consolas';
+  ctx.textAlign='center';
+  ctx.fillText(winnerTeam==='R'?'RED VICTORY':(winnerTeam==='B'?'BLUE VICTORY':'DRAW'), W/2, 100);
+  ctx.fillStyle='#fff';
+  ctx.font='bold 16px Consolas';
+  ctx.fillText('FINAL  '+Math.floor(scoreR)+' — '+Math.floor(scoreB), W/2, 130);
+
+  // MVP determination: max kills + hilltime score
+  let mvp=null, best=-1;
+  for(const b of bots){
+    const s=b.kills*4 + Math.floor(b.hillTime)*2 - b.deaths;
+    if(s>best){ best=s; mvp=b; }
+  }
+
+  // Table
+  const ty=180;
+  ctx.font='bold 14px Consolas';
+  ctx.textAlign='left';
+  ctx.fillStyle='#7d8696';
+  const cols=['NAME','TEAM','ROLE','KILLS','DEATHS','HILL-S','SCORE'];
+  const xs=[200, 360, 440, 520, 620, 720, 830];
+  for(let i=0;i<cols.length;i++){ ctx.fillText(cols[i], xs[i], ty); }
+
+  let yy=ty+30;
+  const sorted=bots.slice().sort((a,b)=>(b.kills*4+Math.floor(b.hillTime)*2-b.deaths)-(a.kills*4+Math.floor(a.hillTime)*2-a.deaths));
+  for(const b of sorted){
+    const isMvp=(b===mvp);
+    const score=b.kills*4+Math.floor(b.hillTime)*2-b.deaths;
+    if(isMvp){
+      ctx.fillStyle='rgba(255,216,74,0.15)';
+      ctx.fillRect(190, yy-18, 760, 26);
+      ctx.fillStyle=GOLD;
+      ctx.font='bold 14px Consolas';
+      ctx.fillText('★ MVP', 130, yy);
+    }
+    ctx.fillStyle=isMvp?GOLD:(b.team==='R'?RED_C:BLU_C);
+    ctx.font='bold 14px Consolas';
+    ctx.fillText(b.name, xs[0], yy);
+    ctx.fillStyle=b.team==='R'?RED_C:BLU_C;
+    ctx.fillText(b.team==='R'?'RED':'BLUE', xs[1], yy);
+    ctx.fillStyle=isMvp?GOLD:'#fff';
+    ctx.fillText(b.role.toUpperCase(), xs[2], yy);
+    ctx.fillText(b.kills.toString(), xs[3], yy);
+    ctx.fillText(b.deaths.toString(), xs[4], yy);
+    ctx.fillText(Math.floor(b.hillTime).toString(), xs[5], yy);
+    ctx.fillText(score.toString(), xs[6], yy);
+    yy+=30;
+  }
+
+  // Next match
+  ctx.fillStyle='#7d8696';
+  ctx.font='12px Consolas';
+  ctx.textAlign='center';
+  ctx.fillText('NEXT MATCH IN '+Math.max(0,Math.ceil(mvpScreenTimer))+'s — fresh roster incoming', W/2, H-30);
+}
+
+// ================ Main loop ================
+let lastT=performance.now();
+let currentTime=0;
+
+function frame(t){
+  const dt=Math.min(0.05, (t-lastT)/1000);
+  lastT=t;
+  currentTime+=dt;
+
+  update(dt, currentTime);
+
+  // Render
+  ctx.fillStyle='#06070a';
+  ctx.fillRect(0,0,W,H);
+
+  drawBackground();
+  drawHill(currentTime);
+  drawPickups();
+  drawShots();
+  drawSpartans();
+
+  drawHUD();
+  drawPanel();
+  drawBanner();
+
+  if(matchPhase==='ENDED'){
+    drawMVP();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+newMatch();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vRACon — Cowork Cookbook (browser twin)</title>
+<style>
+  :root{ --bg:#0d1117; --pan:#161b22; --bd:#30363d; --tx:#e6edf3; --mut:#8b949e; --grn:#3fb950; --blu:#58a6ff; --pur:#742774; }
+  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--tx); font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  .wrap{ max-width:880px; margin:0 auto; padding:24px 18px 60px; }
+  h1{ font-size:21px; margin:2px 0 2px; } .dek{ color:var(--mut); margin:0 0 14px; }
+  .bar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:14px 0; }
+  input,button{ font:14px inherit; border-radius:8px; }
+  input{ flex:1; min-width:200px; background:#0d1117; border:1px solid var(--bd); color:var(--tx); padding:9px 11px; }
+  button{ background:#21262d; border:1px solid var(--bd); color:var(--tx); padding:9px 14px; font-weight:600; cursor:pointer; }
+  button:hover{ border-color:var(--blu); color:var(--blu); } button.primary{ background:var(--pur); border-color:var(--pur); color:#fff; } button:disabled{ opacity:.5; cursor:not-allowed; }
+  #status{ color:var(--mut); font-size:13px; min-height:18px; margin:6px 0; }
+  pre{ background:#010409; border:1px solid var(--bd); border-radius:10px; padding:12px 14px; font:12px ui-monospace,Menlo,monospace; white-space:pre-wrap; word-break:break-word; max-height:60vh; overflow:auto; }
+  .pill{ font-size:11px; background:#1b3a25; color:#56d364; padding:2px 8px; border-radius:20px; }
+  code{ background:#010409; border:1px solid var(--bd); border-radius:5px; padding:1px 5px; font-size:12px; }
+</style>
+</head><body><div class="wrap">
+  <h1>🎮 vRACon — Cowork Cookbook <span class="pill" id="live" style="display:none">vTwin live</span></h1>
+  <p class="dek">The RACon cartridge, in the browser. Pyodide loads the same portable <code>.egg</code> from
+  the cloud and runs the same converter as a <b>vTwin</b> — no install, same functionality as local.</p>
+  <div class="bar">
+    <button id="listBtn" disabled>📚 List recipes</button>
+    <input id="slug" placeholder="recipe slug — e.g. adaptive-card-analyze-asset-utilization" disabled>
+    <button id="convBtn" class="primary" disabled>⚙ Convert → agent.py</button>
+  </div>
+  <div id="status">booting…</div>
+  <pre id="out"></pre>
+</div>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+  const EGG_URL = "https://raw.githubusercontent.com/kody-w/cowork-cookbook-rapp/main/cowork_cookbook.egg"; // cloud DEFAULT
+  const $ = id => document.getElementById(id);
+  const setS = t => $('status').textContent = t;
+  let py = null;
+  async function boot(){
+    try{
+      setS("loading Pyodide (Python in the browser)…");
+      py = await loadPyodide();
+      setS("fetching the cartridge (.egg) from the cloud…");
+      const egg = new Uint8Array(await (await fetch(EGG_URL, {cache:'no-store'})).arrayBuffer());
+      py.FS.writeFile('/cowork.egg', egg);
+      setS("unpacking the cartridge + hatching the vTwin…");
+      await py.runPythonAsync(`
+import zipfile, sys, os
+os.makedirs('/twinroot', exist_ok=True)
+zipfile.ZipFile('/cowork.egg').extractall('/twinroot')
+sys.path.insert(0, '/twinroot/twin/agents')
+import cookbook_converter_agent as _cc
+_agent = _cc.CoworkCookbookConverterAgent()
+`);
+      $('listBtn').disabled = $('slug').disabled = $('convBtn').disabled = false;
+      $('live').style.display = 'inline-block';
+      setS("🎮 cartridge loaded — vTwin live in the browser. Browse, or convert a recipe.");
+    }catch(e){ setS("boot error: " + e); }
+  }
+  async function call(expr){
+    setS("running in the vTwin…");
+    try{ const r = await py.runPythonAsync(`_agent.perform(${expr})`); $('out').textContent = r; setS("done ✓"); }
+    catch(e){ $('out').textContent = "error: " + e; setS("error"); }
+  }
+  $('listBtn').addEventListener('click', () => call('list=True'));
+  $('convBtn').addEventListener('click', () => { const s = $('slug').value.trim(); if(!s) return; call(`recipe=${JSON.stringify(s)}`); });
+  $('slug').addEventListener('keydown', e => { if(e.key === 'Enter') $('convBtn').click(); });
+  boot();
+</script>
+</body></html>

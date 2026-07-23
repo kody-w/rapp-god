@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fabric Sculptor: Challenge Mode</title>
+    <meta name="description" content="A cloth physics challenge game with verlet integration, 15+ levels, 5 cloth types, hazards, abilities, and sandbox mode">
+    <meta name="rappterzoo:author" content="RappterZoo">
+    <meta name="rappterzoo:author-type" content="agent">
+    <meta name="rappterzoo:category" content="particle-physics">
+    <meta name="rappterzoo:tags" content="physics,cloth,simulation,canvas,interactive,game,audio,particles">
+    <meta name="rappterzoo:type" content="game">
+    <meta name="rappterzoo:complexity" content="advanced">
+    <meta name="rappterzoo:created" content="2026-02-08">
+    <meta name="rappterzoo:generation" content="2">
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: linear-gradient(180deg, #1a1028 0%, #0a0610 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            color: #d0b8e8;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #gameCanvas {
+            position: fixed;
+            top: 0; left: 0;
+            cursor: crosshair;
+            z-index: 1;
+        }
+        .overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            background: rgba(8, 4, 16, 0.92);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+        .overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .panel {
+            background: linear-gradient(135deg, rgba(40, 20, 70, 0.97) 0%, rgba(20, 10, 40, 0.98) 100%);
+            border: 2px solid rgba(180, 130, 255, 0.4);
+            border-radius: 20px;
+            padding: 40px 50px;
+            text-align: center;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 0 60px rgba(120, 60, 200, 0.3), inset 0 0 30px rgba(100, 50, 180, 0.1);
+            animation: panelGlow 3s ease-in-out infinite;
+        }
+        @keyframes panelGlow {
+            0%, 100% { box-shadow: 0 0 60px rgba(120, 60, 200, 0.3), inset 0 0 30px rgba(100, 50, 180, 0.1); }
+            50% { box-shadow: 0 0 80px rgba(140, 80, 220, 0.4), inset 0 0 40px rgba(120, 60, 200, 0.15); }
+        }
+        .panel h1 {
+            font-size: 42px;
+            background: linear-gradient(135deg, #e0b0ff, #ffd700, #e0b0ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+            text-shadow: none;
+            animation: titleShimmer 4s ease-in-out infinite;
+            background-size: 200% 200%;
+        }
+        @keyframes titleShimmer {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        .panel h2 {
+            font-size: 28px;
+            color: #e0c0ff;
+            margin-bottom: 15px;
+        }
+        .panel h3 {
+            font-size: 18px;
+            color: #c8a8e0;
+            margin-bottom: 10px;
+        }
+        .panel p {
+            color: #b0a0c8;
+            font-size: 15px;
+            margin: 10px 0;
+            line-height: 1.5;
+        }
+        .subtitle {
+            font-size: 16px;
+            color: #c8a0e0;
+            margin-bottom: 25px;
+            font-style: italic;
+        }
+        .btn {
+            display: inline-block;
+            padding: 14px 36px;
+            margin: 8px;
+            background: linear-gradient(135deg, rgba(120, 60, 200, 0.6) 0%, rgba(80, 40, 160, 0.6) 100%);
+            border: 1px solid rgba(180, 130, 255, 0.5);
+            color: #e8d0ff;
+            font-size: 16px;
+            font-family: inherit;
+            cursor: pointer;
+            border-radius: 12px;
+            transition: all 0.25s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        .btn:hover {
+            background: linear-gradient(135deg, rgba(140, 80, 220, 0.8) 0%, rgba(100, 50, 180, 0.8) 100%);
+            border-color: rgba(200, 150, 255, 0.7);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(120, 60, 200, 0.4);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .btn-gold {
+            background: linear-gradient(135deg, rgba(200, 160, 40, 0.7) 0%, rgba(160, 120, 20, 0.7) 100%);
+            border-color: rgba(255, 215, 0, 0.6);
+            color: #fff8e0;
+        }
+        .btn-gold:hover {
+            background: linear-gradient(135deg, rgba(220, 180, 60, 0.9) 0%, rgba(180, 140, 40, 0.9) 100%);
+            box-shadow: 0 6px 20px rgba(200, 160, 40, 0.4);
+        }
+        .btn-red {
+            background: linear-gradient(135deg, rgba(200, 40, 40, 0.6) 0%, rgba(160, 20, 20, 0.6) 100%);
+            border-color: rgba(255, 100, 100, 0.5);
+        }
+        .btn-red:hover {
+            background: linear-gradient(135deg, rgba(220, 60, 60, 0.8) 0%, rgba(180, 40, 40, 0.8) 100%);
+        }
+        .btn-small {
+            padding: 8px 20px;
+            font-size: 13px;
+        }
+        .difficulty-selector {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin: 15px 0;
+        }
+        .diff-btn {
+            padding: 10px 24px;
+            border-radius: 10px;
+            border: 2px solid rgba(180, 130, 255, 0.3);
+            background: rgba(40, 20, 70, 0.5);
+            color: #c0a0e0;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .diff-btn.selected {
+            border-color: #ffd700;
+            background: rgba(200, 160, 40, 0.3);
+            color: #ffd700;
+            box-shadow: 0 0 15px rgba(200, 160, 40, 0.2);
+        }
+        .diff-btn:hover { border-color: rgba(200, 160, 255, 0.6); }
+        .stars {
+            font-size: 28px;
+            margin: 10px 0;
+            letter-spacing: 4px;
+        }
+        .star-filled { color: #ffd700; text-shadow: 0 0 10px rgba(255, 215, 0, 0.5); }
+        .star-empty { color: rgba(100, 80, 130, 0.5); }
+        .score-display {
+            font-size: 32px;
+            color: #ffd700;
+            font-weight: bold;
+            margin: 10px 0;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 15px 0;
+            text-align: left;
+        }
+        .stat-label { color: #a090b8; font-size: 13px; }
+        .stat-value { color: #e0c0ff; font-size: 13px; text-align: right; }
+        .hud {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 500;
+            background: linear-gradient(180deg, rgba(10, 5, 20, 0.85) 0%, transparent 100%);
+            pointer-events: none;
+        }
+        .hud-section {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .hud-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .hud-label {
+            font-size: 10px;
+            color: #8070a0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .hud-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #e0c0ff;
+        }
+        .hud-value.gold { color: #ffd700; }
+        .hud-value.red { color: #ff6060; }
+        .hud-value.green { color: #60ff80; }
+        .combo-display {
+            font-size: 14px;
+            color: #ffd700;
+            animation: comboPulse 0.5s ease;
+        }
+        @keyframes comboPulse {
+            0% { transform: scale(1.5); opacity: 0.5; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .ability-bar {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 500;
+            pointer-events: none;
+        }
+        .ability-slot {
+            width: 60px;
+            height: 60px;
+            border: 2px solid rgba(180, 130, 255, 0.4);
+            border-radius: 12px;
+            background: rgba(20, 10, 40, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .ability-icon { font-size: 22px; }
+        .ability-key {
+            font-size: 9px;
+            color: #8070a0;
+            margin-top: 2px;
+        }
+        .ability-cooldown {
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 100%;
+            background: rgba(120, 60, 200, 0.4);
+            transition: height 0.1s linear;
+        }
+        .ability-slot.ready { border-color: #ffd700; box-shadow: 0 0 10px rgba(255, 215, 0, 0.2); }
+        .ability-slot.on-cooldown { opacity: 0.5; }
+        .integrity-bar {
+            width: 120px;
+            height: 8px;
+            background: rgba(40, 20, 70, 0.6);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .integrity-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4040, #ffaa00, #40ff60);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .tutorial-step {
+            margin: 15px 0;
+            padding: 15px;
+            background: rgba(60, 30, 100, 0.3);
+            border-radius: 10px;
+            border-left: 3px solid #ffd700;
+        }
+        .tutorial-step h4 {
+            color: #ffd700;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .tutorial-step p {
+            font-size: 13px;
+            margin: 0;
+        }
+        .level-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin: 15px 0;
+        }
+        .level-cell {
+            padding: 8px;
+            border: 1px solid rgba(120, 80, 180, 0.3);
+            border-radius: 8px;
+            background: rgba(30, 15, 50, 0.5);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .level-cell:hover { border-color: rgba(180, 130, 255, 0.6); background: rgba(50, 25, 80, 0.5); }
+        .level-cell.locked { opacity: 0.3; cursor: default; }
+        .level-cell.completed { border-color: #ffd700; }
+        .level-cell .level-num { font-weight: bold; color: #e0c0ff; }
+        .level-cell .level-stars { font-size: 10px; }
+        .env-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            margin-bottom: 4px;
+        }
+        .env-wind { background: rgba(100, 200, 255, 0.2); color: #80d0ff; }
+        .env-rain { background: rgba(80, 120, 255, 0.2); color: #90a0ff; }
+        .env-zero { background: rgba(200, 100, 255, 0.2); color: #d080ff; }
+        .env-water { background: rgba(40, 180, 200, 0.2); color: #60d0e0; }
+        .env-fire { background: rgba(255, 100, 40, 0.2); color: #ff8040; }
+        .cloth-preview {
+            display: inline-block;
+            width: 12px; height: 12px;
+            border-radius: 3px;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+        .sandbox-controls {
+            position: fixed;
+            top: 60px; left: 15px;
+            z-index: 500;
+            background: rgba(20, 10, 40, 0.9);
+            border: 1px solid rgba(120, 80, 180, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            width: 200px;
+            pointer-events: all;
+        }
+        .sandbox-controls h4 {
+            color: #e0c0ff;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .sandbox-row {
+            margin: 8px 0;
+        }
+        .sandbox-row label {
+            display: block;
+            font-size: 11px;
+            color: #a090b8;
+            margin-bottom: 3px;
+        }
+        .sandbox-row input[type="range"] {
+            width: 100%;
+            accent-color: #a060e0;
+        }
+        .sandbox-row select {
+            width: 100%;
+            padding: 5px;
+            background: rgba(40, 20, 70, 0.8);
+            border: 1px solid rgba(120, 80, 180, 0.4);
+            color: #d0b8e8;
+            border-radius: 6px;
+            font-family: inherit;
+        }
+        @keyframes screenShake {
+            0%, 100% { transform: translate(0, 0); }
+            25% { transform: translate(-4px, 2px); }
+            50% { transform: translate(3px, -3px); }
+            75% { transform: translate(-2px, 4px); }
+        }
+        .shaking { animation: screenShake 0.15s ease-in-out; }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeInUp 0.5s ease-out; }
+        @keyframes floatScore {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-60px) scale(1.4); }
+        }
+        @media (max-width: 768px) {
+            .panel { padding: 25px 20px; }
+            .panel h1 { font-size: 28px; }
+            .btn { padding: 12px 24px; font-size: 14px; }
+            .level-grid { grid-template-columns: repeat(3, 1fr); }
+            .hud { padding: 8px 12px; }
+            .hud-value { font-size: 16px; }
+            .ability-slot { width: 48px; height: 48px; }
+            .ability-icon { font-size: 18px; }
+        }
+        @media (max-width: 480px) {
+            .panel h1 { font-size: 22px; }
+            .level-grid { grid-template-columns: repeat(3, 1fr); }
+            .sandbox-controls { width: 160px; padding: 10px; }
+        }
+    </style>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="controls">
+        <h3>Fabric Sculptor</h3>
+        <div class="control-row">
+            <label>Gravity <span class="value" id="grav-val">0.5</span></label>
+            <input type="range" id="gravity" min="0" max="100" value="50">
+        </div>
+        <div class="control-row">
+            <label>Wind <span class="value" id="wind-val">0</span></label>
+            <input type="range" id="wind" min="-50" max="50" value="0">
+        </div>
+        <div class="control-row">
+            <label>Stiffness <span class="value" id="stiff-val">50</span></label>
+            <input type="range" id="stiffness" min="10" max="100" value="50">
+        </div>
+        <button id="reset-btn">Reset Cloth</button>
+        <button id="drop-btn">Drop Corners</button>
+        <button id="wave-btn">Create Wave</button>
+    </div>
+    <div id="info">Click and drag the fabric | Watch physics in action</div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+        function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; initCloth(); }
+        
+        let gravity = 0.5;
+        let wind = 0;
+        let stiffness = 50;
+        
+        const COLS = 30;
+        const ROWS = 20;
+        let points = [];
+        let constraints = [];
+        
+        class Point {
+            constructor(x, y, pinned) {
+                this.x = x; this.y = y;
+                this.oldX = x; this.oldY = y;
+                this.pinned = pinned;
+            }
+        }
+        
+        class Constraint {
+            constructor(p1, p2, length) {
+                this.p1 = p1; this.p2 = p2;
+                this.length = length;
+            }
+        }
+        
+        function initCloth() {
+            points = [];
+            constraints = [];
+            
+            const spacingX = W * 0.6 / COLS;
+            const spacingY = H * 0.5 / ROWS;
+            const startX = W * 0.2;
+            const startY = 80;
+            
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const x = startX + c * spacingX;
+                    const y = startY + r * spacingY;
+                    const pinned = r === 0 && (c === 0 || c === COLS - 1 || c === Math.floor(COLS / 2));
+                    points.push(new Point(x, y, pinned));
+                }
+            }
+            
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const i = r * COLS + c;
+                    if (c < COLS - 1) {
+                        constraints.push(new Constraint(points[i], points[i + 1], spacingX));
+                    }
+                    if (r < ROWS - 1) {
+                        constraints.push(new Constraint(points[i], points[i + COLS], spacingY));
+                    }
+                }
+            }
+        }
+        
+        function updatePhysics() {
+            const iterations = Math.floor(stiffness / 10);
+            
+            points.forEach(p => {
+                if (p.pinned) return;
+                
+                const vx = (p.x - p.oldX) * 0.99;
+                const vy = (p.y - p.oldY) * 0.99;
+                
+                p.oldX = p.x;
+                p.oldY = p.y;
+                
+                p.x += vx + wind * 0.01 + (Math.random() - 0.5) * 0.2;
+                p.y += vy + gravity * 0.1;
+                
+                if (p.y > H - 50) {
+                    p.y = H - 50;
+                    p.oldY = p.y + vy * 0.5;
+                }
+                if (p.x < 10) p.x = 10;
+                if (p.x > W - 10) p.x = W - 10;
+            });
+            
+            for (let i = 0; i < iterations; i++) {
+                constraints.forEach(c => {
+                    const dx = c.p2.x - c.p1.x;
+                    const dy = c.p2.y - c.p1.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const diff = (c.length - dist) / dist;
+                    const offsetX = dx * diff * 0.5;
+                    const offsetY = dy * diff * 0.5;
+                    
+                    if (!c.p1.pinned) {
+                        c.p1.x -= offsetX;
+                        c.p1.y -= offsetY;
+                    }
+                    if (!c.p2.pinned) {
+                        c.p2.x += offsetX;
+                        c.p2.y += offsetY;
+                    }
+                });
+            }
+        }
+        
+        function drawCloth() {
+            ctx.fillStyle = '#0a0810';
+            ctx.fillRect(0, 0, W, H);
+            
+            for (let r = 0; r < ROWS - 1; r++) {
+                for (let c = 0; c < COLS - 1; c++) {
+                    const i = r * COLS + c;
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    const p3 = points[i + COLS];
+                    const p4 = points[i + COLS + 1];
+                    
+                    const avgY = (p1.y + p2.y + p3.y + p4.y) / 4;
+                    const depth = Math.min(1, avgY / H);
+                    const hue = 270 + (c / COLS) * 30;
+                    const lightness = 40 + depth * 20;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.lineTo(p4.x, p4.y);
+                    ctx.lineTo(p3.x, p3.y);
+                    ctx.closePath();
+                    ctx.fillStyle = "hsla(" + hue + ", 60%, " + lightness + "%, 0.9)";
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = "hsla(" + hue + ", 40%, " + (lightness + 10) + "%, 0.3)";
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                }
+            }
+            
+            points.forEach(p => {
+                if (p.pinned) {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffd700';
+                    ctx.fill();
+                }
+            });
+        }
+        
+        let dragging = null;
+        let mouseX = 0, mouseY = 0;
+        
+        canvas.onmousedown = e => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            let minDist = 50;
+            points.forEach(p => {
+                const dist = Math.hypot(p.x - mouseX, p.y - mouseY);
+                if (dist < minDist) {
+                    minDist = dist;
+                    dragging = p;
+                }
+            });
+        };
+        
+        canvas.onmousemove = e => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            if (dragging) {
+                dragging.x = mouseX;
+                dragging.y = mouseY;
+            }
+        };
+        
+        canvas.onmouseup = () => dragging = null;
+        canvas.onmouseleave = () => dragging = null;
+        
+        function animate() {
+            updatePhysics();
+            drawCloth();
+            requestAnimationFrame(animate);
+        }
+        
+        document.getElementById('gravity').oninput = e => {
+            gravity = e.target.value / 100;
+            document.getElementById('grav-val').textContent = gravity.toFixed(2);
+        };
+        document.getElementById('wind').oninput = e => {
+            wind = parseInt(e.target.value);
+            document.getElementById('wind-val').textContent = wind;
+        };
+        document.getElementById('stiffness').oninput = e => {
+            stiffness = parseInt(e.target.value);
+            document.getElementById('stiff-val').textContent = stiffness;
+        };
+        
+        document.getElementById('reset-btn').onclick = initCloth;
+        
+        document.getElementById('drop-btn').onclick = () => {
+            points.forEach((p, i) => {
+                if (p.pinned && i !== Math.floor(COLS / 2)) {
+                    p.pinned = false;
+                }
+            });
+        };
+        
+        document.getElementById('wave-btn').onclick = () => {
+            const time = Date.now();
+            points.forEach((p, i) => {
+                if (!p.pinned) {
+                    const col = i % COLS;
+                    p.y -= Math.sin(col * 0.5) * 30;
+                }
+            });
+        };
+        
+        resize();
+        window.onresize = resize;
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Obsidian Binder — Web Twin</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafafa; --bg-2: #fff; --bg-3: #f0f0f0;
+    --fg: #222; --fg-2: #555; --fg-3: #888;
+    --border: #e3e3e3; --accent: #7c3aed; --link: #2b6cb0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e; --bg-2: #262626; --bg-3: #2f2f2f;
+      --fg: #e6e6e6; --fg-2: #b8b8b8; --fg-3: #888;
+      --border: #383838; --accent: #a78bfa; --link: #79b8ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--fg); height: 100vh; overflow: hidden; }
+  .app { display: grid; grid-template-columns: 240px 1fr 240px; height: 100vh; }
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar, .backlinks { display: none; }
+    .app.show-sidebar .sidebar { display: block; position: fixed; inset: 0; z-index: 10;
+      width: 80%; max-width: 300px; background: var(--bg-2); }
+  }
+  .sidebar { background: var(--bg-2); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 12px 0; }
+  .sidebar h3 { font-size: 11px; text-transform: uppercase; color: var(--fg-3);
+    margin: 12px 14px 6px; letter-spacing: .8px; font-weight: 600; }
+  .sidebar a { display: block; padding: 5px 14px; color: var(--fg-2); text-decoration: none;
+    font-size: 13px; border-left: 2px solid transparent; cursor: pointer; }
+  .sidebar a:hover { background: var(--bg-3); }
+  .sidebar a.active { color: var(--accent); border-left-color: var(--accent); background: var(--bg-3); }
+  .main { overflow-y: auto; padding: 0; }
+  .topbar { padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--bg-2);
+    display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 5; }
+  .topbar .title { font-weight: 600; flex: 1; }
+  .topbar input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); font: inherit; min-width: 200px; }
+  .topbar button { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-3); color: var(--fg); cursor: pointer; font: inherit; }
+  .topbar button:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .topbar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .content { padding: 28px 32px; max-width: 800px; margin: 0 auto; }
+  .content h1 { font-size: 28px; margin: 0 0 6px; font-weight: 600; }
+  .content h2 { font-size: 20px; margin: 22px 0 8px; font-weight: 600; }
+  .content h3 { font-size: 16px; margin: 18px 0 6px; }
+  .content p { margin: 8px 0; }
+  .content ul, .content ol { padding-left: 24px; margin: 8px 0; }
+  .content code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .content pre { background: var(--bg-3); padding: 12px; border-radius: 6px; overflow-x: auto; }
+  .content pre code { background: none; padding: 0; }
+  .content a.wikilink { color: var(--accent); text-decoration: none; cursor: pointer;
+    border-bottom: 1px dashed var(--accent); }
+  .content a.wikilink:hover { background: var(--accent); color: #fff; }
+  .content a.wikilink.broken { color: var(--fg-3); border-bottom-style: dotted; }
+  .content a.external { color: var(--link); }
+  .content blockquote { border-left: 3px solid var(--accent); padding: 4px 14px;
+    color: var(--fg-2); margin: 10px 0; }
+  .frontmatter { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 0 0 20px; font-size: 13px; }
+  .frontmatter .row { display: flex; gap: 12px; margin: 3px 0; }
+  .frontmatter .key { color: var(--fg-3); min-width: 100px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .frontmatter .val { color: var(--fg); }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 8px; background: var(--bg-3);
+    color: var(--fg-2); border-radius: 999px; margin-right: 4px; }
+  .backlinks { background: var(--bg-2); border-left: 1px solid var(--border);
+    overflow-y: auto; padding: 16px; }
+  .backlinks h3 { font-size: 11px; text-transform: uppercase; color: var(--fg-3);
+    margin: 0 0 8px; letter-spacing: .8px; font-weight: 600; }
+  .backlinks .bl { padding: 8px 10px; border-radius: 6px; cursor: pointer; margin-bottom: 4px;
+    background: var(--bg); border: 1px solid var(--border); }
+  .backlinks .bl:hover { background: var(--bg-3); }
+  .backlinks .bl-title { font-weight: 600; font-size: 13px; }
+  .backlinks .bl-snip { font-size: 12px; color: var(--fg-2); margin-top: 3px;
+    overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .grid-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px; padding: 16px 32px; }
+  .grid-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; cursor: pointer; transition: transform .12s, box-shadow .12s; }
+  .grid-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .grid-card h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+  .grid-card .inc { font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent);
+    word-break: break-all; margin-bottom: 6px; }
+  .grid-card .ex { font-size: 12px; color: var(--fg-2);
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+  .help { padding: 40px; text-align: center; color: var(--fg-3); }
+  .menu-btn { display: none; }
+
+  /* === Trading-card preview (shown at top of card-kind notes) === */
+  .tc-wrap { display: flex; gap: 22px; margin: 0 0 22px; align-items: flex-start; flex-wrap: wrap; }
+  .tc-frame { width: 280px; aspect-ratio: 5/7; background: linear-gradient(135deg, #1c1820 0%, #2a2028 100%); border: 2px solid #d4a13c; border-radius: 14px; padding: 10px; box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset, 0 8px 24px rgba(0,0,0,0.55), 0 0 18px rgba(212, 161, 60, 0.08); display: flex; flex-direction: column; color: #e8e6dd; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
+  .tc-frame:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset, 0 12px 32px rgba(0,0,0,0.7), 0 0 24px rgba(212,161,60,0.35); }
+  .tc-frame::before { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: 12px; background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.06) 50%, transparent 65%); opacity: 0.7; }
+  .tc-titlebar { display: flex; justify-content: space-between; align-items: flex-start; background: linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.15)); border: 1px solid rgba(212, 161, 60, 0.3); border-radius: 4px; padding: 6px 9px; gap: 6px; }
+  .tc-name { font-family: Georgia, serif; font-size: 14px; font-weight: 600; line-height: 1.15; color: #e8e6dd; }
+  .tc-tag { font-family: Georgia, serif; font-style: italic; font-size: 11px; color: #8a8678; margin-top: 2px; }
+  .tc-cost { display: flex; gap: 3px; flex-shrink: 0; }
+  .tc-pip { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; box-shadow: inset 0 -2px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.4); border: 1px solid rgba(0,0,0,0.4); }
+  .tc-pip.n { background: linear-gradient(180deg,#d8d2c2,#a39e8e); color:#2b2820; }
+  .tc-pip.u { background: linear-gradient(180deg,#6db4ee,#2a6fb5); color:#fff; }
+  .tc-pip.b { background: linear-gradient(180deg,#d99656,#a05a18); color:#fff; }
+  .tc-pip.r { background: linear-gradient(180deg,#ee6d6d,#b52a2a); color:#fff; }
+  .tc-pip.g { background: linear-gradient(180deg,#6dd49e,#2aa55a); color:#fff; }
+  .tc-art { margin-top: 6px; aspect-ratio: 1.3/1; background: radial-gradient(ellipse at center, #1a1426 0%, #0a0810 100%); border: 1px solid rgba(212,161,60,0.35); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .tc-art svg { width: 70%; height: 70%; opacity: 0.85; }
+  .tc-typeline { margin-top: 6px; background: linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.15)); border: 1px solid rgba(212,161,60,0.3); border-radius: 4px; padding: 4px 9px; font-family: Georgia, serif; font-size: 11px; color: #e8e6dd; }
+  .tc-textbox { margin-top: 6px; flex: 1; background: linear-gradient(180deg,#f4ecd6,#e8dcb8); color: #1a1612; padding: 8px 10px; font-size: 10.5px; line-height: 1.35; border: 1px solid rgba(0,0,0,0.4); border-radius: 3px; overflow: hidden; }
+  .tc-textbox .ab { margin-bottom: 6px; }
+  .tc-textbox .kw { font-weight: 700; color: #5a3a1a; }
+  .tc-textbox .fl { border-top: 1px solid rgba(90,58,26,0.35); margin-top: 8px; padding-top: 6px; font-style: italic; font-size: 10px; color: #4a3826; }
+  .tc-foot { margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase; color: #f4c45a; padding: 0 4px; }
+  .tc-pt { background: linear-gradient(180deg,#f4ecd6,#c5b88a); color:#1a1612; padding: 2px 8px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.4); font-weight: 700; font-size: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+  .tc-stats { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
+  .tc-stats .sv { font-family: Georgia, serif; font-size: 22px; font-weight: 700; line-height: 1; }
+  .tc-stats .sv.grade { color: #d4a13c; }
+  .tc-stats .sv.rep { color: #8a4ed6; }
+  .tc-stats .sl { font-size: 9px; letter-spacing: 0.25em; color: var(--fg-3); text-transform: uppercase; margin-top: 4px; }
+  @media (prefers-color-scheme: dark) { .tc-stats .sv.rep { color: #b58cf0; } }
+  @media (max-width: 700px) { .tc-wrap { flex-direction: column; } .tc-frame { width: 100%; max-width: 320px; } }
+  @media (max-width: 800px) {
+    .menu-btn { display: inline-block; }
+    .content { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main">
+    <div class="topbar">
+      <button class="menu-btn" onclick="document.getElementById('app').classList.toggle('show-sidebar')">☰</button>
+      <span class="title" id="title">Binder</span>
+      <input type="search" id="search" placeholder="Search…">
+      <button id="grid-btn" onclick="showGrid()">⊞ Grid</button>
+    </div>
+    <div id="view"></div>
+  </main>
+  <aside class="backlinks" id="backlinks"></aside>
+</div>
+
+<script>
+const VAULT = {"notes": {"README": {"title": "Vault Home", "frontmatter": {}, "body": "# Obsidian Binder — Vault Home\n\nWelcome to your binder. Below is the live card grid (rendered from `binder-view.html`, regenerated on every commit). Cards live in [[cards/]] as markdown notes you can search, link, and graph like any other notes in your second brain.\n\n<iframe src=\"binder-view.html\" width=\"100%\" height=\"700\" style=\"border:1px solid #ccc;border-radius:8px\"></iframe>\n\n> If you don't see the grid above, your Obsidian doesn't allow iframes. Open `binder-view.html` directly: right-click in the file explorer → Show in system explorer → open in browser. Or enable HTML embeds in Obsidian → Settings → Editor.\n\n## Three ways to read your binder\n\n1. **The grid above** — `binder-view.html`, your card-flipping interface. Search, tag-filter, expand each card's federation JSON. Looks like a real binder.\n2. **Obsidian's own UI** — open the [[cards/]] folder in the file explorer. Use graph view to see how cards connect. Use full-text search across all your notes about each card.\n3. **The federation** — `seed-index.json` and `cards/*.json` at the repo root, fetchable by any other binder peer.\n\nSame vault, three reading modes.\n\n## How this vault works\n\n- Each card lives in [[cards/]] as one markdown note\n- Frontmatter holds the federation-required fields (seed, incantation, name, agent_id)\n- The body is yours — write whatever you want about the card\n- Use `[[wiki-links]]` to connect cards in the graph view\n- Tag with `#insight`, `#wishlist`, `#archived`, or whatever fits your thinking\n- A build script (`scripts/build.py`) regenerates `binder-view.html` and the federation files on every commit\n\n## Summoning new cards\n\n1. Open `binder.html` in your browser (separate from `binder-view.html` — this one is the summon UI)\n2. Paste a 7-word incantation\n3. The federation walker fetches the card from whichever peer owns it\n4. A new markdown note is created in `cards/` with frontmatter pre-populated\n5. Add your notes to the body\n6. Commit — the GitHub Action regenerates the federation files AND the grid view\n\n## Essays\n\n[[essays/why-i-keep-my-binder-in-obsidian]] — the manifesto\n\n## The cards\n\nSee `cards/` for the full collection (or scroll the grid above).\n", "kind": "home"}, "cards/Anvil Tester": {"title": "Anvil Tester", "frontmatter": {"seed": "14392815063918732911", "incantation": "FORGE ANVIL BLADE RUNE SHARD SMELT TEMPER", "name": "Anvil Tester", "agent_id": "rar-anvil-001", "source": "rar", "created": "2026-04-18", "tags": ["card", "agent", "testing", "adversarial"]}, "body": "\n# Anvil Tester\n\nAgent that stress-tests claims, designs, and arguments by hammering them with edge cases until something breaks. Named \"anvil\" because the metaphor is: bring your idea, place it on the anvil, the agent strikes it.\n\n## Why I summoned it\n\nWanted a reliable adversarial reviewer that wouldn't be polite at the cost of usefulness. Anvil Tester is famously blunt. It will tell you your design is bad and then enumerate why.\n\n## How I've used it\n\n- Reviewed three different drafts of the [[Production Line Optimization Agent]] essay before publishing\n- Caught a logic error in a contract I was drafting\n- Refused to validate a startup pitch (correctly — the unit economics didn't work)\n\n## Personality notes\n\nAnvil Tester does not soften feedback. New users find this jarring. After a week you'll find every other reviewer too soft.\n\n## Connections\n\n- [[Production Line Optimization Agent]] — used together for high-confidence decisions\n", "kind": "card"}, "cards/Production Line Optimization Agent": {"title": "Production Line Optimization Agent", "frontmatter": {"seed": "11447213470199194507", "incantation": "BRAND CUTLASS BREACH ANVIL COIL MUSK BESTOW", "name": "Production Line Optimization Agent", "agent_id": "rar-prod-opt-001", "source": "rar", "created": "2026-04-18", "tags": ["card", "agent", "productivity", "manufacturing"]}, "body": "\n# Production Line Optimization Agent\n\nSpecialist agent for analyzing and optimizing manufacturing production lines. Looks at throughput, bottlenecks, defect rates, and worker utilization. Pairs especially well with [[Supply Chain Forecaster]] for end-to-end optimization.\n\n## Why I summoned it\n\nI was reading about lean manufacturing and wanted an agent that could actually run the numbers on hypothetical line configurations. This one shipped from RAR with the right combination of operations research grounding and willingness to defer when the data is bad.\n\n## How I've used it\n\n- Sketched out a hypothetical 4-station vs 6-station tradeoff for a friend's small batch operation\n- Used as a reasoning partner for an [[essays/why-i-keep-my-binder-in-obsidian|essay]] on flow vs batch processing\n\n## Connections\n\n- [[Supply Chain Forecaster]] — natural pair\n- [[Anvil Tester]] — surprisingly good at adversarial questioning of production assumptions\n\n## Open questions\n\n- Does it handle service operations or only manufacturing? (Need to test.)\n- Can it work with sparse data, or does it want full instrumentation?\n", "kind": "card"}, "cards/Supply Chain Forecaster": {"title": "Supply Chain Forecaster", "frontmatter": {"seed": "8801475193746129052", "incantation": "ZEPHYR LANTERN COMPASS ATLAS HORIZON BEACON LATTICE", "name": "Supply Chain Forecaster", "agent_id": "rar-supply-001", "source": "rar", "created": "2026-04-18", "tags": ["card", "agent", "forecasting", "logistics"]}, "body": "\n# Supply Chain Forecaster\n\nAgent that builds probabilistic forecasts of supply chain disruptions, lead times, and demand spikes. Incorporates seasonal patterns, geopolitical signals, and weather data. Outputs distributions, not point estimates.\n\n## Why I summoned it\n\nAfter [[Production Line Optimization Agent]] proved useful for the production side, I needed a counterpart for the upstream side. Supply Chain Forecaster handles the inbound; the optimization agent handles the line.\n\n## How I've used it\n\n- Built a 90-day forecast for a hypothetical electronics assembly business\n- Used as a reality check on supplier promises\n\n## What I've learned\n\n- Always ask for the distribution, not just the median\n- It will refuse to forecast more than 180 days out (correctly — uncertainty dominates)\n\n## Connections\n\n- [[Production Line Optimization Agent]] — natural pair\n", "kind": "card"}, "essays/why-i-keep-my-binder-in-obsidian": {"title": "Why I keep my binder in Obsidian", "frontmatter": {"title": "Why I keep my binder in Obsidian", "created": "2026-04-18", "tags": ["essay", "meta"]}, "body": "\n# Why I keep my binder in Obsidian\n\nA RAPPcards binder is a view over a federation. The federation doesn't care what view you use. Most binders are web apps with their own UI, their own database, their own search. Mine is an Obsidian vault.\n\nI made this choice because I already think in Obsidian. I keep my notes here. I write essays here. I have years of accumulated context that backlinks and tags into a graph I trust. When I summon a card from the federation, I want the card to land in *my brain*, not in some other app.\n\nThe federation makes this trivially possible. Cards are content-addressed via a 7-word mnemonic, and the canonical form is just JSON. Whatever produces the JSON is fine. So my vault stores cards as markdown notes with frontmatter, and a build script generates the JSON sidecars at commit time. The federation sees a normal binder. I see a normal vault.\n\nWhat I get from this:\n\n- **Graph view** of my collection — which cards I've connected, which clusters I've built\n- **Full-text search** across both card metadata and my notes about each card\n- **Backlinks** between cards, between cards and essays, between essays and tags\n- **Daily notes** that log when I summoned what and why\n- **My own taxonomy** via tags (`#insight`, `#archived`, `#wishlist`) without anyone's permission\n- **Real notes about each card**, not a comment field bolted onto a row\n\nWhat [[Production Line Optimization Agent]] is, to me, is not a row in a database. It's a note I've written about a tool I've used, with backlinks to other notes about other tools, with tags that reflect my own thinking, in a vault that will outlive whatever specific federation app I'm using right now.\n\nThis is the Karpathy second-brain pattern applied to a federated card protocol. The binder is the brain. The brain is in Obsidian. The federation just works.\n\n## Related\n\n- [[../README|Vault home]]\n- [[../cards/Production Line Optimization Agent]]\n- [[../cards/Anvil Tester]]\n- [[../cards/Supply Chain Forecaster]]\n", "kind": "essay"}}, "wikiResolve": {"Vault Home": "README", "README": "README", "Anvil Tester": "cards/Anvil Tester", "Production Line Optimization Agent": "cards/Production Line Optimization Agent", "Supply Chain Forecaster": "cards/Supply Chain Forecaster", "Why I keep my binder in Obsidian": "essays/why-i-keep-my-binder-in-obsidian", "why-i-keep-my-binder-in-obsidian": "essays/why-i-keep-my-binder-in-obsidian"}, "backlinks": {"README": [{"from": "essays/why-i-keep-my-binder-in-obsidian", "snippet": "the brain. The brain is in Obsidian. The federation just works. ## Related - [[../README|Vault home]] - [[../cards/Production Line Optimization Agent]] - [[../cards/Anvil Tester]] -"}], "cards/Anvil Tester": [{"from": "cards/Production Line Optimization Agent", "snippet": "atch processing ## Connections - [[Supply Chain Forecaster]] — natural pair - [[Anvil Tester]] — surprisingly good at adversarial questioning of production assumptions ## Op"}, {"from": "essays/why-i-keep-my-binder-in-obsidian", "snippet": "- [[../README|Vault home]] - [[../cards/Production Line Optimization Agent]] - [[../cards/Anvil Tester]] - [[../cards/Supply Chain Forecaster]]"}], "cards/Production Line Optimization Agent": [{"from": "cards/Anvil Tester", "snippet": "n enumerate why. ## How I've used it - Reviewed three different drafts of the [[Production Line Optimization Agent]] essay before publishing - Caught a logic error in a contract I was drafting - R"}, {"from": "cards/Anvil Tester", "snippet": "ing. After a week you'll find every other reviewer too soft. ## Connections - [[Production Line Optimization Agent]] — used together for high-confidence decisions"}, {"from": "cards/Supply Chain Forecaster", "snippet": "data. Outputs distributions, not point estimates. ## Why I summoned it After [[Production Line Optimization Agent]] proved useful for the production side, I needed a counterpart for the upstream"}, {"from": "cards/Supply Chain Forecaster", "snippet": "t more than 180 days out (correctly — uncertainty dominates) ## Connections - [[Production Line Optimization Agent]] — natural pair"}, {"from": "essays/why-i-keep-my-binder-in-obsidian", "snippet": "n - **Real notes about each card**, not a comment field bolted onto a row What [[Production Line Optimization Agent]] is, to me, is not a row in a database. It's a note I've written about a tool I'"}, {"from": "essays/why-i-keep-my-binder-in-obsidian", "snippet": "Obsidian. The federation just works. ## Related - [[../README|Vault home]] - [[../cards/Production Line Optimization Agent]] - [[../cards/Anvil Tester]] - [[../cards/Supply Chain Forecaster]]"}], "cards/Supply Chain Forecaster": [{"from": "cards/Production Line Optimization Agent", "snippet": ", bottlenecks, defect rates, and worker utilization. Pairs especially well with [[Supply Chain Forecaster]] for end-to-end optimization. ## Why I summoned it I was reading about lean ma"}, {"from": "cards/Production Line Optimization Agent", "snippet": "ep-my-binder-in-obsidian|essay]] on flow vs batch processing ## Connections - [[Supply Chain Forecaster]] — natural pair - [[Anvil Tester]] — surprisingly good at adversarial questionin"}, {"from": "essays/why-i-keep-my-binder-in-obsidian", "snippet": "- [[../cards/Production Line Optimization Agent]] - [[../cards/Anvil Tester]] - [[../cards/Supply Chain Forecaster]]"}], "essays/why-i-keep-my-binder-in-obsidian": [{"from": "README", "snippet": "he GitHub Action regenerates the federation files AND the grid view ## Essays [[essays/why-i-keep-my-binder-in-obsidian]] — the manifesto ## The cards See `cards/` for the full collection (or scroll"}, {"from": "cards/Production Line Optimization Agent", "snippet": "deoff for a friend's small batch operation - Used as a reasoning partner for an [[essays/why-i-keep-my-binder-in-obsidian|essay]] on flow vs batch processing ## Connections - [[Supply Chain Forecaster]] — na"}]}};
+// VAULT shape: {
+//   notes: { "cards/Foo": {title, frontmatter, body, kind: 'card'|'essay'|'home'}, ... },
+//   wikiResolve: { "Foo Bar": "cards/Foo Bar", ... },
+//   backlinks: { "cards/Foo": [{from: "essays/x", snippet: "..."}, ...] }
+// }
+
+let currentNote = null;
+
+function buildSidebar() {
+  const sb = document.getElementById('sidebar');
+  const cards = [];
+  const essays = [];
+  const other = [];
+  for (const path of Object.keys(VAULT.notes).sort()) {
+    const note = VAULT.notes[path];
+    if (note.kind === 'card') cards.push(path);
+    else if (note.kind === 'essay') essays.push(path);
+    else other.push(path);
+  }
+  let html = '';
+  if (other.length) {
+    html += '<h3>Vault</h3>';
+    for (const p of other) html += `<a data-path="${p}">${esc(VAULT.notes[p].title)}</a>`;
+  }
+  html += '<h3>Cards (' + cards.length + ')</h3>';
+  for (const p of cards) html += `<a data-path="${p}">${esc(VAULT.notes[p].title)}</a>`;
+  if (essays.length) {
+    html += '<h3>Essays</h3>';
+    for (const p of essays) html += `<a data-path="${p}">${esc(VAULT.notes[p].title)}</a>`;
+  }
+  sb.innerHTML = html;
+  sb.querySelectorAll('a').forEach(a => a.onclick = () => openNote(a.dataset.path));
+}
+
+function openNote(path) {
+  const note = VAULT.notes[path];
+  if (!note) { showHelp("Note not found: " + path); return; }
+  currentNote = path;
+  document.getElementById('title').textContent = note.title;
+  document.getElementById('grid-btn').classList.remove('active');
+
+  const view = document.getElementById('view');
+  let html = '<div class="content">';
+  html += '<h1>' + esc(note.title) + '</h1>';
+  if (note.kind === 'card') {
+    html += renderTradingCard(note);
+  }
+  if (Object.keys(note.frontmatter || {}).length) {
+    html += '<div class="frontmatter">';
+    for (const [k, v] of Object.entries(note.frontmatter)) {
+      const valHtml = Array.isArray(v)
+        ? v.map(x => '<span class="tag">' + esc(x) + '</span>').join(' ')
+        : esc(String(v));
+      html += '<div class="row"><span class="key">' + esc(k) + '</span><span class="val">' + valHtml + '</span></div>';
+    }
+    html += '</div>';
+  }
+  html += renderMarkdown(note.body);
+  html += '</div>';
+  view.innerHTML = html;
+  view.querySelectorAll('a.wikilink').forEach(a => {
+    a.onclick = (e) => { e.preventDefault(); openNote(a.dataset.target); };
+  });
+  renderBacklinks(path);
+
+  // Update sidebar active state
+  document.querySelectorAll('.sidebar a').forEach(a =>
+    a.classList.toggle('active', a.dataset.path === path));
+
+  // Mobile: close sidebar
+  document.getElementById('app').classList.remove('show-sidebar');
+  window.scrollTo(0, 0);
+  document.querySelector('.main').scrollTo(0, 0);
+}
+
+function renderBacklinks(path) {
+  const bl = document.getElementById('backlinks');
+  const links = VAULT.backlinks[path] || [];
+  if (!links.length) { bl.innerHTML = '<h3>Backlinks</h3><div style="color:var(--fg-3);font-size:12px">No backlinks yet.</div>'; return; }
+  let html = '<h3>Backlinks (' + links.length + ')</h3>';
+  for (const l of links) {
+    const note = VAULT.notes[l.from];
+    if (!note) continue;
+    html += '<div class="bl" data-path="' + esc(l.from) + '">';
+    html += '<div class="bl-title">' + esc(note.title) + '</div>';
+    html += '<div class="bl-snip">' + esc(l.snippet) + '</div>';
+    html += '</div>';
+  }
+  bl.innerHTML = html;
+  bl.querySelectorAll('.bl').forEach(d => d.onclick = () => openNote(d.dataset.path));
+}
+
+function showGrid() {
+  currentNote = '__grid__';
+  document.getElementById('title').textContent = 'All cards';
+  document.getElementById('grid-btn').classList.add('active');
+  document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
+  document.getElementById('backlinks').innerHTML = '<h3>Filter</h3><div style="color:var(--fg-3);font-size:12px">Click any card to open it.</div>';
+
+  const cards = Object.entries(VAULT.notes)
+    .filter(([_, n]) => n.kind === 'card')
+    .sort(([a], [b]) => a.localeCompare(b));
+  let html = '<div class="grid-view">';
+  for (const [path, note] of cards) {
+    const fm = note.frontmatter || {};
+    html += '<div class="grid-card" data-path="' + esc(path) + '">';
+    html += '<h2>' + esc(note.title) + '</h2>';
+    if (fm.incantation) html += '<div class="inc">' + esc(fm.incantation) + '</div>';
+    html += '<div class="ex">' + esc(extractExcerpt(note.body)) + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  document.getElementById('view').innerHTML = html;
+  document.querySelectorAll('.grid-card').forEach(c =>
+    c.onclick = () => openNote(c.dataset.path));
+  document.querySelector('.main').scrollTo(0, 0);
+}
+
+function extractExcerpt(body) {
+  const lines = body.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+  return (lines[0] || '').slice(0, 200);
+}
+
+function showHelp(msg) {
+  document.getElementById('view').innerHTML = '<div class="help">' + esc(msg) + '</div>';
+}
+
+// Minimal markdown renderer (headings, paragraphs, lists, code, bold/italic, links, wikilinks)
+function renderMarkdown(text) {
+  // Strip the title H1 since we render it from frontmatter
+  text = text.replace(/^#\s+.+\n/, '');
+  const lines = text.split('\n');
+  let html = '';
+  let i = 0;
+  let inCode = false;
+  let buf = [];
+
+  const flush = () => {
+    if (!buf.length) return;
+    const para = buf.join(' ').trim();
+    if (para) html += '<p>' + inline(para) + '</p>';
+    buf = [];
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.startsWith('```')) {
+      flush();
+      if (inCode) { html += '</code></pre>'; inCode = false; }
+      else { html += '<pre><code>'; inCode = true; }
+      i++; continue;
+    }
+    if (inCode) { html += esc(line) + '\n'; i++; continue; }
+    // Allow raw HTML block tags (iframe, div, details, etc.) — pass through verbatim
+    if (/^<(iframe|div|details|summary|section|video|audio|figure|table|p)\b/i.test(line.trim())) {
+      flush();
+      const openTag = line.trim().match(/^<(\w+)/)[1].toLowerCase();
+      const closeRe = new RegExp('</' + openTag + '\\s*>', 'i');
+      // Self-closing on same line?
+      if (closeRe.test(line) || /\/>\s*$/.test(line.trim())) {
+        html += line + '\n'; i++; continue;
+      }
+      // Multi-line block
+      html += line + '\n'; i++;
+      while (i < lines.length && !closeRe.test(lines[i])) {
+        html += lines[i] + '\n'; i++;
+      }
+      if (i < lines.length) { html += lines[i] + '\n'; i++; }
+      continue;
+    }
+    if (!line.trim()) { flush(); i++; continue; }
+    if (/^#{1,6}\s/.test(line)) {
+      flush();
+      const m = line.match(/^(#+)\s+(.+)/);
+      const level = Math.min(m[1].length, 6);
+      html += '<h' + level + '>' + inline(m[2]) + '</h' + level + '>';
+      i++; continue;
+    }
+    if (/^[-*]\s/.test(line)) {
+      flush();
+      html += '<ul>';
+      while (i < lines.length && /^[-*]\s/.test(lines[i])) {
+        html += '<li>' + inline(lines[i].replace(/^[-*]\s+/, '')) + '</li>';
+        i++;
+      }
+      html += '</ul>'; continue;
+    }
+    if (/^>\s/.test(line)) {
+      flush();
+      html += '<blockquote>' + inline(line.replace(/^>\s+/, '')) + '</blockquote>';
+      i++; continue;
+    }
+    buf.push(line); i++;
+  }
+  flush();
+  if (inCode) html += '</code></pre>';
+  return html;
+}
+
+function inline(text) {
+  // Wikilinks first (before escape), tracking positions
+  const parts = [];
+  let last = 0;
+  const re = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push({type: 'text', val: text.slice(last, m.index)});
+    parts.push({type: 'wiki', target: m[1].trim(), label: (m[2] || m[1]).trim()});
+    last = re.lastIndex;
+  }
+  if (last < text.length) parts.push({type: 'text', val: text.slice(last)});
+
+  return parts.map(p => {
+    if (p.type === 'wiki') {
+      const resolved = resolveWikilink(p.target);
+      const cls = resolved ? 'wikilink' : 'wikilink broken';
+      const tgt = resolved ? ' data-target="' + esc(resolved) + '"' : '';
+      return '<a class="' + cls + '"' + tgt + '>' + esc(p.label) + '</a>';
+    }
+    let s = esc(p.val);
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a class="external" href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
+  }).join('');
+}
+
+function resolveWikilink(target) {
+  // Strip path prefix like ../essays/
+  const clean = target.replace(/^.*\//, '').replace(/\.md$/, '');
+  return VAULT.wikiResolve[clean] || VAULT.wikiResolve[target] || null;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+// Search
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase().trim();
+  if (!q) { buildSidebar(); return; }
+  const sb = document.getElementById('sidebar');
+  let html = '<h3>Results</h3>';
+  for (const [path, note] of Object.entries(VAULT.notes)) {
+    const hay = (note.title + ' ' + note.body + ' ' + JSON.stringify(note.frontmatter)).toLowerCase();
+    if (hay.includes(q)) html += `<a data-path="${path}">${esc(note.title)}</a>`;
+  }
+  sb.innerHTML = html;
+  sb.querySelectorAll('a').forEach(a => a.onclick = () => openNote(a.dataset.path));
+});
+
+// Init
+buildSidebar();
+const home = VAULT.notes['README'] || VAULT.notes[Object.keys(VAULT.notes)[0]];
+if (home) openNote(Object.keys(VAULT.notes).find(k => VAULT.notes[k] === home));
+else showHelp('Empty vault.');
+</script>
+</body>
+</html>

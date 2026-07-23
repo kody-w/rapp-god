@@ -1,0 +1,78 @@
+name: pulse
+
+# The body's heartbeat. A daily pulse takes one witnessed slice; the no-churn rule means
+# most days mint nothing. A separate weekly cron forces a --heartbeat liveness frame.
+# Every run verifies the chain BEFORE and AFTER, and commits only if a frame was minted.
+
+on:
+  schedule:
+    - cron: "17 7 * * *"    # daily pulse (07:17 UTC)
+    - cron: "23 7 * * 1"    # weekly heartbeat (Mondays 07:23 UTC)
+  workflow_dispatch:
+    inputs:
+      heartbeat:
+        description: "Force a heartbeat (liveness) frame even if nothing changed"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pulse
+  cancel-in-progress: false
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verify chain (before)
+        run: node tools/verify-chain.mjs
+
+      - name: Pulse
+        # CI ALWAYS runs with GITHUB_TOKEN (5000 req/hr), so the coherence gate is never
+        # tripped by rate-limiting. Only coherence exit 3 is a clean skip; a pre-append
+        # frame-gate refusal is exit 4 and must fail this job.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          if [ "${{ github.event.schedule }}" = "23 7 * * 1" ] || [ "${{ inputs.heartbeat }}" = "true" ]; then
+            echo "weekly heartbeat pulse"
+            node tools/pulse.mjs --heartbeat
+          else
+            node tools/pulse.mjs
+          fi
+          code=$?
+          set -e
+          if [ "$code" -eq 3 ]; then
+            echo "::warning::slice incoherent — refused to mint (transient); no frame this run"
+            exit 0
+          fi
+          if [ "$code" -eq 4 ]; then
+            echo "::error::pre-append frame gate refused the candidate; no append occurred"
+          fi
+          exit "$code"
+
+      - name: Verify chain (after)
+        run: node tools/verify-chain.mjs
+
+      - name: Commit if a frame was minted
+        run: |
+          if [ -n "$(git status --porcelain frames vitals.json)" ]; then
+            head=$(node -e "process.stdout.write(String(require('./frames/index.json').head.seq))")
+            git config user.name "rapp-body pulse"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add frames vitals.json
+            git commit -m "pulse: mint frame seq ${head}"
+            git push
+            echo "minted + pushed frame seq ${head}"
+          else
+            echo "no change; no frame minted; nothing to commit"
+          fi

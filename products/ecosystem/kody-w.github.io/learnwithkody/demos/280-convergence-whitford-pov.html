@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Convergence — Whitford POV · Brimsworth 11/12 (R26)</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#0a0608;color:#f3e8d8;font-family:'Helvetica Neue',Arial,sans-serif;overflow:hidden;height:100%}
+  #c{position:fixed;inset:0;display:block}
+  .panel{position:fixed;background:rgba(20,12,14,.68);border:1px solid rgba(220,196,170,.22);border-radius:6px;padding:10px 14px;font-size:12px;line-height:1.5;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  #hud{left:12px;top:12px;max-width:340px}
+  #cam{right:12px;top:12px;font-size:11px;max-width:260px}
+  #vows{left:12px;bottom:64px;max-width:420px;font-size:12px;line-height:1.5;font-family:'Times New Roman',Georgia,serif;background:rgba(252,243,224,.08);border:1px solid rgba(255,220,170,.28)}
+  #ledger{right:12px;bottom:64px;max-width:300px;font-size:11px;line-height:1.45}
+  #chy{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(0deg,rgba(120,30,40,.92),rgba(120,30,40,.55) 60%,rgba(120,30,40,0));padding:12px 20px 14px;font-size:13px;text-align:center;letter-spacing:.04em}
+  #conv{position:fixed;left:0;right:0;top:30%;text-align:center;font-size:32px;letter-spacing:.18em;text-transform:uppercase;color:#fff8e0;text-shadow:0 0 24px #ffb060,0 0 48px #ff6020;opacity:0;pointer-events:none;transition:opacity 1.6s}
+  #conv.on{opacity:1}
+  #conv .sub{display:block;font-size:14px;letter-spacing:.06em;margin-top:8px;color:#ffd8a8;text-transform:none;text-shadow:0 0 12px #c0603a}
+  .tag{font-weight:700;color:#ffc8a0;letter-spacing:.1em;text-transform:uppercase}
+  .k{color:#ffd86b}
+  .o{color:#ffa97a}
+  .p{color:#ffc8d8}
+  .g{color:#a8d4a0}
+  .m{color:#cfe8ff}
+  .v{color:#e5b4ff}
+  .b{color:#ffd2a0}
+  .dim{opacity:.7}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  #script{margin-top:6px;font-size:12px}
+  #script .now{color:#fff8d8;font-style:italic}
+  #script .past{opacity:.45}
+  #script .future{opacity:.35}
+  #ticker{font-size:10px;margin-top:4px;color:#cfe8ff;opacity:.85}
+  .pulse{animation:p 2.4s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:.85}50%{opacity:1}}
+  .flash{animation:f 1.2s ease-out}
+  @keyframes f{0%{background:rgba(255,200,120,.45)}100%{background:rgba(252,243,224,.08)}}
+</style>
+</head>
+<body>
+<!-- ROUND26_CONVERGENCE v1 -->
+<canvas id="c"></canvas>
+<div class="panel" id="hud">
+  <div class="tag">⛪ Whitford POV · Brimsworth Convergence 11/12</div>
+  <div class="row"><span><span class="dim">master-clock:</span> <span class="k" id="t">--:--</span></span><span class="dim" id="phase">gathering</span></div>
+  <div><span class="dim">officiant:</span> <span class="o">Mr Alaric Whitford, 56</span></div>
+  <div><span class="dim">ceremony:</span> <span class="p" id="cer">processional pending…</span></div>
+  <div><span class="dim">gaze:</span> <span class="g" id="gz">centre</span></div>
+  <div><span class="dim">heard-twins:</span> <span class="m" id="hr">0</span></div>
+</div>
+<div class="panel" id="cam">
+  <div class="tag">POV · officiant eye-level 1.78m</div>
+  <div class="dim" id="cnm">altar-fixed · slow gaze sweep</div>
+  <div id="ticker"></div>
+</div>
+<div class="panel" id="vows">
+  <div class="tag" style="color:#ffc8a0">📖 Vows-Text · ceremony script</div>
+  <div class="dim" id="vl">page <span id="pg">1</span>/6 · <span id="ph2">opening</span></div>
+  <div id="script"></div>
+</div>
+<div class="panel" id="ledger">
+  <div class="tag" style="color:#cfe8ff">brimsworth_convergence_v1</div>
+  <div id="lg"></div>
+</div>
+<div id="conv"><span>convergence: whitford</span><span class="sub">the words become real.</span></div>
+<div id="chy"><span class="tag">Brimsworth Convergence</span> · POV 11/12 — officiant · <span id="msg" class="pulse">FICTIONAL ceremony · INVENTED Brimsworth canon · all characters fictitious</span></div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  var SENT='ROUND26_CONV'+'ERGENCE v1';
+  var STORE='convergence_whitford_v1';
+  var LEDGER='brimsworth_convergence_v1';
+  var POV_ID='whitford';
+  var POV_INDEX=11, POV_OF=12, ROUND=26;
+  var T_CONV=540;     // pronouncement instant
+  var T_RESEED=600;   // reseed period
+
+  // ---- cross-read brimsworth canon ----
+  var canon={}, canonCount=0;
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i); if(!k) continue;
+      if(k.indexOf('brimsworth_')===0||k.indexOf('worlds_')===0||k.indexOf('multiverse_')===0||k.indexOf('century_')===0||k==='recurring_cast_v1'){
+        try{ canon[k]=JSON.parse(localStorage.getItem(k)||'null'); }catch(e){ canon[k]=null; }
+        canonCount++;
+      }
+    }
+  }catch(e){}
+  console.log('['+POV_ID+'] sentinel:',SENT,'canon-keys:',canonCount,Object.keys(canon));
+
+  // ---- BroadcastChannel master-clock sync ----
+  var bc=null, heardTwins={}, heardCount=0;
+  var masterClockOffset=0; // we adopt earliest-tab clock if heard
+  try{
+    bc=new BroadcastChannel('brimsworth_convergence');
+    bc.onmessage=function(ev){
+      if(!ev||!ev.data) return;
+      var d=ev.data;
+      if(d.pov_id===POV_ID) return;
+      heardTwins[d.pov_id]=d;
+      heardCount=Object.keys(heardTwins).length;
+      if(d.type==='clock'&&typeof d.master_t==='number'){
+        // adopt master_t if it's earlier (lower) than ours -> sync to oldest tab
+        var local=(performance.now()/1000)+masterClockOffset;
+        if(d.master_t>local-0.5 && d.master_t<local+0.5){ /* close enough */ }
+        else if(d.master_t>local){ masterClockOffset += (d.master_t-local); }
+      }
+      console.log('[bc-conv] heard:',d.pov_id,d.type,d.master_t);
+    };
+    bc.postMessage({pov_id:POV_ID,type:'awake',round:ROUND,t:Date.now()});
+  }catch(e){}
+
+  // ---- seedable RNG ----
+  var seed=0x77e1f0a1;
+  function rand(){ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }
+  function rr(a,b){ return a+(b-a)*rand(); }
+  function reseed(s){ seed=(s>>>0)||1; }
+
+  // ---- canonical R21 wedding cast (Brimsworth recurring) ----
+  // Lily Pemberton (bride), Tomas Vellum (groom), Mr Whitford (officiant),
+  // Henry Bramble Jr, Margaret Field, Eleanor Wren, etc. (guests).
+  var BRIDE={name:'Lily Pemberton',color:0xf6e8d8};
+  var GROOM={name:'Tomas Vellum',color:0x2a3140};
+  var OFF={name:'Mr Alaric Whitford',color:0x1a1418};
+
+  // ---- ceremony script (lines indexed by phase, t in seconds) ----
+  // 6 pages. Each line: {t, page, txt}
+  var SCRIPT=[
+    {t:  0,page:1,phase:'gathering',  txt:'(processional · the guests rise)'},
+    {t: 18,page:1,phase:'gathering',  txt:'"Friends. Family. Brimsworth-folk near and far—"'},
+    {t: 42,page:1,phase:'opening',    txt:'"—be welcome, on this still afternoon."'},
+    {t: 70,page:1,phase:'opening',    txt:'"We have come together for Lily Pemberton and Tomas Vellum."'},
+    {t:104,page:2,phase:'opening',    txt:'"A wedding is, at heart, a small public truth."'},
+    {t:138,page:2,phase:'opening',    txt:'"Two people declare a thing, and the rest of us hold it."'},
+    {t:172,page:2,phase:'reading',    txt:'(reading — Pemberton family verse, brief, fictional)'},
+    {t:208,page:3,phase:'vows',       txt:'"Tomas. Will you have this woman to be your wedded wife?"'},
+    {t:236,page:3,phase:'vows',       txt:'(Tomas: "I will.")'},
+    {t:258,page:3,phase:'vows',       txt:'"Lily. Will you have this man to be your wedded husband?"'},
+    {t:286,page:3,phase:'vows',       txt:'(Lily: "I will.")'},
+    {t:312,page:4,phase:'rings',      txt:'"The rings — circles without end. Tomas, place this ring—"'},
+    {t:348,page:4,phase:'rings',      txt:'"—and say: with this ring I marry you."'},
+    {t:374,page:4,phase:'rings',      txt:'(Tomas: "With this ring, I marry you.")'},
+    {t:402,page:4,phase:'rings',      txt:'"Lily. The same. Place the ring—"'},
+    {t:432,page:5,phase:'rings',      txt:'(Lily: "With this ring, I marry you.")'},
+    {t:462,page:5,phase:'pronounce',  txt:'"Then by the laws of this place and the assent of these witnesses—"'},
+    {t:498,page:5,phase:'pronounce',  txt:'"—and by what I myself have come to believe of the two of you—"'},
+    {t:528,page:6,phase:'pronounce',  txt:'(I close the book. I look up. I let the moment hold.)'},
+    {t:540,page:6,phase:'CONVERGENCE',txt:'"I pronounce you, Lily and Tomas, married."'},
+    {t:556,page:6,phase:'kiss',       txt:'(they turn to each other. then they look at me. I nod.)'},
+    {t:584,page:6,phase:'recessional',txt:'"Brimsworth — please greet them. Mr and Mrs Vellum-Pemberton."'}
+  ];
+
+  // ---- Three.js scene ----
+  var THREE=window.THREE;
+  var renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.setSize(innerWidth,innerHeight);
+
+  var scene=new THREE.Scene();
+  scene.background=new THREE.Color(0xc8b89a);
+  scene.fog=new THREE.Fog(0xd8c8aa,16,90);
+
+  // first-person camera at the altar, eye-level 1.78m, looking -Z
+  var camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,0.05,200);
+  camera.position.set(0,1.78,0.35);
+  camera.rotation.order='YXZ';
+
+  // ---- lights ----
+  var sun=new THREE.DirectionalLight(0xffe0b8,1.0);
+  sun.position.set(-12,18,-6); scene.add(sun);
+  var amb=new THREE.HemisphereLight(0xffe2c0,0x554840,0.55); scene.add(amb);
+  var altarGlow=new THREE.PointLight(0xfff0c8,0.8,12); altarGlow.position.set(0,2.4,-1.2); scene.add(altarGlow);
+
+  // ---- ground (lawn) ----
+  var lawn=new THREE.Mesh(new THREE.PlaneGeometry(80,140),new THREE.MeshLambertMaterial({color:0x6a8a4e}));
+  lawn.rotation.x=-Math.PI/2; lawn.position.set(0,0,-30); scene.add(lawn);
+
+  // aisle runner (pale linen) — runs from couple back through congregation
+  var aisle=new THREE.Mesh(new THREE.PlaneGeometry(2.4,32),new THREE.MeshLambertMaterial({color:0xefe2c8}));
+  aisle.rotation.x=-Math.PI/2; aisle.position.set(0,0.01,-14); scene.add(aisle);
+  // petal scatter on aisle
+  for(var pi=0;pi<60;pi++){
+    var pe=new THREE.Mesh(new THREE.CircleGeometry(0.06+rand()*0.05,6),
+      new THREE.MeshBasicMaterial({color:rand()<.5?0xffc8c8:0xfff0d0}));
+    pe.rotation.x=-Math.PI/2; pe.position.set(rr(-1.0,1.0),0.02,rr(-2,-28)); scene.add(pe);
+  }
+
+  // ---- floral arch (frames the view, around the camera/altar) ----
+  function makeArch(){
+    var g=new THREE.Group();
+    var matWood=new THREE.MeshLambertMaterial({color:0x6a4a32});
+    var lp=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,3.4,10),matWood); lp.position.set(-1.6,1.7,-0.3); g.add(lp);
+    var rp=lp.clone(); rp.position.set(1.6,1.7,-0.3); g.add(rp);
+    var tp=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.09,8,18,Math.PI),matWood);
+    tp.rotation.x=Math.PI/2; tp.position.set(0,3.4,-0.3); g.add(tp);
+    // foliage clumps
+    for(var i=0;i<28;i++){
+      var ang=Math.PI*(i/27);
+      var x=-Math.cos(ang)*1.6, y=3.4+Math.sin(ang)*1.6-1.6;
+      var leaf=new THREE.Mesh(new THREE.SphereGeometry(0.18+rand()*0.12,6,5),
+        new THREE.MeshLambertMaterial({color:[0x4d6a3a,0x6a8a4e,0x90a070,0xe0c8a8,0xffc8c8][i%5]}));
+      leaf.position.set(x+rr(-0.1,0.1),y+1.7-1.6,-0.3+rr(-0.15,0.15)); g.add(leaf);
+    }
+    // post foliage at base
+    for(var j=0;j<10;j++){
+      var leaf2=new THREE.Mesh(new THREE.SphereGeometry(0.16+rand()*0.1,6,5),
+        new THREE.MeshLambertMaterial({color:j%2?0x6a8a4e:0xffc8c8}));
+      leaf2.position.set((j<5?-1.6:1.6)+rr(-0.15,0.15),0.4+rr(0,1.6),-0.3+rr(-0.1,0.1)); g.add(leaf2);
+    }
+    return g;
+  }
+  scene.add(makeArch());
+
+  // ---- altar table just behind camera (suggested by a soft cloth in front of officiant) ----
+  // Officiant POV: book is held in hands at chest level; we render a vows-book proxy when head dips.
+  function makeBook(){
+    var g=new THREE.Group();
+    var bm=new THREE.MeshLambertMaterial({color:0x6c2820});
+    var pm=new THREE.MeshLambertMaterial({color:0xf3e8c8});
+    var cover=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.02,0.24),bm); cover.position.y=0; g.add(cover);
+    var pages=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.018,0.22),pm); pages.position.y=0.012; g.add(pages);
+    // ribbon
+    var rib=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.001,0.30),new THREE.MeshBasicMaterial({color:0xc04030}));
+    rib.position.set(0.06,0.022,0.04); g.add(rib);
+    // page-text suggestion lines
+    for(var i=0;i<7;i++){
+      var ln=new THREE.Mesh(new THREE.BoxGeometry(0.20+rand()*0.06,0.001,0.006),new THREE.MeshBasicMaterial({color:0x342820}));
+      ln.position.set(rr(-0.04,0.04),0.022,-0.08+i*0.025); g.add(ln);
+    }
+    return g;
+  }
+  var book=makeBook();
+  // attach the book to the camera so it follows POV
+  book.position.set(0,-0.42,-0.55);
+  book.rotation.x=-0.42;
+  camera.add(book);
+  scene.add(camera);
+
+  // ---- COUPLE (humanoid stand-ins, faces toward officiant initially) ----
+  function makePerson(opt){
+    var g=new THREE.Group();
+    var skin=new THREE.MeshLambertMaterial({color:opt.skin||0xf2c8a0});
+    var cloth=new THREE.MeshLambertMaterial({color:opt.cloth||0x303040});
+    var hair=new THREE.MeshLambertMaterial({color:opt.hair||0x3b2820});
+    // body
+    var torso=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.24,0.74,12),cloth); torso.position.y=1.10; g.add(torso);
+    // dress flare for bride
+    if(opt.dress){
+      var skirt=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.0,16,1,true),cloth);
+      skirt.position.y=0.55; g.add(skirt);
+    } else {
+      var legs=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.15,0.85,10),cloth);
+      legs.position.y=0.45; g.add(legs);
+    }
+    // arms
+    var lA=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.62,8),cloth); lA.position.set(-0.27,1.15,0); lA.rotation.z=0.18; g.add(lA);
+    var rA=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.62,8),cloth); rA.position.set( 0.27,1.15,0); rA.rotation.z=-0.18; g.add(rA);
+    // hands
+    var lH=new THREE.Mesh(new THREE.SphereGeometry(0.07,8,6),skin); lH.position.set(-0.30,0.84,0.04); g.add(lH);
+    var rH=new THREE.Mesh(new THREE.SphereGeometry(0.07,8,6),skin); rH.position.set( 0.30,0.84,0.04); g.add(rH);
+    // neck
+    var neck=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.07,0.10,8),skin); neck.position.y=1.52; g.add(neck);
+    // head (tilted slightly down — they're shorter than camera eye-level since they stand 1m forward but their heads are at ~1.6m which is below 1.78m)
+    var head=new THREE.Group(); head.position.y=1.65;
+    var skull=new THREE.Mesh(new THREE.SphereGeometry(0.13,14,12),skin); head.add(skull);
+    // hair cap
+    var cap=new THREE.Mesh(new THREE.SphereGeometry(0.135,14,12,0,Math.PI*2,0,1.4),hair);
+    cap.rotation.x=opt.dress?0.05:-0.1; head.add(cap);
+    if(opt.dress){
+      // bun-ish
+      var bun=new THREE.Mesh(new THREE.SphereGeometry(0.07,8,6),hair); bun.position.set(0,-0.02,-0.12); head.add(bun);
+      // veil
+      var veil=new THREE.Mesh(new THREE.PlaneGeometry(0.42,0.55),new THREE.MeshLambertMaterial({color:0xf6efe0,transparent:true,opacity:0.55,side:THREE.DoubleSide}));
+      veil.position.set(0,-0.18,-0.05); head.add(veil);
+    }
+    // simple eyes (so you can SEE them looking back)
+    var eyeMat=new THREE.MeshBasicMaterial({color:0x141014});
+    var le=new THREE.Mesh(new THREE.SphereGeometry(0.018,6,5),eyeMat); le.position.set(-0.045,0.02,0.122); head.add(le);
+    var re=new THREE.Mesh(new THREE.SphereGeometry(0.018,6,5),eyeMat); re.position.set( 0.045,0.02,0.122); head.add(re);
+    // small smile mark
+    var sm=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.005,0.005),new THREE.MeshBasicMaterial({color:0x6a3024}));
+    sm.position.set(0,-0.04,0.124); head.add(sm);
+    g.add(head);
+    g.userData.head=head;
+    return g;
+  }
+
+  var bride=makePerson({dress:true,cloth:0xf6efdc,hair:0x4a2a18,skin:0xf3d2b0});
+  // bouquet
+  var bouquet=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),new THREE.MeshLambertMaterial({color:0xffc8c8}));
+  bouquet.position.set(0,0.86,0.18); bride.add(bouquet);
+  bride.position.set(-0.55,0,-1.45);
+  // initially she faces the officiant (camera at +Z), so face -is at +Z forward; default makePerson faces +Z, so rotate 0 for facing camera.
+  bride.rotation.y=0;
+  scene.add(bride);
+
+  var groom=makePerson({dress:false,cloth:0x2a2a36,hair:0x2a2018,skin:0xe6b890});
+  // boutonniere
+  var bout=new THREE.Mesh(new THREE.SphereGeometry(0.04,6,5),new THREE.MeshBasicMaterial({color:0xffd0a0}));
+  bout.position.set(-0.16,1.3,0.20); groom.add(bout);
+  groom.position.set(0.55,0,-1.45);
+  groom.rotation.y=0;
+  scene.add(groom);
+
+  // gentle idle shoulders/hands sway tracker (set in animate)
+  bride.userData.baseY=0; groom.userData.baseY=0;
+
+  // ---- congregation: pews + ~110 seated guests in two banks behind the couple ----
+  function makePew(side, row){
+    var g=new THREE.Group();
+    var bench=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.08,0.36),new THREE.MeshLambertMaterial({color:0x6a4830}));
+    bench.position.y=0.50; g.add(bench);
+    var back=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.55,0.06),new THREE.MeshLambertMaterial({color:0x6a4830}));
+    back.position.set(0,0.78,-0.18*side); g.add(back);
+    // legs
+    for(var i=0;i<2;i++){
+      var lg=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.50,0.36),new THREE.MeshLambertMaterial({color:0x4a2e1e}));
+      lg.position.set(i?1.20:-1.20,0.25,0); g.add(lg);
+    }
+    return g;
+  }
+  // colour palette for guest clothing — Brimsworth recurring cast tones
+  var GUEST_COLOURS=[0x2a3140,0x4a2a3a,0x3a4a5a,0x5a3a2a,0x6a5040,0x303a4a,0x4a3030,0x2a4a3a,0x5a4a2a,0x4a4a5a,0x3a2a4a,0x6a3a3a,0x303030,0x2a3a3a,0x5a3a4a,0x40302a];
+  var GUESTS=[];
+  // Some named recurring cast (FICTIONAL Brimsworth canon)
+  var CAST_NAMES=['Henry Bramble Jr','Margaret Field','Eleanor Wren','Mrs Pemberton','Hester Vellum','Old Wren','Nathaniel Whitford','Iris Bramble','Cousin Bram-shi','Aunt Caleth-mor','Reverend Field-vell','Lily\'s niece, Pell','Tomas\'s brother, Quen','Brimsworth choir-keeper','Mira-keth, the photographer','Sael Bramble','Dree Pemberton','Whitford\'s wife (back row)'];
+  function makeGuest(side,row,seat,id){
+    var p=makePerson({
+      dress: rand()<.5,
+      cloth: GUEST_COLOURS[(row*7+seat*3+(side<0?1:0))%GUEST_COLOURS.length],
+      hair: rand()<.3?0xc8b08a:(rand()<.5?0x3b2820:0x1a1410),
+      skin: [0xf3d2b0,0xe6b890,0xd0a070,0xc89060,0xa07050][((row+seat)*3)%5]
+    });
+    // seated: shrink legs, drop posture
+    p.scale.set(0.95,0.92,0.95);
+    p.position.set(side*1.6+seat*0.7-0.0, 0.42, -3.6 - row*1.45);
+    // sitting offset
+    p.position.y = 0.52;
+    // head turned slightly forward (toward couple) — they all face +Z (toward camera), so rotation 0
+    p.rotation.y = side<0 ? rr(-0.05,0.18) : rr(-0.18,0.05);
+    var g={mesh:p,row:row,seat:seat,side:side,id:id,
+           name: id<CAST_NAMES.length?CAST_NAMES[id]:('Guest '+id+' (Brimsworth-folk)'),
+           ph:rand()*Math.PI*2, spd:0.6+rand()*0.6};
+    GUESTS.push(g);
+    scene.add(p);
+    // pew (one per row x side, dedup)
+    if(seat===0){
+      var pw=makePew(side,row);
+      pw.position.set(side*2.0,0,-3.6-row*1.45);
+      scene.add(pw);
+    }
+    return g;
+  }
+  var gid=0;
+  for(var rw=0;rw<8;rw++){
+    for(var st=0;st<3;st++){
+      makeGuest(-1,rw,st,gid++);
+      makeGuest( 1,rw,st,gid++);
+    }
+  }
+
+  // background trees
+  for(var ti=0;ti<14;ti++){
+    var trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.24,2.4,8),new THREE.MeshLambertMaterial({color:0x5a3820}));
+    var canopy=new THREE.Mesh(new THREE.SphereGeometry(1.4+rand()*0.8,8,6),new THREE.MeshLambertMaterial({color:0x4a6a38}));
+    var tx=(rand()<.5?-1:1)*(8+rand()*16);
+    var tz=-20-rand()*40;
+    trunk.position.set(tx,1.2,tz); canopy.position.set(tx,3.0+rand()*0.6,tz);
+    scene.add(trunk); scene.add(canopy);
+  }
+
+  // ---- master clock (BroadcastChannel-shareable) ----
+  var T0=performance.now()/1000;
+  function masterT(){ return ((performance.now()/1000)-T0+masterClockOffset); }
+
+  // ---- ledger append ----
+  var join_master_t = masterT();
+  function loadLedger(){
+    try{ return JSON.parse(localStorage.getItem(LEDGER)||'[]'); }catch(e){ return []; }
+  }
+  function saveLedger(arr){
+    try{ localStorage.setItem(LEDGER,JSON.stringify(arr.slice(-64))); }catch(e){}
+  }
+  var lg=loadLedger();
+  // append join entry
+  lg.push({pov_id:POV_ID, master_clock_at_join: join_master_t.toFixed(2), convergence_at:null, joined_at:Date.now()});
+  saveLedger(lg);
+
+  function ledgerSetConverged(){
+    var arr=loadLedger();
+    // find our most recent unmarked entry
+    for(var i=arr.length-1;i>=0;i--){
+      if(arr[i].pov_id===POV_ID && !arr[i].convergence_at){ arr[i].convergence_at=Date.now(); break; }
+    }
+    saveLedger(arr);
+  }
+
+  // self-store too
+  try{
+    localStorage.setItem(STORE,JSON.stringify({pov_id:POV_ID,round:ROUND,join:join_master_t,sentinel:SENT,ts:Date.now()}));
+  }catch(e){}
+
+  // ---- HUD refs ----
+  var elT=document.getElementById('t'), elPhase=document.getElementById('phase'), elCer=document.getElementById('cer'),
+      elGz=document.getElementById('gz'), elHr=document.getElementById('hr'),
+      elPg=document.getElementById('pg'), elPh2=document.getElementById('ph2'),
+      elScript=document.getElementById('script'), elTicker=document.getElementById('ticker'),
+      elLg=document.getElementById('lg'), elConv=document.getElementById('conv'),
+      elVows=document.getElementById('vows'), elMsg=document.getElementById('msg'), elCnm=document.getElementById('cnm');
+
+  function fmt(t){ var m=Math.floor(t/60), s=Math.floor(t%60); return (m<10?'0':'')+m+':'+(s<10?'0':'')+s; }
+
+  function currentLineIdx(t){
+    var idx=0;
+    for(var i=0;i<SCRIPT.length;i++){ if(SCRIPT[i].t<=t) idx=i; else break; }
+    return idx;
+  }
+
+  function renderScript(t){
+    var idx=currentLineIdx(t);
+    var html='';
+    for(var i=Math.max(0,idx-2); i<=Math.min(SCRIPT.length-1,idx+2); i++){
+      var cls=i<idx?'past':(i===idx?'now':'future');
+      html+='<div class="'+cls+'"><span class="dim">['+fmt(SCRIPT[i].t)+']</span> '+SCRIPT[i].txt+'</div>';
+    }
+    elScript.innerHTML=html;
+    elPg.textContent=SCRIPT[idx].page;
+    elPh2.textContent=SCRIPT[idx].phase;
+  }
+
+  function renderLedger(){
+    var arr=loadLedger();
+    var html='';
+    var recent=arr.slice(-6);
+    for(var i=0;i<recent.length;i++){
+      var e=recent[i];
+      html+='<div><span class="o">'+e.pov_id+'</span> <span class="dim">@</span> <span class="k">'+(e.master_clock_at_join||'-').toString().slice(0,6)+'s</span>'+
+            (e.convergence_at?' <span class="g">✓conv</span>':' <span class="dim">…</span>')+'</div>';
+    }
+    html+='<div class="dim" style="margin-top:4px">canon-keys read: '+canonCount+'</div>';
+    elLg.innerHTML=html;
+  }
+
+  function renderTicker(){
+    var ks=Object.keys(heardTwins);
+    if(ks.length===0){ elTicker.textContent='(no twin-tabs heard yet — open another POV in a new tab to sync)'; return; }
+    var s='twins: ';
+    for(var i=0;i<ks.length;i++){
+      var d=heardTwins[ks[i]];
+      s+=ks[i]+(d.master_t?'@'+(d.master_t).toFixed(0)+'s':'')+(i<ks.length-1?' · ':'');
+    }
+    elTicker.textContent=s;
+  }
+
+  // ---- gaze targets (slow, steady head turn between bride + groom + book) ----
+  // Camera position fixed. Camera rotation interpolates between targets.
+  // Targets are world-space points the camera will look at.
+  var TARG={
+    bride:   new THREE.Vector3(-0.55,1.55,-1.45),
+    groom:   new THREE.Vector3( 0.55,1.55,-1.45),
+    centre:  new THREE.Vector3( 0.00,1.55,-1.45),
+    book:    new THREE.Vector3( 0.00,1.20,-0.20),
+    couple:  new THREE.Vector3( 0.00,1.55,-1.45), // for kiss-moment
+    backRow: new THREE.Vector3( 0.00,1.20,-12.0)  // recessional / sweep at end
+  };
+  var lookAt=new THREE.Vector3().copy(TARG.centre);
+
+  function chooseTarget(t){
+    // ceremony-driven gaze cadence
+    var phase = SCRIPT[currentLineIdx(t)].phase;
+    // book glances every ~22s during reading/pronounce, and at line transitions
+    var line=SCRIPT[currentLineIdx(t)];
+    var inLine = t - line.t;
+    // dip to book briefly right after each line begins (first 2s)
+    if(inLine<2.0 && line.page<=5 && t<540) return 'book';
+    // during specific phases gaze prefers bride or groom
+    if(phase==='vows'){
+      // alternate based on which name we just spoke
+      // 208-236 Tomas (groom), 258-286 Lily (bride)
+      if(t>=208&&t<240) return 'groom';
+      if(t>=258&&t<290) return 'bride';
+    }
+    if(phase==='rings'){
+      if(t>=312&&t<400) return 'groom';
+      if(t>=400&&t<462) return 'bride';
+    }
+    if(phase==='CONVERGENCE'||phase==='kiss'){
+      return 'couple';
+    }
+    if(phase==='recessional') return 'backRow';
+    // baseline: slow oscillation centre→bride→centre→groom
+    var slow=Math.sin(t*0.18);
+    if(slow>0.55) return 'bride';
+    if(slow<-0.55) return 'groom';
+    return 'centre';
+  }
+
+  // ---- couple animation states ----
+  // before convergence: facing officiant (rotation.y=0, since their +Z faces camera)
+  // at convergence: turn to face each other
+  // after kiss-moment: turn back toward officiant (with gentle lift / smile)
+  function updateCouple(t){
+    // gentle breathing
+    var br = Math.sin(t*1.6)*0.005;
+    bride.position.y = 0 + br;
+    groom.position.y = 0 + Math.sin(t*1.5+0.5)*0.005;
+
+    // head subtle tilt
+    var bh = bride.userData.head, gh = groom.userData.head;
+    if(bh) bh.rotation.y = Math.sin(t*0.7)*0.05;
+    if(gh) gh.rotation.y = Math.sin(t*0.7+1.0)*0.05;
+
+    // ring exchange micro-gesture
+    if(t>=348 && t<398){
+      // groom raises right hand toward bride
+      groom.rotation.y = THREE.MathUtils.lerp(groom.rotation.y, -0.15, 0.04);
+    } else if(t>=402 && t<452){
+      bride.rotation.y = THREE.MathUtils.lerp(bride.rotation.y, 0.15, 0.04);
+    } else if(t<540){
+      bride.rotation.y = THREE.MathUtils.lerp(bride.rotation.y, 0, 0.03);
+      groom.rotation.y = THREE.MathUtils.lerp(groom.rotation.y, 0, 0.03);
+    }
+
+    // CONVERGENCE: 540-555 turn to face each other
+    if(t>=540 && t<555){
+      // bride is at -0.55 x, groom at +0.55 x. bride should face +x (rotation.y = -PI/2). groom should face -x (rotation.y = +PI/2).
+      bride.rotation.y = THREE.MathUtils.lerp(bride.rotation.y, -Math.PI/2, 0.05);
+      groom.rotation.y = THREE.MathUtils.lerp(groom.rotation.y,  Math.PI/2, 0.05);
+    }
+    // 555-575: turn back toward officiant (camera at +Z) WITH thanks
+    else if(t>=555 && t<590){
+      bride.rotation.y = THREE.MathUtils.lerp(bride.rotation.y, 0, 0.04);
+      groom.rotation.y = THREE.MathUtils.lerp(groom.rotation.y, 0, 0.04);
+      // small lift (gratitude)
+      var lift=Math.min(1,(t-555)/4);
+      if(bh) bh.rotation.x = THREE.MathUtils.lerp(bh.rotation.x, -0.06*lift, 0.04);
+      if(gh) gh.rotation.x = THREE.MathUtils.lerp(gh.rotation.x, -0.06*lift, 0.04);
+    }
+    // 590+: recessional — they begin to walk back down the aisle
+    else if(t>=590){
+      var walk = Math.min(8, (t-590));
+      bride.position.z = -1.45 + walk*0.45;
+      groom.position.z = -1.45 + walk*0.45;
+      // close together
+      bride.position.x = THREE.MathUtils.lerp(bride.position.x, -0.30, 0.02);
+      groom.position.x = THREE.MathUtils.lerp(groom.position.x,  0.30, 0.02);
+    }
+  }
+
+  // ---- guests animation: small idle, plus a wave at convergence ----
+  function updateGuests(t){
+    for(var i=0;i<GUESTS.length;i++){
+      var g=GUESTS[i];
+      var sway=Math.sin(t*g.spd + g.ph)*0.015;
+      g.mesh.position.y = 0.52 + sway;
+      // at convergence: applause — quick up-down
+      if(t>=540 && t<568){
+        g.mesh.position.y = 0.52 + Math.abs(Math.sin((t-540)*8 + g.ph))*0.06;
+      }
+    }
+  }
+
+  // ---- camera gaze update ----
+  function updateGaze(t){
+    var key=chooseTarget(t);
+    // smoothly move lookAt toward TARG[key]
+    var target=TARG[key];
+    lookAt.lerp(target,0.045);
+    camera.lookAt(lookAt);
+    // slight breathing tilt
+    camera.rotation.z = Math.sin(t*0.7)*0.004;
+    // book is attached to camera; tilt book in/out depending on whether we're glancing at it
+    if(book){
+      var dipAmt = (key==='book') ? 0.0 : 0.42;
+      book.rotation.x = THREE.MathUtils.lerp(book.rotation.x, -0.42 - (key==='book'?0.15:0), 0.08);
+      book.position.y = THREE.MathUtils.lerp(book.position.y, (key==='book')?-0.32:-0.42, 0.08);
+    }
+    elGz.textContent=key;
+    elCnm.textContent='altar-fixed · gaze:'+key;
+  }
+
+  // ---- chyron / message bar ----
+  var convergenceFired=false;
+  function updateChyron(t){
+    var idx=currentLineIdx(t);
+    var line=SCRIPT[idx];
+    elCer.textContent=line.txt;
+    elPhase.textContent=line.phase;
+    if(line.phase==='CONVERGENCE' && t>=T_CONV && !convergenceFired){
+      convergenceFired=true;
+      elConv.classList.add('on');
+      elMsg.textContent='convergence: whitford — the words become real.';
+      elVows.classList.add('flash');
+      ledgerSetConverged();
+      try{ if(bc) bc.postMessage({pov_id:POV_ID,type:'convergence',master_t:t,ts:Date.now()}); }catch(e){}
+      // ramp up altar glow
+      altarGlow.intensity = 1.6;
+      setTimeout(function(){ elConv.classList.remove('on'); }, 6500);
+    }
+  }
+
+  // ---- broadcast clock pulse every 4s ----
+  var lastClockBroadcast=0;
+  function broadcastClock(t){
+    if(t-lastClockBroadcast>4){
+      lastClockBroadcast=t;
+      try{ if(bc) bc.postMessage({pov_id:POV_ID,type:'clock',master_t:t,ts:Date.now()}); }catch(e){}
+    }
+  }
+
+  // ---- reseed every 600s ----
+  var nextReseed=T_RESEED;
+  function maybeReseed(t){
+    if(t>=nextReseed){
+      reseed(Math.floor(t*1000)^0xa5a5a5);
+      nextReseed += T_RESEED;
+      // rotate guest cloth colours subtly
+      for(var i=0;i<GUESTS.length;i++){
+        // (mesh has many materials; just nudge primary torso color via children scan)
+        var children=GUESTS[i].mesh.children;
+        for(var c=0;c<children.length;c++){
+          if(children[c].material && children[c].material.color && c<2){
+            var oc=children[c].material.color;
+            oc.offsetHSL((rand()-0.5)*0.02,0,0);
+          }
+        }
+      }
+      console.log('['+POV_ID+'] reseed at master_t=',t.toFixed(1));
+    }
+  }
+
+  // ---- resize ----
+  window.addEventListener('resize',function(){
+    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+  });
+
+  // ---- main loop ----
+  var lastUI=0;
+  function tick(){
+    var t=masterT();
+    updateCouple(t);
+    updateGuests(t);
+    updateGaze(t);
+    updateChyron(t);
+    broadcastClock(t);
+    maybeReseed(t);
+    renderer.render(scene,camera);
+    if(t-lastUI>0.25){
+      lastUI=t;
+      elT.textContent=fmt(t);
+      elHr.textContent=heardCount;
+      renderScript(t);
+      renderLedger();
+      renderTicker();
+    }
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  console.log('['+POV_ID+'] R26 convergence POV booted. master_t join=',join_master_t.toFixed(2),'sec. Convergence at t=',T_CONV,'s.');
+})();
+</script>
+</body>
+</html>

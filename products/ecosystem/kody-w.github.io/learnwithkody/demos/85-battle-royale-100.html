@@ -1,0 +1,1729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BR100 — 100-Bot Battle Royale (Broadcast)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #07090f; color: #e0e4ee;
+    font-family: 'Courier New', Consolas, monospace;
+    user-select: none;
+  }
+  #c { position: fixed; inset: 0; display: block; }
+
+  .panel {
+    position: fixed; padding: 8px 12px;
+    background: rgba(10,12,22,0.78);
+    border: 1px solid rgba(120,140,180,0.32);
+    border-radius: 4px; font-size: 11px; line-height: 1.5;
+    text-shadow: 0 0 6px #000; pointer-events: none;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  /* Top-left alive count */
+  #alive { top: 12px; left: 12px; min-width: 150px; padding: 10px 14px; }
+  #alive .num { color: #7df9a0; font-weight: bold; font-size: 28px; line-height: 1; }
+  #alive .label { color: #9aa0b8; font-size: 9px; letter-spacing: 2px; }
+  #alive .of { color: #555; font-size: 14px; }
+
+  /* Top-center phase timer */
+  #phase {
+    top: 12px; left: 50%; transform: translateX(-50%);
+    text-align: center; min-width: 240px;
+  }
+  #phase .pname { color: #76d3ff; font-size: 13px; font-weight: bold; letter-spacing: 2px; }
+  #phase .ptimer { color: #ffd66e; font-size: 22px; font-weight: bold; line-height: 1.1; }
+  #phase .pstate { color: #b67aff; font-size: 9px; letter-spacing: 3px; }
+
+  /* Top-right kill leader */
+  #leader {
+    top: 12px; right: 12px;
+    min-width: 240px;
+    border-color: rgba(255,180,80,0.55);
+    box-shadow: 0 0 18px rgba(255,180,80,0.15);
+  }
+  #leader .label { color: #ffd66e; font-size: 9px; letter-spacing: 3px; }
+  #leader .name { color: #fff; font-size: 16px; font-weight: bold; }
+  #leader .kc { color: #ff6b6b; font-size: 12px; font-weight: bold; }
+  #leader .tier { color: #b67aff; font-size: 10px; }
+
+  /* Right side killfeed */
+  #killfeed {
+    position: fixed; right: 12px; top: 130px;
+    width: 280px; pointer-events: none;
+  }
+  .kf {
+    background: rgba(10,12,22,0.75); padding: 5px 9px; margin-top: 3px;
+    border-left: 3px solid #ff6b6b; border-radius: 2px;
+    font-size: 11px; line-height: 1.4;
+    transition: opacity 0.6s;
+  }
+  .kf.fresh { animation: kfPop 0.35s ease-out; }
+  @keyframes kfPop {
+    0% { transform: translateX(40px); opacity: 0; }
+    60% { transform: translateX(-4px); opacity: 1; }
+    100% { transform: translateX(0); opacity: 1; }
+  }
+  .kf .killer { color: #ffd66e; font-weight: bold; }
+  .kf .victim { color: #cfd3e0; }
+  .kf .weapon { color: #76d3ff; font-style: italic; }
+  .kf .left { color: #777; font-size: 9px; margin-left: 4px; }
+  .kf.storm { border-left-color: #b67aff; }
+  .kf.storm .killer { color: #b67aff; }
+
+  /* Left alive list */
+  #alivelist {
+    position: fixed; left: 12px; top: 92px; bottom: 60px;
+    width: 188px; padding: 8px 10px;
+    background: rgba(10,12,22,0.75);
+    border: 1px solid rgba(120,140,180,0.25);
+    border-radius: 4px;
+    font-size: 10px; line-height: 1.5;
+    overflow: hidden;
+    text-shadow: 0 0 6px #000;
+  }
+  #alivelist .header { color: #9aa0b8; font-size: 9px; letter-spacing: 2px; padding-bottom: 4px; border-bottom: 1px solid #2a2f44; margin-bottom: 5px; }
+  #alivelist .row { display: flex; justify-content: space-between; padding: 1px 0; align-items: center; gap: 4px; }
+  #alivelist .nm { color: #cfd3e0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  #alivelist .kc { color: #ff6b6b; font-size: 9px; font-weight: bold; }
+  #alivelist .tier0 .nm { color: #aab; }
+  #alivelist .tier1 .nm { color: #5d8; }
+  #alivelist .tier2 .nm { color: #6af; }
+  #alivelist .tier3 .nm { color: #c8f; }
+  #alivelist .leader .nm { color: #ffd66e !important; font-weight: bold; }
+  #alivelist .leader::before { content: '★ '; color: #ffd66e; }
+
+  /* Marquee bottom */
+  #marquee {
+    position: fixed; bottom: 12px; left: 220px; right: 310px;
+    height: 28px;
+    background: rgba(10,12,22,0.78);
+    border: 1px solid rgba(120,140,180,0.25);
+    border-radius: 4px;
+    overflow: hidden;
+    font-size: 11px; line-height: 28px;
+    text-shadow: 0 0 6px #000;
+  }
+  #marquee .track {
+    display: inline-block; white-space: nowrap;
+    padding-left: 100%;
+    animation: scroll 60s linear infinite;
+  }
+  @keyframes scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-100%); }
+  }
+  #marquee .item { padding: 0 12px; color: #cfd3e0; }
+  #marquee .item .k { color: #ff6b6b; font-weight: bold; }
+  #marquee .item.t1 { color: #5d8; }
+  #marquee .item.t2 { color: #6af; }
+  #marquee .item.t3 { color: #c8f; }
+  #marquee .sep { color: #2a2f44; padding: 0 4px; }
+
+  /* Banner */
+  #banner {
+    position: fixed; top: 100px; left: 50%; transform: translateX(-50%) scale(0.8);
+    padding: 14px 40px;
+    font-size: 30px; font-weight: bold; letter-spacing: 5px;
+    color: #ffd66e;
+    background: rgba(10,12,22,0.88);
+    border: 2px solid #ffd66e;
+    border-radius: 4px;
+    text-shadow: 0 0 18px #ffd66ec0;
+    pointer-events: none;
+    opacity: 0; transition: opacity 0.25s, transform 0.25s;
+    box-shadow: 0 0 40px #ffd66e40, inset 0 0 20px #ffd66e20;
+    white-space: nowrap;
+  }
+  #banner.show { opacity: 1; transform: translateX(-50%) scale(1); }
+  #banner.crit { color: #ff6b6b; border-color: #ff6b6b; text-shadow: 0 0 18px #ff6b6bc0; box-shadow: 0 0 40px #ff6b6b50, inset 0 0 20px #ff6b6b20; }
+  #banner.zone { color: #b67aff; border-color: #b67aff; text-shadow: 0 0 18px #b67affc0; box-shadow: 0 0 40px #b67aff50, inset 0 0 20px #b67aff20; }
+  #banner.air  { color: #6cf; border-color: #6cf; text-shadow: 0 0 18px #6cfc; box-shadow: 0 0 40px #6cf5, inset 0 0 20px #6cf2; }
+
+  /* End card */
+  #endcard {
+    position: fixed; inset: 0;
+    background: radial-gradient(circle at 50% 38%, rgba(255,180,40,0.22), rgba(0,0,0,0.94) 70%);
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    pointer-events: none;
+  }
+  #endcard.show { display: flex; }
+  #endcard .vr {
+    font-size: 78px; color: #ffd066;
+    text-shadow: 0 0 30px #ffd066, 0 0 60px #ff8a00, 0 0 90px #ff4500;
+    letter-spacing: 14px; font-weight: bold;
+    animation: vrPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes vrPulse {
+    0%, 100% { transform: scale(1); text-shadow: 0 0 30px #ffd066, 0 0 60px #ff8a00, 0 0 90px #ff4500; }
+    50% { transform: scale(1.04); text-shadow: 0 0 40px #ffe6a0, 0 0 80px #ffaa20, 0 0 120px #ff5500; }
+  }
+  #endcard .winner {
+    font-size: 60px; color: #fff;
+    text-shadow: 0 0 24px #ffd066, 0 0 48px #ffd066;
+    margin-top: 16px; font-weight: bold;
+    letter-spacing: 5px;
+  }
+  #endcard .stats {
+    margin-top: 22px; font-size: 16px; color: #cfd3e0;
+    text-align: center; line-height: 1.9;
+  }
+  #endcard .stats b { color: #ff6b6b; }
+  #endcard .stats .tag { color: #76d3ff; }
+  #endcard .top5 {
+    margin-top: 22px; font-size: 13px; color: #9aa0b8;
+    text-align: center; line-height: 1.8;
+    background: rgba(0,0,0,0.4);
+    padding: 14px 36px; border-radius: 6px;
+    border: 1px solid rgba(120,140,180,0.2);
+  }
+  #endcard .top5 .head { color: #ffd066; font-size: 11px; letter-spacing: 3px; margin-bottom: 6px; }
+  #endcard .top5 .gold { color: #ffd066; font-weight: bold; }
+  #endcard .top5 .silver { color: #d8d8e8; }
+  #endcard .top5 .bronze { color: #cd9962; }
+  #endcard .next {
+    margin-top: 26px; font-size: 12px; color: #76d3ff;
+    letter-spacing: 4px;
+  }
+  #endcard .placement {
+    margin-top: 14px; font-size: 11px; color: #777; letter-spacing: 2px;
+  }
+
+  #logo {
+    position: fixed; bottom: 14px; left: 14px;
+    font-size: 9px; color: #444; letter-spacing: 4px;
+    pointer-events: none;
+  }
+  #title {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 56px; font-weight: bold; letter-spacing: 8px;
+    color: #ffd066;
+    text-shadow: 0 0 28px #ffd066, 0 0 56px #ff8a00;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  #title small { display: block; font-size: 13px; color: #76d3ff; margin-top: 10px; letter-spacing: 4px; }
+  #title.show { opacity: 1; }
+
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="panel" id="alive">
+  <div class="label">ALIVE</div>
+  <div><span class="num" id="aliveNum">100</span><span class="of"> / 100</span></div>
+  <div class="label" style="margin-top:4px;">KILLS <span style="color:#ff6b6b" id="totalKills">0</span></div>
+</div>
+
+<div class="panel" id="phase">
+  <div class="pname" id="phaseName">DROPPING IN</div>
+  <div class="ptimer" id="phaseTimer">0:30</div>
+  <div class="pstate" id="phaseState">SAFE ZONE</div>
+</div>
+
+<div class="panel" id="leader">
+  <div class="label">★ KILL LEADER</div>
+  <div><span class="name" id="leaderName">—</span></div>
+  <div><span class="kc" id="leaderKills">0 KILLS</span> · <span class="tier" id="leaderTier">UNARMED</span></div>
+</div>
+
+<div id="killfeed"></div>
+
+<div id="alivelist">
+  <div class="header">★ TOP FRAGGERS</div>
+  <div id="alList"></div>
+</div>
+
+<div id="marquee"><div class="track" id="mqTrack"></div></div>
+
+<div id="banner"></div>
+<div id="title">BR100<small>100-BOT BATTLE ROYALE · AUTOPLAY</small></div>
+
+<div id="endcard">
+  <div class="vr">VICTORY ROYALE</div>
+  <div class="winner" id="winnerName">—</div>
+  <div class="stats" id="winnerStats"></div>
+  <div class="top5" id="top5"></div>
+  <div class="placement" id="placement"></div>
+  <div class="next" id="nextMatch">NEXT MATCH IN 8</div>
+</div>
+
+<div id="logo">BR100 · LEARNWITHKODY · AUTOPLAY · ZERO INPUT</div>
+
+<script>
+'use strict';
+// ============================================================
+// BR100 — 100-BOT BATTLE ROYALE (BROADCAST)
+// Single-file, Canvas 2D, no external libs, autoplay forever.
+// ============================================================
+
+// -------------------- Constants --------------------
+const W = 2000;            // world units (square)
+const NUM_BOTS = 100;
+const HC = 100;            // spatial hash cell
+const HW = Math.ceil(W / HC);
+
+const TIERS = [
+  { name: 'COMMON',   color: '#aab',  glow: '#ccd',  dmg: 2.5, range: 150, fire: 1.05, acc: 0.34, hpBoost: 0   },
+  { name: 'RARE',     color: '#5d8',  glow: '#9fd',  dmg: 4,   range: 220, fire: 0.85, acc: 0.44, hpBoost: 15  },
+  { name: 'EPIC',     color: '#48f',  glow: '#8af',  dmg: 7,   range: 300, fire: 0.70, acc: 0.55, hpBoost: 30  },
+  { name: 'LEGEND',   color: '#b6f',  glow: '#d8f',  dmg: 13,  range: 400, fire: 0.60, acc: 0.66, hpBoost: 50  },
+];
+// drop-in grace: bots can't engage for the first ~25 seconds
+const COMBAT_START = 25;
+const WEAPON_NAMES = [
+  ['Pistol', 'SMG', 'Shotgun', 'Tac-9'],
+  ['AR', 'Carbine', 'Burst SMG', 'Combat Shotgun'],
+  ['Assault Rifle', 'DMR', 'Heavy SMG', 'Pump Shotgun'],
+  ['Sniper', 'Rocket', 'Plasma Rifle', 'Railgun'],
+];
+
+// 6-phase storm
+const PHASES = [
+  { r: 1100, hold: 60, close: 0,  dmg: 0,  name: 'ZONE 1' },
+  { r: 720,  hold: 42, close: 36, dmg: 1,  name: 'ZONE 2' },
+  { r: 430,  hold: 38, close: 30, dmg: 3,  name: 'ZONE 3' },
+  { r: 240,  hold: 32, close: 26, dmg: 5,  name: 'ZONE 4' },
+  { r: 110,  hold: 28, close: 22, dmg: 9,  name: 'ZONE 5' },
+  { r: 35,   hold: 40, close: 18, dmg: 14, name: 'FINAL ZONE' },
+];
+
+const NAME_PREFIXES = ('Phantom Shadow Echo Viper Ghost Rogue Storm Frost Blaze Reaper Specter Wraith Void '+
+  'Toxic Savage Brutal Cursed Hex Omen Rune Saber Slayer Drift Pulse Glitch Static Neon Cyber Vector '+
+  'Quantum Atomic Plasma Laser Sonic Turbo Nitro Apex Prime Omega Alpha Sigma Delta Kilo Tango Foxtrot '+
+  'Bravo Zulu Onyx Crimson Cobalt Azure Jade Amber Ruby Steel Iron Titan Bronze Granite Obsidian Mystic '+
+  'Arcane Nebula Cosmic Stellar Solar Lunar Astral Nova Rift Warp Flux Surge Volt Thunder Tempest '+
+  'Cyclone Tornado Inferno Wildfire Glacier Avalanche Tundra Mojave Sahara Everest Krakatoa Hydra '+
+  'Kraken Cerberus Phoenix Griffin Basilisk Wyvern Banshee Reaver Marauder Berserker Outlaw Bandit '+
+  'Renegade Vigilante Sentinel Guardian Warden Paladin Ranger Hunter Stalker Tracker Sniper Assassin '+
+  'Operator Recon Vanguard Crusader Templar Inquisitor Warlock Necro Demon Devil Angel Saint Prophet '+
+  'Oracle Sage Hex Rune Doom Fury Havoc Chaos Order Karma Fate Bolt Spike Edge Blade Fang Talon Claw '+
+  'Wolf Bear Hawk Eagle Tiger Panther Cobra Mamba Scorpion Raven Crow Falcon Owl Lynx Jackal Coyote').split(/\s+/);
+const NAME_SUFFIXES = ['','','','','','','77','99','420','69','13','007','X','XX','Pro','TV','HD','GG','Jr','Killer','Lord','King','Boss','Elite','Z','Y','Tactical','Prime','One','Mk2','MkII','77x','TTV','OG'];
+
+// -------------------- RNG --------------------
+let _seed = (Date.now() ^ 0xC0DE5EED) >>> 0;
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let rng = mulberry32(_seed);
+const r1 = () => rng();
+const rr = (a, b) => a + rng() * (b - a);
+const ri = (a, b) => Math.floor(a + rng() * (b - a + 1));
+const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+
+// -------------------- Canvas / DOM --------------------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+let DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+let SW = 0, SH = 0;
+function resize() {
+  SW = window.innerWidth;
+  SH = window.innerHeight;
+  canvas.width = (SW * DPR) | 0;
+  canvas.height = (SH * DPR) | 0;
+  canvas.style.width = SW + 'px';
+  canvas.style.height = SH + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+const $ = (id) => document.getElementById(id);
+const elAlive = $('aliveNum');
+const elTotalKills = $('totalKills');
+const elPhaseName = $('phaseName');
+const elPhaseTimer = $('phaseTimer');
+const elPhaseState = $('phaseState');
+const elLeaderName = $('leaderName');
+const elLeaderKills = $('leaderKills');
+const elLeaderTier = $('leaderTier');
+const elKillfeed = $('killfeed');
+const elAlList = $('alList');
+const elMqTrack = $('mqTrack');
+const elBanner = $('banner');
+const elEndcard = $('endcard');
+const elWinnerName = $('winnerName');
+const elWinnerStats = $('winnerStats');
+const elTop5 = $('top5');
+const elPlacement = $('placement');
+const elNextMatch = $('nextMatch');
+const elTitle = $('title');
+
+// -------------------- Match State --------------------
+let bots = [];
+let pickups = [];      // { x, y, type: 'box'|'heal'|'shield'|'airdrop', tier }
+let lootBoxes = [];    // chest icons placed on map
+let tracers = [];
+let particles = [];
+let confetti = [];
+let killfeed = [];     // {killer, victim, weapon, time, alive, isStorm}
+let pois = [];         // map points-of-interest
+let buildings = [];    // map structures
+let trees = [];
+let lakes = [];
+let bridges = [];
+let roads = [];
+let mapCanvas = null;
+let mapCtx = null;
+let hash = new Array(HW * HW);
+
+let zoneCx = W * 0.5, zoneCy = W * 0.5;
+let zoneR = PHASES[0].r;
+let zoneTargetR = zoneR;
+let zoneTargetCx = zoneCx, zoneTargetCy = zoneCy;
+let phaseIdx = 0;
+let phaseTimer = PHASES[0].hold;
+let phaseClosing = false;
+let stormDmg = 0;
+
+let matchTime = 0;
+let matchEnded = false;
+let endcardTimer = 0;
+let totalKills = 0;
+let firstBlood = false;
+let killLeader = null;
+let lastFightAt = null;
+let lastFightTime = -10;
+let airdropsDone = 0;
+let airdropTimer = 60 + rng() * 50;
+let nextZoneAnnounce = 1;
+let placement = []; // ordered list of dead-or-alive at end
+
+// Camera
+let cam = {
+  x: W * 0.5, y: W * 0.5,
+  zoom: 0.45,
+  tx: W * 0.5, ty: W * 0.5,
+  tzoom: 0.45,
+  shake: 0,
+};
+let dramaTimer = 0;
+
+// Banner queue
+let bannerQueue = [];
+let bannerActive = null;
+let bannerTimer = 0;
+
+// -------------------- Bot factory --------------------
+function buildNamePool() {
+  const pool = new Set();
+  let safety = 0;
+  while (pool.size < 250 && safety++ < 5000) {
+    pool.add(pick(NAME_PREFIXES) + pick(NAME_SUFFIXES));
+  }
+  return [...pool];
+}
+
+function spawnBots() {
+  const pool = buildNamePool();
+  // shuffle
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  bots = [];
+  // Drop bots scattered across map (skydive feel) but seeded near POIs
+  for (let i = 0; i < NUM_BOTS; i++) {
+    let x, y;
+    if (pois.length && rng() < 0.7) {
+      const p = pois[i % pois.length];
+      x = p.x + rr(-p.r * 0.9, p.r * 0.9);
+      y = p.y + rr(-p.r * 0.9, p.r * 0.9);
+    } else {
+      x = rr(W * 0.1, W * 0.9);
+      y = rr(W * 0.1, W * 0.9);
+    }
+    const hue = (i * 137.508) % 360;
+    bots.push({
+      id: i,
+      name: pool[i] || ('BOT_' + i),
+      x, y,
+      vx: 0, vy: 0,
+      angle: rng() * Math.PI * 2,
+      tier: 0, // weapon tier
+      weaponName: pick(WEAPON_NAMES[0]),
+      hp: 100,
+      shield: 25,
+      heals: 0,
+      shieldsP: 0,
+      kills: 0,
+      dead: false,
+      deathTime: 0,
+      placement: 0,
+      target: null,
+      lastHitBy: null,
+      fireTimer: rng() * 0.5,
+      state: 1, // 0 loot, 1 move, 2 fight, 3 flee, 4 heal
+      stateTimer: 0,
+      moveTx: 0, moveTy: 0,
+      lootTarget: null,
+      personality: {
+        agg: 0.3 + rng() * 0.7,        // aggression
+        greed: 0.3 + rng() * 0.7,      // loot greed
+        snipe: rng(),                  // snipe pref
+      },
+      color: `hsl(${hue}, 70%, 60%)`,
+      colorDim: `hsl(${hue}, 60%, 36%)`,
+      _next: null,
+      flash: 0,
+      hitFlash: 0,
+    });
+  }
+}
+
+// -------------------- Map generation --------------------
+function genMap() {
+  pois = []; buildings = []; trees = []; lakes = []; bridges = []; roads = [];
+
+  // City center (NE quadrant)
+  pois.push({ name: 'CITY', x: W * 0.66, y: W * 0.34, r: 220, lootDensity: 1.0, kind: 'city' });
+  // Residential cluster (NW)
+  pois.push({ name: 'RESIDENTIAL', x: W * 0.28, y: W * 0.30, r: 170, lootDensity: 0.5, kind: 'residential' });
+  // Military base (SW)
+  pois.push({ name: 'MILITARY', x: W * 0.30, y: W * 0.72, r: 180, lootDensity: 1.4, kind: 'military' });
+  // Forest (SE)
+  pois.push({ name: 'FOREST', x: W * 0.72, y: W * 0.72, r: 240, lootDensity: 0.7, kind: 'forest' });
+  // Smaller POIs
+  pois.push({ name: 'OUTPOST', x: W * 0.50, y: W * 0.18, r: 90, lootDensity: 0.6, kind: 'small' });
+  pois.push({ name: 'FARMS',   x: W * 0.18, y: W * 0.50, r: 100, lootDensity: 0.5, kind: 'small' });
+  pois.push({ name: 'DOCKS',   x: W * 0.82, y: W * 0.50, r: 100, lootDensity: 0.6, kind: 'small' });
+  pois.push({ name: 'BUNKER',  x: W * 0.50, y: W * 0.82, r: 90,  lootDensity: 1.0, kind: 'small' });
+
+  // Lakes
+  lakes.push({ x: W * 0.50, y: W * 0.50, r: 130 });
+  lakes.push({ x: W * 0.13, y: W * 0.85, r: 95 });
+
+  // Bridges across central lake
+  bridges.push({ x: W * 0.50, y: W * 0.50, w: 280, h: 28, ang: 0 });
+  bridges.push({ x: W * 0.50, y: W * 0.50, w: 280, h: 28, ang: Math.PI / 2 });
+
+  // Roads connecting POIs (rough)
+  for (let i = 0; i < pois.length; i++) {
+    const a = pois[i];
+    const b = pois[(i + 1) % pois.length];
+    roads.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+  }
+  roads.push({ x1: pois[0].x, y1: pois[0].y, x2: pois[2].x, y2: pois[2].y });
+  roads.push({ x1: pois[1].x, y1: pois[1].y, x2: pois[3].x, y2: pois[3].y });
+
+  // Buildings inside city
+  const city = pois[0];
+  for (let i = 0; i < 32; i++) {
+    const ang = rng() * Math.PI * 2;
+    const r = rng() * city.r * 0.95;
+    const w = 30 + rng() * 50;
+    const h = 30 + rng() * 50;
+    buildings.push({ x: city.x + Math.cos(ang) * r - w / 2, y: city.y + Math.sin(ang) * r - h / 2, w, h, type: 'city' });
+  }
+  // Residential houses
+  const res = pois[1];
+  for (let i = 0; i < 22; i++) {
+    const ang = rng() * Math.PI * 2;
+    const r = rng() * res.r * 0.9;
+    const w = 22 + rng() * 22;
+    const h = 22 + rng() * 22;
+    buildings.push({ x: res.x + Math.cos(ang) * r - w / 2, y: res.y + Math.sin(ang) * r - h / 2, w, h, type: 'house' });
+  }
+  // Military bunkers
+  const mil = pois[2];
+  for (let i = 0; i < 14; i++) {
+    const ang = rng() * Math.PI * 2;
+    const r = rng() * mil.r * 0.9;
+    const w = 35 + rng() * 35;
+    const h = 35 + rng() * 35;
+    buildings.push({ x: mil.x + Math.cos(ang) * r - w / 2, y: mil.y + Math.sin(ang) * r - h / 2, w, h, type: 'bunker' });
+  }
+  // Outpost / docks / farms small structures
+  for (const p of pois.slice(4)) {
+    for (let i = 0; i < 6; i++) {
+      const ang = rng() * Math.PI * 2;
+      const r = rng() * p.r * 0.85;
+      const w = 20 + rng() * 24;
+      const h = 20 + rng() * 24;
+      buildings.push({ x: p.x + Math.cos(ang) * r - w / 2, y: p.y + Math.sin(ang) * r - h / 2, w, h, type: 'small' });
+    }
+  }
+  // Trees (forest + scattered)
+  const fr = pois[3];
+  for (let i = 0; i < 320; i++) {
+    const ang = rng() * Math.PI * 2;
+    const r = Math.pow(rng(), 0.7) * fr.r;
+    trees.push({ x: fr.x + Math.cos(ang) * r, y: fr.y + Math.sin(ang) * r, r: 6 + rng() * 5 });
+  }
+  for (let i = 0; i < 200; i++) {
+    trees.push({ x: rr(0, W), y: rr(0, W), r: 4 + rng() * 4 });
+  }
+
+  // Loot boxes (chests)
+  lootBoxes = [];
+  for (const p of pois) {
+    const count = Math.floor(p.lootDensity * (p.r / 24));
+    for (let i = 0; i < count; i++) {
+      const ang = rng() * Math.PI * 2;
+      const r = rng() * p.r * 0.9;
+      // Tier weighted by POI quality
+      let tier;
+      const roll = rng() * (0.5 + p.lootDensity * 0.7);
+      if (roll < 0.35) tier = 0;
+      else if (roll < 0.65) tier = 1;
+      else if (roll < 0.88) tier = 2;
+      else tier = 3;
+      lootBoxes.push({
+        x: p.x + Math.cos(ang) * r,
+        y: p.y + Math.sin(ang) * r,
+        tier,
+        looted: false,
+      });
+    }
+  }
+  // Sprinkle a few wild boxes
+  for (let i = 0; i < 30; i++) {
+    lootBoxes.push({ x: rr(W*0.08, W*0.92), y: rr(W*0.08, W*0.92), tier: ri(0,1), looted: false });
+  }
+
+  // Heal / shield potions
+  pickups = [];
+  for (let i = 0; i < 35; i++) {
+    pickups.push({ x: rr(W*0.1, W*0.9), y: rr(W*0.1, W*0.9), type: rng() < 0.5 ? 'heal' : 'shield' });
+  }
+
+  // Bake static map
+  bakeMap();
+}
+
+function bakeMap() {
+  const SCALE = 0.5;
+  mapCanvas = document.createElement('canvas');
+  mapCanvas.width = (W * SCALE) | 0;
+  mapCanvas.height = (W * SCALE) | 0;
+  mapCtx = mapCanvas.getContext('2d');
+  const m = mapCtx;
+  m.save();
+  m.scale(SCALE, SCALE);
+
+  // Base ground
+  const grad = m.createRadialGradient(W * 0.5, W * 0.5, 50, W * 0.5, W * 0.5, W * 0.7);
+  grad.addColorStop(0, '#2a3328');
+  grad.addColorStop(1, '#1c2220');
+  m.fillStyle = grad;
+  m.fillRect(0, 0, W, W);
+
+  // Subtle noise grid
+  m.fillStyle = 'rgba(255,255,255,0.012)';
+  for (let y = 0; y < W; y += 16) {
+    for (let x = 0; x < W; x += 16) {
+      if (((x ^ y) >> 4) & 1) m.fillRect(x, y, 16, 16);
+    }
+  }
+
+  // POI tints
+  for (const p of pois) {
+    let col = 'rgba(80,90,80,0.18)';
+    if (p.kind === 'city') col = 'rgba(120,120,140,0.22)';
+    else if (p.kind === 'residential') col = 'rgba(150,130,90,0.20)';
+    else if (p.kind === 'military') col = 'rgba(110,130,80,0.28)';
+    else if (p.kind === 'forest') col = 'rgba(40,80,50,0.30)';
+    else col = 'rgba(120,110,90,0.18)';
+    const g = m.createRadialGradient(p.x, p.y, 10, p.x, p.y, p.r);
+    g.addColorStop(0, col);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    m.fillStyle = g;
+    m.beginPath(); m.arc(p.x, p.y, p.r, 0, Math.PI * 2); m.fill();
+  }
+
+  // Roads
+  m.strokeStyle = 'rgba(180,160,120,0.14)';
+  m.lineWidth = 14;
+  m.lineCap = 'round';
+  for (const r of roads) {
+    m.beginPath(); m.moveTo(r.x1, r.y1); m.lineTo(r.x2, r.y2); m.stroke();
+  }
+  m.strokeStyle = 'rgba(220,200,160,0.20)';
+  m.lineWidth = 2;
+  for (const r of roads) {
+    m.beginPath(); m.moveTo(r.x1, r.y1); m.lineTo(r.x2, r.y2); m.stroke();
+  }
+
+  // Lakes
+  for (const lk of lakes) {
+    const g = m.createRadialGradient(lk.x, lk.y, 4, lk.x, lk.y, lk.r);
+    g.addColorStop(0, '#345a78');
+    g.addColorStop(0.6, '#2a4a66');
+    g.addColorStop(1, '#1d3447');
+    m.fillStyle = g;
+    m.beginPath(); m.arc(lk.x, lk.y, lk.r, 0, Math.PI * 2); m.fill();
+    m.strokeStyle = 'rgba(140,200,230,0.25)';
+    m.lineWidth = 1.5;
+    m.stroke();
+  }
+
+  // Bridges (over lakes)
+  for (const br of bridges) {
+    m.save();
+    m.translate(br.x, br.y);
+    m.rotate(br.ang);
+    m.fillStyle = '#5a4d3e';
+    m.fillRect(-br.w / 2, -br.h / 2, br.w, br.h);
+    m.fillStyle = '#3a2f25';
+    for (let i = -br.w / 2 + 8; i < br.w / 2; i += 16) m.fillRect(i, -br.h / 2, 2, br.h);
+    m.restore();
+  }
+
+  // Trees (forest first)
+  for (const t of trees) {
+    m.fillStyle = 'rgba(20,40,25,0.6)';
+    m.beginPath(); m.arc(t.x + 1, t.y + 2, t.r * 1.2, 0, Math.PI * 2); m.fill();
+    m.fillStyle = '#2e5a36';
+    m.beginPath(); m.arc(t.x, t.y, t.r, 0, Math.PI * 2); m.fill();
+    m.fillStyle = '#3e7448';
+    m.beginPath(); m.arc(t.x - t.r * 0.3, t.y - t.r * 0.3, t.r * 0.5, 0, Math.PI * 2); m.fill();
+  }
+
+  // Buildings
+  for (const b of buildings) {
+    let fill = '#4a4d56', shadow = 'rgba(0,0,0,0.45)', roof = '#3a3d46';
+    if (b.type === 'house') { fill = '#7a5a3a'; shadow = 'rgba(0,0,0,0.4)'; roof = '#5a3a22'; }
+    else if (b.type === 'bunker') { fill = '#5e6a48'; shadow = 'rgba(0,0,0,0.5)'; roof = '#4a5638'; }
+    else if (b.type === 'small') { fill = '#6a5a48'; roof = '#4a3a28'; }
+    m.fillStyle = shadow;
+    m.fillRect(b.x + 3, b.y + 4, b.w, b.h);
+    m.fillStyle = fill;
+    m.fillRect(b.x, b.y, b.w, b.h);
+    m.fillStyle = roof;
+    m.fillRect(b.x, b.y, b.w, 4);
+    // window highlights
+    m.fillStyle = 'rgba(255,230,160,0.10)';
+    for (let i = 4; i < b.w - 4; i += 8) {
+      for (let j = 6; j < b.h - 4; j += 8) {
+        if (((i + j) >> 3) & 1) m.fillRect(b.x + i, b.y + j, 3, 3);
+      }
+    }
+  }
+
+  // POI labels
+  m.font = 'bold 18px Courier New, monospace';
+  m.textAlign = 'center';
+  m.fillStyle = 'rgba(255,255,255,0.20)';
+  m.strokeStyle = 'rgba(0,0,0,0.6)';
+  m.lineWidth = 3;
+  for (const p of pois) {
+    m.strokeText(p.name, p.x, p.y - p.r - 8);
+    m.fillText(p.name, p.x, p.y - p.r - 8);
+  }
+
+  // Border
+  m.strokeStyle = 'rgba(180,180,200,0.10)';
+  m.lineWidth = 6;
+  m.strokeRect(8, 8, W - 16, W - 16);
+
+  m.restore();
+}
+
+// -------------------- Spatial Hash --------------------
+function rebuildHash() {
+  for (let i = 0; i < hash.length; i++) hash[i] = null;
+  for (let i = 0; i < bots.length; i++) {
+    const b = bots[i];
+    if (b.dead) continue;
+    const cx = Math.max(0, Math.min(HW - 1, (b.x / HC) | 0));
+    const cy = Math.max(0, Math.min(HW - 1, (b.y / HC) | 0));
+    const idx = cy * HW + cx;
+    b._next = hash[idx];
+    hash[idx] = b;
+  }
+}
+function findNearestEnemy(b, maxR) {
+  let best = null, bestD = maxR * maxR;
+  const minX = Math.max(0, ((b.x - maxR) / HC) | 0);
+  const maxXi = Math.min(HW - 1, ((b.x + maxR) / HC) | 0);
+  const minY = Math.max(0, ((b.y - maxR) / HC) | 0);
+  const maxYi = Math.min(HW - 1, ((b.y + maxR) / HC) | 0);
+  for (let cy = minY; cy <= maxYi; cy++) {
+    for (let cx = minX; cx <= maxXi; cx++) {
+      let o = hash[cy * HW + cx];
+      while (o) {
+        if (o !== b && !o.dead) {
+          const dx = o.x - b.x, dy = o.y - b.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD) { bestD = d2; best = o; }
+        }
+        o = o._next;
+      }
+    }
+  }
+  return best;
+}
+
+// -------------------- AI / Bot updates --------------------
+function aliveCount() {
+  let n = 0;
+  for (let i = 0; i < bots.length; i++) if (!bots[i].dead) n++;
+  return n;
+}
+
+function findClosestLootBox(b) {
+  let best = null, bestD = Infinity;
+  for (let i = 0; i < lootBoxes.length; i++) {
+    const lb = lootBoxes[i];
+    if (lb.looted) continue;
+    if (lb.tier <= b.tier - 1) continue; // skip far-worse loot
+    const dx = lb.x - b.x, dy = lb.y - b.y;
+    const d = dx * dx + dy * dy;
+    // greed scales preference for far high-tier
+    const tierBoost = (3 - lb.tier) * 12000 * (1 - b.personality.greed);
+    if (d + tierBoost < bestD) { bestD = d + tierBoost; best = lb; }
+  }
+  return best;
+}
+
+function findClosestPickup(b, type) {
+  let best = null, bestD = Infinity;
+  for (let i = 0; i < pickups.length; i++) {
+    const p = pickups[i];
+    if (type && p.type !== type && p.type !== 'airdrop') continue;
+    const dx = p.x - b.x, dy = p.y - b.y;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+function moveToward(b, tx, ty, dt, speedMul = 1) {
+  const dx = tx - b.x, dy = ty - b.y;
+  const d = Math.hypot(dx, dy) + 1e-3;
+  const speed = 70 * speedMul * (0.85 + b.personality.agg * 0.4);
+  b.vx = (dx / d) * speed;
+  b.vy = (dy / d) * speed;
+  b.x += b.vx * dt;
+  b.y += b.vy * dt;
+  b.angle = Math.atan2(dy, dx);
+}
+
+function strafe(b, dt) {
+  // small lateral perturbation when fighting
+  const a = b.angle + Math.PI / 2;
+  const d = (b.id & 1 ? 1 : -1) * 30;
+  b.x += Math.cos(a) * d * dt;
+  b.y += Math.sin(a) * d * dt;
+}
+
+function pickupBox(b, lb) {
+  lb.looted = true;
+  if (lb.tier > b.tier) {
+    b.tier = lb.tier;
+    b.weaponName = pick(WEAPON_NAMES[lb.tier]);
+    b.flash = 0.45;
+    b.hp = Math.min(100 + TIERS[b.tier].hpBoost, b.hp + 10);
+  }
+  // also chance of heal/shield drop
+  if (rng() < 0.4) b.heals = Math.min(3, b.heals + 1);
+  if (rng() < 0.4) b.shieldsP = Math.min(2, b.shieldsP + 1);
+  if (rng() < 0.25 && b.shield < 50) b.shield = Math.min(100, b.shield + 25);
+}
+
+function pickupItem(b, p, idx) {
+  if (p.type === 'heal') b.heals = Math.min(3, b.heals + 1);
+  else if (p.type === 'shield') b.shieldsP = Math.min(2, b.shieldsP + 1);
+  else if (p.type === 'airdrop') {
+    b.tier = 3;
+    b.weaponName = pick(WEAPON_NAMES[3]);
+    b.flash = 0.7;
+    b.shield = 100;
+    showBanner(b.name.toUpperCase() + ' GRABBED THE DROP!', 'air');
+  }
+  b.flash = Math.max(b.flash, 0.3);
+  pickups.splice(idx, 1);
+}
+
+function botStep(b, dt, ac) {
+  if (b.dead) return;
+
+  // Storm damage outside zone
+  const dxz = b.x - zoneCx, dyz = b.y - zoneCy;
+  const dz = Math.hypot(dxz, dyz);
+  if (dz > zoneR) {
+    b.hp -= stormDmg * dt;
+    if (b.hp <= 0) { kill(null, b, 'STORM'); return; }
+  }
+
+  // Hit flash decay
+  if (b.flash > 0) b.flash -= dt;
+  if (b.hitFlash > 0) b.hitFlash -= dt;
+
+  // Heal state
+  if (b.state === 4) {
+    b.stateTimer -= dt;
+    if (b.stateTimer <= 0) {
+      // apply heal
+      if (b.shieldsP > 0 && b.shield < 100) {
+        b.shield = Math.min(100, b.shield + 50);
+        b.shieldsP--;
+      } else if (b.heals > 0 && b.hp < 100) {
+        b.hp = Math.min(100, b.hp + 40);
+        b.heals--;
+      }
+      b.state = 1;
+      b.flash = 0.25;
+    }
+    return;
+  }
+
+  // Pickup nearby items / boxes
+  for (let i = 0; i < lootBoxes.length; i++) {
+    const lb = lootBoxes[i];
+    if (lb.looted) continue;
+    const dx = lb.x - b.x, dy = lb.y - b.y;
+    if (dx * dx + dy * dy < 16 * 16) { pickupBox(b, lb); break; }
+  }
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const p = pickups[i];
+    const dx = p.x - b.x, dy = p.y - b.y;
+    if (dx * dx + dy * dy < 18 * 18) { pickupItem(b, p, i); }
+  }
+
+  // Threat detection (line-of-sight in current zone, range scales with weapon)
+  const detectR = TIERS[b.tier].range * 0.85;
+  const threat = findNearestEnemy(b, detectR);
+
+  const totalHp = b.hp + b.shield;
+  const lowHp = totalHp < 45;
+  const critHp = totalHp < 25;
+
+  // Heal decision (when safe-ish)
+  if (lowHp && !threat && (b.heals > 0 || b.shieldsP > 0)) {
+    b.state = 4;
+    b.stateTimer = 1.4;
+    return;
+  }
+
+  // Flee decision when crit and threat nearby
+  if (critHp && threat) {
+    b.state = 3;
+    // run toward zone center, away from threat
+    const fx = b.x - threat.x, fy = b.y - threat.y;
+    const fd = Math.hypot(fx, fy) + 1e-3;
+    const tx = b.x + (fx / fd) * 200 + (zoneCx - b.x) * 0.2;
+    const ty = b.y + (fy / fd) * 200 + (zoneCy - b.y) * 0.2;
+    moveToward(b, tx, ty, dt, 1.15);
+    // panic shoot occasionally
+    if (rng() < 0.2) {
+      b.target = threat;
+      tryShoot(b, dt);
+    }
+    return;
+  }
+
+  // Fight
+  if (threat) {
+    b.state = 2;
+    b.target = threat;
+    const dx = threat.x - b.x, dy = threat.y - b.y;
+    const d = Math.hypot(dx, dy);
+    const tier = TIERS[b.tier];
+    const pref = tier.range * (0.55 + b.personality.snipe * 0.4);
+    if (d > pref + 60) {
+      moveToward(b, threat.x, threat.y, dt, 0.9);
+    } else if (d < pref - 80 && b.personality.snipe > 0.5) {
+      moveToward(b, b.x - dx, b.y - dy, dt, 0.7);
+    } else {
+      strafe(b, dt);
+      b.angle = Math.atan2(dy, dx);
+    }
+    tryShoot(b, dt);
+    lastFightAt = { x: b.x, y: b.y };
+    lastFightTime = matchTime;
+    return;
+  }
+
+  // No threat: loot or position
+  if (ac > 25 && b.tier < 3) {
+    // Loot phase: head to nearest unlooted box
+    if (!b.lootTarget || b.lootTarget.looted) {
+      b.lootTarget = findClosestLootBox(b);
+    }
+    if (b.lootTarget) {
+      b.state = 0;
+      moveToward(b, b.lootTarget.x, b.lootTarget.y, dt, 1.0);
+      // edge: stay in zone
+      if (dz > zoneR * 0.95) moveToward(b, zoneCx, zoneCy, dt, 1.0);
+      return;
+    }
+  }
+
+  // If near death low HP and no threat, get heal pickup
+  if (lowHp && b.heals === 0) {
+    const p = findClosestPickup(b, 'heal');
+    if (p) {
+      const pdx = p.x - b.x, pdy = p.y - b.y;
+      if (pdx * pdx + pdy * pdy < 600 * 600) {
+        moveToward(b, p.x, p.y, dt, 1.0);
+        return;
+      }
+    }
+  }
+
+  // Move toward zone center / drift
+  b.state = 1;
+  let tx, ty;
+  if (ac <= 10) {
+    // aggressive push to ring
+    tx = zoneCx + Math.cos(b.angle) * zoneR * 0.5;
+    ty = zoneCy + Math.sin(b.angle) * zoneR * 0.5;
+    if (rng() < 0.01) b.angle = rng() * Math.PI * 2;
+  } else {
+    // drift around zone edge
+    const ang = Math.atan2(b.y - zoneCy, b.x - zoneCx);
+    const ringR = zoneR * 0.7;
+    tx = zoneCx + Math.cos(ang + 0.1) * ringR;
+    ty = zoneCy + Math.sin(ang + 0.1) * ringR;
+    if (dz > zoneR * 0.95) { tx = zoneCx; ty = zoneCy; }
+  }
+  moveToward(b, tx, ty, dt, 0.8);
+}
+
+function tryShoot(b, dt) {
+  b.fireTimer -= dt;
+  if (matchTime < COMBAT_START) return; // drop-in grace
+  if (!b.target || b.target.dead) return;
+  const tier = TIERS[b.tier];
+  const dx = b.target.x - b.x, dy = b.target.y - b.y;
+  const d = Math.hypot(dx, dy);
+  if (d > tier.range) return;
+  if (b.fireTimer > 0) return;
+  b.fireTimer = tier.fire * (0.85 + rng() * 0.4);
+  particles.push({ x: b.x, y: b.y, vx: dx / d * 80, vy: dy / d * 80, life: 0.18, color: tier.glow, size: 3 });
+  tracers.push({ x1: b.x, y1: b.y, x2: b.target.x, y2: b.target.y, life: 0.1, color: tier.color });
+  // hit chance falls off with range; aggression slightly improves it
+  let acc = tier.acc * (0.5 + 0.5 * (1 - d / tier.range));
+  acc *= (0.85 + b.personality.agg * 0.25);
+  if (rng() < acc) {
+    let dmg = tier.dmg * (0.85 + rng() * 0.3);
+    if (rng() < 0.08) dmg *= 1.8; // crit
+    applyDamage(b, b.target, dmg, b.weaponName);
+  }
+}
+
+function applyDamage(killer, victim, dmg, wname) {
+  if (victim.dead) return;
+  victim.hitFlash = 0.18;
+  if (victim.shield > 0) {
+    const s = Math.min(victim.shield, dmg);
+    victim.shield -= s;
+    dmg -= s;
+  }
+  victim.hp -= dmg;
+  victim.lastHitBy = killer;
+  if (victim.hp <= 0) kill(killer, victim, wname);
+}
+
+function kill(killer, victim, wname) {
+  if (victim.dead) return;
+  victim.dead = true;
+  victim.deathTime = matchTime;
+  victim.placement = aliveCount() + 1;
+  for (let i = 0; i < 14; i++) {
+    particles.push({
+      x: victim.x, y: victim.y,
+      vx: rr(-60, 60), vy: rr(-60, 60),
+      life: 0.6 + rng() * 0.4, color: '#ff6b6b', size: 2 + rng() * 2,
+    });
+  }
+  // Drop pickup
+  if (rng() < 0.7) pickups.push({ x: victim.x + rr(-8,8), y: victim.y + rr(-8,8), type: rng() < 0.6 ? 'heal' : 'shield' });
+  if (killer && victim.tier > killer.tier) {
+    // drop a box of victim's tier
+    lootBoxes.push({ x: victim.x, y: victim.y, tier: victim.tier, looted: false });
+  }
+
+  let isStorm = false;
+  if (killer) {
+    killer.kills++;
+    killer.flash = 0.5;
+  } else {
+    isStorm = true;
+  }
+
+  killfeed.unshift({
+    killer: killer ? killer.name : 'STORM',
+    killerTier: killer ? killer.tier : -1,
+    victim: victim.name,
+    weapon: wname,
+    time: matchTime,
+    alive: aliveCount(),
+    isStorm,
+    fresh: true,
+  });
+  if (killfeed.length > 40) killfeed.pop();
+
+  // Announcer
+  if (!firstBlood && killer) {
+    firstBlood = true;
+    showBanner('FIRST BLOOD · ' + killer.name.toUpperCase(), 'crit');
+  }
+
+  totalKills++;
+
+  // Update kill leader
+  let newLeader = null, lk = 0;
+  for (const o of bots) {
+    if (!o.dead && o.kills > lk) { lk = o.kills; newLeader = o; }
+  }
+  if (newLeader && killLeader !== newLeader && newLeader.kills >= 3) {
+    killLeader = newLeader;
+    showBanner('NEW KILL LEADER · ' + newLeader.name.toUpperCase() + ' (' + newLeader.kills + ')', 'zone');
+  } else if (newLeader && newLeader === killLeader && newLeader.kills >= 5 && newLeader.kills % 3 === 0) {
+    showBanner(newLeader.name.toUpperCase() + ' RAMPAGE · ' + newLeader.kills + ' KILLS', 'crit');
+  }
+  killLeader = newLeader;
+
+  const ac = aliveCount();
+  if (ac === 10) showBanner('TOP 10', 'zone');
+  else if (ac === 5) showBanner('TOP 5', 'crit');
+  else if (ac === 3) showBanner('FINAL 3', 'crit');
+}
+
+// -------------------- Storm --------------------
+function updateStorm(dt) {
+  const phase = PHASES[phaseIdx];
+  stormDmg = phase.dmg;
+  if (phaseClosing) {
+    // Lerp zone radius and center toward target
+    const t = Math.min(1, dt / Math.max(0.1, phaseTimer));
+    zoneR += (zoneTargetR - zoneR) * t;
+    zoneCx += (zoneTargetCx - zoneCx) * t;
+    zoneCy += (zoneTargetCy - zoneCy) * t;
+    phaseTimer -= dt;
+    if (phaseTimer <= 0) {
+      zoneR = zoneTargetR;
+      zoneCx = zoneTargetCx; zoneCy = zoneTargetCy;
+      phaseClosing = false;
+      phaseTimer = phase.hold;
+    }
+  } else {
+    phaseTimer -= dt;
+    if (phaseTimer <= 0 && phaseIdx < PHASES.length - 1) {
+      phaseIdx++;
+      const next = PHASES[phaseIdx];
+      // pick new center inside current zone
+      const ang = rng() * Math.PI * 2;
+      const off = (zoneR - next.r) * (0.2 + rng() * 0.55);
+      zoneTargetCx = Math.max(next.r + 20, Math.min(W - next.r - 20, zoneCx + Math.cos(ang) * off));
+      zoneTargetCy = Math.max(next.r + 20, Math.min(W - next.r - 20, zoneCy + Math.sin(ang) * off));
+      zoneTargetR = next.r;
+      phaseClosing = true;
+      phaseTimer = next.close;
+      showBanner(next.name + ' CLOSING', 'zone');
+    }
+  }
+}
+
+// -------------------- Airdrops --------------------
+function updateAirdrops(dt) {
+  airdropTimer -= dt;
+  const ac = aliveCount();
+  if (airdropTimer <= 0 && airdropsDone < 2 && ac > 8) {
+    airdropsDone++;
+    const ang = rng() * Math.PI * 2;
+    const r = rng() * zoneR * 0.6;
+    const x = Math.max(80, Math.min(W - 80, zoneCx + Math.cos(ang) * r));
+    const y = Math.max(80, Math.min(W - 80, zoneCy + Math.sin(ang) * r));
+    pickups.push({ x, y, type: 'airdrop', tier: 3, dropping: 1.0 });
+    showBanner('AIRDROP INCOMING', 'air');
+    airdropTimer = 90 + rng() * 60;
+  }
+  // animate drops
+  for (const p of pickups) {
+    if (p.dropping !== undefined) p.dropping = Math.max(0, p.dropping - dt * 0.4);
+  }
+}
+
+// -------------------- Banner system --------------------
+function showBanner(text, kind) {
+  bannerQueue.push({ text, kind: kind || '' });
+}
+function updateBanner(dt) {
+  if (bannerActive) {
+    bannerTimer -= dt;
+    if (bannerTimer <= 0) {
+      elBanner.classList.remove('show');
+      bannerActive = null;
+      bannerTimer = 0.25;
+    }
+  } else {
+    bannerTimer -= dt;
+    if (bannerTimer <= 0 && bannerQueue.length) {
+      bannerActive = bannerQueue.shift();
+      bannerTimer = 2.6;
+      elBanner.textContent = bannerActive.text;
+      elBanner.className = '';
+      elBanner.classList.add('show');
+      if (bannerActive.kind) elBanner.classList.add(bannerActive.kind);
+      cam.shake = Math.max(cam.shake, 6);
+    }
+  }
+}
+
+// -------------------- Drama Cam --------------------
+function updateCam(dt) {
+  dramaTimer -= dt;
+  const ac = aliveCount();
+  if (dramaTimer <= 0) {
+    dramaTimer = 2.4 + rng() * 1.6;
+    if (matchEnded) {
+      // focus on winner / center
+      const winner = bots.find(b => !b.dead);
+      if (winner) {
+        cam.tx = winner.x; cam.ty = winner.y; cam.tzoom = 1.6;
+      }
+    } else if (ac <= 3) {
+      // focus on the centroid of survivors
+      let sx = 0, sy = 0, n = 0;
+      for (const b of bots) if (!b.dead) { sx += b.x; sy += b.y; n++; }
+      if (n) { cam.tx = sx / n; cam.ty = sy / n; cam.tzoom = 1.5; }
+    } else if (ac <= 10) {
+      // alternate kill leader / recent fight
+      if (rng() < 0.6 && killLeader && !killLeader.dead) {
+        cam.tx = killLeader.x; cam.ty = killLeader.y; cam.tzoom = 1.0;
+      } else if (lastFightAt && (matchTime - lastFightTime) < 4) {
+        cam.tx = lastFightAt.x; cam.ty = lastFightAt.y; cam.tzoom = 0.9;
+      } else if (killLeader && !killLeader.dead) {
+        cam.tx = killLeader.x; cam.ty = killLeader.y; cam.tzoom = 1.0;
+      } else {
+        cam.tx = zoneCx; cam.ty = zoneCy; cam.tzoom = 0.7;
+      }
+    } else {
+      // mid-game: rotate between recent fight, leader, full overview
+      const r = rng();
+      if (r < 0.4 && lastFightAt && (matchTime - lastFightTime) < 3) {
+        cam.tx = lastFightAt.x; cam.ty = lastFightAt.y; cam.tzoom = 0.85;
+      } else if (r < 0.75 && killLeader && !killLeader.dead) {
+        cam.tx = killLeader.x; cam.ty = killLeader.y; cam.tzoom = 0.85;
+      } else {
+        cam.tx = zoneCx; cam.ty = zoneCy; cam.tzoom = Math.max(0.4, Math.min(0.6, 1100 / (zoneR * 2 + 50)));
+      }
+    }
+  }
+  // smoothly approach
+  const k = 1 - Math.pow(0.001, dt);
+  cam.x += (cam.tx - cam.x) * k * 0.9;
+  cam.y += (cam.ty - cam.y) * k * 0.9;
+  cam.zoom += (cam.tzoom - cam.zoom) * k * 0.9;
+  cam.shake *= Math.pow(0.001, dt);
+}
+
+// -------------------- Combat / movement loop --------------------
+function step(dt) {
+  // clamp dt
+  if (dt > 0.05) dt = 0.05;
+  matchTime += dt;
+
+  if (!matchEnded) {
+    rebuildHash();
+    const ac = aliveCount();
+    for (let i = 0; i < bots.length; i++) {
+      botStep(bots[i], dt, ac);
+      // clamp inside world
+      const b = bots[i];
+      b.x = Math.max(4, Math.min(W - 4, b.x));
+      b.y = Math.max(4, Math.min(W - 4, b.y));
+    }
+    updateStorm(dt);
+    updateAirdrops(dt);
+  }
+
+  updateBanner(dt);
+  updateCam(dt);
+
+  // Decay tracers / particles
+  for (let i = tracers.length - 1; i >= 0; i--) {
+    tracers[i].life -= dt;
+    if (tracers[i].life <= 0) tracers.splice(i, 1);
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.96; p.vy *= 0.96;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  for (let i = confetti.length - 1; i >= 0; i--) {
+    const c = confetti[i];
+    c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 320 * dt;
+    c.life -= dt; c.rot += c.spin * dt;
+    if (c.life <= 0 || c.y > SH + 40) confetti.splice(i, 1);
+  }
+
+  // Match end check
+  if (!matchEnded) {
+    const ac2 = aliveCount();
+    if (ac2 <= 1) {
+      endMatch();
+    }
+  } else {
+    endcardTimer -= dt;
+    if (endcardTimer <= 0) {
+      startMatch();
+    } else {
+      // countdown
+      const sec = Math.max(0, Math.ceil(endcardTimer));
+      elNextMatch.textContent = 'NEXT MATCH IN ' + sec;
+      // confetti spawner
+      if (rng() < 0.5) spawnConfetti(2);
+    }
+  }
+}
+
+function spawnConfetti(n) {
+  const cols = ['#ffd066', '#ff6b6b', '#76d3ff', '#7df9a0', '#b67aff', '#fff'];
+  for (let i = 0; i < n; i++) {
+    confetti.push({
+      x: rng() * SW,
+      y: -10 - rng() * 80,
+      vx: rr(-60, 60),
+      vy: rr(40, 160),
+      rot: rng() * Math.PI * 2,
+      spin: rr(-6, 6),
+      size: 4 + rng() * 6,
+      color: pick(cols),
+      life: 6 + rng() * 4,
+    });
+  }
+}
+
+// -------------------- Match lifecycle --------------------
+function startMatch() {
+  _seed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
+  rng = mulberry32(_seed);
+  matchTime = 0;
+  matchEnded = false;
+  endcardTimer = 0;
+  totalKills = 0;
+  firstBlood = false;
+  killLeader = null;
+  lastFightAt = null;
+  lastFightTime = -10;
+  airdropsDone = 0;
+  airdropTimer = 70 + rng() * 50;
+  phaseIdx = 0;
+  phaseClosing = false;
+  phaseTimer = PHASES[0].hold;
+  zoneCx = W * 0.5; zoneCy = W * 0.5;
+  zoneR = PHASES[0].r;
+  zoneTargetR = zoneR;
+  bannerQueue = [];
+  bannerActive = null;
+  bannerTimer = 0;
+  killfeed = [];
+  tracers = [];
+  particles = [];
+  confetti = [];
+  placement = [];
+
+  genMap();
+  spawnBots();
+  rebuildHash();
+
+  cam.x = W * 0.5; cam.y = W * 0.5; cam.tx = cam.x; cam.ty = cam.y;
+  cam.zoom = 0.42; cam.tzoom = 0.42;
+  dramaTimer = 1.5;
+
+  elEndcard.classList.remove('show');
+  elTitle.classList.add('show');
+  showBanner('100 BOTS · 1 SURVIVOR', 'air');
+  setTimeout(() => elTitle.classList.remove('show'), 2200);
+}
+
+function endMatch() {
+  matchEnded = true;
+  // Remaining alive = winners
+  const winner = bots.find(b => !b.dead);
+  if (winner) {
+    winner.placement = 1;
+    showBanner('VICTORY ROYALE · ' + winner.name.toUpperCase(), 'crit');
+  }
+  // Compose top 5 by kills
+  const ranked = bots.slice().sort((a, b) => b.kills - a.kills || a.placement - b.placement);
+  const top5 = ranked.slice(0, 5);
+
+  elWinnerName.textContent = winner ? winner.name : 'NONE';
+  if (winner) {
+    const tier = TIERS[winner.tier];
+    elWinnerStats.innerHTML = `
+      <b>${winner.kills}</b> KILLS &nbsp;·&nbsp;
+      <span class="tag">${tier.name}</span> ${winner.weaponName} &nbsp;·&nbsp;
+      HP <b>${Math.round(winner.hp)}</b>/<b>${Math.round(winner.shield)}</b>
+    `;
+  }
+  let html = '<div class="head">★ TOP 5 FRAGGERS</div>';
+  const medals = ['gold','silver','bronze','',''];
+  top5.forEach((b, i) => {
+    html += `<div class="${medals[i]}">${i+1}. ${b.name} — ${b.kills} kills</div>`;
+  });
+  elTop5.innerHTML = html;
+  elPlacement.textContent = `MATCH TIME ${formatTime(matchTime)} · ${totalKills} TOTAL KILLS`;
+  elEndcard.classList.add('show');
+
+  // confetti burst
+  spawnConfetti(120);
+  endcardTimer = 8.0;
+}
+
+// -------------------- HUD updates --------------------
+let _hudAcc = 0;
+function updateHUD(dt) {
+  _hudAcc += dt;
+  if (_hudAcc < 0.12) return;
+  _hudAcc = 0;
+
+  const ac = aliveCount();
+  elAlive.textContent = ac;
+  elTotalKills.textContent = totalKills;
+
+  const phase = PHASES[phaseIdx];
+  elPhaseName.textContent = phase.name;
+  elPhaseTimer.textContent = formatTime(Math.max(0, phaseTimer));
+  elPhaseState.textContent = phaseClosing ? 'STORM CLOSING' : 'SAFE ZONE';
+
+  if (killLeader && !killLeader.dead) {
+    elLeaderName.textContent = killLeader.name;
+    elLeaderKills.textContent = killLeader.kills + ' KILLS';
+    elLeaderTier.textContent = TIERS[killLeader.tier].name + ' ' + killLeader.weaponName;
+  } else {
+    elLeaderName.textContent = '—';
+    elLeaderKills.textContent = '0 KILLS';
+    elLeaderTier.textContent = 'AWAITING';
+  }
+
+  // Top fraggers list
+  const ranked = bots.filter(b => !b.dead).sort((a, b) => b.kills - a.kills || b.tier - a.tier);
+  const top = ranked.slice(0, 26);
+  let lhtml = '';
+  for (let i = 0; i < top.length; i++) {
+    const b = top[i];
+    const isLeader = (i === 0 && b.kills > 0);
+    lhtml += `<div class="row tier${b.tier} ${isLeader ? 'leader' : ''}">
+      <span class="nm">${b.name}</span>
+      <span class="kc">${b.kills}K</span>
+    </div>`;
+  }
+  elAlList.innerHTML = lhtml;
+
+  // Marquee — all alive
+  let mhtml = '';
+  for (const b of bots) {
+    if (b.dead) continue;
+    mhtml += `<span class="item t${b.tier}">${b.name}<span class="k"> ${b.kills}K</span></span><span class="sep">·</span>`;
+  }
+  // Duplicate so wrap is seamless
+  elMqTrack.innerHTML = mhtml + mhtml;
+
+  // Killfeed
+  let kfh = '';
+  const recent = killfeed.slice(0, 8);
+  for (const k of recent) {
+    const cls = (k.isStorm ? 'storm ' : '') + (k.fresh ? 'fresh' : '');
+    if (k.isStorm) {
+      kfh += `<div class="kf ${cls}"><span class="killer">STORM</span> [<span class="weapon">storm</span>] <span class="victim">${k.victim}</span> <span class="left">(${k.alive} left)</span></div>`;
+    } else {
+      kfh += `<div class="kf ${cls}"><span class="killer">${k.killer}</span> [<span class="weapon">${k.weapon}</span>] <span class="victim">${k.victim}</span> <span class="left">(${k.alive} left)</span></div>`;
+    }
+    k.fresh = false;
+  }
+  elKillfeed.innerHTML = kfh;
+}
+
+function formatTime(t) {
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+// -------------------- Render --------------------
+function render() {
+  // background
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#06080d';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // World transform
+  const z = cam.zoom * DPR;
+  const cxOff = canvas.width * 0.5 - cam.x * z + (rng() - 0.5) * cam.shake;
+  const cyOff = canvas.height * 0.5 - cam.y * z + (rng() - 0.5) * cam.shake;
+  ctx.setTransform(z, 0, 0, z, cxOff, cyOff);
+
+  // Map
+  if (mapCanvas) {
+    ctx.drawImage(mapCanvas, 0, 0, W, W);
+  }
+
+  // Loot boxes
+  for (let i = 0; i < lootBoxes.length; i++) {
+    const lb = lootBoxes[i];
+    if (lb.looted) continue;
+    const tier = TIERS[lb.tier];
+    ctx.fillStyle = tier.color;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(lb.x - 4, lb.y - 4, 8, 8);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = tier.glow;
+    ctx.lineWidth = 1 / cam.zoom;
+    ctx.strokeRect(lb.x - 4.5, lb.y - 4.5, 9, 9);
+    if (lb.tier >= 2) {
+      ctx.strokeStyle = tier.glow;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath(); ctx.arc(lb.x, lb.y, 10 + Math.sin(matchTime * 4 + i) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Pickups
+  for (let i = 0; i < pickups.length; i++) {
+    const p = pickups[i];
+    if (p.type === 'airdrop') {
+      const drop = p.dropping || 0;
+      // descending crate
+      ctx.save();
+      ctx.translate(p.x, p.y - drop * 60);
+      // parachute
+      if (drop > 0) {
+        ctx.fillStyle = 'rgba(180,200,255,0.6)';
+        ctx.beginPath();
+        ctx.arc(0, -22, 24, Math.PI, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 1 / cam.zoom;
+        ctx.beginPath();
+        ctx.moveTo(-22, -22); ctx.lineTo(-6, 0);
+        ctx.moveTo(22, -22); ctx.lineTo(6, 0); ctx.stroke();
+      }
+      ctx.fillStyle = '#7c4be0';
+      ctx.fillRect(-12, -10, 24, 20);
+      ctx.strokeStyle = '#d8b6ff';
+      ctx.lineWidth = 1.4 / cam.zoom;
+      ctx.strokeRect(-12, -10, 24, 20);
+      // beacon
+      ctx.fillStyle = `rgba(180,120,255,${0.4 + Math.sin(matchTime * 6) * 0.3})`;
+      ctx.beginPath(); ctx.arc(0, -2, 28, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else if (p.type === 'heal') {
+      ctx.fillStyle = '#ff6b6b';
+      ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(p.x - 0.5, p.y - 2, 1, 4);
+      ctx.fillRect(p.x - 2, p.y - 0.5, 4, 1);
+    } else if (p.type === 'shield') {
+      ctx.fillStyle = '#48f';
+      ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+      ctx.strokeStyle = '#bdf';
+      ctx.lineWidth = 1 / cam.zoom;
+      ctx.strokeRect(p.x - 3, p.y - 3, 6, 6);
+    }
+  }
+
+  // Tracers
+  ctx.lineCap = 'round';
+  for (const t of tracers) {
+    const a = Math.max(0, t.life * 8);
+    ctx.strokeStyle = t.color;
+    ctx.globalAlpha = Math.min(1, a);
+    ctx.lineWidth = 1.4 / cam.zoom;
+    ctx.beginPath(); ctx.moveTo(t.x1, t.y1); ctx.lineTo(t.x2, t.y2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Particles
+  for (const p of particles) {
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = Math.max(0, p.life * 1.5);
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // Bots
+  // First a circle of "shadow" then dot
+  const tagThreshold = cam.zoom > 0.7;
+  // sort by kills to identify top 10
+  let topIds = null;
+  if (!tagThreshold) {
+    const ranked = bots.slice().sort((a, b) => b.kills - a.kills || b.tier - a.tier);
+    topIds = new Set();
+    for (let i = 0; i < Math.min(10, ranked.length); i++) topIds.add(ranked[i].id);
+  }
+
+  for (let i = 0; i < bots.length; i++) {
+    const b = bots[i];
+    if (b.dead) continue;
+    const tier = TIERS[b.tier];
+    // direction pip
+    ctx.fillStyle = b.colorDim;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // tier ring
+    if (b.tier > 0) {
+      ctx.strokeStyle = tier.color;
+      ctx.lineWidth = 1.5 / cam.zoom;
+      ctx.beginPath(); ctx.arc(b.x, b.y, 6.5, 0, Math.PI * 2); ctx.stroke();
+    }
+    // body
+    ctx.fillStyle = b.hitFlash > 0 ? '#fff' : (b.flash > 0 ? tier.glow : b.color);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // facing line
+    ctx.strokeStyle = '#fff';
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 1 / cam.zoom;
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x + Math.cos(b.angle) * 6, b.y + Math.sin(b.angle) * 6);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // HP bar
+    const totalHp = b.hp + b.shield;
+    if (totalHp < 200 && cam.zoom > 0.45) {
+      const w = 14, h = 1.6;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(b.x - w / 2, b.y - 11, w, h);
+      ctx.fillStyle = '#7df9a0';
+      ctx.fillRect(b.x - w / 2, b.y - 11, w * (b.hp / 100), h);
+      if (b.shield > 0) {
+        ctx.fillStyle = '#48f';
+        ctx.fillRect(b.x - w / 2, b.y - 13, w * (b.shield / 100), h);
+      }
+    }
+  }
+
+  // Name tags (separate pass for legibility)
+  ctx.font = `${10 / cam.zoom}px Courier New, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  for (let i = 0; i < bots.length; i++) {
+    const b = bots[i];
+    if (b.dead) continue;
+    let show = false;
+    if (tagThreshold) {
+      // visible in viewport
+      const sx = b.x * z + cxOff;
+      const sy = b.y * z + cyOff;
+      if (sx > -40 && sx < canvas.width + 40 && sy > -40 && sy < canvas.height + 40) show = true;
+    } else if (topIds && topIds.has(b.id)) show = true;
+    if (b === killLeader) show = true;
+    if (!show) continue;
+
+    // background
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    const text = b.name + (b.kills > 0 ? ' ' + b.kills + 'K' : '');
+    const tw = ctx.measureText(text).width;
+    ctx.fillRect(b.x - tw / 2 - 2, b.y - 22 / cam.zoom, tw + 4, 12 / cam.zoom);
+    if (b === killLeader) ctx.fillStyle = '#ffd066';
+    else if (b.tier >= 3) ctx.fillStyle = '#d8b6ff';
+    else if (b.tier === 2) ctx.fillStyle = '#9cc8ff';
+    else if (b.tier === 1) ctx.fillStyle = '#bdf0c6';
+    else ctx.fillStyle = '#cfd3e0';
+    ctx.fillText(text, b.x, b.y - 12 / cam.zoom);
+  }
+
+  // Storm overlay
+  drawStorm();
+
+  // World border
+  ctx.strokeStyle = 'rgba(180,180,200,0.18)';
+  ctx.lineWidth = 4 / cam.zoom;
+  ctx.strokeRect(2, 2, W - 4, W - 4);
+
+  // Confetti (screen-space)
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  for (const c of confetti) {
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rot);
+    ctx.fillStyle = c.color;
+    ctx.globalAlpha = Math.min(1, c.life * 0.4);
+    ctx.fillRect(-c.size / 2, -c.size / 2, c.size, c.size * 0.6);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawStorm() {
+  // Outside-zone purple haze. Use cheap clip-out via composite.
+  ctx.save();
+  // Fill the exterior with a dark-purple tinted area
+  ctx.fillStyle = 'rgba(120, 60, 200, 0.18)';
+  ctx.beginPath();
+  ctx.rect(-W, -W, W * 3, W * 3);
+  ctx.arc(zoneCx, zoneCy, zoneR, 0, Math.PI * 2, true);
+  ctx.fill('evenodd');
+
+  // Glow ring (storm wall)
+  ctx.lineWidth = 6 / cam.zoom;
+  ctx.strokeStyle = 'rgba(180,120,255,0.85)';
+  ctx.beginPath(); ctx.arc(zoneCx, zoneCy, zoneR, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 16 / cam.zoom;
+  ctx.strokeStyle = 'rgba(180,120,255,0.20)';
+  ctx.beginPath(); ctx.arc(zoneCx, zoneCy, zoneR, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 30 / cam.zoom;
+  ctx.strokeStyle = 'rgba(140,80,220,0.10)';
+  ctx.beginPath(); ctx.arc(zoneCx, zoneCy, zoneR, 0, Math.PI * 2); ctx.stroke();
+
+  // Closing target ring
+  if (phaseClosing) {
+    ctx.setLineDash([8 / cam.zoom, 6 / cam.zoom]);
+    ctx.lineWidth = 2 / cam.zoom;
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath(); ctx.arc(zoneTargetCx, zoneTargetCy, zoneTargetR, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Storm "particles" — wispy sparkles outside
+  for (let i = 0; i < 14; i++) {
+    const a = (matchTime * 0.4 + i * 0.7) % (Math.PI * 2);
+    const rR = zoneR + 18 + (i * 6 % 30);
+    const x = zoneCx + Math.cos(a) * rR;
+    const y = zoneCy + Math.sin(a) * rR;
+    ctx.fillStyle = 'rgba(200,150,255,0.5)';
+    ctx.beginPath(); ctx.arc(x, y, 3 / cam.zoom, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// -------------------- Main loop --------------------
+let lastT = performance.now();
+let _frameTimes = [];
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+  step(dt);
+  render();
+  updateHUD(dt);
+  // perf measure
+  _frameTimes.push(performance.now() - now);
+  if (_frameTimes.length > 60) _frameTimes.shift();
+  requestAnimationFrame(frame);
+}
+
+// -------------------- Boot --------------------
+startMatch();
+requestAnimationFrame((t) => { lastT = t; frame(t); });
+
+// expose for debug
+window.BR = { bots: () => bots, perf: () => _frameTimes };
+</script>
+</body>
+</html>

@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ROUND 12 — ENDLESS TOURNAMENT BROADCAST</title>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:#000;
+  font-family:'Helvetica Neue', Arial, sans-serif; color:#fff; user-select:none; }
+#shake { position:fixed; inset:0; z-index:1; }
+#c { position:absolute; inset:0; display:block; width:100%; height:100%; }
+.overlay { position:fixed; z-index:10; pointer-events:none; }
+
+#logo { top:14px; left:18px; display:flex; align-items:center; gap:10px; }
+#logo .glyph { width:46px; height:46px;
+  background:linear-gradient(135deg,#ff3344 0%,#7a0028 100%);
+  display:flex; align-items:center; justify-content:center;
+  font-weight:900; font-size:28px; letter-spacing:-1px;
+  box-shadow:0 0 22px rgba(255,60,80,0.7);
+  border:1px solid rgba(255,255,255,0.3);
+  text-shadow:0 0 6px rgba(255,255,255,0.4); }
+#logo .stack { display:flex; flex-direction:column; }
+#logo .name { font-weight:900; font-size:18px; letter-spacing:3px;
+  text-shadow:0 2px 6px rgba(0,0,0,0.95); }
+#logo .sub { font-size:10px; letter-spacing:5px; opacity:0.7; margin-top:2px; color:#ffcdd6; }
+#logo .live { display:inline-flex; align-items:center; gap:6px;
+  background:rgba(220,0,0,0.92); padding:4px 10px;
+  font-size:12px; font-weight:900; letter-spacing:3px; margin-left:6px;
+  box-shadow:0 0 12px rgba(220,0,0,0.6); }
+#logo .live::before { content:''; width:8px; height:8px; background:#fff;
+  border-radius:50%; animation:pulse 1s infinite; }
+@keyframes pulse { 0%,100% {opacity:1;} 50% {opacity:0.3;} }
+#logo .kanji { font-size:11px; letter-spacing:2px; opacity:0.8; color:#ffd0d8; margin-top:1px; }
+
+#match { top:18px; left:50%; transform:translateX(-50%); text-align:center; }
+#match .num { font-size:13px; letter-spacing:6px; opacity:0.8; }
+#match .stage { font-size:22px; font-weight:900; letter-spacing:5px;
+  margin-top:3px; text-shadow:0 2px 8px rgba(0,0,0,0.9);
+  background:linear-gradient(180deg,#fff,#ffcb47); -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent; background-clip:text; }
+#match .pos { font-size:11px; letter-spacing:4px; opacity:0.7; margin-top:3px; color:#ffd58a; }
+
+#fighters { top:14px; right:18px; display:flex; gap:14px; align-items:flex-start; }
+.card { width:230px; background:rgba(8,4,12,0.78);
+  border:1px solid rgba(255,255,255,0.14);
+  padding:8px 10px 10px 10px; backdrop-filter:blur(4px); }
+.card.r { text-align:right; }
+.card .nm { font-weight:900; font-size:15px; letter-spacing:1px; }
+.card .ar { font-size:10px; letter-spacing:3px; opacity:0.65; margin-top:2px; }
+.card .hp { height:9px; margin-top:6px; background:rgba(255,255,255,0.12);
+  position:relative; overflow:hidden; }
+.card .hp .fill { height:100%; transition:width 0.25s ease;
+  background:linear-gradient(90deg,#21ff7a,#fff14a 60%,#ff3a3a 95%); }
+.card .stats { display:flex; justify-content:space-between; margin-top:5px;
+  font-size:10px; letter-spacing:2px; opacity:0.7; }
+.card.r .stats { flex-direction:row-reverse; }
+.card .vs { display:none; }
+#vs { font-weight:900; font-size:34px; align-self:center; margin-top:18px;
+  letter-spacing:2px; color:#ffcb47; text-shadow:0 0 16px rgba(255,180,40,0.7); }
+
+#ticker { bottom:0; left:0; right:0; height:34px; background:rgba(0,0,0,0.85);
+  border-top:1px solid rgba(255,200,80,0.6); overflow:hidden;
+  display:flex; align-items:center; }
+#ticker .label { background:linear-gradient(90deg,#ff2a2a,#a90000);
+  height:100%; padding:0 14px; display:flex; align-items:center;
+  font-weight:900; font-size:12px; letter-spacing:4px; }
+#ticker .scroll { white-space:nowrap; padding-left:22px;
+  font-size:13px; letter-spacing:3px;
+  animation:tick 56s linear infinite; }
+@keyframes tick { from { transform:translateX(0%); } to { transform:translateX(-100%); } }
+
+#bracket { bottom:42px; left:14px; width:280px;
+  background:rgba(8,4,12,0.78); border:1px solid rgba(255,255,255,0.12);
+  padding:9px 11px; font-size:11px; letter-spacing:1.4px; }
+#bracket .h { font-weight:900; letter-spacing:4px; font-size:11px;
+  color:#ffcb47; margin-bottom:5px; }
+#bracket .row { display:flex; justify-content:space-between; padding:1px 0;
+  border-bottom:1px solid rgba(255,255,255,0.05); }
+#bracket .row.now { color:#21ff7a; font-weight:700; }
+#bracket .row.done { opacity:0.45; text-decoration:line-through; }
+#bracket .row .a, #bracket .row .b { width:46%; }
+#bracket .row .b { text-align:right; }
+
+#cam { bottom:46px; right:14px; background:rgba(8,4,12,0.78);
+  border:1px solid rgba(255,255,255,0.14); padding:5px 11px;
+  font-size:11px; letter-spacing:3px; font-weight:700; }
+#cam::before { content:'CAM '; opacity:0.55; }
+
+#chyron { position:fixed; left:14px; right:14px; bottom:50px;
+  display:flex; justify-content:center; pointer-events:none; z-index:9; }
+#chyron .box { background:linear-gradient(90deg,rgba(170,0,0,0.95),rgba(60,0,0,0.95));
+  border-left:5px solid #ffcb47; border-right:5px solid #ffcb47;
+  padding:10px 26px; font-weight:900; font-size:18px; letter-spacing:6px;
+  text-shadow:0 2px 6px rgba(0,0,0,0.9); transform:translateY(120%);
+  transition:transform 0.4s cubic-bezier(0.2,1.2,0.3,1); }
+#chyron.show .box { transform:translateY(0); }
+
+#whois { position:fixed; left:50%; top:36%; transform:translate(-50%,-50%) scale(0.8);
+  pointer-events:none; z-index:9; opacity:0; transition:opacity 0.3s, transform 0.3s; }
+#whois.show { opacity:1; transform:translate(-50%,-50%) scale(1); }
+#whois .who { background:rgba(0,0,0,0.78); padding:14px 28px;
+  border:2px solid #ffcb47; text-align:center;
+  box-shadow:0 0 26px rgba(255,200,60,0.5); }
+#whois .who .label { font-size:11px; letter-spacing:6px; opacity:0.7; color:#ffd58a; }
+#whois .who .nm { font-size:30px; font-weight:900; letter-spacing:2px; margin:6px 0 3px;
+  background:linear-gradient(180deg,#fff,#ffcb47); -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent; background-clip:text; }
+#whois .who .arc { font-size:12px; letter-spacing:3px; opacity:0.85; color:#ffd0d8; }
+
+#pip { position:fixed; right:18px; bottom:90px; width:230px; height:130px;
+  background:#000; border:2px solid #ffcb47; box-shadow:0 0 18px rgba(255,200,60,0.45);
+  overflow:hidden; opacity:0; transform:translateY(20px); transition:opacity 0.3s, transform 0.3s;
+  z-index:8; }
+#pip.show { opacity:1; transform:translateY(0); }
+#pip .pipcanvas { width:100%; height:100%; display:block; }
+#pip .pipLabel { position:absolute; top:5px; left:7px; font-size:10px; letter-spacing:3px;
+  background:rgba(170,0,0,0.85); padding:2px 7px; font-weight:900; }
+
+#flash { position:fixed; inset:0; pointer-events:none; z-index:7;
+  background:#fff; opacity:0; transition:opacity 0.18s; }
+
+#vignette { position:fixed; inset:0; pointer-events:none; z-index:6;
+  box-shadow:inset 0 0 200px rgba(0,0,0,0.85); }
+
+#announce { position:fixed; left:14px; bottom:108px; max-width:300px;
+  background:rgba(0,0,0,0.7); padding:7px 11px;
+  border-left:3px solid #ffcb47; font-size:12px; letter-spacing:0.6px;
+  font-style:italic; opacity:0; transform:translateX(-18px);
+  transition:opacity 0.3s, transform 0.3s; z-index:8; }
+#announce.show { opacity:1; transform:translateX(0); }
+#announce .from { font-style:normal; font-weight:900; letter-spacing:3px;
+  font-size:10px; opacity:0.9; margin-bottom:3px; color:#ffcb47; }
+
+#krill { position:fixed; left:50%; top:74px; transform:translateX(-50%);
+  font-size:10px; letter-spacing:5px; opacity:0.55; }
+</style>
+</head>
+<body>
+<!-- ROUND12_BROADCAST v1 -->
+<div id="shake"><canvas id="c"></canvas></div>
+
+<div class="overlay" id="logo">
+  <div class="glyph">闘</div>
+  <div class="stack">
+    <div class="name">ROUND 12 <span class="live">LIVE</span></div>
+    <div class="sub">ENDLESS TOURNAMENT NETWORK</div>
+    <div class="kanji">第十二回 武闘大会 — 永遠の決戦</div>
+  </div>
+</div>
+
+<div class="overlay" id="krill">SEASON 7 — THE CROWN ARC — 24/7 LIVE FROM HONO STADIUM</div>
+
+<div class="overlay" id="match">
+  <div class="num">MATCH <span id="mNum">1</span> / 15</div>
+  <div class="stage" id="mStage">FIRST ROUND</div>
+  <div class="pos" id="mPos">BRACKET A · BOUT 1 OF 8</div>
+</div>
+
+<div class="overlay" id="fighters">
+  <div class="card" id="cardA">
+    <div class="nm" id="aNm">—</div>
+    <div class="ar" id="aAr">—</div>
+    <div class="hp"><div class="fill" id="aHP" style="width:100%"></div></div>
+    <div class="stats"><span id="aSp">SPD —</span><span id="aPw">PWR —</span></div>
+  </div>
+  <div id="vs">VS</div>
+  <div class="card r" id="cardB">
+    <div class="nm" id="bNm">—</div>
+    <div class="ar" id="bAr">—</div>
+    <div class="hp"><div class="fill" id="bHP" style="width:100%"></div></div>
+    <div class="stats"><span id="bSp">SPD —</span><span id="bPw">PWR —</span></div>
+  </div>
+</div>
+
+<div class="overlay" id="bracket">
+  <div class="h">BRACKET</div>
+  <div id="bracketBody"></div>
+</div>
+
+<div class="overlay" id="cam">ARENA</div>
+
+<div id="chyron"><div class="box" id="chyronTxt">—</div></div>
+<div id="whois"><div class="who"><div class="label">NOW ENTERING</div>
+  <div class="nm" id="whoNm">—</div><div class="arc" id="whoArc">—</div></div></div>
+
+<div id="pip"><div class="pipLabel">FLASHBACK · TRAINING</div>
+  <canvas class="pipcanvas" id="pipC"></canvas></div>
+
+<div id="announce"><div class="from" id="annFrom">MASTER YAMATO</div>
+  <div id="annTxt">—</div></div>
+
+<div id="flash"></div>
+<div id="vignette"></div>
+
+<div class="overlay" id="ticker">
+  <div class="label">ROUND 12 ALERT</div>
+  <div class="scroll" id="tickerTxt">• THE ANNUAL TOURNAMENT REACHES ITS CLIMAX • UNDEFEATED CHAMPION RYU KOGANE EYES THE TITLE • FINAL BOSS LORD VORRATH SPOTTED IN THE STADIUM • UNDERDOG AKIRA KAZAMI SHOCKS WORLD WITH TRIPLE COUNTER • SPONSORED BY KAMEYAMA RAMEN • REPLAYS EVERY 12 MINUTES • CROWD COUNT: 84,200 • </div>
+</div>
+
+<script>
+"use strict";
+(function(){
+const T = THREE;
+
+// ============ ROSTER ============
+const ROSTER = [
+  { n:"AKIRA KAZAMI",      arc:"THE BOY WITH THE BURNING HEART",      arch:"spiky-hero",   col:0xff7733, hair:0xff5522, sp:8, pw:7, isHero:true },
+  { n:"RYU KOGANE",         arc:"THE UNDEFEATED CHAMPION",             arch:"masked",       col:0xffd24a, hair:0xfff0a0, sp:9, pw:9 },
+  { n:"SAKURA INOUE",       arc:"THE FLOWER OF THE EASTERN DOJO",      arch:"healer",       col:0xff7ab3, hair:0xff9fcc, sp:7, pw:6 },
+  { n:"DAISUKE TOH",        arc:"THE COCKY UPSTART",                   arch:"cocky",        col:0x77b8ff, hair:0x99c8ff, sp:7, pw:7 },
+  { n:"HINA MORI",          arc:"THE TWILIGHT TRICKSTER",              arch:"trickster",    col:0xb46aff, hair:0xc99bff, sp:9, pw:5 },
+  { n:"RENO MIZUKI",        arc:"THE BLADE THAT OUTRUNS LIGHT",        arch:"speedster",    col:0x33e1ff, hair:0x66f0ff, sp:10,pw:5 },
+  { n:"JIN KUROSAKI",       arc:"THE LONE WOLF SWORDSMAN",             arch:"wolf-sword",   col:0x202028, hair:0x101018, sp:8, pw:8 },
+  { n:"AYA SASAKI",         arc:"THE PRODIGY OF THE WHITE TOWER",      arch:"prodigy",      col:0xeaeaea, hair:0xffffff, sp:7, pw:6 },
+  { n:"KAITO YAMADA",       arc:"THE IRON MOUNTAIN",                   arch:"tank",         col:0x886644, hair:0x442200, sp:4, pw:10 },
+  { n:"MINA OHI",           arc:"THE STORMCATCHER",                    arch:"speedster",    col:0xffe066, hair:0xfff0a0, sp:9, pw:6 },
+  { n:"KENSHIN AOYAMA",     arc:"THE OLD MASTER WHO RETURNED",         arch:"master",       col:0x444477, hair:0xddddee, sp:6, pw:9 },
+  { n:"YUKI SANO",          arc:"THE CHILD OF SNOW",                   arch:"healer",       col:0xcceeff, hair:0xeaffff, sp:6, pw:5 },
+  { n:"TATSU IWAKI",        arc:"THE GIANT FROM THE NORTH",            arch:"giant",        col:0x553322, hair:0x000000, sp:3, pw:10 },
+  { n:"MEI KOBAYASHI",      arc:"THE GLASSES STRATEGIST",              arch:"prodigy",      col:0x22aa55, hair:0x224422, sp:6, pw:6 },
+  { n:"RYOMA HOSHINO",      arc:"THE STAR-CROSSED RIVAL",              arch:"spiky-hero",   col:0xff3355, hair:0x991122, sp:8, pw:8, isRival:true },
+  { n:"LORD VORRATH",       arc:"THE FINAL BOSS",                      arch:"final-boss",   col:0x220018, hair:0x6611aa, sp:7, pw:11, isFinalBoss:true }
+];
+
+const ATTACK_NAMES = [
+  "DRAGON FANG", "STORM PIERCER", "CRESCENT MOON SLASH", "HEAVENLY THUNDER",
+  "PHOENIX RISING", "IRON WILL FIST", "SHADOW STEP", "BLADE OF THE WIND",
+  "RAGING WAVE", "BLAZING TIGER", "SNOW BLOSSOM", "WHITE DRAGON ASCENT",
+  "SOUL SEVEN STAR", "EARTH SHATTER", "INFINITE TYPHOON", "VOID PIERCER",
+  "STAR DEVOURER", "ANCESTRAL ROAR", "EMPYREAN STRIKE", "OBLIVION EDGE"
+];
+
+const ULTIMATES = [
+  "FORBIDDEN ART: HEAVENLY DRAGON", "SECRET STYLE: CRIMSON ECLIPSE",
+  "FINAL FORM: BLAZING PHOENIX", "ULTIMATE: STAR-SHATTERER",
+  "DIVINE TECHNIQUE: WHITE TIGER ROAR", "SOUL ART: ETERNAL DAWN",
+  "RUIN GATE: THIRD KEY", "INHERITED SKILL: MASTER'S BEQUEST"
+];
+
+const QUOTES = [
+  "I won't lose... not after everything they sacrificed for me!",
+  "You think strength alone can win this? Watch closely.",
+  "I made a promise. To my friends. To my master. I CANNOT FALL!",
+  "Heh... you're stronger than the rumors said. But not strong enough.",
+  "This blade was forged for one purpose. To END you.",
+  "I trained ten years in the mountains for this very moment.",
+  "You hurt my friends. That was your last mistake.",
+  "Even if my arms break... even if my legs give out... I will stand!",
+  "There's no going back now. Either you fall, or I do.",
+  "Do you understand? This is the power of WILL!"
+];
+
+const ANN_YAMATO = [
+  "INCREDIBLE! That counter came out of NOWHERE!",
+  "Folks, we are witnessing HISTORY at this tournament!",
+  "Look at the FORM on that strike! Textbook!",
+  "He's bleeding! He's BLEEDING and he's still SMILING!",
+  "I have NEVER seen anyone get up from that hit!",
+  "This is what the championship is ALL about!",
+  "The crowd is on their feet — and I am too!",
+  "If this isn't the match of the century, I don't know what is!"
+];
+
+const ANN_SAYURI = [
+  "Sayuri here — and I have CHILLS, Master Yamato!",
+  "Look at the determination in those eyes... unreal.",
+  "You can feel the air change — something is about to break.",
+  "He's setting up for the special! Watch the back foot!",
+  "Yamato-sensei, that was a textbook KOMA-ZUKI counter!",
+  "The whole stadium is silent. The whole NATION is silent.",
+  "If he lands that... it's over. Just like that.",
+  "I did NOT expect that lineage technique here!"
+];
+
+// ============ THREE.js setup ============
+const canvas = document.getElementById('c');
+const renderer = new T.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = T.PCFSoftShadowMap;
+
+const scene = new T.Scene();
+scene.background = new T.Color(0x1a1228);
+scene.fog = new T.Fog(0x140820, 30, 110);
+
+// CAMERAS
+function makeCam() {
+  const c = new T.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 300);
+  return c;
+}
+const camArena   = makeCam(); camArena.position.set(0, 14, 30);   camArena.lookAt(0,2,0);
+const camDrama   = makeCam(); camDrama.fov = 24;
+const camAttack  = makeCam(); camAttack.fov = 30;
+const camSpin    = makeCam();
+const camCrowd   = makeCam(); camCrowd.position.set(-22,8,18);
+const camImpact  = makeCam(); camImpact.fov = 18;
+const cams = {
+  ARENA: camArena, DRAMA: camDrama, ATTACK: camAttack,
+  SPIN: camSpin, CROWD: camCrowd, IMPACT: camImpact
+};
+let activeCamName = "ARENA";
+let activeCam = camArena;
+const camLabel = document.getElementById('cam');
+
+// PIP
+const pipCanvas = document.getElementById('pipC');
+const pipR = new T.WebGLRenderer({ canvas:pipCanvas, antialias:true });
+pipR.setPixelRatio(1);
+pipR.setSize(230, 130);
+const pipScene = new T.Scene();
+pipScene.background = new T.Color(0x2c1818);
+const pipCam = new T.PerspectiveCamera(40, 230/130, 0.1, 60);
+pipCam.position.set(0, 3, 10);
+pipScene.add(new T.AmbientLight(0xffcc99, 0.7));
+const pipKey = new T.DirectionalLight(0xffcc88, 1.0); pipKey.position.set(5,5,5);
+pipScene.add(pipKey);
+const pipMountain = new T.Mesh(new T.ConeGeometry(8,8,12), new T.MeshLambertMaterial({color:0x554433}));
+pipMountain.position.set(-3,-2,-2); pipScene.add(pipMountain);
+const pipMountain2 = new T.Mesh(new T.ConeGeometry(6,6,12), new T.MeshLambertMaterial({color:0x443322}));
+pipMountain2.position.set(4,-3,-3); pipScene.add(pipMountain2);
+const pipSky = new T.Mesh(new T.PlaneGeometry(40,20),
+  new T.MeshBasicMaterial({color:0xff8855})); pipSky.position.set(0,5,-10); pipScene.add(pipSky);
+const pipMaster = new T.Group(); pipScene.add(pipMaster);
+const pipMasterB = new T.Mesh(new T.BoxGeometry(0.7,1.6,0.5), new T.MeshLambertMaterial({color:0x224488}));
+pipMasterB.position.set(-2,0,1); pipMaster.add(pipMasterB);
+const pipMasterH = new T.Mesh(new T.SphereGeometry(0.4,10,8), new T.MeshLambertMaterial({color:0xeebb88}));
+pipMasterH.position.set(-2,1.2,1); pipMaster.add(pipMasterH);
+const pipStudent = new T.Group(); pipScene.add(pipStudent);
+const pipStudentB = new T.Mesh(new T.BoxGeometry(0.6,1.4,0.45), new T.MeshLambertMaterial({color:0xff7733}));
+pipStudentB.position.set(2,-0.1,1); pipStudent.add(pipStudentB);
+const pipStudentH = new T.Mesh(new T.SphereGeometry(0.38,10,8), new T.MeshLambertMaterial({color:0xeebb88}));
+pipStudentH.position.set(2,1.0,1); pipStudent.add(pipStudentH);
+
+// LIGHTS
+const ambient = new T.AmbientLight(0xffffff, 0.4);
+scene.add(ambient);
+const sun = new T.DirectionalLight(0xfff2c0, 1.0);
+sun.position.set(20, 30, 14);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024,1024);
+sun.shadow.camera.left = -25; sun.shadow.camera.right = 25;
+sun.shadow.camera.top = 25; sun.shadow.camera.bottom = -25;
+scene.add(sun);
+const rim = new T.DirectionalLight(0xff66aa, 0.4);
+rim.position.set(-12, 8, -12); scene.add(rim);
+const flood1 = new T.SpotLight(0xffffff, 0, 80, Math.PI/4, 0.4);
+flood1.position.set(0, 24, 0); flood1.target.position.set(0,0,0);
+scene.add(flood1); scene.add(flood1.target);
+
+// ARENA
+const arenaG = new T.Group(); scene.add(arenaG);
+
+// Floor (square dohyo / arena)
+const floorMat = new T.MeshStandardMaterial({ color:0xddbb88, roughness:0.85 });
+const floor = new T.Mesh(new T.BoxGeometry(22,1,22), floorMat);
+floor.position.y = -0.5; floor.receiveShadow = true; arenaG.add(floor);
+// Tatami border
+for (let i=0;i<4;i++){
+  const b = new T.Mesh(new T.BoxGeometry(20,0.05,1.2),
+    new T.MeshStandardMaterial({ color:0xaa3322 }));
+  b.position.y = 0.03; b.position.z = (i%2===0?1:-1) * 9;
+  if (i>=2) { b.rotation.y = Math.PI/2; b.position.z = 0; b.position.x = (i===2?9:-9); }
+  arenaG.add(b);
+}
+// Center emblem
+const emblem = new T.Mesh(new T.RingGeometry(2.2, 2.6, 32),
+  new T.MeshBasicMaterial({ color:0xff3344 }));
+emblem.rotation.x = -Math.PI/2; emblem.position.y = 0.04; arenaG.add(emblem);
+const emblemKanji = new T.Mesh(new T.CircleGeometry(1.8, 6),
+  new T.MeshBasicMaterial({ color:0xff5555 }));
+emblemKanji.rotation.x = -Math.PI/2; emblemKanji.position.y = 0.045; arenaG.add(emblemKanji);
+
+// STADIUM TIERS
+const stadiumG = new T.Group(); scene.add(stadiumG);
+const tierMat = new T.MeshStandardMaterial({ color:0x332244, roughness:0.9 });
+for (let r=0; r<5; r++){
+  const radius = 16 + r*2.4;
+  const ring = new T.Mesh(new T.TorusGeometry(radius, 0.7, 6, 28),
+    new T.MeshStandardMaterial({ color: r%2===0 ? 0x2a1a3a : 0x402858, roughness:0.9 }));
+  ring.rotation.x = Math.PI/2; ring.position.y = 1.0 + r*1.5; stadiumG.add(ring);
+}
+// Stadium base ring
+const baseRing = new T.Mesh(new T.CylinderGeometry(28, 30, 2, 32, 1, true),
+  new T.MeshStandardMaterial({ color:0x180a22, side:T.DoubleSide }));
+baseRing.position.y = 0.5; stadiumG.add(baseRing);
+
+// CROWD (instanced)
+const crowdGeom = new T.BoxGeometry(0.35, 0.7, 0.35);
+const crowdColors = [0xff5566, 0xffaa33, 0x33aaff, 0x99ff66, 0xffee55, 0xff77cc, 0x6677ff, 0xffffff];
+const CROWD_COUNT = 360;
+const crowdMesh = new T.InstancedMesh(crowdGeom,
+  new T.MeshLambertMaterial({ vertexColors:false }), CROWD_COUNT);
+crowdMesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+const crowdData = [];
+const tmpMat = new T.Matrix4(); const tmpQ = new T.Quaternion();
+const tmpV = new T.Vector3(); const tmpS = new T.Vector3(1,1,1);
+const colArr = new Float32Array(CROWD_COUNT*3);
+for (let i=0;i<CROWD_COUNT;i++){
+  const tier = Math.floor(i / (CROWD_COUNT/5));
+  const radius = 17 + tier*2.4 + (Math.random()-0.5)*0.8;
+  const ang = (i/(CROWD_COUNT/5)) * Math.PI*2 + (Math.random()-0.5)*0.05 + tier*0.13;
+  const x = Math.cos(ang)*radius;
+  const z = Math.sin(ang)*radius;
+  const y = 1.6 + tier*1.5 + Math.random()*0.2;
+  crowdData.push({ x,y,z, ph: Math.random()*Math.PI*2, amp:0.15+Math.random()*0.25 });
+  const c = new T.Color(crowdColors[Math.floor(Math.random()*crowdColors.length)]);
+  colArr[i*3]=c.r; colArr[i*3+1]=c.g; colArr[i*3+2]=c.b;
+}
+crowdMesh.instanceColor = new T.InstancedBufferAttribute(colArr, 3);
+crowdMesh.material.vertexColors = true;
+scene.add(crowdMesh);
+
+// BANNERS / FLAGS
+const bannerG = new T.Group(); scene.add(bannerG);
+const bannerColors = [0xff3344, 0xffcb47, 0x33aaff, 0xff77cc, 0x66ff88, 0xaa55ff];
+for (let i=0;i<14;i++){
+  const ang = (i/14) * Math.PI*2;
+  const r = 14;
+  const pole = new T.Mesh(new T.CylinderGeometry(0.06,0.06, 8, 5),
+    new T.MeshLambertMaterial({color:0x442211}));
+  pole.position.set(Math.cos(ang)*r, 4, Math.sin(ang)*r); bannerG.add(pole);
+  const flag = new T.Mesh(new T.PlaneGeometry(1.6, 2.4),
+    new T.MeshBasicMaterial({ color:bannerColors[i%bannerColors.length], side:T.DoubleSide }));
+  flag.position.set(Math.cos(ang)*r + 0.8, 6, Math.sin(ang)*r);
+  flag.rotation.y = -ang;
+  bannerG.add(flag);
+}
+
+// KANJI BANNERS at four sides
+const kanjiTexts = ['闘','武','勝','力'];
+function makeKanjiBanner(txt, color){
+  const cv = document.createElement('canvas'); cv.width=128; cv.height=256;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,128,256);
+  ctx.fillStyle = '#'+(color.toString(16).padStart(6,'0'));
+  ctx.fillRect(6,6,116,244);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 110px serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(txt, 64, 128);
+  const tex = new T.CanvasTexture(cv);
+  return new T.MeshBasicMaterial({ map:tex });
+}
+for (let i=0;i<4;i++){
+  const ang = i * Math.PI/2 + Math.PI/4;
+  const m = new T.Mesh(new T.PlaneGeometry(2.2, 4.4),
+    makeKanjiBanner(kanjiTexts[i], bannerColors[i]));
+  m.position.set(Math.cos(ang)*13, 5, Math.sin(ang)*13);
+  m.rotation.y = -ang + Math.PI;
+  scene.add(m);
+}
+
+// ============ FIGHTER FACTORY ============
+function makeFighter(def, side){
+  const g = new T.Group();
+  const skin = 0xeeccaa;
+  // body
+  const bodyMat = new T.MeshLambertMaterial({ color:def.col });
+  const torso = new T.Mesh(new T.BoxGeometry(0.85, 1.0, 0.55), bodyMat);
+  torso.position.y = 1.4; torso.castShadow = true; g.add(torso);
+  // belt
+  const belt = new T.Mesh(new T.BoxGeometry(0.92, 0.16, 0.6),
+    new T.MeshLambertMaterial({color:0x111111}));
+  belt.position.y = 0.95; g.add(belt);
+  // legs
+  const legMat = new T.MeshLambertMaterial({color:def.col});
+  const legL = new T.Mesh(new T.BoxGeometry(0.32,0.95,0.32), legMat);
+  legL.position.set(-0.22, 0.45, 0); legL.castShadow=true; g.add(legL);
+  const legR = legL.clone(); legR.position.x = 0.22; g.add(legR);
+  // arms
+  const armMat = new T.MeshLambertMaterial({color:skin});
+  const armL = new T.Group(); armL.position.set(-0.55, 1.7, 0);
+  const armLM = new T.Mesh(new T.BoxGeometry(0.25, 0.8, 0.25), armMat);
+  armLM.position.y = -0.4; armLM.castShadow=true; armL.add(armLM);
+  g.add(armL);
+  const armR = new T.Group(); armR.position.set(0.55, 1.7, 0);
+  const armRM = new T.Mesh(new T.BoxGeometry(0.25, 0.8, 0.25), armMat);
+  armRM.position.y = -0.4; armRM.castShadow=true; armR.add(armRM);
+  g.add(armR);
+  // head
+  const head = new T.Mesh(new T.BoxGeometry(0.55,0.55,0.55),
+    new T.MeshLambertMaterial({color:skin}));
+  head.position.y = 2.18; head.castShadow=true; g.add(head);
+  // eyes (anime style — big)
+  const eyeWhite = new T.MeshBasicMaterial({color:0xffffff});
+  const eyeL = new T.Mesh(new T.BoxGeometry(0.13,0.16,0.04), eyeWhite);
+  eyeL.position.set(-0.14, 2.22, 0.28); g.add(eyeL);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.14; g.add(eyeR);
+  const pupilM = new T.MeshBasicMaterial({color:0x111111});
+  const pL = new T.Mesh(new T.BoxGeometry(0.07,0.09,0.04), pupilM);
+  pL.position.set(-0.14, 2.20, 0.30); g.add(pL);
+  const pR = pL.clone(); pR.position.x = 0.14; g.add(pR);
+  // hair
+  const hairMat = new T.MeshLambertMaterial({color:def.hair});
+  const hairBase = new T.Mesh(new T.BoxGeometry(0.6,0.25,0.6), hairMat);
+  hairBase.position.y = 2.45; g.add(hairBase);
+
+  // ARCHETYPE FEATURES
+  if (def.arch === "spiky-hero") {
+    for (let i=0;i<5;i++){
+      const sp = new T.Mesh(new T.ConeGeometry(0.13, 0.45, 5), hairMat);
+      sp.position.set((i-2)*0.13, 2.65, 0.06 + (i%2)*0.1);
+      sp.rotation.x = -0.3 + (i%2)*0.2; g.add(sp);
+    }
+    // headband
+    const hb = new T.Mesh(new T.BoxGeometry(0.62,0.1,0.6),
+      new T.MeshLambertMaterial({color:0xffffff}));
+    hb.position.y = 2.32; g.add(hb);
+  } else if (def.arch === "masked") {
+    const mask = new T.Mesh(new T.BoxGeometry(0.56,0.28,0.06),
+      new T.MeshLambertMaterial({color:0x111111}));
+    mask.position.set(0,2.2,0.30); g.add(mask);
+    // cape
+    const cape = new T.Mesh(new T.PlaneGeometry(1.2, 1.6),
+      new T.MeshLambertMaterial({color:0xaa0033, side:T.DoubleSide}));
+    cape.position.set(0,1.6,-0.32); g.add(cape);
+    g.userData.cape = cape;
+  } else if (def.arch === "healer") {
+    // long ponytail
+    const pony = new T.Mesh(new T.BoxGeometry(0.22, 0.95, 0.22), hairMat);
+    pony.position.set(0,1.95,-0.32); g.add(pony);
+    // ribbon
+    const rib = new T.Mesh(new T.BoxGeometry(0.5,0.2,0.05),
+      new T.MeshLambertMaterial({color:0xffffff}));
+    rib.position.set(0,2.55,-0.05); g.add(rib);
+  } else if (def.arch === "cocky") {
+    // tilted forelock
+    const fl = new T.Mesh(new T.BoxGeometry(0.35, 0.18, 0.4), hairMat);
+    fl.position.set(0.18, 2.5, 0.15); fl.rotation.z = 0.4; g.add(fl);
+    // smug grin? do a smaller pupil
+    pL.scale.set(0.6,0.6,1); pR.scale.set(0.6,0.6,1);
+  } else if (def.arch === "trickster") {
+    // hood
+    const hood = new T.Mesh(new T.BoxGeometry(0.7, 0.45, 0.7),
+      new T.MeshLambertMaterial({color:0x442266}));
+    hood.position.y = 2.55; g.add(hood);
+    // mischievous smile (a tiny line)
+  } else if (def.arch === "speedster") {
+    // scarf
+    const scarf = new T.Mesh(new T.BoxGeometry(0.7,0.18,0.4),
+      new T.MeshLambertMaterial({color:0xffffff}));
+    scarf.position.set(0,1.85,0); g.add(scarf);
+    g.userData.scarf = scarf;
+    const tail = new T.Mesh(new T.PlaneGeometry(0.25, 1.4),
+      new T.MeshLambertMaterial({color:0xffffff, side:T.DoubleSide}));
+    tail.position.set(0,1.4,-0.4); g.add(tail);
+    g.userData.scarftail = tail;
+  } else if (def.arch === "wolf-sword") {
+    // long black coat
+    const coat = new T.Mesh(new T.BoxGeometry(0.95,1.05,0.6),
+      new T.MeshLambertMaterial({color:0x161019}));
+    coat.position.y = 1.4; g.add(coat);
+    // sword
+    const swordG = new T.Group(); swordG.position.set(0.7,1.4,0);
+    const blade = new T.Mesh(new T.BoxGeometry(0.06,1.5,0.06),
+      new T.MeshStandardMaterial({color:0xeeeeff, metalness:0.7, roughness:0.2}));
+    blade.position.y = 0.8; swordG.add(blade);
+    const hilt = new T.Mesh(new T.BoxGeometry(0.18,0.18,0.18),
+      new T.MeshLambertMaterial({color:0x221100})); swordG.add(hilt);
+    g.add(swordG);
+    g.userData.sword = swordG;
+  } else if (def.arch === "prodigy") {
+    // glasses
+    const gl1 = new T.Mesh(new T.RingGeometry(0.07, 0.10, 16),
+      new T.MeshBasicMaterial({color:0xffffff}));
+    gl1.position.set(-0.14,2.2,0.29); g.add(gl1);
+    const gl2 = gl1.clone(); gl2.position.x = 0.14; g.add(gl2);
+    const bridge = new T.Mesh(new T.BoxGeometry(0.1,0.02,0.02),
+      new T.MeshBasicMaterial({color:0xffffff}));
+    bridge.position.set(0,2.2,0.29); g.add(bridge);
+  } else if (def.arch === "tank") {
+    // bigger torso + shoulder pads
+    torso.scale.set(1.25,1.1,1.2);
+    const padL = new T.Mesh(new T.BoxGeometry(0.4,0.35,0.5),
+      new T.MeshLambertMaterial({color:0x333333}));
+    padL.position.set(-0.55,1.85,0); g.add(padL);
+    const padR = padL.clone(); padR.position.x = 0.55; g.add(padR);
+  } else if (def.arch === "master") {
+    // beard
+    const beard = new T.Mesh(new T.BoxGeometry(0.4,0.35,0.2),
+      new T.MeshLambertMaterial({color:0xeeeeee}));
+    beard.position.set(0,1.95,0.27); g.add(beard);
+    // top knot
+    const tk = new T.Mesh(new T.SphereGeometry(0.16, 8, 6), hairMat);
+    tk.position.set(0,2.6,0); g.add(tk);
+    // staff
+    const staff = new T.Mesh(new T.CylinderGeometry(0.05,0.05,2.2,6),
+      new T.MeshLambertMaterial({color:0x3a2010}));
+    staff.position.set(0.7,1.3,0); g.add(staff);
+    g.userData.staff = staff;
+  } else if (def.arch === "giant") {
+    g.scale.set(1.45,1.4,1.45);
+    // beard
+    const bd = new T.Mesh(new T.BoxGeometry(0.5,0.45,0.25),
+      new T.MeshLambertMaterial({color:0x000000}));
+    bd.position.set(0,1.92,0.25); g.add(bd);
+  } else if (def.arch === "final-boss") {
+    // dark aura body
+    torso.material = new T.MeshLambertMaterial({color:0x180022});
+    // horns
+    const hornM = new T.MeshLambertMaterial({color:0x220011});
+    const hornL = new T.Mesh(new T.ConeGeometry(0.12, 0.55, 6), hornM);
+    hornL.position.set(-0.18, 2.7, 0); hornL.rotation.z = 0.25; g.add(hornL);
+    const hornR = hornL.clone(); hornR.position.x = 0.18; hornR.rotation.z = -0.25; g.add(hornR);
+    // glowing red eyes
+    eyeWhite.color.setHex(0xff0033);
+    pupilM.color.setHex(0xff0033);
+    pL.material = new T.MeshBasicMaterial({color:0xffffff});
+    pR.material = new T.MeshBasicMaterial({color:0xffffff});
+    // dark cape
+    const cape = new T.Mesh(new T.PlaneGeometry(1.6, 2.2),
+      new T.MeshLambertMaterial({color:0x110014, side:T.DoubleSide}));
+    cape.position.set(0,1.5,-0.34); g.add(cape);
+    g.userData.cape = cape;
+    // aura
+    const aura = new T.Mesh(new T.SphereGeometry(1.3, 12, 8),
+      new T.MeshBasicMaterial({color:0x6611aa, transparent:true, opacity:0.18}));
+    aura.position.y = 1.4; g.add(aura);
+    g.userData.aura = aura;
+  }
+
+  // Save part refs
+  g.userData = Object.assign(g.userData||{}, {
+    def, side, torso, head, armL, armR, legL, legR, hairBase,
+    eyeL, eyeR, pupilL:pL, pupilR:pR
+  });
+  return g;
+}
+
+// ============ TOURNAMENT BRACKET ============
+let bracket = null;
+function shuffle(a){
+  for (let i=a.length-1; i>0; i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+function buildBracket(){
+  // Always include final boss but tee him as the ultimate seed.
+  const fighters = ROSTER.slice();
+  const finalBoss = fighters.find(f=>f.isFinalBoss);
+  const hero = fighters.find(f=>f.isHero);
+  const others = fighters.filter(f=>!f.isFinalBoss && !f.isHero);
+  shuffle(others);
+  // hero seeded into bracket A, finalBoss into bracket B (so they meet in finals if both win)
+  const seedA = [hero, ...others.slice(0,7)]; shuffle(seedA);
+  const seedB = [finalBoss, ...others.slice(7,14)]; shuffle(seedB);
+  const r1 = [];
+  for (let i=0;i<8;i+=2) r1.push({a:seedA[i], b:seedA[i+1], side:'A'});
+  for (let i=0;i<8;i+=2) r1.push({a:seedB[i], b:seedB[i+1], side:'B'});
+  return {
+    matches: r1.map(m=>({...m, winner:null, hp:[100,100], doneRound:0})),
+    round: 1, idx: 0,
+    history: []
+  };
+}
+
+function pickWinner(m){
+  // weighted by power+speed; underdog gets a 14% upset bonus
+  const a = m.a.sp + m.a.pw + Math.random()*5;
+  const b = m.b.sp + m.b.pw + Math.random()*5;
+  let w = a > b ? m.a : m.b;
+  // hero pity in final vs final boss: 60% hero wins to satisfy shounen logic
+  if (m.a.isHero && m.b.isFinalBoss) w = Math.random()<0.6 ? m.a : m.b;
+  if (m.b.isHero && m.a.isFinalBoss) w = Math.random()<0.6 ? m.b : m.a;
+  // upset clause for underdogs (very rare)
+  if (Math.random() < 0.07) w = (w === m.a ? m.b : m.a);
+  return w;
+}
+
+function advanceRound(){
+  const cur = bracket.matches.filter(m=>m.doneRound === bracket.round);
+  const winners = cur.map(m=>m.winner);
+  if (winners.length === 1) return null; // champion done
+  const next = [];
+  for (let i=0;i<winners.length;i+=2){
+    next.push({ a:winners[i], b:winners[i+1], winner:null, hp:[100,100],
+      side: i<winners.length/2 ? 'A':'B', doneRound:0 });
+  }
+  bracket.matches.push(...next);
+  bracket.round += 1;
+  return next;
+}
+
+function curMatchObj(){
+  // current match index
+  const allDone = bracket.matches.filter(m=>m.doneRound>0).length;
+  return bracket.matches[allDone];
+}
+
+// ============ STATE MACHINE ============
+let A = null, B = null; // current fighter groups
+let curMatch = null;
+let phase = "INTRO";
+let phaseT = 0;
+let phaseDur = 3.0;
+let matchTime = 0;
+let particles = [];
+let confetti = [];
+let auraEffects = [];
+let speedTrails = [];
+let isNight = false;
+let dayMix = 0; // 0=day 1=night
+
+const fighterRoot = new T.Group(); scene.add(fighterRoot);
+
+function clearArena(){
+  while(fighterRoot.children.length){
+    const c = fighterRoot.children[0];
+    fighterRoot.remove(c);
+    c.traverse(o=>{ if(o.geometry) o.geometry.dispose && o.geometry.dispose(); });
+  }
+  particles.forEach(p => scene.remove(p)); particles = [];
+  confetti.forEach(p => scene.remove(p)); confetti = [];
+  auraEffects.forEach(p => scene.remove(p)); auraEffects = [];
+  speedTrails.forEach(p => scene.remove(p)); speedTrails = [];
+}
+
+function setPhase(name, dur){
+  phase = name; phaseT = 0; phaseDur = dur;
+}
+
+function setHP(side, val){
+  curMatch.hp[side] = Math.max(0, Math.min(100, val));
+  document.getElementById(side===0?'aHP':'bHP').style.width = curMatch.hp[side]+'%';
+}
+
+function showChyron(text, ms){
+  const el = document.getElementById('chyron');
+  document.getElementById('chyronTxt').textContent = text;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), ms||2200);
+}
+
+function showWhois(name, arc){
+  const el = document.getElementById('whois');
+  document.getElementById('whoNm').textContent = name;
+  document.getElementById('whoArc').textContent = arc;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 1800);
+}
+
+function showPIP(ms){
+  document.getElementById('pip').classList.add('show');
+  setTimeout(()=>document.getElementById('pip').classList.remove('show'), ms||3000);
+}
+
+function showAnnounce(who, txt, ms){
+  const el = document.getElementById('announce');
+  document.getElementById('annFrom').textContent = who;
+  document.getElementById('annTxt').textContent = txt;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), ms||2500);
+}
+
+function flash(intensity){
+  const f = document.getElementById('flash');
+  f.style.opacity = intensity;
+  setTimeout(()=>{ f.style.opacity = 0; }, 110);
+}
+
+function shakeOn(amt, dur){ shakeAmt = amt; shakeDur = dur; shakeT = 0; }
+let shakeAmt = 0, shakeDur = 0, shakeT = 0;
+
+function setCam(name){
+  if (!cams[name]) return;
+  activeCamName = name; activeCam = cams[name];
+  camLabel.textContent = name;
+}
+
+// ============ COMBAT EFFECTS ============
+function spawnImpact(pos, color){
+  for (let i=0;i<14;i++){
+    const m = new T.Mesh(new T.BoxGeometry(0.2,0.2,0.2),
+      new T.MeshBasicMaterial({color:color||0xffee55}));
+    m.position.copy(pos);
+    m.userData = {
+      vx:(Math.random()-0.5)*8,
+      vy: 2 + Math.random()*5,
+      vz:(Math.random()-0.5)*8,
+      life: 0.5 + Math.random()*0.4
+    };
+    scene.add(m); particles.push(m);
+  }
+}
+
+function spawnSlash(from, to, color){
+  const m = new T.Mesh(new T.PlaneGeometry(2.4, 0.5),
+    new T.MeshBasicMaterial({color:color||0xffffff, transparent:true, opacity:0.9, side:T.DoubleSide}));
+  m.position.lerpVectors(from, to, 0.5);
+  m.position.y += 1.4;
+  m.lookAt(to.x, m.position.y, to.z);
+  m.rotation.z = Math.random()*Math.PI;
+  m.userData = { life: 0.32, slash:true };
+  scene.add(m); particles.push(m);
+}
+
+function spawnAura(target, color){
+  const m = new T.Mesh(new T.SphereGeometry(1.3, 14, 10),
+    new T.MeshBasicMaterial({color:color, transparent:true, opacity:0.5}));
+  m.position.copy(target.position);
+  m.userData = { target, life: 1.4, aura:true, base:1.3 };
+  scene.add(m); auraEffects.push(m);
+}
+
+function spawnSpeedTrail(from, color){
+  const m = new T.Mesh(new T.PlaneGeometry(0.4, 1.6),
+    new T.MeshBasicMaterial({color, transparent:true, opacity:0.55, side:T.DoubleSide}));
+  m.position.copy(from); m.position.y = 1.4;
+  m.userData = { life: 0.4 };
+  scene.add(m); speedTrails.push(m);
+}
+
+function spawnConfetti(){
+  for (let i=0;i<70;i++){
+    const c = new T.Mesh(new T.PlaneGeometry(0.18,0.32),
+      new T.MeshBasicMaterial({
+        color:bannerColors[Math.floor(Math.random()*bannerColors.length)],
+        side:T.DoubleSide
+      }));
+    c.position.set((Math.random()-0.5)*16, 14+Math.random()*6, (Math.random()-0.5)*16);
+    c.userData = {
+      vx:(Math.random()-0.5)*1.4,
+      vy:-1.6 - Math.random()*1.2,
+      vz:(Math.random()-0.5)*1.4,
+      rx:Math.random()*8, ry:Math.random()*8,
+      life: 9
+    };
+    scene.add(c); confetti.push(c);
+  }
+}
+
+// ============ MATCH FLOW ============
+function startMatch(){
+  curMatch = curMatchObj();
+  if (!curMatch){
+    // tournament finished — declare champion already handled
+    return;
+  }
+  const champBefore = bracket.matches.filter(m=>m.doneRound===bracket.round-1);
+  // Decide presentational stage label
+  let stage = "FIRST ROUND";
+  if (bracket.round === 2) stage = "QUARTERFINALS";
+  else if (bracket.round === 3) stage = "SEMIFINALS";
+  else if (bracket.round === 4) stage = "GRAND FINAL";
+  document.getElementById('mStage').textContent = stage;
+
+  const totalPlayed = bracket.matches.filter(m=>m.doneRound>0).length;
+  document.getElementById('mNum').textContent = String(totalPlayed+1);
+
+  // Position label
+  const inRoundIdx = bracket.matches
+    .filter(m=>m.doneRound===0 && m === curMatch ? true :
+      m.doneRound===0).indexOf(curMatch);
+  const sideStr = curMatch.side === 'A' ? 'BRACKET A' : 'BRACKET B';
+  let posLabel;
+  if (bracket.round === 1) posLabel = `${sideStr} · BOUT ${inRoundIdx+1} OF 8`;
+  else if (bracket.round === 2) posLabel = `QUARTERFINAL · BOUT ${inRoundIdx+1} OF 4`;
+  else if (bracket.round === 3) posLabel = `SEMIFINAL · BOUT ${inRoundIdx+1} OF 2`;
+  else posLabel = `GRAND FINAL · CHAMPIONSHIP BOUT`;
+  document.getElementById('mPos').textContent = posLabel;
+
+  // build fighters
+  clearArena();
+  A = makeFighter(curMatch.a, 0);
+  B = makeFighter(curMatch.b, 1);
+  A.position.set(-3.4, 0, 0);
+  B.position.set( 3.4, 0, 0);
+  A.rotation.y = Math.PI/2;
+  B.rotation.y = -Math.PI/2;
+  fighterRoot.add(A); fighterRoot.add(B);
+
+  setHP(0, 100); setHP(1, 100);
+  document.getElementById('aNm').textContent = curMatch.a.n;
+  document.getElementById('bNm').textContent = curMatch.b.n;
+  document.getElementById('aAr').textContent = curMatch.a.arc;
+  document.getElementById('bAr').textContent = curMatch.b.arc;
+  document.getElementById('aSp').textContent = `SPD ${curMatch.a.sp}`;
+  document.getElementById('bSp').textContent = `SPD ${curMatch.b.sp}`;
+  document.getElementById('aPw').textContent = `PWR ${curMatch.a.pw}`;
+  document.getElementById('bPw').textContent = `PWR ${curMatch.b.pw}`;
+
+  // night switch on SF / Final
+  if (bracket.round >= 3 && !isNight){
+    isNight = true;
+    flood1.intensity = 1.4;
+  } else if (bracket.round < 3 && isNight){
+    isNight = false;
+    flood1.intensity = 0;
+  }
+
+  // pre-decide winner for narrative consistency
+  curMatch.winner = pickWinner(curMatch);
+
+  matchTime = 0;
+  setCam("ARENA");
+  setPhase("INTRO", 2.4);
+
+  // chyron + whois
+  showWhois(curMatch.a.n, curMatch.a.arc);
+  setTimeout(()=>showWhois(curMatch.b.n, curMatch.b.arc), 1500);
+  showChyron(`${stage} · ${curMatch.a.n} VS ${curMatch.b.n}`, 2200);
+  showAnnounce("MASTER YAMATO",
+    ANN_YAMATO[Math.floor(Math.random()*ANN_YAMATO.length)], 2400);
+  refreshBracketUI();
+}
+
+function endMatch(winner, loser){
+  curMatch.doneRound = bracket.round;
+  if (bracket.round === 4){
+    // CHAMPION
+    setPhase("CELEBRATE", 12);
+    showChyron(`${winner.n} — TOURNAMENT CHAMPION!`, 6500);
+    setTimeout(()=>showAnnounce("LADY SAYURI",
+      `Yamato-sensei... ${winner.n.split(' ')[0]} did it. They actually did it.`, 5000), 1200);
+    spawnConfetti();
+    refreshBracketUI();
+    return;
+  }
+  showChyron(`WINNER: ${winner.n}`, 2400);
+  showAnnounce("LADY SAYURI",
+    ANN_SAYURI[Math.floor(Math.random()*ANN_SAYURI.length)], 2200);
+  setPhase("VICTORY", 3.5);
+  refreshBracketUI();
+}
+
+function nextMatch(){
+  // advance to next match; build next round if necessary
+  const remaining = bracket.matches.filter(m=>m.doneRound===0);
+  if (remaining.length === 0){
+    // build next round
+    const nxt = advanceRound();
+    if (!nxt){
+      // tournament done; restart entire tournament after celebrate
+      return null;
+    }
+  }
+  startMatch();
+}
+
+// ============ BRACKET UI ============
+function refreshBracketUI(){
+  const el = document.getElementById('bracketBody');
+  let html = '';
+  const labels = ["R16","QF","SF","FINAL"];
+  for (let r=1; r<=4; r++){
+    const ms = bracket.matches.filter(m=>m.matchRound? false : (
+      // determine round: matches in round r are at indices ...
+      true
+    ));
+  }
+  // Simpler: show all matches grouped by round
+  let cursor = 0;
+  const counts = [8,4,2,1];
+  for (let r=0; r<bracket.round; r++){
+    if (r>0) html += `<div class="h" style="margin-top:6px">${labels[r]}</div>`;
+    else html += `<div class="h">ROUND OF 16</div>`;
+    for (let i=0; i<counts[r]; i++){
+      const m = bracket.matches[cursor];
+      if (!m) break;
+      const isCur = (m === curMatch);
+      const cls = m.doneRound>0 ? 'done' : (isCur ? 'now' : '');
+      const aTxt = m.doneRound>0 && m.winner !== m.a ? m.a.n.split(' ')[0] : m.a.n.split(' ')[0];
+      const bTxt = m.doneRound>0 && m.winner !== m.b ? m.b.n.split(' ')[0] : m.b.n.split(' ')[0];
+      html += `<div class="row ${cls}"><span class="a">${aTxt}</span><span class="b">${bTxt}</span></div>`;
+      cursor++;
+    }
+  }
+  el.innerHTML = html;
+}
+
+// ============ RENDER LOOP ============
+const clock = new T.Clock();
+let cameraDirT = 0;
+let cameraDirInterval = 2.5;
+
+function setupCamForPhase(){
+  const camPicks = {
+    INTRO:    ["ARENA","CROWD","DRAMA"],
+    BOW:      ["DRAMA","ARENA"],
+    STANCE:   ["DRAMA","ARENA"],
+    EXCHANGE: ["ATTACK","ARENA","SPIN"],
+    MONOLOGUE:["DRAMA","DRAMA","ARENA"],
+    SPECIAL_A:["IMPACT","ATTACK","SPIN"],
+    SPECIAL_B:["IMPACT","ATTACK","SPIN"],
+    ULTIMATE: ["IMPACT","SPIN","DRAMA"],
+    KO:       ["IMPACT","DRAMA"],
+    VICTORY:  ["DRAMA","CROWD","ARENA"],
+    CELEBRATE:["CROWD","ARENA","DRAMA","SPIN"]
+  };
+  const list = camPicks[phase] || ["ARENA"];
+  setCam(list[Math.floor(Math.random()*list.length)]);
+}
+
+function placeDramaCam(target){
+  const off = new T.Vector3(
+    Math.cos(matchTime*0.6)*2.5, 1.8 + Math.sin(matchTime*0.4)*0.4,
+    Math.sin(matchTime*0.6)*2.5);
+  camDrama.position.copy(target.position).add(off);
+  camDrama.position.y = Math.max(1.4, camDrama.position.y);
+  camDrama.lookAt(target.position.x, 1.8, target.position.z);
+}
+
+function placeAttackCam(){
+  if (!A || !B) return;
+  const mid = new T.Vector3().addVectors(A.position, B.position).multiplyScalar(0.5);
+  camAttack.position.set(mid.x, 2.1, mid.z + 6);
+  camAttack.lookAt(mid.x, 1.6, mid.z);
+}
+
+function placeSpinCam(){
+  if (!A || !B) return;
+  const mid = new T.Vector3().addVectors(A.position, B.position).multiplyScalar(0.5);
+  const a = matchTime*1.4;
+  camSpin.position.set(mid.x + Math.cos(a)*7, 4 + Math.sin(a*0.5)*1.5,
+    mid.z + Math.sin(a)*7);
+  camSpin.lookAt(mid.x, 1.7, mid.z);
+}
+
+function placeImpactCam(target){
+  const ang = Math.random()*Math.PI*2;
+  camImpact.position.set(target.position.x + Math.cos(ang)*2.4, 1.7 + Math.random()*0.7,
+    target.position.z + Math.sin(ang)*2.4);
+  camImpact.lookAt(target.position.x, 1.7, target.position.z);
+}
+
+function placeCrowdCam(){
+  const a = matchTime*0.18;
+  camCrowd.position.set(Math.cos(a)*22, 7 + Math.sin(a*0.4)*1.5,
+    Math.sin(a)*22);
+  camCrowd.lookAt(0, 2, 0);
+}
+
+function placeArenaCam(){
+  const a = matchTime*0.05;
+  camArena.position.set(Math.cos(a)*20, 11 + Math.sin(matchTime*0.13)*1.2,
+    Math.sin(a)*20 + 14);
+  camArena.lookAt(0, 1.6, 0);
+}
+
+function updateFighterIdle(f, dt){
+  const t = matchTime;
+  f.userData.torso.position.y = 1.4 + Math.sin(t*3 + (f.userData.side?0.6:0))*0.04;
+  f.userData.armL.rotation.x = Math.sin(t*2.5)*0.12;
+  f.userData.armR.rotation.x = -Math.sin(t*2.5)*0.12;
+  if (f.userData.scarftail){
+    f.userData.scarftail.rotation.x = Math.sin(t*4)*0.2;
+  }
+  if (f.userData.cape){
+    f.userData.cape.rotation.x = Math.sin(t*1.8)*0.2;
+  }
+  if (f.userData.aura){
+    f.userData.aura.scale.setScalar(1 + Math.sin(t*4)*0.07);
+  }
+}
+
+function attack(att, def, power){
+  // animation: attacker hops toward defender
+  const dir = (att === A) ? 1 : -1;
+  att.position.x += dir * 0.6;
+  // arm swing
+  att.userData.armR.rotation.x = -1.4;
+  att.userData.armR.rotation.z = -0.5*dir;
+  setTimeout(()=>{
+    att.userData.armR.rotation.x = 0;
+    att.userData.armR.rotation.z = 0;
+    att.position.x -= dir * 0.6;
+  }, 220);
+  spawnSlash(att.position, def.position, 0xffffff);
+  spawnImpact(def.position.clone().setY(1.7), 0xffee55);
+  shakeOn(0.06 * Math.min(2, power*0.05), 0.18);
+  flash(0.25);
+  // damage
+  const sideIdx = (def === A) ? 0 : 1;
+  const dmg = power;
+  setHP(sideIdx, curMatch.hp[sideIdx] - dmg);
+  // knockback
+  def.position.x += dir * 0.25;
+  // fighter recoil
+  def.rotation.z = (sideIdx===0?-1:1) * 0.3;
+  setTimeout(()=>{ if(def) def.rotation.z = 0; }, 250);
+}
+
+function ultimate(att, def){
+  shakeOn(0.16, 0.6);
+  flash(0.85);
+  spawnAura(att, 0xffaa44);
+  setTimeout(()=>{
+    spawnImpact(def.position.clone().setY(1.7), 0xff3333);
+    spawnSlash(att.position, def.position, 0xffaa44);
+    spawnSlash(att.position, def.position, 0xffffff);
+    flash(0.9);
+    shakeOn(0.22, 0.7);
+    const sideIdx = (def === A) ? 0 : 1;
+    setHP(sideIdx, curMatch.hp[sideIdx] - 65);
+    def.rotation.z = (sideIdx===0?-1:1) * 0.6;
+    def.position.x += (sideIdx===0?-1:1)*-0.6; // knockback
+  }, 600);
+}
+
+let exchangeCD = 0;
+let monologueShown = false;
+let specialUsedA = false;
+let specialUsedB = false;
+let ultimateUsed = false;
+let koSide = -1;
+let koTime = 0;
+let underdogSneak = false;
+
+function tournamentReset(){
+  bracket = buildBracket();
+  isNight = false; flood1.intensity = 0;
+  refreshBracketUI();
+  startMatch();
+}
+
+function nextPhase(){
+  // Determine phase progression
+  if (phase === "INTRO"){
+    setPhase("BOW", 1.6);
+  } else if (phase === "BOW"){
+    A.rotation.x = -0.3; B.rotation.x = -0.3;
+    setTimeout(()=>{ if(A) A.rotation.x=0; if(B) B.rotation.x=0; }, 800);
+    setPhase("STANCE", 1.8);
+  } else if (phase === "STANCE"){
+    showChyron("FIGHT!", 1200);
+    setPhase("EXCHANGE", 4.0);
+    exchangeCD = 0;
+  } else if (phase === "EXCHANGE"){
+    // monologue interlude (only sometimes)
+    if (!monologueShown && Math.random()<0.7){
+      monologueShown = true;
+      const speakerName = (Math.random()<0.5 ? curMatch.a.n : curMatch.b.n);
+      showChyron(QUOTES[Math.floor(Math.random()*QUOTES.length)], 2800);
+      // training flashback PIP
+      if (Math.random()<0.65) showPIP(2800);
+      setPhase("MONOLOGUE", 3.0);
+    } else {
+      setPhase("SPECIAL_A", 2.4);
+    }
+  } else if (phase === "MONOLOGUE"){
+    setPhase("SPECIAL_A", 2.4);
+  } else if (phase === "SPECIAL_A"){
+    if (!specialUsedA){
+      specialUsedA = true;
+      const att = curMatch.a; const def = curMatch.b;
+      const an = ATTACK_NAMES[Math.floor(Math.random()*ATTACK_NAMES.length)];
+      showChyron(`${att.n} — ${an}!`, 2200);
+      attack(A, B, 18 + Math.random()*8);
+    }
+    setPhase("SPECIAL_B", 2.4);
+  } else if (phase === "SPECIAL_B"){
+    if (!specialUsedB){
+      specialUsedB = true;
+      const att = curMatch.b; const def = curMatch.a;
+      const an = ATTACK_NAMES[Math.floor(Math.random()*ATTACK_NAMES.length)];
+      showChyron(`${att.n} — ${an}!`, 2200);
+      attack(B, A, 18 + Math.random()*8);
+    }
+    // possible underdog sneak counter
+    const winnerIsA = (curMatch.winner === curMatch.a);
+    const underdog = winnerIsA ?
+      (curMatch.a.sp + curMatch.a.pw < curMatch.b.sp + curMatch.b.pw) :
+      (curMatch.b.sp + curMatch.b.pw < curMatch.a.sp + curMatch.a.pw);
+    if (underdog && !underdogSneak && Math.random()<0.5){
+      underdogSneak = true;
+      showChyron("AN UNEXPECTED COUNTER!", 1800);
+      const att = winnerIsA ? A : B; const def = winnerIsA ? B : A;
+      attack(att, def, 22);
+      showAnnounce("MASTER YAMATO",
+        "DID YOU SEE THAT?! THAT WAS A TRIPLE COUNTER!", 2500);
+    }
+    setPhase("ULTIMATE", 3.6);
+  } else if (phase === "ULTIMATE"){
+    if (!ultimateUsed){
+      ultimateUsed = true;
+      const winner = curMatch.winner;
+      const winnerIsA = winner === curMatch.a;
+      const att = winnerIsA ? A : B;
+      const def = winnerIsA ? B : A;
+      const ult = ULTIMATES[Math.floor(Math.random()*ULTIMATES.length)];
+      showChyron(`${winner.n} — ${ult}!!`, 3400);
+      ultimate(att, def);
+      // ensure loser hp -> 0
+      const sideIdx = winnerIsA ? 1 : 0;
+      setTimeout(()=>setHP(sideIdx, 0), 800);
+    }
+    setPhase("KO", 2.4);
+  } else if (phase === "KO"){
+    const winner = curMatch.winner;
+    const loser = (winner === curMatch.a) ? curMatch.b : curMatch.a;
+    const loserGroup = (winner === curMatch.a) ? B : A;
+    if (loserGroup){
+      loserGroup.rotation.z = (winner === curMatch.a ? 1.3 : -1.3);
+      loserGroup.position.y = -0.1;
+    }
+    endMatch(winner, loser);
+  } else if (phase === "VICTORY"){
+    // reset flags
+    monologueShown = false; specialUsedA = specialUsedB = ultimateUsed = false;
+    underdogSneak = false; koSide = -1;
+    nextMatch();
+  } else if (phase === "CELEBRATE"){
+    // restart whole tournament
+    tournamentReset();
+    monologueShown = false; specialUsedA = specialUsedB = ultimateUsed = false;
+    underdogSneak = false;
+  }
+}
+
+// ============ MAIN LOOP ============
+function tick(){
+  const dt = Math.min(0.066, clock.getDelta());
+  matchTime += dt;
+  phaseT += dt;
+  cameraDirT += dt;
+
+  // crowd bobbing
+  for (let i=0;i<CROWD_COUNT;i++){
+    const d = crowdData[i];
+    const y = d.y + Math.sin(matchTime*4 + d.ph)*d.amp;
+    tmpV.set(d.x, y, d.z);
+    tmpMat.compose(tmpV, tmpQ, tmpS);
+    crowdMesh.setMatrixAt(i, tmpMat);
+  }
+  crowdMesh.instanceMatrix.needsUpdate = true;
+
+  if (A) updateFighterIdle(A, dt);
+  if (B) updateFighterIdle(B, dt);
+
+  // Phase progression
+  if (phase === "EXCHANGE"){
+    exchangeCD -= dt;
+    if (exchangeCD <= 0){
+      exchangeCD = 0.55 + Math.random()*0.5;
+      const which = Math.random()<0.5 ? 0 : 1;
+      if (which===0) attack(A, B, 5 + Math.random()*4);
+      else attack(B, A, 5 + Math.random()*4);
+    }
+  }
+  if (phase === "CELEBRATE" && A && B){
+    // raise winner's arm; bounce
+    const winner = curMatch.winner === curMatch.a ? A : B;
+    winner.position.y = Math.abs(Math.sin(matchTime*5))*0.4;
+    winner.userData.armR.rotation.x = -1.6;
+  }
+
+  if (phaseT >= phaseDur){
+    nextPhase();
+  }
+
+  // particles
+  for (let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.userData.life -= dt;
+    if (p.userData.slash){
+      p.material.opacity = Math.max(0, p.userData.life * 3);
+    } else {
+      p.position.x += p.userData.vx * dt;
+      p.position.y += p.userData.vy * dt;
+      p.position.z += p.userData.vz * dt;
+      p.userData.vy -= 9.8 * dt;
+    }
+    if (p.userData.life <= 0){
+      scene.remove(p);
+      particles.splice(i,1);
+    }
+  }
+  for (let i=auraEffects.length-1;i>=0;i--){
+    const a = auraEffects[i];
+    a.userData.life -= dt;
+    if (a.userData.target) a.position.copy(a.userData.target.position);
+    a.scale.setScalar(a.userData.base * (1 + (1.4-a.userData.life)*0.4));
+    a.material.opacity = Math.max(0, a.userData.life * 0.4);
+    if (a.userData.life <= 0){ scene.remove(a); auraEffects.splice(i,1); }
+  }
+  for (let i=speedTrails.length-1;i>=0;i--){
+    const s = speedTrails[i];
+    s.userData.life -= dt;
+    s.material.opacity = Math.max(0, s.userData.life);
+    if (s.userData.life <= 0){ scene.remove(s); speedTrails.splice(i,1); }
+  }
+  for (let i=confetti.length-1;i>=0;i--){
+    const c = confetti[i];
+    c.userData.life -= dt;
+    c.position.x += c.userData.vx * dt;
+    c.position.y += c.userData.vy * dt;
+    c.position.z += c.userData.vz * dt;
+    c.rotation.x += c.userData.rx * dt;
+    c.rotation.y += c.userData.ry * dt;
+    c.userData.vy -= 0.6*dt;
+    if (c.position.y < 0 || c.userData.life <= 0){
+      scene.remove(c); confetti.splice(i,1);
+    }
+  }
+
+  // Camera director: rotate cameras periodically
+  if (cameraDirT >= cameraDirInterval){
+    cameraDirT = 0;
+    cameraDirInterval = 2.0 + Math.random()*1.6;
+    setupCamForPhase();
+  }
+
+  // place dynamic cameras
+  placeArenaCam();
+  placeCrowdCam();
+  placeAttackCam();
+  placeSpinCam();
+  if (A && B){
+    const target = (Math.floor(matchTime*0.5) % 2 === 0) ? A : B;
+    placeDramaCam(target);
+    placeImpactCam(target);
+  }
+
+  // shake
+  let sx=0, sy=0;
+  if (shakeDur > 0){
+    shakeT += dt;
+    if (shakeT >= shakeDur){ shakeAmt = 0; shakeDur = 0; }
+    else {
+      const k = (1 - shakeT/shakeDur) * shakeAmt;
+      sx = (Math.random()-0.5)*k*40;
+      sy = (Math.random()-0.5)*k*40;
+    }
+  }
+  document.getElementById('shake').style.transform =
+    `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
+
+  // night ambient
+  if (isNight){
+    dayMix = Math.min(1, dayMix + dt*0.5);
+  } else {
+    dayMix = Math.max(0, dayMix - dt*0.5);
+  }
+  scene.background.setRGB(
+    0.10 + (1-dayMix)*0.0,
+    0.07 + (1-dayMix)*0.0,
+    0.16 - dayMix*0.10);
+  ambient.intensity = 0.4 - dayMix*0.18;
+  sun.intensity = 1.0 - dayMix*0.55;
+
+  // PIP scene gentle anim
+  pipMaster.position.x = -0.2 + Math.sin(matchTime*2)*0.05;
+  pipStudent.position.x = 0.2 + Math.sin(matchTime*2 + 0.7)*0.06;
+  pipR.render(pipScene, pipCam);
+
+  renderer.render(scene, activeCam);
+
+  requestAnimationFrame(tick);
+}
+
+window.addEventListener('resize', ()=>{
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  for (const k in cams){
+    cams[k].aspect = window.innerWidth/window.innerHeight;
+    cams[k].updateProjectionMatrix();
+  }
+});
+
+// ============ START ============
+tournamentReset();
+tick();
+
+// Ticker ping every 30s with new fact
+const TICKER_FACTS = [
+  "FINAL BOSS LORD VORRATH SPOTTED IN THE STADIUM",
+  "UNDERDOG AKIRA KAZAMI SHOCKS WORLD WITH TRIPLE COUNTER",
+  "RYU KOGANE ENTERS WITH 47-MATCH WIN STREAK",
+  "ATTENDANCE: 84,200 — A NEW RECORD",
+  "MASTER KENSHIN AOYAMA RETURNS AFTER 20 YEARS",
+  "TATSU IWAKI BENCH PRESSED A TRUCK ON HIS WARMUP",
+  "SAKURA INOUE'S BLOSSOM PETALS NOW PATENTED",
+  "BETTING ODDS: VORRATH -550, FIELD +400",
+  "SPONSORED BY KAMEYAMA RAMEN — 'SLURP THE VICTORY'",
+  "REPLAYS EVERY 12 MINUTES ON THE ROUND 12 NETWORK"
+];
+setInterval(()=>{
+  const fact = TICKER_FACTS[Math.floor(Math.random()*TICKER_FACTS.length)];
+  const cur = document.getElementById('tickerTxt').textContent;
+  document.getElementById('tickerTxt').textContent = cur + " • " + fact;
+}, 30000);
+
+})();
+</script>
+</body>
+</html>

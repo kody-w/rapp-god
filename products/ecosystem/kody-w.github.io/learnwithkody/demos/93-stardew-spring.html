@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pelican Cove Farm — A Year in 3D</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Trebuchet MS',sans-serif;color:#fff}
+canvas{display:block;position:fixed;top:0;left:0;z-index:1}
+#hud{position:fixed;inset:0;z-index:10;pointer-events:none;font-size:13px}
+.panel{background:rgba(20,30,50,.78);border:2px solid #f7d97a;border-radius:10px;padding:10px 12px;backdrop-filter:blur(4px);box-shadow:0 4px 14px rgba(0,0,0,.4)}
+#topbar{position:absolute;top:10px;left:10px;display:flex;gap:10px;align-items:center}
+#topbar .panel{padding:8px 14px;font-size:14px;font-weight:bold;letter-spacing:.5px}
+#season{font-size:18px;color:#f7d97a;text-shadow:0 0 8px rgba(247,217,122,.6)}
+#clock{color:#9ee5ff}
+#farmer-name{color:#ffb3d9}
+#chronicle{position:absolute;top:10px;right:10px;width:320px;max-height:60vh;overflow:hidden}
+#chronicle h3{margin-bottom:6px;color:#f7d97a;font-size:13px;letter-spacing:1px;text-transform:uppercase}
+#log{font-size:11.5px;line-height:1.45;color:#e6f0ff;max-height:50vh;overflow-y:auto}
+#log .entry{margin-bottom:5px;padding:4px 6px;background:rgba(255,255,255,.04);border-left:2px solid #6fa8d6;border-radius:3px}
+#log .entry.event{border-left-color:#ff7f50;color:#ffe2c8}
+#log .entry.festival{border-left-color:#ffd700;color:#fff5cc}
+#friends{position:absolute;bottom:10px;left:10px;width:340px}
+#friends h3{margin-bottom:8px;color:#f7d97a;font-size:13px;letter-spacing:1px;text-transform:uppercase}
+.friend{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11.5px}
+.portrait{width:24px;height:24px;border-radius:50%;border:2px solid #f7d97a;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#fff}
+.fname{flex:1;color:#dfe7f0}
+.hearts{font-size:11px;letter-spacing:1px;color:#ff5c8a}
+#inv{position:absolute;bottom:10px;right:10px;width:240px}
+#inv h3{margin-bottom:6px;color:#f7d97a;font-size:13px;letter-spacing:1px;text-transform:uppercase}
+#inv-list{font-size:12px;line-height:1.5;color:#e6f0ff}
+#stats{margin-top:6px;padding-top:6px;border-top:1px solid rgba(247,217,122,.3);font-size:11.5px;color:#9ee5ff}
+#bubble{position:absolute;background:rgba(255,255,255,.95);color:#23354f;padding:8px 12px;border-radius:14px;font-size:12px;font-weight:bold;display:none;pointer-events:none;border:2px solid #f7d97a;max-width:240px;text-align:center;z-index:11;box-shadow:0 4px 10px rgba(0,0,0,.3)}
+#bubble:after{content:'';position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);border:7px solid transparent;border-top-color:#f7d97a}
+#flash{position:fixed;inset:0;z-index:20;background:#000;opacity:0;pointer-events:none;transition:opacity 1.5s}
+#title{position:fixed;inset:0;z-index:25;display:flex;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.75);text-align:center;opacity:0;pointer-events:none;transition:opacity 1s}
+#title h1{font-size:48px;color:#f7d97a;text-shadow:0 0 20px rgba(247,217,122,.8);letter-spacing:3px;margin-bottom:10px}
+#title h2{font-size:22px;color:#9ee5ff;letter-spacing:2px}
+#title p{margin-top:14px;font-size:15px;color:#fff;max-width:680px;line-height:1.6;padding:0 30px}
+#weather{margin-top:6px;font-size:11px;color:#bbcfe8}
+.fest-banner{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:38px;color:#ffd700;text-shadow:0 0 18px rgba(255,215,0,.9),0 4px 8px rgba(0,0,0,.7);font-weight:bold;letter-spacing:4px;z-index:18;pointer-events:none;opacity:0;transition:opacity 1s}
+</style>
+</head>
+<body><!-- ROUND11_3D_EPIC v1 -->
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="topbar">
+    <div class="panel" id="season">SPRING — DAY 1, YEAR 1</div>
+    <div class="panel" id="clock">06:00</div>
+    <div class="panel" id="farmer-name">🧑‍🌾 Maple Greenfields</div>
+    <div class="panel" id="weather-panel" style="font-size:12px"><span id="weather">☀ Clear</span></div>
+  </div>
+  <div id="chronicle" class="panel"><h3>📜 Chronicle</h3><div id="log"></div></div>
+  <div id="friends" class="panel"><h3>💛 Pelican Cove Friends</h3><div id="friend-list"></div></div>
+  <div id="inv" class="panel"><h3>🎒 Inventory</h3><div id="inv-list"></div><div id="stats"></div></div>
+  <div id="bubble"></div>
+</div>
+<div id="flash"></div>
+<div id="title"><h1 id="title-h1"></h1><h2 id="title-h2"></h2><p id="title-p"></p></div>
+<div class="fest-banner" id="fest-banner"></div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+"use strict";
+// ============ PELICAN COVE 3D ============
+const T = THREE;
+const scene = new T.Scene();
+scene.fog = new T.Fog(0x9ec9e8, 60, 220);
+const camera = new T.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 500);
+const renderer = new T.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = T.PCFSoftShadowMap;
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+
+// ===== LIGHTS =====
+const hemi = new T.HemisphereLight(0xa8d5ff, 0x4a6b3a, 0.65);
+scene.add(hemi);
+const amb = new T.AmbientLight(0xffeed0, 0.35);
+scene.add(amb);
+const sun = new T.DirectionalLight(0xfff4d1, 1.1);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024,1024);
+sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 200;
+sun.shadow.bias = -0.0003;
+scene.add(sun);
+scene.add(sun.target);
+
+// ===== UTILS =====
+const rand = (a,b)=>a+Math.random()*(b-a);
+const choice = a => a[Math.floor(Math.random()*a.length)];
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const lerpC = (a,b,t)=>new T.Color(lerp(a.r,b.r,t),lerp(a.g,b.g,t),lerp(a.b,b.b,t));
+function makeMat(color, opts={}){return new T.MeshLambertMaterial({color,...opts});}
+function box(w,h,d,c,opts={}){const m=new T.Mesh(new T.BoxGeometry(w,h,d),makeMat(c,opts));m.castShadow=true;m.receiveShadow=true;return m;}
+function cyl(rt,rb,h,c,seg=10){const m=new T.Mesh(new T.CylinderGeometry(rt,rb,h,seg),makeMat(c));m.castShadow=true;m.receiveShadow=true;return m;}
+function sph(r,c,seg=10){const m=new T.Mesh(new T.SphereGeometry(r,seg,seg),makeMat(c));m.castShadow=true;m.receiveShadow=true;return m;}
+function cone(r,h,c,seg=8){const m=new T.Mesh(new T.ConeGeometry(r,h,seg),makeMat(c));m.castShadow=true;m.receiveShadow=true;return m;}
+
+// ===== GROUND / TERRAIN =====
+const groundMat = new T.MeshLambertMaterial({color:0x6fae5a});
+const ground = new T.Mesh(new T.PlaneGeometry(300,300,1,1), groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Ocean (south side, z>40)
+const oceanMat = new T.MeshLambertMaterial({color:0x4a90c8,transparent:true,opacity:0.85});
+const ocean = new T.Mesh(new T.PlaneGeometry(300,120,20,8), oceanMat);
+ocean.rotation.x = -Math.PI/2;
+ocean.position.set(0,-0.05,90);
+ocean.receiveShadow = true;
+scene.add(ocean);
+const oceanGeo = ocean.geometry;
+
+// Beach band
+const beach = new T.Mesh(new T.PlaneGeometry(300,12), new T.MeshLambertMaterial({color:0xead8a8}));
+beach.rotation.x = -Math.PI/2;
+beach.position.set(0,0.01,30);
+beach.receiveShadow = true;
+scene.add(beach);
+
+// Path from farm to village
+const pathMat = new T.MeshLambertMaterial({color:0xb89968});
+function makePath(x,z,w,d){const p=new T.Mesh(new T.PlaneGeometry(w,d),pathMat);p.rotation.x=-Math.PI/2;p.position.set(x,0.02,z);p.receiveShadow=true;scene.add(p);return p;}
+makePath(-15, -10, 4, 30); // farm exit
+makePath(-7, 5, 18, 4);    // bend toward village
+makePath(8, 0, 4, 14);     // into village square
+makePath(8, 5, 12, 4);     // across square
+
+// ===== FARM (north-west, around -30..-5 X, -25..0 Z) =====
+const FARM_CX = -22, FARM_CZ = -15;
+const TILE = 1.6;
+const COLS = 12, ROWS = 10;
+const tiles = []; // {x,z,mesh,state:'untilled'|'tilled'|'planted'|'growing','crop':{stage,type,planted}}
+const tileGroup = new T.Group();
+scene.add(tileGroup);
+for(let r=0;r<ROWS;r++){
+  for(let c=0;c<COLS;c++){
+    const x = FARM_CX - (COLS-1)/2*TILE + c*TILE;
+    const z = FARM_CZ - (ROWS-1)/2*TILE + r*TILE;
+    const m = new T.Mesh(new T.PlaneGeometry(TILE*0.92,TILE*0.92), new T.MeshLambertMaterial({color:0x6fae5a}));
+    m.rotation.x = -Math.PI/2;
+    m.position.set(x,0.03,z);
+    m.receiveShadow = true;
+    tileGroup.add(m);
+    tiles.push({x,z,r,c,mesh:m,state:'untilled',crop:null,cropMesh:null,watered:false});
+  }
+}
+
+// Fence around farm
+const fenceMat = makeMat(0xc8a06a);
+function fencePost(x,z){const p=box(0.18,0.9,0.18,0xa07840);p.position.set(x,0.45,z);scene.add(p);}
+function fenceRail(x1,z1,x2,z2){const len=Math.hypot(x2-x1,z2-z1);const r=box(len,0.12,0.08,0xc8a06a);r.position.set((x1+x2)/2,0.55,(z1+z2)/2);r.lookAt(x2,0.55,z2);r.rotateY(Math.PI/2);scene.add(r);}
+const fxMin=FARM_CX-COLS/2*TILE-0.5, fxMax=FARM_CX+COLS/2*TILE+0.5, fzMin=FARM_CZ-ROWS/2*TILE-0.5, fzMax=FARM_CZ+ROWS/2*TILE+0.5;
+for(let i=0;i<=10;i++){fencePost(lerp(fxMin,fxMax,i/10),fzMin);fencePost(lerp(fxMin,fxMax,i/10),fzMax);}
+for(let i=0;i<=8;i++){fencePost(fxMin,lerp(fzMin,fzMax,i/8));fencePost(fxMax,lerp(fzMin,fzMax,i/8));}
+fenceRail(fxMin,fzMin,fxMax,fzMin);
+fenceRail(fxMin,fzMax,fxMax,fzMax);
+fenceRail(fxMin,fzMin,fxMin,fzMax);
+fenceRail(fxMax,fzMin,fxMax,fzMax);
+
+// Scarecrow
+function buildScarecrow(x,z){
+  const g = new T.Group();
+  const pole = cyl(0.06,0.06,2.4,0x6b4f2a); pole.position.y=1.2; g.add(pole);
+  const cross = cyl(0.05,0.05,1.2,0x6b4f2a); cross.rotation.z=Math.PI/2; cross.position.y=1.7; g.add(cross);
+  const head = sph(0.28,0xeed8a0); head.position.y=2.25; g.add(head);
+  const hat = cone(0.36,0.4,0x4a3220,8); hat.position.y=2.55; g.add(hat);
+  const shirt = box(0.7,0.6,0.3,0xc34a4a); shirt.position.y=1.55; g.add(shirt);
+  g.position.set(x,0,z);
+  scene.add(g);
+}
+buildScarecrow(FARM_CX, FARM_CZ-3);
+
+// Farmhouse
+function buildHouse(x,z,colorWall=0xe8d8b0,colorRoof=0xc04030,size=1){
+  const g = new T.Group();
+  const w=4*size,h=2.6*size,d=4*size;
+  const body = box(w,h,d,colorWall); body.position.y=h/2; g.add(body);
+  const roofGeom = new T.ConeGeometry(w*0.85,1.6*size,4);
+  const roof = new T.Mesh(roofGeom, makeMat(colorRoof));
+  roof.position.y = h+0.8*size; roof.rotation.y=Math.PI/4; roof.castShadow=true;
+  g.add(roof);
+  const door = box(0.7*size,1.4*size,0.08,0x6b3f1a); door.position.set(0,0.7*size,d/2+0.04); g.add(door);
+  const win1 = box(0.6*size,0.6*size,0.05,0x9ad9ff); win1.position.set(-1.1*size,1.4*size,d/2+0.03); g.add(win1);
+  const win2 = box(0.6*size,0.6*size,0.05,0x9ad9ff); win2.position.set(1.1*size,1.4*size,d/2+0.03); g.add(win2);
+  const chimney = box(0.5*size,1.0*size,0.5*size,0x6b6b6b); chimney.position.set(w/2-0.5,h+0.4,0); g.add(chimney);
+  g.position.set(x,0,z);
+  g.userData.chimney = chimney;
+  scene.add(g);
+  return g;
+}
+const farmHouse = buildHouse(FARM_CX-COLS/2*TILE-3, FARM_CZ+ROWS/2*TILE-2, 0xf5e6c8, 0xb53a30, 1.0);
+// Chimney smoke (Points)
+const smokeGeo = new T.BufferGeometry();
+const smokeCount = 40;
+const smokeArr = new Float32Array(smokeCount*3);
+const smokeLife = new Float32Array(smokeCount);
+const chPos = farmHouse.userData.chimney.getWorldPosition(new T.Vector3());
+for(let i=0;i<smokeCount;i++){
+  smokeArr[i*3] = chPos.x + rand(-0.2,0.2);
+  smokeArr[i*3+1] = chPos.y + 0.5 + rand(0,2);
+  smokeArr[i*3+2] = chPos.z + rand(-0.2,0.2);
+  smokeLife[i] = Math.random();
+}
+smokeGeo.setAttribute('position', new T.BufferAttribute(smokeArr,3));
+const smokeMat = new T.PointsMaterial({color:0xcccccc,size:0.4,transparent:true,opacity:0.6,depthWrite:false});
+const smoke = new T.Points(smokeGeo, smokeMat);
+scene.add(smoke);
+
+// Well
+function buildWell(x,z){
+  const g = new T.Group();
+  const base = cyl(0.7,0.8,0.6,0x808080,12); base.position.y=0.3; g.add(base);
+  const water = cyl(0.6,0.6,0.04,0x3a78b0,12); water.position.y=0.62; g.add(water);
+  const p1 = box(0.1,1.2,0.1,0x6b4f2a); p1.position.set(-0.6,0.9,0); g.add(p1);
+  const p2 = box(0.1,1.2,0.1,0x6b4f2a); p2.position.set(0.6,0.9,0); g.add(p2);
+  const top = box(1.4,0.1,0.5,0x8b3a1a); top.position.y=1.55; g.add(top);
+  const roof1 = cone(0.9,0.5,0xc04030,4); roof1.position.y=1.85; roof1.rotation.y=Math.PI/4; g.add(roof1);
+  g.position.set(x,0,z);
+  scene.add(g);
+}
+buildWell(FARM_CX+COLS/2*TILE+2, FARM_CZ);
+
+// Coop & chickens
+function buildCoop(x,z){
+  const g = new T.Group();
+  const body = box(2.6,1.6,2.2,0xd0a070); body.position.y=0.8; g.add(body);
+  const roof = box(2.8,0.2,2.4,0x8b3a1a); roof.position.y=1.7; g.add(roof);
+  const door = box(0.5,0.9,0.05,0x6b3f1a); door.position.set(0,0.45,1.13); g.add(door);
+  g.position.set(x,0,z); scene.add(g);
+}
+buildCoop(FARM_CX-COLS/2*TILE-3, FARM_CZ-2);
+const chickens = [];
+for(let i=0;i<4;i++){
+  const ck = new T.Group();
+  const bd = sph(0.22,0xffffff); bd.scale.y=0.85; bd.position.y=0.3; ck.add(bd);
+  const hd = sph(0.13,0xffffff); hd.position.set(0.18,0.55,0); ck.add(hd);
+  const beak = cone(0.04,0.1,0xffaa00,6); beak.rotation.z=-Math.PI/2; beak.position.set(0.32,0.55,0); ck.add(beak);
+  const comb = sph(0.06,0xff3030); comb.position.set(0.18,0.65,0); ck.add(comb);
+  ck.position.set(FARM_CX-COLS/2*TILE-3 + rand(-1.5,1.5), 0, FARM_CZ-2 + rand(-1.5,1.5));
+  ck.userData = {tx:ck.position.x, tz:ck.position.z, bob:Math.random()*Math.PI*2};
+  scene.add(ck);
+  chickens.push(ck);
+}
+
+// ===== VILLAGE (east of farm, around X 5..25, Z -10..15) =====
+const VILLAGE_CX = 12, VILLAGE_CZ = 5;
+// Town square ground (cobblestone)
+const sq = new T.Mesh(new T.PlaneGeometry(14,14), new T.MeshLambertMaterial({color:0xa89888}));
+sq.rotation.x = -Math.PI/2; sq.position.set(VILLAGE_CX, 0.04, VILLAGE_CZ); sq.receiveShadow=true; scene.add(sq);
+
+// Fountain (Points water)
+function buildFountain(x,z){
+  const g = new T.Group();
+  const base = cyl(1.2,1.4,0.4,0xb0a090,16); base.position.y=0.2; g.add(base);
+  const inner = cyl(1.0,1.0,0.1,0x4a90c8,16); inner.position.y=0.45; g.add(inner);
+  const pillar = cyl(0.15,0.2,1.2,0xb0a090,8); pillar.position.y=1.0; g.add(pillar);
+  const top = sph(0.3,0xb0a090); top.position.y=1.7; g.add(top);
+  g.position.set(x,0,z); scene.add(g);
+  // Water particles
+  const fwGeo = new T.BufferGeometry();
+  const fwN = 60;
+  const fwArr = new Float32Array(fwN*3);
+  const fwVel = new Float32Array(fwN*3);
+  for(let i=0;i<fwN;i++){
+    fwArr[i*3]=x; fwArr[i*3+1]=1.7; fwArr[i*3+2]=z;
+    fwVel[i*3]=rand(-0.04,0.04); fwVel[i*3+1]=rand(0.06,0.12); fwVel[i*3+2]=rand(-0.04,0.04);
+  }
+  fwGeo.setAttribute('position', new T.BufferAttribute(fwArr,3));
+  const fwMat = new T.PointsMaterial({color:0x9ee5ff,size:0.18,transparent:true,opacity:0.8});
+  const fw = new T.Points(fwGeo, fwMat);
+  fw.userData = {vel:fwVel, ox:x, oz:z};
+  scene.add(fw);
+  return fw;
+}
+const fountainPts = buildFountain(VILLAGE_CX, VILLAGE_CZ);
+
+// Village buildings
+const inn = buildHouse(VILLAGE_CX-7, VILLAGE_CZ-3, 0xe8c890, 0x8b3a1a, 1.3);
+const sign1 = box(0.8,0.5,0.05,0x6b4f2a); sign1.position.set(VILLAGE_CX-7,2.4,VILLAGE_CZ-3+2.8); scene.add(sign1);
+const store = buildHouse(VILLAGE_CX+7, VILLAGE_CZ-3, 0x90c890, 0x4a8050, 1.2);
+const docHouse = buildHouse(VILLAGE_CX-7, VILLAGE_CZ+8, 0xb8c8e8, 0x4a5070, 1.0);
+const mayorHouse = buildHouse(VILLAGE_CX+7, VILLAGE_CZ+8, 0xd0b0c8, 0x70405a, 1.1);
+const ranch = buildHouse(VILLAGE_CX-2, VILLAGE_CZ+13, 0xc8a880, 0x70502a, 1.2);
+const elliottCabin = buildHouse(VILLAGE_CX+15, 30, 0xb0a890, 0x607060, 0.9);
+
+// Cave entrance (north of village)
+const caveBase = box(4,3,2,0x4a3a30); caveBase.position.set(VILLAGE_CX+15, 1.5, -22); scene.add(caveBase);
+const caveMouth = new T.Mesh(new T.SphereGeometry(1.4,12,12,0,Math.PI*2,0,Math.PI/2), makeMat(0x000000));
+caveMouth.position.set(VILLAGE_CX+15, 1.4, -21); caveMouth.rotation.x=Math.PI; scene.add(caveMouth);
+
+// Fishing dock
+const dock = box(2.5,0.15,8,0x8b6a4a); dock.position.set(-3,0.1,38); scene.add(dock);
+for(let i=0;i<4;i++){const p=cyl(0.12,0.12,1.5,0x6b4f2a); p.position.set(-3-1.1,-0.5,34+i*2.2); scene.add(p); const p2=cyl(0.12,0.12,1.5,0x6b4f2a); p2.position.set(-3+1.1,-0.5,34+i*2.2); scene.add(p2);}
+
+// ===== TREES =====
+const trees = []; // {trunk, leaves, baseColor, x, z}
+function makeTree(x,z,trunkH=2.4,leafR=1.4,leafColor=0x3a8030){
+  const g = new T.Group();
+  const tk = cyl(0.18,0.25,trunkH,0x6b4520); tk.position.y=trunkH/2; g.add(tk);
+  const lf = sph(leafR,leafColor,8); lf.position.y=trunkH+0.3; lf.scale.y=1.1; g.add(lf);
+  g.position.set(x,0,z);
+  scene.add(g);
+  trees.push({group:g,leaves:lf,trunk:tk,baseY:trunkH+0.3,leafR});
+  return g;
+}
+// Forest borders
+for(let i=0;i<24;i++){
+  let x = rand(-90,90), z = rand(-80,-30);
+  makeTree(x,z,rand(2,3),rand(1.2,1.8));
+}
+for(let i=0;i<14;i++){
+  let x = rand(-90,-50), z = rand(-30,30);
+  makeTree(x,z,rand(2,3),rand(1.2,1.8));
+}
+for(let i=0;i<14;i++){
+  let x = rand(50,90), z = rand(-30,30);
+  makeTree(x,z,rand(2,3),rand(1.2,1.8));
+}
+// Few trees by farm
+makeTree(FARM_CX-COLS/2*TILE-1, FARM_CZ+ROWS/2*TILE+2);
+makeTree(FARM_CX+COLS/2*TILE+5, FARM_CZ+ROWS/2*TILE+1);
+// Village edge trees
+makeTree(VILLAGE_CX-12, VILLAGE_CZ-1);
+makeTree(VILLAGE_CX+12, VILLAGE_CZ-1);
+makeTree(VILLAGE_CX, VILLAGE_CZ+18);
+
+// Flowers (will be repopulated by season)
+let flowerGroup = new T.Group();
+scene.add(flowerGroup);
+function populateFlowers(season){
+  while(flowerGroup.children.length) flowerGroup.remove(flowerGroup.children[0]);
+  if(season===3) return; // winter no flowers
+  const colors = season===0?[0xff6699,0xffaadd,0xffe066,0xff9999]:season===1?[0xffaa00,0xff6644,0xffdd00,0xff7799]:[0xcc4422,0xdd8822,0xaa4488];
+  for(let i=0;i<60;i++){
+    let x,z;
+    if(Math.random()<0.5){ x=rand(-80,80); z=rand(-30,30); }
+    else { x=VILLAGE_CX+rand(-15,15); z=VILLAGE_CZ+rand(-15,15); }
+    // skip on farm tile area
+    if(Math.abs(x-FARM_CX)<COLS*TILE/2+1 && Math.abs(z-FARM_CZ)<ROWS*TILE/2+1) continue;
+    if(Math.abs(z) < 5 && Math.abs(x) < 8) continue; // skip path zone
+    const f = box(0.12,0.18,0.12,choice(colors));
+    f.position.set(x,0.09,z);
+    const stem = cyl(0.02,0.02,0.18,0x4a8030,4); stem.position.set(0,-0.05,0); f.add(stem);
+    flowerGroup.add(f);
+  }
+}
+populateFlowers(0);
+
+// ===== STARS (night) =====
+const starGeo = new T.BufferGeometry();
+const starN = 250;
+const starArr = new Float32Array(starN*3);
+for(let i=0;i<starN;i++){
+  const phi=rand(0,Math.PI*2), theta=rand(0.1,Math.PI/2-0.1), r=120;
+  starArr[i*3]=r*Math.sin(theta)*Math.cos(phi);
+  starArr[i*3+1]=r*Math.cos(theta);
+  starArr[i*3+2]=r*Math.sin(theta)*Math.sin(phi);
+}
+starGeo.setAttribute('position', new T.BufferAttribute(starArr,3));
+const stars = new T.Points(starGeo, new T.PointsMaterial({color:0xffffff,size:0.7,transparent:true,opacity:0}));
+scene.add(stars);
+
+// Fireflies/butterflies (time of day dependent)
+const flyGeo = new T.BufferGeometry();
+const flyN = 30;
+const flyArr = new Float32Array(flyN*3);
+const flyOff = [];
+for(let i=0;i<flyN;i++){
+  const fx=rand(-40,40), fz=rand(-25,30);
+  flyArr[i*3]=fx; flyArr[i*3+1]=rand(0.6,1.6); flyArr[i*3+2]=fz;
+  flyOff.push({ox:fx,oz:fz,phase:Math.random()*Math.PI*2});
+}
+flyGeo.setAttribute('position', new T.BufferAttribute(flyArr,3));
+const flies = new T.Points(flyGeo, new T.PointsMaterial({color:0xffee66,size:0.25,transparent:true,opacity:0}));
+scene.add(flies);
+
+// Lantern lights at night (simple emissive boxes in village)
+const lanterns = [];
+function lantern(x,z){
+  const g = new T.Group();
+  const pole = cyl(0.06,0.06,2,0x4a3a20); pole.position.y=1; g.add(pole);
+  const lit = box(0.25,0.3,0.25,0xffcc66); lit.position.y=2.05; g.add(lit);
+  g.position.set(x,0,z); scene.add(g); lanterns.push(lit); return g;
+}
+lantern(VILLAGE_CX-5, VILLAGE_CZ-7);
+lantern(VILLAGE_CX+5, VILLAGE_CZ-7);
+lantern(VILLAGE_CX-5, VILLAGE_CZ+7);
+lantern(VILLAGE_CX+5, VILLAGE_CZ+7);
+lantern(VILLAGE_CX, VILLAGE_CZ);
+
+// Festival decorations group (rebuilt per festival)
+const festivalGroup = new T.Group();
+scene.add(festivalGroup);
+
+// Rain/snow Points (toggled by weather)
+const rainGeo = new T.BufferGeometry();
+const rainN = 400;
+const rainArr = new Float32Array(rainN*3);
+for(let i=0;i<rainN;i++){
+  rainArr[i*3]=rand(-60,60); rainArr[i*3+1]=rand(0,30); rainArr[i*3+2]=rand(-40,40);
+}
+rainGeo.setAttribute('position', new T.BufferAttribute(rainArr,3));
+const rain = new T.Points(rainGeo, new T.PointsMaterial({color:0x99bbdd,size:0.18,transparent:true,opacity:0}));
+scene.add(rain);
+const snow = new T.Points(rainGeo.clone(), new T.PointsMaterial({color:0xffffff,size:0.32,transparent:true,opacity:0}));
+scene.add(snow);
+
+// ===== HUMANOID CHARACTER FACTORY =====
+function makeHumanoid(opts){
+  // opts: skin, shirt, pants, hair, hairColor, accessory, hat
+  const g = new T.Group();
+  const skin = opts.skin || 0xeec9a0;
+  const shirt = opts.shirt || 0x4a8fc8;
+  const pants = opts.pants || 0x3a3a5a;
+  const hair = opts.hair || 0x4a2a1a;
+
+  const torso = box(0.55,0.7,0.32,shirt); torso.position.y=1.0; g.add(torso);
+  const head = sph(0.26,skin); head.position.y=1.55; g.add(head);
+  // Hair
+  if(opts.hat){
+    const ht = cyl(0.27,0.32,0.18,opts.hat,10); ht.position.y=1.78; g.add(ht);
+    const brim = cyl(0.42,0.42,0.04,opts.hat,12); brim.position.y=1.7; g.add(brim);
+  } else {
+    const hr = sph(0.28,hair); hr.scale.y=0.7; hr.position.y=1.65; g.add(hr);
+  }
+  // Eyes (small boxes)
+  const e1 = box(0.05,0.05,0.02,0x222222); e1.position.set(-0.08,1.58,0.24); g.add(e1);
+  const e2 = box(0.05,0.05,0.02,0x222222); e2.position.set(0.08,1.58,0.24); g.add(e2);
+  // Smile
+  const sm = box(0.12,0.02,0.02,0x6b3030); sm.position.set(0,1.48,0.25); g.add(sm);
+  // Arms
+  const armL = cyl(0.08,0.08,0.6,skin,8); armL.position.set(-0.36,1.0,0); g.add(armL);
+  const armR = cyl(0.08,0.08,0.6,skin,8); armR.position.set(0.36,1.0,0); g.add(armR);
+  // Legs
+  const legL = cyl(0.1,0.1,0.7,pants,8); legL.position.set(-0.15,0.35,0); g.add(legL);
+  const legR = cyl(0.1,0.1,0.7,pants,8); legR.position.set(0.15,0.35,0); g.add(legR);
+  // Feet
+  const ftL = box(0.16,0.1,0.22,0x222222); ftL.position.set(-0.15,0.05,0.04); g.add(ftL);
+  const ftR = box(0.16,0.1,0.22,0x222222); ftR.position.set(0.15,0.05,0.04); g.add(ftR);
+  // Accessory
+  if(opts.accessory==='glasses'){
+    const gl1 = box(0.1,0.07,0.02,0x000000); gl1.position.set(-0.08,1.58,0.255); g.add(gl1);
+    const gl2 = box(0.1,0.07,0.02,0x000000); gl2.position.set(0.08,1.58,0.255); g.add(gl2);
+  }
+  if(opts.accessory==='apron'){
+    const ap = box(0.5,0.5,0.34,0xffffff); ap.position.y=0.95; g.add(ap);
+  }
+  if(opts.accessory==='vest'){
+    const v = box(0.58,0.4,0.34,0x6b3a1a); v.position.y=1.15; g.add(v);
+  }
+  if(opts.accessory==='scarf'){
+    const sc = box(0.45,0.12,0.34,0xc04030); sc.position.y=1.32; g.add(sc);
+  }
+  if(opts.accessory==='book'){
+    const bk = box(0.2,0.04,0.28,0x6b3030); bk.position.set(0.45,1.0,0.1); g.add(bk);
+  }
+  if(opts.accessory==='briefcase'){
+    const bc = box(0.18,0.22,0.1,0x4a3a20); bc.position.set(0.45,0.85,0); g.add(bc);
+  }
+  // Cast shadows
+  g.traverse(o=>{if(o.isMesh){o.castShadow=true;}});
+  return g;
+}
+
+// ===== FARMER =====
+const FARMERS = [
+  {name:'Maple Greenfields', shirt:0x60c060, pants:0x4a3a20, hair:0xb87340, hat:0xd4a040},
+  {name:'Pip Hollybrook', shirt:0xc04030, pants:0x3a2a1a, hair:0x2a1a10, hat:null},
+  {name:'Wren Sunpetal', shirt:0xffcc44, pants:0x6b4a8a, hair:0xeec060, hat:null},
+  {name:'Tobin Riverstone', shirt:0x4a90c8, pants:0x2a3a4a, hair:0x4a3020, hat:0x6b4a30},
+  {name:'Sage Wildflower', shirt:0xb060c0, pants:0x4a4a6a, hair:0x6b3a4a, hat:null}
+];
+let farmerIdx = 0;
+let farmerGroup = makeHumanoid({shirt:FARMERS[0].shirt,pants:FARMERS[0].pants,hair:FARMERS[0].hair,hat:FARMERS[0].hat,skin:0xeec9a0});
+farmerGroup.position.set(FARM_CX, 0, FARM_CZ+ROWS/2*TILE+2);
+scene.add(farmerGroup);
+const farmerState = {x:FARM_CX, z:FARM_CZ+ROWS/2*TILE+2, tx:FARM_CX, tz:FARM_CZ, task:'idle', speed:3.0, walkPhase:0};
+
+// ===== VILLAGERS =====
+// schedule: array of {h:hour, x, z, task}
+const VILLAGER_DEFS = [
+  {name:'Mayor Brindle', shirt:0x4a3a8a, pants:0x2a2a3a, hair:0xcccccc, hat:0x222255, accessory:'briefcase', home:[VILLAGE_CX+7, VILLAGE_CZ+8],
+   schedule:[{h:6,x:VILLAGE_CX+7,z:VILLAGE_CZ+8,t:'home'},{h:9,x:VILLAGE_CX,z:VILLAGE_CZ+1,t:'square'},{h:13,x:VILLAGE_CX+7,z:VILLAGE_CZ-3,t:'store'},{h:17,x:VILLAGE_CX,z:VILLAGE_CZ-1,t:'square'},{h:21,x:VILLAGE_CX+7,z:VILLAGE_CZ+8,t:'home'}]},
+  {name:'Gus the Innkeeper', shirt:0xc04030, pants:0x4a3a1a, hair:0x4a3020, accessory:'apron', home:[VILLAGE_CX-7, VILLAGE_CZ-3],
+   schedule:[{h:6,x:VILLAGE_CX-7,z:VILLAGE_CZ-3,t:'inn'},{h:11,x:VILLAGE_CX-5,z:VILLAGE_CZ-3,t:'inn'},{h:14,x:VILLAGE_CX,z:VILLAGE_CZ,t:'square'},{h:17,x:VILLAGE_CX-7,z:VILLAGE_CZ-3,t:'inn'},{h:23,x:VILLAGE_CX-7,z:VILLAGE_CZ-3,t:'inn'}]},
+  {name:'Doc Penny', shirt:0xffffff, pants:0x4a4a6a, hair:0xc04030, accessory:'glasses', home:[VILLAGE_CX-7, VILLAGE_CZ+8],
+   schedule:[{h:6,x:VILLAGE_CX-7,z:VILLAGE_CZ+8,t:'home'},{h:8,x:VILLAGE_CX-7,z:VILLAGE_CZ+8,t:'clinic'},{h:13,x:VILLAGE_CX-2,z:VILLAGE_CZ+2,t:'square'},{h:16,x:VILLAGE_CX-7,z:VILLAGE_CZ+8,t:'clinic'},{h:20,x:VILLAGE_CX-7,z:VILLAGE_CZ+8,t:'home'}]},
+  {name:'Marnie the Rancher', shirt:0xc8a030, pants:0x6b4a20, hair:0xc8a050, accessory:'vest', home:[VILLAGE_CX-2, VILLAGE_CZ+13],
+   schedule:[{h:5,x:VILLAGE_CX-2,z:VILLAGE_CZ+13,t:'ranch'},{h:9,x:VILLAGE_CX,z:VILLAGE_CZ+8,t:'animals'},{h:12,x:VILLAGE_CX,z:VILLAGE_CZ,t:'square'},{h:16,x:VILLAGE_CX-2,z:VILLAGE_CZ+13,t:'ranch'},{h:21,x:VILLAGE_CX-2,z:VILLAGE_CZ+13,t:'home'}]},
+  {name:'Pierre the Shopkeeper', shirt:0x60a060, pants:0x4a3a2a, hair:0x4a2a1a, accessory:'apron', home:[VILLAGE_CX+7, VILLAGE_CZ-3],
+   schedule:[{h:6,x:VILLAGE_CX+7,z:VILLAGE_CZ-3,t:'store'},{h:9,x:VILLAGE_CX+7,z:VILLAGE_CZ-3,t:'store'},{h:13,x:VILLAGE_CX+5,z:VILLAGE_CZ-2,t:'store'},{h:18,x:VILLAGE_CX,z:VILLAGE_CZ,t:'square'},{h:22,x:VILLAGE_CX+7,z:VILLAGE_CZ-3,t:'home'}]},
+  {name:'Elliott the Writer', shirt:0x6b4a8a, pants:0x4a3a20, hair:0xc8a050, accessory:'book', home:[VILLAGE_CX+15, 30],
+   schedule:[{h:7,x:VILLAGE_CX+15,z:30,t:'cabin'},{h:10,x:-3,z:38,t:'dock'},{h:14,x:VILLAGE_CX,z:VILLAGE_CZ,t:'square'},{h:17,x:VILLAGE_CX-7,z:VILLAGE_CZ-3,t:'inn'},{h:22,x:VILLAGE_CX+15,z:30,t:'cabin'}]}
+];
+const villagers = VILLAGER_DEFS.map(def=>{
+  const g = makeHumanoid({shirt:def.shirt,pants:def.pants,hair:def.hair,hat:def.hat,accessory:def.accessory,skin:0xeec9a0});
+  g.position.set(def.home[0], 0, def.home[1]);
+  scene.add(g);
+  return {name:def.name, group:g, def, x:def.home[0], z:def.home[1], tx:def.home[0], tz:def.home[1], task:'idle', friendship:0, walkPhase:Math.random()*10, lastChat:0};
+});
+
+// Camera follows farmer
+camera.position.set(FARM_CX-10, 12, FARM_CZ+18);
+camera.lookAt(FARM_CX, 0, FARM_CZ);
+
+// ===== STATE & TIME =====
+const STATE = {
+  startMs: performance.now(),
+  // Time scale: 1 day = 30 sec real
+  DAY_MS: 30000,
+  day:1, season:0, year:1,
+  totalDays:0,
+  hour:6, minute:0,
+  weather:'clear',
+  weatherEndDay:0,
+  // Stats
+  goldEarned:0, cropsHarvested:0, fishCaught:0, friendshipMax:0, festivalsAttended:0, daysFarmed:0,
+  // Inventory
+  parsnipSeeds:8, cauliflowerSeeds:0, melonSeeds:0, pumpkinSeeds:0, blueberrySeeds:0,
+  parsnips:0, cauliflower:0, melons:0, pumpkins:0, blueberries:0, fish:0, gold:50,
+  hasGoldenParsnip:false,
+  // Daily flags
+  dailyEvents:[],
+  lastEventDay:0,
+  // Wedding
+  weddingTriggered:false, weddingPartner:null,
+  // Mode
+  mode:'play', // 'play','montage'
+  montageStart:0,
+  fastMode: location.search.includes('fast'),
+};
+
+const SEASONS = ['Spring','Summer','Fall','Winter'];
+const SEASON_COLORS = [
+  {sky:new T.Color(0x9ec9e8), ground:new T.Color(0x6fae5a), tree:new T.Color(0x3a8030), fog:0x9ec9e8},
+  {sky:new T.Color(0x88ccff), ground:new T.Color(0x88c460), tree:new T.Color(0x4a9040), fog:0x88ccff},
+  {sky:new T.Color(0xeac88a), ground:new T.Color(0xa89050), tree:new T.Color(0xc8742a), fog:0xeac88a},
+  {sky:new T.Color(0xc8d8e8), ground:new T.Color(0xeaf0f5), tree:new T.Color(0x8a8a90), fog:0xc8d8e8}
+];
+const SEASON_DAY_COUNT = 28;
+
+if(STATE.fastMode){ STATE.DAY_MS = 1000; }
+
+// ===== HUD =====
+const $log = document.getElementById('log');
+const $season = document.getElementById('season');
+const $clock = document.getElementById('clock');
+const $fname = document.getElementById('farmer-name');
+const $weather = document.getElementById('weather');
+const $bubble = document.getElementById('bubble');
+const $friendList = document.getElementById('friend-list');
+const $invList = document.getElementById('inv-list');
+const $stats = document.getElementById('stats');
+const $flash = document.getElementById('flash');
+const $title = document.getElementById('title');
+const $titleH1 = document.getElementById('title-h1');
+const $titleH2 = document.getElementById('title-h2');
+const $titleP = document.getElementById('title-p');
+const $festBanner = document.getElementById('fest-banner');
+
+const chronicleEntries = [];
+function chronicle(text, kind='info'){
+  const ts = `Y${STATE.year} ${SEASONS[STATE.season].slice(0,3)} D${STATE.day}`;
+  chronicleEntries.push({ts,text,kind,year:STATE.year,season:STATE.season,day:STATE.day,hour:STATE.hour});
+  const e = document.createElement('div');
+  e.className = 'entry ' + kind;
+  e.innerHTML = `<b>${ts}</b> · ${text}`;
+  $log.insertBefore(e, $log.firstChild);
+  while($log.children.length > 60) $log.removeChild($log.lastChild);
+}
+
+function showBubble(charGroup, text, color='#23354f'){
+  $bubble.textContent = text;
+  $bubble.style.color = color;
+  $bubble.style.display = 'block';
+  $bubble.dataset.until = (performance.now()+2400)+'';
+  $bubble.dataset.target = JSON.stringify({x:charGroup.position.x, y:charGroup.position.y+2.4, z:charGroup.position.z});
+}
+
+function showFestivalBanner(name){
+  $festBanner.textContent = '🎉 ' + name + ' 🎉';
+  $festBanner.style.opacity = '1';
+  setTimeout(()=>{$festBanner.style.opacity='0';}, 4000);
+}
+
+function updateHUD(){
+  $season.textContent = `${SEASONS[STATE.season].toUpperCase()} — DAY ${STATE.day}, YEAR ${STATE.year}`;
+  const hh = String(Math.floor(STATE.hour)).padStart(2,'0');
+  const mm = String(Math.floor(STATE.minute)).padStart(2,'0');
+  $clock.textContent = `${hh}:${mm}`;
+  $fname.textContent = `🧑‍🌾 ${FARMERS[farmerIdx].name}`;
+  const wIcons = {clear:'☀ Clear', rain:'🌧 Rainy', storm:'⛈ Storm', snow:'❄ Snow', wind:'💨 Windy'};
+  $weather.textContent = wIcons[STATE.weather] || STATE.weather;
+
+  // Friends list
+  let html = '';
+  villagers.forEach(v=>{
+    const hearts = '♥'.repeat(Math.min(10,Math.max(0,Math.floor(v.friendship)))) + '♡'.repeat(10-Math.min(10,Math.max(0,Math.floor(v.friendship))));
+    const initials = v.name.split(' ').map(w=>w[0]).slice(0,2).join('');
+    const c = `hsl(${(v.def.shirt&0xff0000)>>16},60%,55%)`;
+    html += `<div class="friend"><div class="portrait" style="background:#${v.def.shirt.toString(16).padStart(6,'0')}">${initials}</div><span class="fname">${v.name.split(' ')[0]}</span><span class="hearts">${hearts}</span></div>`;
+  });
+  $friendList.innerHTML = html;
+
+  // Inventory
+  let inv = '';
+  if(STATE.parsnipSeeds) inv += `🌱 Parsnip seeds: ${STATE.parsnipSeeds}<br>`;
+  if(STATE.cauliflowerSeeds) inv += `🌱 Cauliflower seeds: ${STATE.cauliflowerSeeds}<br>`;
+  if(STATE.melonSeeds) inv += `🌱 Melon seeds: ${STATE.melonSeeds}<br>`;
+  if(STATE.pumpkinSeeds) inv += `🌱 Pumpkin seeds: ${STATE.pumpkinSeeds}<br>`;
+  if(STATE.blueberrySeeds) inv += `🌱 Blueberry seeds: ${STATE.blueberrySeeds}<br>`;
+  if(STATE.parsnips) inv += `🥕 Parsnips: ${STATE.parsnips}<br>`;
+  if(STATE.cauliflower) inv += `🥬 Cauliflower: ${STATE.cauliflower}<br>`;
+  if(STATE.melons) inv += `🍈 Melons: ${STATE.melons}<br>`;
+  if(STATE.pumpkins) inv += `🎃 Pumpkins: ${STATE.pumpkins}<br>`;
+  if(STATE.blueberries) inv += `🫐 Blueberries: ${STATE.blueberries}<br>`;
+  if(STATE.fish) inv += `🐟 Fish: ${STATE.fish}<br>`;
+  if(STATE.hasGoldenParsnip) inv += `<span style="color:#ffd700">✨ Golden Parsnip ✨</span><br>`;
+  inv += `💰 Gold: ${STATE.gold}g`;
+  $invList.innerHTML = inv;
+  $stats.innerHTML = `Crops harvested: ${STATE.cropsHarvested} · Fish: ${STATE.fishCaught}<br>Gold earned: ${STATE.goldEarned}g · Festivals: ${STATE.festivalsAttended}`;
+}
+
+// ===== CROPS =====
+const CROPS = {
+  parsnip:    {color:0xeed884, fruitColor:0xffe8a0, days:4, sellPrice:35, season:0},
+  cauliflower:{color:0xfff0f0, fruitColor:0xfafff0, days:6, sellPrice:175, season:0},
+  melon:      {color:0xff8a8a, fruitColor:0x90c060, days:5, sellPrice:250, season:1},
+  pumpkin:    {color:0xff8030, fruitColor:0xe06030, days:7, sellPrice:320, season:2},
+  blueberry:  {color:0x6080dd, fruitColor:0x4060c0, days:6, sellPrice:80,  season:1}
+};
+function plantCrop(tile, cropType){
+  if(tile.state !== 'tilled') return false;
+  tile.state = 'planted';
+  tile.crop = {type:cropType, stage:0, planted:STATE.totalDays};
+  // Initial: small mound
+  const m = box(0.4,0.1,0.4, 0x6b4520);
+  m.position.set(tile.x, 0.06, tile.z);
+  tileGroup.add(m);
+  tile.cropMesh = m;
+  return true;
+}
+function updateCropMesh(tile){
+  if(!tile.crop) return;
+  const C = CROPS[tile.crop.type];
+  const age = STATE.totalDays - tile.crop.planted;
+  const stage = clamp(Math.floor(age / Math.max(1,C.days/4)), 0, 4);
+  if(stage === tile.crop.stage && tile.cropMesh) return;
+  tile.crop.stage = stage;
+  if(tile.cropMesh) tileGroup.remove(tile.cropMesh);
+  let m;
+  if(stage === 0){ m = box(0.4,0.1,0.4, 0x6b4520); m.position.y=0.06; }
+  else if(stage === 1){
+    m = new T.Group(); const sp = box(0.08,0.2,0.08,0x6fae5a); sp.position.y=0.15; m.add(sp);
+  }
+  else if(stage === 2){
+    m = new T.Group(); const sp = cyl(0.08,0.1,0.45,0x4a8030,6); sp.position.y=0.25; m.add(sp);
+    const lf = sph(0.18,0x6fae5a,6); lf.position.y=0.5; lf.scale.y=0.6; m.add(lf);
+  }
+  else if(stage === 3){
+    m = new T.Group(); const sp = cyl(0.08,0.1,0.6,0x4a8030,6); sp.position.y=0.35; m.add(sp);
+    const lf = sph(0.28,C.color,6); lf.position.y=0.7; lf.scale.y=0.7; m.add(lf);
+  }
+  else {
+    m = new T.Group(); const sp = cyl(0.08,0.1,0.7,0x4a8030,6); sp.position.y=0.4; m.add(sp);
+    const fruit = sph(0.32,C.fruitColor,8); fruit.position.y=0.85; m.add(fruit);
+    if(tile.crop.golden){ fruit.material = makeMat(0xffd700); fruit.material.emissive = new T.Color(0xffd700); fruit.material.emissiveIntensity=0.4; }
+  }
+  m.position.x = tile.x;
+  m.position.z = tile.z;
+  if(!m.position.y) m.position.y = 0.05;
+  m.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+  tileGroup.add(m);
+  tile.cropMesh = m;
+}
+function harvestCrop(tile){
+  if(!tile.crop || tile.crop.stage < 4) return false;
+  const c = tile.crop.type;
+  if(tile.crop.golden){
+    STATE.hasGoldenParsnip = true;
+    chronicle('⚡ Lightning blessed your parsnip! Found a Golden Parsnip!', 'event');
+  }
+  STATE[c+'s'] = (STATE[c+'s']||0) + 1;
+  STATE.cropsHarvested++;
+  if(tile.cropMesh) tileGroup.remove(tile.cropMesh);
+  tile.cropMesh = null;
+  tile.crop = null;
+  tile.state = 'tilled';
+  return c;
+}
+
+// Farmer task system
+function getCurrentSeedType(){
+  if(STATE.season===0 && STATE.parsnipSeeds>0) return 'parsnip';
+  if(STATE.season===0 && STATE.cauliflowerSeeds>0) return 'cauliflower';
+  if(STATE.season===1 && STATE.melonSeeds>0) return 'melon';
+  if(STATE.season===1 && STATE.blueberrySeeds>0) return 'blueberry';
+  if(STATE.season===2 && STATE.pumpkinSeeds>0) return 'pumpkin';
+  return null;
+}
+
+// ===== FESTIVALS =====
+const FESTIVALS = [
+  {season:0, day:13, name:"Egg Festival"},
+  {season:0, day:24, name:"Flower Dance"},
+  {season:1, day:11, name:"Luau"},
+  {season:1, day:28, name:"Moonlight Jellies"},
+  {season:2, day:16, name:"Stardew Fair"},
+  {season:2, day:27, name:"Spirit's Eve"},
+  {season:3, day:8,  name:"Festival of Ice"},
+  {season:3, day:25, name:"Feast of Winter Star"}
+];
+function todayFestival(){
+  return FESTIVALS.find(f=>f.season===STATE.season && f.day===STATE.day);
+}
+function setupFestival(f){
+  while(festivalGroup.children.length) festivalGroup.remove(festivalGroup.children[0]);
+  if(!f) return;
+  // Banner pole
+  const pole = cyl(0.1,0.1,4,0x6b4f2a); pole.position.set(VILLAGE_CX, 2, VILLAGE_CZ-1); festivalGroup.add(pole);
+  const banner = box(2.4,0.6,0.05, 0xffd700); banner.position.set(VILLAGE_CX, 3.5, VILLAGE_CZ-1); festivalGroup.add(banner);
+  // Themed deco
+  if(f.name==='Egg Festival'){
+    for(let i=0;i<8;i++){const e=sph(0.2,choice([0xffd0d0,0xd0ffd0,0xd0d0ff,0xffffd0])); e.scale.y=1.3; e.position.set(VILLAGE_CX+rand(-5,5),0.3,VILLAGE_CZ+rand(-5,5)); festivalGroup.add(e);}
+  } else if(f.name==='Flower Dance'){
+    for(let i=0;i<20;i++){const f1=box(0.15,0.2,0.15,choice([0xff66aa,0xffaadd,0xffe066])); f1.position.set(VILLAGE_CX+rand(-6,6),0.1,VILLAGE_CZ+rand(-6,6)); festivalGroup.add(f1);}
+  } else if(f.name==='Luau'){
+    const pot = cyl(1,1.2,1,0x808080,12); pot.position.set(VILLAGE_CX,0.5,VILLAGE_CZ); festivalGroup.add(pot);
+    const soup = cyl(0.95,0.95,0.1,0xffaa30,12); soup.position.set(VILLAGE_CX,1.05,VILLAGE_CZ); festivalGroup.add(soup);
+  } else if(f.name==='Moonlight Jellies'){
+    for(let i=0;i<10;i++){const j=sph(0.3,0x9080ff); j.material.transparent=true; j.material.opacity=0.6; j.position.set(rand(-15,15),rand(1,4),rand(35,55)); festivalGroup.add(j);}
+  } else if(f.name==='Stardew Fair'){
+    const tent = cone(2,2,0xc04030,4); tent.position.set(VILLAGE_CX-3,1,VILLAGE_CZ); tent.rotation.y=Math.PI/4; festivalGroup.add(tent);
+    const tent2 = cone(2,2,0x4a90c8,4); tent2.position.set(VILLAGE_CX+3,1,VILLAGE_CZ); tent2.rotation.y=Math.PI/4; festivalGroup.add(tent2);
+  } else if(f.name==="Spirit's Eve"){
+    for(let i=0;i<6;i++){const p=sph(0.4,0xff8030); p.position.set(VILLAGE_CX+rand(-6,6),0.4,VILLAGE_CZ+rand(-6,6)); festivalGroup.add(p);}
+  } else if(f.name==='Festival of Ice'){
+    for(let i=0;i<8;i++){const ic=cone(0.5,1.5,0xc8e8ff,6); ic.position.set(VILLAGE_CX+rand(-6,6),0.75,VILLAGE_CZ+rand(-6,6)); festivalGroup.add(ic);}
+  } else if(f.name==='Feast of Winter Star'){
+    const tree = cone(1,3,0x2a6030,8); tree.position.set(VILLAGE_CX,1.5,VILLAGE_CZ); festivalGroup.add(tree);
+    for(let i=0;i<8;i++){const orn=sph(0.12,choice([0xff3030,0xffd700,0x4a90c8])); orn.position.set(VILLAGE_CX+rand(-0.7,0.7),rand(0.8,2.5),VILLAGE_CZ+rand(-0.7,0.7)); festivalGroup.add(orn);}
+    const star = cone(0.3,0.5,0xffe66b,5); star.position.set(VILLAGE_CX,3.2,VILLAGE_CZ); festivalGroup.add(star);
+  }
+}
+
+// ===== FARMER AI: simple state machine =====
+const TASK = {
+  IDLE:'idle', GOTO:'goto', TILL:'till', PLANT:'plant', WATER:'water', HARVEST:'harvest',
+  FISH:'fish', VISIT:'visit', FESTIVAL:'festival', SLEEP:'sleep'
+};
+let currentTask = TASK.IDLE;
+let taskTarget = null; // tile or {x,z,kind,...}
+let taskTimer = 0;
+let waterPos = null;
+let lastTaskRefreshHour = -1;
+
+function moveToward(group, tx, tz, dt){
+  const dx = tx - group.position.x, dz = tz - group.position.z;
+  const d = Math.hypot(dx,dz);
+  if(d < 0.05) return true;
+  const sp = farmerState.speed;
+  const step = Math.min(d, sp*dt);
+  group.position.x += dx/d*step;
+  group.position.z += dz/d*step;
+  group.rotation.y = Math.atan2(dx,dz);
+  return false;
+}
+
+function nextTaskForFarmer(){
+  // Festival days override
+  const fest = todayFestival();
+  if(fest){
+    return {task:TASK.FESTIVAL, x:VILLAGE_CX+rand(-3,3), z:VILLAGE_CZ+rand(-3,3), fest};
+  }
+  // Night: sleep
+  if(STATE.hour < 5 || STATE.hour >= 23){
+    return {task:TASK.SLEEP, x:FARM_CX-COLS/2*TILE-3, z:FARM_CZ+ROWS/2*TILE-2};
+  }
+  // Morning: farming priorities
+  // 1) Harvest ready crops
+  for(const t of tiles){
+    if(t.crop && t.crop.stage>=4){
+      return {task:TASK.HARVEST, target:t, x:t.x, z:t.z};
+    }
+  }
+  // 2) Plant if seeds available and tilled tiles exist
+  const seedType = getCurrentSeedType();
+  if(seedType){
+    // Find tilled tile
+    for(const t of tiles){
+      if(t.state==='tilled' && !t.crop){
+        return {task:TASK.PLANT, target:t, x:t.x, z:t.z, seedType};
+      }
+    }
+    // Need to till first
+    for(const t of tiles){
+      if(t.state==='untilled'){
+        // only till in farm season (not winter)
+        if(STATE.season<3){
+          return {task:TASK.TILL, target:t, x:t.x, z:t.z};
+        }
+      }
+    }
+  }
+  // 3) Water unwatered planted tiles
+  for(const t of tiles){
+    if(t.crop && !t.watered && STATE.weather!=='rain' && STATE.weather!=='storm'){
+      return {task:TASK.WATER, target:t, x:t.x, z:t.z};
+    }
+  }
+  // 4) Afternoon: visit a villager (3-7pm)
+  if(STATE.hour >= 13 && STATE.hour < 19){
+    const idx = (STATE.day + STATE.season*7) % villagers.length;
+    const v = villagers[idx];
+    return {task:TASK.VISIT, villager:v, x:v.x, z:v.z};
+  }
+  // 5) Mid-day: fishing if summer/fall and dock free
+  if(STATE.hour >= 10 && STATE.hour < 14 && (STATE.season===1 || STATE.season===2)){
+    return {task:TASK.FISH, x:-3, z:38};
+  }
+  // 6) Default: stroll
+  return {task:TASK.IDLE, x:FARM_CX+rand(-3,3), z:FARM_CZ+rand(-3,3)};
+}
+
+function tickFarmer(dt){
+  // Animate walk
+  const moving = currentTask !== TASK.IDLE && currentTask !== TASK.SLEEP;
+  if(moving){
+    farmerState.walkPhase += dt*8;
+    farmerGroup.children[5].rotation.x = Math.sin(farmerState.walkPhase)*0.4; // armL
+    farmerGroup.children[6].rotation.x = -Math.sin(farmerState.walkPhase)*0.4; // armR
+    farmerGroup.children[7].rotation.x = -Math.sin(farmerState.walkPhase)*0.5;
+    farmerGroup.children[8].rotation.x = Math.sin(farmerState.walkPhase)*0.5;
+  }
+  // Pick task if idle
+  if(currentTask === TASK.IDLE && (STATE.hour !== lastTaskRefreshHour || taskTimer > 1.5)){
+    const t = nextTaskForFarmer();
+    currentTask = t.task;
+    taskTarget = t;
+    taskTimer = 0;
+    lastTaskRefreshHour = STATE.hour;
+  }
+  taskTimer += dt;
+
+  if(currentTask === TASK.IDLE){
+    // Wander a bit
+    if(taskTarget){
+      moveToward(farmerGroup, taskTarget.x, taskTarget.z, dt);
+    }
+    if(taskTimer > 3){ currentTask = TASK.IDLE; taskTarget = null; taskTimer=0; lastTaskRefreshHour=-1;}
+    return;
+  }
+
+  if(currentTask === TASK.SLEEP){
+    moveToward(farmerGroup, taskTarget.x, taskTarget.z, dt);
+    // Wake up when morning comes
+    if(STATE.hour >= 5 && STATE.hour < 23){
+      currentTask = TASK.IDLE; taskTarget=null; lastTaskRefreshHour=-1;
+    }
+    return;
+  }
+
+  if(currentTask === TASK.TILL || currentTask === TASK.PLANT || currentTask === TASK.WATER || currentTask === TASK.HARVEST){
+    const reached = moveToward(farmerGroup, taskTarget.x, taskTarget.z, dt);
+    if(reached){
+      const tile = taskTarget.target;
+      if(currentTask === TASK.TILL){
+        tile.state = 'tilled';
+        tile.mesh.material = new T.MeshLambertMaterial({color:0x6b4520});
+      } else if(currentTask === TASK.PLANT){
+        const st = taskTarget.seedType;
+        if(STATE[st+'Seeds'] > 0){
+          STATE[st+'Seeds']--;
+          plantCrop(tile, st);
+        }
+      } else if(currentTask === TASK.WATER){
+        tile.watered = true;
+        tile.mesh.material = new T.MeshLambertMaterial({color:0x4a3010});
+      } else if(currentTask === TASK.HARVEST){
+        const c = harvestCrop(tile);
+        if(c){
+          chronicle(`Harvested a ${c}!`);
+          // Sell it
+          const price = CROPS[c].sellPrice;
+          STATE.gold += price;
+          STATE.goldEarned += price;
+          STATE[c+'s']--;
+        }
+        tile.mesh.material = new T.MeshLambertMaterial({color:0x6b4520});
+        tile.state = 'tilled';
+      }
+      currentTask = TASK.IDLE; taskTarget = null; lastTaskRefreshHour=-1;
+    }
+    return;
+  }
+
+  if(currentTask === TASK.FISH){
+    const reached = moveToward(farmerGroup, taskTarget.x, taskTarget.z, dt);
+    if(reached){
+      taskTimer += dt;
+      if(taskTimer > 2.5){
+        if(Math.random()<0.7){
+          STATE.fish++; STATE.fishCaught++;
+          const fishVal = 60 + Math.floor(Math.random()*120);
+          STATE.gold += fishVal; STATE.goldEarned += fishVal;
+          chronicle(`Caught a fish at the dock! (+${fishVal}g)`);
+        }
+        currentTask = TASK.IDLE; taskTarget = null; lastTaskRefreshHour=-1;
+      }
+    }
+    return;
+  }
+
+  if(currentTask === TASK.VISIT){
+    const v = taskTarget.villager;
+    const reached = moveToward(farmerGroup, v.x+1.2, v.z, dt);
+    if(reached){
+      taskTimer += dt;
+      if(taskTimer > 1.0 && !taskTarget.chatted){
+        taskTarget.chatted = true;
+        const before = v.friendship;
+        v.friendship = Math.min(10, v.friendship + 0.5 + (STATE.weather==='clear'?0.1:0));
+        if(STATE.friendshipMax < v.friendship) STATE.friendshipMax = v.friendship;
+        const lines = friendlyLines(v);
+        showBubble(v.group, choice(lines));
+        chronicle(`Chatted with ${v.name} (♥${v.friendship.toFixed(1)})`);
+        // Wedding trigger
+        if(v.friendship >= 10 && !STATE.weddingTriggered){
+          STATE.weddingTriggered = true;
+          STATE.weddingPartner = v.name;
+          chronicle(`💍 ${v.name} accepted your proposal!`, 'event');
+        }
+      }
+      if(taskTimer > 2){
+        currentTask = TASK.IDLE; taskTarget=null; lastTaskRefreshHour=-1;
+      }
+    }
+    return;
+  }
+
+  if(currentTask === TASK.FESTIVAL){
+    const reached = moveToward(farmerGroup, taskTarget.x, taskTarget.z, dt);
+    if(reached){
+      taskTimer += dt;
+      if(taskTimer > 4){
+        if(!taskTarget.celebrated){
+          taskTarget.celebrated = true;
+          STATE.festivalsAttended++;
+          chronicle(`🎊 Joined the ${taskTarget.fest.name}!`, 'festival');
+          villagers.forEach(v=>{ v.friendship = Math.min(10, v.friendship + 0.3); });
+          showFestivalBanner(taskTarget.fest.name);
+          setupFestival(taskTarget.fest);
+        }
+        // After 6s wander around festival
+        taskTarget.x = VILLAGE_CX + rand(-4,4); taskTarget.z = VILLAGE_CZ + rand(-4,4);
+        taskTimer = 0;
+        if(STATE.hour >= 22) { currentTask = TASK.IDLE; taskTarget=null; lastTaskRefreshHour=-1; }
+      }
+    }
+    return;
+  }
+}
+
+function friendlyLines(v){
+  return [
+    `Hi, ${FARMERS[farmerIdx].name.split(' ')[0]}!`,
+    `Lovely ${SEASONS[STATE.season].toLowerCase()} weather!`,
+    `How's the farm coming along?`,
+    `Pelican Cove is so peaceful.`,
+    `Thanks for stopping by.`,
+    `I love this little town.`,
+    `${v.name.split(' ')[0]} is happy to see you.`
+  ];
+}
+
+// ===== VILLAGER AI =====
+function tickVillagers(dt){
+  villagers.forEach(v=>{
+    // Determine target from schedule
+    const sched = v.def.schedule;
+    let curr = sched[0];
+    for(let i=0;i<sched.length;i++){
+      if(STATE.hour >= sched[i].h) curr = sched[i];
+    }
+    // Festival days: gather in square
+    const fest = todayFestival();
+    if(fest && STATE.hour >= 12 && STATE.hour < 22){
+      v.tx = VILLAGE_CX + rand(-3,3);
+      v.tz = VILLAGE_CZ + rand(-3,3);
+    } else {
+      v.tx = curr.x;
+      v.tz = curr.z;
+    }
+    const dx = v.tx - v.group.position.x, dz = v.tz - v.group.position.z;
+    const d = Math.hypot(dx,dz);
+    if(d > 0.1){
+      const sp = 1.4;
+      const step = Math.min(d, sp*dt);
+      v.group.position.x += dx/d*step;
+      v.group.position.z += dz/d*step;
+      v.group.rotation.y = Math.atan2(dx,dz);
+      v.walkPhase += dt*8;
+      v.group.children[5].rotation.x = Math.sin(v.walkPhase)*0.4;
+      v.group.children[6].rotation.x = -Math.sin(v.walkPhase)*0.4;
+      v.group.children[7].rotation.x = -Math.sin(v.walkPhase)*0.5;
+      v.group.children[8].rotation.x = Math.sin(v.walkPhase)*0.5;
+    }
+    v.x = v.group.position.x;
+    v.z = v.group.position.z;
+  });
+}
+
+// ===== EVENTS =====
+function dailyEvent(){
+  // Reset task chatted flags
+  STATE.dailyEvents = [];
+  // Weather selection
+  if(STATE.day >= STATE.weatherEndDay){
+    if(STATE.season===3){
+      STATE.weather = Math.random()<0.6?'snow':(Math.random()<0.5?'wind':'clear');
+    } else if(STATE.season===0){
+      STATE.weather = Math.random()<0.35?'rain':(Math.random()<0.1?'storm':'clear');
+    } else if(STATE.season===1){
+      STATE.weather = Math.random()<0.2?'rain':(Math.random()<0.1?'storm':'clear');
+    } else {
+      STATE.weather = Math.random()<0.4?'wind':(Math.random()<0.2?'rain':'clear');
+    }
+    STATE.weatherEndDay = STATE.day+1;
+  }
+  // Random emergent events
+  const r = Math.random();
+  if(r < 0.1){
+    chronicle('🍀 Lucky day! All harvests bring extra coin.', 'event');
+    STATE.dailyEvents.push('lucky');
+  } else if(r < 0.18){
+    chronicle('🐎 The Traveling Cart visits the forest!', 'event');
+    STATE.dailyEvents.push('cart');
+    // Give a rare seed
+    if(STATE.season===0) STATE.cauliflowerSeeds += 2;
+    else if(STATE.season===1) STATE.blueberrySeeds += 2;
+    else if(STATE.season===2) STATE.pumpkinSeeds += 2;
+  } else if(r < 0.24 && STATE.season<3){
+    chronicle('🐦 A crow attacked the field! Some crops were lost.', 'event');
+    STATE.dailyEvents.push('crow');
+    let lost = 0;
+    for(const t of tiles){
+      if(t.crop && Math.random()<0.18){
+        if(t.cropMesh) tileGroup.remove(t.cropMesh);
+        t.cropMesh=null; t.crop=null; t.state='tilled'; lost++;
+      }
+      if(lost>=2) break;
+    }
+  }
+  // Lightning -> golden parsnip
+  if(STATE.weather === 'storm'){
+    chronicle('⛈ A great storm rolls through the cove!', 'event');
+    const candidates = tiles.filter(t=>t.crop && t.crop.type==='parsnip' && t.crop.stage>=2);
+    if(candidates.length){
+      const t = choice(candidates);
+      t.crop.golden = true;
+      t.crop.stage = -1; // force remesh next tick
+    }
+  }
+  // Villager visits farm
+  if(Math.random()<0.18){
+    const v = choice(villagers);
+    setTimeout(()=>{
+      chronicle(`${v.name} stopped by the farm to say hi.`);
+      showBubble(v.group, `Lovely day, neighbor!`);
+      v.friendship = Math.min(10, v.friendship + 0.3);
+    }, 1200);
+  }
+  // Reset watering
+  for(const t of tiles){
+    t.watered = false;
+    if(t.state === 'tilled'){
+      t.mesh.material = new T.MeshLambertMaterial({color:0x8b6940});
+    }
+  }
+  // If rain, water everything
+  if(STATE.weather==='rain' || STATE.weather==='storm'){
+    for(const t of tiles){
+      if(t.crop) t.watered = true;
+    }
+  }
+  STATE.daysFarmed++;
+}
+
+function newSeason(s){
+  // Update palette
+  const C = SEASON_COLORS[s];
+  groundMat.color.copy(C.ground);
+  scene.fog.color.setHex(C.fog);
+  trees.forEach(t=>{
+    const targetColor = s===2 ? choice([0xc8742a,0xd49030,0xb04020,0xe4a040]) : (s===3 ? 0x8a8a90 : (s===0 ? choice([0xff99cc,0x3a8030,0xff66aa]) : 0x4a9040));
+    t.leaves.material = new T.MeshLambertMaterial({color:targetColor});
+    if(s===3 && Math.random()<0.5){
+      // bare tree in winter
+      t.leaves.visible = false;
+    } else {
+      t.leaves.visible = true;
+    }
+  });
+  populateFlowers(s);
+  chronicle(`🍃 ${SEASONS[s]} has arrived in Pelican Cove!`, 'festival');
+  // Gift seeds at season start
+  if(s===0){ STATE.parsnipSeeds += 8; }
+  if(s===1){ STATE.melonSeeds += 6; }
+  if(s===2){ STATE.pumpkinSeeds += 4; }
+  // Clear field for new season
+  for(const t of tiles){
+    if(t.crop && CROPS[t.crop.type].season !== s){
+      if(t.cropMesh) tileGroup.remove(t.cropMesh);
+      t.cropMesh = null; t.crop = null; t.state = 'untilled';
+      t.mesh.material = new T.MeshLambertMaterial({color:0x6fae5a});
+    }
+  }
+}
+
+// ===== YEAR-END MONTAGE =====
+function showMontage(){
+  STATE.mode = 'montage';
+  STATE.montageStart = performance.now();
+  $titleH1.textContent = `Year ${STATE.year} Recap`;
+  $titleH2.textContent = `Pelican Cove Chronicle`;
+  let topFriend = villagers[0];
+  villagers.forEach(v=>{ if(v.friendship > topFriend.friendship) topFriend = v; });
+  const summary = `
+    Farmer: ${FARMERS[farmerIdx].name}<br>
+    Days farmed: ${STATE.daysFarmed} · Crops: ${STATE.cropsHarvested} · Fish: ${STATE.fishCaught}<br>
+    Gold earned: ${STATE.goldEarned}g · Festivals: ${STATE.festivalsAttended}<br>
+    Best friend: ${topFriend.name} (♥${topFriend.friendship.toFixed(1)})<br>
+    ${STATE.hasGoldenParsnip?'<span style="color:#ffd700">⭐ Found a Golden Parsnip!</span><br>':''}
+    ${STATE.weddingTriggered?`💍 Married ${STATE.weddingPartner}!<br>`:''}
+  `;
+  $titleP.innerHTML = summary;
+  $title.style.opacity = '1';
+}
+function endMontage(){
+  $title.style.opacity = '0';
+  STATE.mode = 'play';
+  // Reset stats but keep year
+  STATE.year++;
+  STATE.season = 0;
+  STATE.day = 1;
+  STATE.totalDays = 0;
+  STATE.daysFarmed = 0;
+  STATE.cropsHarvested = 0;
+  STATE.fishCaught = 0;
+  STATE.goldEarned = 0;
+  STATE.festivalsAttended = 0;
+  STATE.weddingTriggered = false;
+  STATE.weddingPartner = null;
+  STATE.hasGoldenParsnip = false;
+  // Rotate farmer
+  farmerIdx = (farmerIdx + 1) % FARMERS.length;
+  scene.remove(farmerGroup);
+  const F = FARMERS[farmerIdx];
+  farmerGroup = makeHumanoid({shirt:F.shirt,pants:F.pants,hair:F.hair,hat:F.hat,skin:0xeec9a0});
+  farmerGroup.position.set(FARM_CX, 0, FARM_CZ+ROWS/2*TILE+2);
+  scene.add(farmerGroup);
+  farmerState.x = FARM_CX; farmerState.z = FARM_CZ+ROWS/2*TILE+2;
+  // Reset farm: fresh seeds
+  STATE.parsnipSeeds = 8;
+  newSeason(0);
+  chronicle(`Year ${STATE.year} begins. ${F.name} arrives at Pelican Cove!`, 'festival');
+}
+
+// ===== TIME ADVANCE =====
+let lastDayDigit = -1, lastSeasonDigit = -1, lastYearDigit = -1;
+function advanceTime(realDt){
+  if(STATE.mode === 'montage') return;
+  const elapsed = performance.now() - STATE.startMs;
+  const dayProgress = (elapsed % STATE.DAY_MS) / STATE.DAY_MS;
+  STATE.hour = dayProgress * 24;
+  STATE.minute = (STATE.hour % 1) * 60;
+
+  const totalDays = Math.floor(elapsed / STATE.DAY_MS);
+  STATE.totalDays = totalDays;
+  const newDay = (totalDays % SEASON_DAY_COUNT) + 1;
+  const newSeasonIdx = Math.floor(totalDays / SEASON_DAY_COUNT) % 4;
+  const newYear = Math.floor(totalDays / (SEASON_DAY_COUNT*4)) + 1;
+
+  if(newDay !== STATE.day){
+    STATE.day = newDay;
+    // Update crops
+    for(const t of tiles){
+      if(t.crop) updateCropMesh(t);
+    }
+    // Reset villager chat ability
+    villagers.forEach(v=>{ if(taskTarget && taskTarget.villager===v) taskTarget.chatted=false; });
+    dailyEvent();
+    // Festival announcement
+    const f = todayFestival();
+    if(f){ chronicle(`Today is the ${f.name}!`, 'festival'); setupFestival(f); }
+    else { while(festivalGroup.children.length) festivalGroup.remove(festivalGroup.children[0]); }
+  }
+  if(newSeasonIdx !== STATE.season){
+    STATE.season = newSeasonIdx;
+    newSeason(newSeasonIdx);
+  }
+  if(newYear !== STATE.year && newYear > STATE.year){
+    showMontage();
+  }
+}
+
+// ===== RENDER LOOP =====
+let lastTime = performance.now();
+function animate(){
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  let dt = (now - lastTime)/1000;
+  if(dt > 0.1) dt = 0.1;
+  lastTime = now;
+
+  if(STATE.mode === 'play'){
+    advanceTime(dt);
+    tickFarmer(dt);
+    tickVillagers(dt);
+  } else if(STATE.mode === 'montage'){
+    if(now - STATE.montageStart > 10000){
+      endMontage();
+    }
+  }
+
+  // Day/Night sun
+  const hour = STATE.hour;
+  const sunAngle = ((hour - 6) / 24) * Math.PI * 2;
+  const sunDist = 60;
+  sun.position.set(Math.sin(sunAngle)*sunDist, Math.cos(sunAngle)*sunDist, 20);
+  sun.target.position.set(0,0,0);
+  // Sun intensity & sky
+  const dayness = clamp(Math.cos(sunAngle), -1, 1) * 0.5 + 0.5;
+  sun.intensity = lerp(0.05, 1.2, dayness);
+  amb.intensity = lerp(0.15, 0.45, dayness);
+  hemi.intensity = lerp(0.2, 0.7, dayness);
+  // Sky color based on hour
+  const sC = SEASON_COLORS[STATE.season].sky;
+  let skyHex;
+  if(hour < 5 || hour > 21){
+    skyHex = lerpC(new T.Color(0x0a0e2a), sC, dayness);
+  } else if(hour < 7){
+    skyHex = lerpC(new T.Color(0xff9966), sC, (hour-5)/2);
+  } else if(hour > 19){
+    skyHex = lerpC(new T.Color(0xff6644), sC, (21-hour)/2);
+  } else {
+    skyHex = sC.clone();
+  }
+  scene.background = skyHex;
+  scene.fog.color.copy(skyHex);
+
+  // Stars at night
+  stars.material.opacity = clamp(1 - dayness*2, 0, 1);
+  // Lanterns at night
+  const lanternBright = 1 - dayness;
+  lanterns.forEach(l=>{
+    l.material.color.setHex(lanternBright>0.5?0xffe066:0x664422);
+    l.material.emissive = new T.Color(lanternBright>0.5?0xffaa00:0x000000);
+    l.material.emissiveIntensity = lanternBright;
+  });
+  // Fireflies at night
+  flies.material.opacity = clamp((1-dayness)*1.5, 0, 0.9);
+
+  // Animate ocean
+  const op = oceanGeo.attributes.position;
+  for(let i=0;i<op.count;i++){
+    const x = op.getX(i), y = op.getY(i);
+    op.setZ(i, Math.sin(now*0.0015 + x*0.2)*0.15 + Math.cos(now*0.001 + y*0.15)*0.12);
+  }
+  op.needsUpdate = true;
+
+  // Animate chimney smoke
+  const sp = smokeGeo.attributes.position;
+  for(let i=0;i<smokeCount;i++){
+    smokeArr[i*3+1] += dt*0.6;
+    smokeLife[i] += dt*0.5;
+    if(smokeLife[i] > 1){
+      smokeLife[i] = 0;
+      smokeArr[i*3] = chPos.x + rand(-0.2,0.2);
+      smokeArr[i*3+1] = chPos.y + 0.5;
+      smokeArr[i*3+2] = chPos.z + rand(-0.2,0.2);
+    }
+  }
+  sp.needsUpdate = true;
+  smoke.material.opacity = STATE.weather==='clear'?0.6:0.3;
+
+  // Fountain particles
+  const fp = fountainPts.geometry.attributes.position;
+  const fwVel = fountainPts.userData.vel;
+  for(let i=0;i<fp.count;i++){
+    fp.array[i*3] += fwVel[i*3];
+    fp.array[i*3+1] += fwVel[i*3+1];
+    fp.array[i*3+2] += fwVel[i*3+2];
+    fwVel[i*3+1] -= 0.005;
+    if(fp.array[i*3+1] < 0.5){
+      fp.array[i*3] = fountainPts.userData.ox;
+      fp.array[i*3+1] = 1.7;
+      fp.array[i*3+2] = fountainPts.userData.oz;
+      fwVel[i*3] = rand(-0.06,0.06);
+      fwVel[i*3+1] = rand(0.08,0.14);
+      fwVel[i*3+2] = rand(-0.06,0.06);
+    }
+  }
+  fp.needsUpdate = true;
+
+  // Fireflies wobble
+  const flpos = flyGeo.attributes.position;
+  for(let i=0;i<flyN;i++){
+    const o = flyOff[i];
+    flpos.array[i*3] = o.ox + Math.sin(now*0.001 + o.phase)*2;
+    flpos.array[i*3+1] = 1 + Math.sin(now*0.002 + o.phase*2)*0.4;
+    flpos.array[i*3+2] = o.oz + Math.cos(now*0.0008 + o.phase)*1.5;
+  }
+  flpos.needsUpdate = true;
+
+  // Rain/Snow
+  const rainOn = STATE.weather==='rain' || STATE.weather==='storm';
+  rain.material.opacity = rainOn ? 0.7 : 0;
+  snow.material.opacity = STATE.weather==='snow' ? 0.85 : 0;
+  if(rainOn || STATE.weather==='snow'){
+    const arr = (rainOn?rain:snow).geometry.attributes.position;
+    const speed = rainOn?0.8:0.18;
+    for(let i=0;i<rainN;i++){
+      arr.array[i*3+1] -= speed;
+      if(arr.array[i*3+1] < 0){
+        arr.array[i*3+1] = 25 + Math.random()*5;
+        arr.array[i*3] = rand(-60,60);
+        arr.array[i*3+2] = rand(-40,40);
+      }
+    }
+    arr.needsUpdate = true;
+  }
+
+  // Chickens wander
+  chickens.forEach(ck=>{
+    const u = ck.userData;
+    if(Math.hypot(ck.position.x-u.tx, ck.position.z-u.tz) < 0.1 || Math.random()<0.005){
+      u.tx = FARM_CX-COLS/2*TILE-3 + rand(-2,2);
+      u.tz = FARM_CZ-2 + rand(-2,2);
+    }
+    const dx = u.tx-ck.position.x, dz = u.tz-ck.position.z, d = Math.hypot(dx,dz);
+    if(d > 0.05){
+      ck.position.x += dx/d * 0.6 * dt;
+      ck.position.z += dz/d * 0.6 * dt;
+      ck.rotation.y = Math.atan2(dx,dz);
+    }
+    u.bob += dt*5;
+    ck.position.y = Math.abs(Math.sin(u.bob))*0.05;
+  });
+
+  // Camera follows farmer
+  const camTargetX = farmerGroup.position.x;
+  const camTargetZ = farmerGroup.position.z;
+  camera.position.x = lerp(camera.position.x, camTargetX - 8, 0.04);
+  camera.position.y = lerp(camera.position.y, 10, 0.04);
+  camera.position.z = lerp(camera.position.z, camTargetZ + 12, 0.04);
+  camera.lookAt(camTargetX, 1, camTargetZ);
+
+  // Bubble position
+  if($bubble.style.display === 'block'){
+    const tu = parseFloat($bubble.dataset.until || '0');
+    if(now > tu){ $bubble.style.display = 'none'; }
+    else if($bubble.dataset.target){
+      const tgt = JSON.parse($bubble.dataset.target);
+      const v = new T.Vector3(tgt.x, tgt.y, tgt.z);
+      v.project(camera);
+      const sx = (v.x*0.5+0.5)*innerWidth;
+      const sy = (-v.y*0.5+0.5)*innerHeight;
+      $bubble.style.left = (sx-100)+'px';
+      $bubble.style.top = (sy-30)+'px';
+    }
+  }
+
+  updateHUD();
+  renderer.render(scene, camera);
+}
+
+// ===== INIT =====
+chronicle(`Welcome to Pelican Cove! ${FARMERS[0].name} arrives in Spring.`, 'festival');
+chronicle(`The mayor offers seeds and a warm welcome.`);
+animate();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,1078 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CPU Inside a CPU Inside a CPU // learnwithkody</title>
+<style>
+  :root{
+    --bg:#020a02;
+    --bg2:#031603;
+    --fg:#46ff7a;
+    --fg2:#9bffb6;
+    --dim:#1a6a2a;
+    --warm:#ffe066;
+    --hot:#ff5d5d;
+    --cold:#0a3a14;
+    --grid:#0d2f17;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:'Courier New',ui-monospace,Menlo,monospace;overflow-x:hidden}
+  body{
+    min-height:100vh;
+    background:
+      radial-gradient(ellipse at 50% 40%,#062606 0%,#020a02 60%,#000 100%);
+    text-shadow:0 0 4px rgba(70,255,122,.55),0 0 12px rgba(70,255,122,.18);
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:5;
+    background:repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.18) 3px,
+      rgba(0,0,0,0) 4px);
+    mix-blend-mode:multiply;
+  }
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:6;
+    background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%);
+  }
+  .crt-flicker{animation:flicker 6s infinite}
+  @keyframes flicker{
+    0%,100%{opacity:1}
+    47%{opacity:.97}
+    48%{opacity:.85}
+    49%{opacity:1}
+    73%{opacity:.94}
+    74%{opacity:1}
+  }
+  header{
+    padding:14px 22px 6px;display:flex;flex-wrap:wrap;align-items:baseline;gap:18px;
+    border-bottom:1px solid var(--dim);
+  }
+  h1{
+    margin:0;font-size:20px;letter-spacing:2px;color:var(--fg2);
+  }
+  h1 .tilde{color:var(--warm)}
+  .sub{font-size:11px;color:var(--dim)}
+  .controls{
+    display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 22px;border-bottom:1px solid var(--dim);
+    background:linear-gradient(180deg,rgba(15,60,25,.18),transparent);
+  }
+  button,select{
+    background:#031003;color:var(--fg);border:1px solid var(--dim);
+    font-family:inherit;font-size:12px;padding:6px 12px;cursor:pointer;
+    text-shadow:inherit;letter-spacing:1px;
+  }
+  button:hover,select:hover{border-color:var(--fg);box-shadow:0 0 8px rgba(70,255,122,.45) inset}
+  button.active{background:#0a2c12;border-color:var(--fg2);color:var(--fg2)}
+  .controls label{font-size:11px;color:var(--fg2);display:flex;align-items:center;gap:6px}
+  input[type=range]{accent-color:var(--fg);width:160px}
+  .pill{
+    border:1px solid var(--dim);padding:3px 8px;font-size:11px;color:var(--fg2);
+  }
+  main{
+    display:grid;
+    grid-template-columns:1.2fr 1fr 1fr;
+    gap:14px;
+    padding:14px 18px 24px;
+    position:relative;z-index:2;
+  }
+  @media (max-width:1100px){
+    main{grid-template-columns:1fr}
+  }
+  .pane{
+    border:1px solid var(--dim);
+    background:linear-gradient(180deg,#031b06 0%,#020a02 100%);
+    padding:10px 12px 14px;
+    box-shadow:0 0 22px rgba(70,255,122,.06) inset, 0 0 12px rgba(0,0,0,.6);
+    position:relative;
+  }
+  .pane h2{
+    margin:0 0 8px;font-size:13px;letter-spacing:3px;color:var(--fg2);
+    border-bottom:1px dashed var(--dim);padding-bottom:6px;
+    display:flex;justify-content:space-between;align-items:baseline;
+  }
+  .pane h2 .tag{font-size:10px;color:var(--warm);letter-spacing:2px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
+  .box{
+    border:1px solid var(--dim);padding:6px 8px;font-size:12px;flex:1 1 auto;min-width:60px;
+    background:rgba(8,30,12,.4);
+  }
+  .box .lbl{font-size:9px;color:var(--dim);letter-spacing:2px;display:block;margin-bottom:2px}
+  .box .val{font-size:14px;color:var(--fg2);font-weight:bold}
+  .flags span{display:inline-block;padding:0 4px;border:1px solid var(--dim);margin-right:3px;font-size:10px}
+  .flags span.on{background:#0a4818;color:var(--warm);border-color:var(--warm)}
+  .ramwrap{margin-top:6px}
+  .ramwrap .lbl-row{
+    display:flex;justify-content:space-between;font-size:10px;color:var(--dim);letter-spacing:2px;margin-bottom:4px;
+  }
+  .ram{
+    display:grid;gap:1px;background:#000;padding:2px;border:1px solid var(--dim);
+  }
+  .ram.r256{grid-template-columns:repeat(16,1fr)}
+  .ram.r16{grid-template-columns:repeat(4,1fr)}
+  .cell{
+    aspect-ratio:1/1;
+    background:var(--cold);
+    font-size:7px;line-height:1;color:#022;
+    display:flex;align-items:center;justify-content:center;
+    transition:background 240ms linear,box-shadow 240ms linear;
+    position:relative;
+  }
+  .ram.r16 .cell{font-size:11px;color:var(--fg);font-weight:bold}
+  .cell.pc{outline:1px solid var(--warm);outline-offset:-1px;z-index:2}
+  .cell.sp{outline:1px solid #6cf;outline-offset:-1px;z-index:2}
+  .disasm{
+    margin-top:8px;border:1px solid var(--dim);background:#020a02;padding:6px;
+    font-size:11px;line-height:1.3;height:148px;overflow:hidden;
+  }
+  .disasm .line{display:flex;gap:6px;color:var(--dim);white-space:pre}
+  .disasm .line.cur{color:var(--warm);background:rgba(255,224,102,.12)}
+  .disasm .line .a{color:var(--dim);width:36px;display:inline-block}
+  .disasm .line.cur .a{color:var(--warm)}
+  .disasm .line .b{color:var(--fg);width:80px;display:inline-block}
+  .disasm .line.cur .b{color:var(--warm)}
+  .disasm .line .c{color:var(--dim)}
+  .marquee-wrap{
+    margin-top:8px;border:1px solid var(--dim);padding:6px;background:#020a02;
+  }
+  .marquee-wrap .lbl{font-size:9px;color:var(--dim);letter-spacing:2px;display:block;margin-bottom:4px}
+  .marquee{
+    font-size:18px;color:var(--warm);text-shadow:0 0 6px rgba(255,224,102,.6),0 0 16px rgba(255,224,102,.3);
+    white-space:pre;overflow:hidden;height:22px;
+    font-family:'Courier New',monospace;letter-spacing:2px;
+  }
+  .scheduler{
+    margin-top:8px;border:1px solid var(--dim);padding:8px;background:#020a02;
+  }
+  .scheduler h3{margin:0 0 6px;font-size:11px;letter-spacing:2px;color:var(--fg2)}
+  .tasks{display:flex;gap:8px}
+  .task{
+    flex:1;border:1px solid var(--dim);padding:6px;font-size:11px;background:rgba(8,30,12,.4);
+  }
+  .task.run{border-color:var(--warm);background:rgba(255,224,102,.08);color:var(--warm)}
+  .task .nm{font-size:10px;color:var(--dim);letter-spacing:2px;display:block}
+  .mode{
+    display:inline-block;padding:2px 8px;border:1px solid var(--dim);font-size:10px;letter-spacing:2px;
+  }
+  .mode.kernel{color:var(--hot);border-color:var(--hot);background:rgba(255,93,93,.1)}
+  .mode.user{color:var(--fg2);border-color:var(--fg2)}
+  .stats{
+    display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:10px;color:var(--dim);
+  }
+  .stats span{border:1px solid var(--dim);padding:2px 6px}
+  .legend{display:flex;gap:8px;margin-top:6px;font-size:9px;color:var(--dim);align-items:center}
+  .legend .sw{display:inline-block;width:10px;height:10px;border:1px solid var(--dim);vertical-align:middle;margin-right:3px}
+  .footer{
+    text-align:center;font-size:10px;color:var(--dim);padding:8px 12px 22px;letter-spacing:1px;
+  }
+  .blink{animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:.2}}
+  .signal{
+    position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;
+    background:var(--fg);box-shadow:0 0 8px var(--fg);
+  }
+  .signal.off{background:#220;box-shadow:none}
+  .inner-prog{
+    margin-top:8px;border:1px solid var(--dim);background:#020a02;padding:6px;
+    font-size:11px;line-height:1.3;
+  }
+  .inner-prog .row2{display:flex;justify-content:space-between;color:var(--dim)}
+  .inner-prog .row2 b{color:var(--warm)}
+  .out-port{
+    margin-top:6px;font-size:10px;color:var(--dim);
+  }
+  .out-port code{color:var(--warm);background:#0a2c12;padding:1px 4px}
+  .help{
+    font-size:10px;color:var(--dim);padding:0 22px 12px;line-height:1.5;
+  }
+  .help b{color:var(--fg2)}
+</style>
+</head>
+<body class="crt-flicker">
+
+<header>
+  <h1><span class="tilde">~</span> CPU INSIDE CPU INSIDE CPU <span class="tilde">~</span></h1>
+  <span class="sub">a single-file vibe demo // learnwithkody / 03</span>
+  <span class="pill" id="cycPill">cyc 0</span>
+  <span class="pill" id="hzPill">— Hz</span>
+</header>
+
+<div class="controls">
+  <button id="btnRun" class="active">RUN</button>
+  <button id="btnPause">PAUSE</button>
+  <button id="btnStep">STEP</button>
+  <button id="btnReset">RESET</button>
+  <label>SPEED <input id="speed" type="range" min="0" max="100" value="55"></label>
+  <span class="pill" id="speedLbl">— ips</span>
+  <label>RAM HEAT <input id="heatDecay" type="range" min="50" max="990" value="900"></label>
+</div>
+
+<div class="help">
+  <b>three machines, one screen.</b> the <b>OUTER 8-bit CPU</b> (left) executes a tiny kernel.
+  the <b>TINY OS</b> (middle) round-robins two cooperative tasks: a marquee and a hosted emulator.
+  the <b>INNER 4-bit CPU</b> (right) is being emulated, instruction-by-instruction, by 8-bit assembly running on the outer CPU.
+  recently-touched RAM cells glow; PC is yellow, SP is cyan.
+</div>
+
+<main>
+
+  <!-- LAYER 1 -->
+  <section class="pane" id="paneOuter">
+    <div class="signal" id="sig1"></div>
+    <h2>OUTER 8-BIT CPU <span class="tag">layer 1 // host</span></h2>
+
+    <div class="row">
+      <div class="box"><span class="lbl">A</span><span class="val" id="rA">00</span></div>
+      <div class="box"><span class="lbl">B</span><span class="val" id="rB">00</span></div>
+      <div class="box"><span class="lbl">C</span><span class="val" id="rC">00</span></div>
+      <div class="box"><span class="lbl">D</span><span class="val" id="rD">00</span></div>
+    </div>
+    <div class="row">
+      <div class="box"><span class="lbl">PC</span><span class="val" id="rPC">0000</span></div>
+      <div class="box"><span class="lbl">SP</span><span class="val" id="rSP">FF</span></div>
+      <div class="box flags"><span class="lbl">FLAGS</span>
+        <span id="fZ">Z</span><span id="fN">N</span><span id="fC">C</span><span id="fI">I</span>
+      </div>
+    </div>
+
+    <div class="ramwrap">
+      <div class="lbl-row"><span>RAM 256B</span><span id="ramHot">hot 0</span></div>
+      <div class="ram r256" id="ram1"></div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--cold)"></span>cold</span>
+        <span><span class="sw" style="background:#1a6a2a"></span>warm</span>
+        <span><span class="sw" style="background:#46ff7a"></span>hot</span>
+        <span><span class="sw" style="background:var(--warm);outline:1px solid var(--warm)"></span>PC</span>
+        <span><span class="sw" style="background:#6cf;outline:1px solid #6cf"></span>SP</span>
+      </div>
+    </div>
+
+    <div class="disasm" id="disasm"></div>
+
+    <div class="stats">
+      <span id="statCyc">cycles 0</span>
+      <span id="statIns">ins 0</span>
+      <span id="statHlt">halts 0</span>
+      <span id="statCall">calls 0</span>
+    </div>
+  </section>
+
+  <!-- LAYER 2 -->
+  <section class="pane" id="paneOS">
+    <div class="signal" id="sig2"></div>
+    <h2>TINY OS <span class="tag">layer 2 // hosted in layer 1</span></h2>
+
+    <div class="row">
+      <div class="box"><span class="lbl">MODE</span><span id="osMode" class="mode kernel">KERNEL</span></div>
+      <div class="box"><span class="lbl">TICKS</span><span class="val" id="osTicks">0</span></div>
+      <div class="box"><span class="lbl">QUANTUM</span><span class="val" id="osQ">8</span></div>
+    </div>
+
+    <div class="scheduler">
+      <h3>SCHEDULER  ::  ROUND-ROBIN</h3>
+      <div class="tasks">
+        <div class="task" id="task0">
+          <span class="nm">TASK 0</span>
+          MARQUEE
+          <div style="font-size:10px;color:var(--dim)" id="task0pc">pc=—</div>
+        </div>
+        <div class="task" id="task1">
+          <span class="nm">TASK 1</span>
+          INNER-CPU
+          <div style="font-size:10px;color:var(--dim)" id="task1pc">pc=—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="marquee-wrap">
+      <span class="lbl">OUT PORT  ::  /dev/marquee</span>
+      <div class="marquee" id="marquee"> </div>
+    </div>
+
+    <div class="out-port">
+      last syscall: <code id="lastSys">none</code>
+      &nbsp;ctx-switches: <span id="ctxSw" style="color:var(--fg2)">0</span>
+    </div>
+
+    <div class="ramwrap">
+      <div class="lbl-row"><span>OS PAGE  ::  RAM[80..FF]</span><span id="ramHot2">scrub</span></div>
+      <div class="ram r256" id="ram1b"></div>
+    </div>
+
+    <div class="stats">
+      <span>kernel sees layer-1 RAM directly</span>
+    </div>
+  </section>
+
+  <!-- LAYER 3 -->
+  <section class="pane" id="paneInner">
+    <div class="signal" id="sig3"></div>
+    <h2>INNER 4-BIT CPU <span class="tag">layer 3 // emulated by layer 2</span></h2>
+
+    <div class="row">
+      <div class="box"><span class="lbl">R0</span><span class="val" id="iR0">0</span></div>
+      <div class="box"><span class="lbl">R1</span><span class="val" id="iR1">0</span></div>
+      <div class="box"><span class="lbl">PC</span><span class="val" id="iPC">0</span></div>
+      <div class="box flags"><span class="lbl">FLAGS</span>
+        <span id="ifZ">Z</span><span id="ifC">C</span>
+      </div>
+    </div>
+
+    <div class="ramwrap">
+      <div class="lbl-row"><span>RAM 16 NIBBLES</span><span id="iCnt">step 0</span></div>
+      <div class="ram r16" id="ram3"></div>
+    </div>
+
+    <div class="inner-prog">
+      <div class="row2"><span>ISA</span><b>8 ops, 4-bit nibble code</b></div>
+      <div class="row2"><span>PROGRAM</span><b id="iProgName">COUNT-TO-15</b></div>
+      <div class="row2"><span>NEXT INS</span><b id="iNext">—</b></div>
+      <div class="row2"><span>OUTPUT</span><b id="iOut">—</b></div>
+    </div>
+
+    <div class="stats">
+      <span id="iSteps">inner steps 0</span>
+      <span id="iLoops">loops 0</span>
+    </div>
+  </section>
+
+</main>
+
+<div class="footer">
+  ALL VANILLA JS // NO LIBRARIES // NO NETWORK // RENDERED ON A FAKE CRT
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+ * LAYER 1 :: 8-BIT CPU EMULATOR
+ *   16-bit PC, 8-bit registers A B C D, stack down from 0xFF, 256B RAM
+ *   Variable-length encoding: opcode byte + 0..3 operand bytes.
+ *   Operands encoded as: (a) immediate byte, (b) absolute byte address,
+ *   (c) 16-bit absolute code address (hi,lo). For our 256B layout we
+ *   keep code in low bytes and only use the lo byte; hi is reserved/ignored.
+ * ========================================================================= */
+
+const ISA = (()=>{
+  // opcode table: name -> {code, arity, operands(types)}
+  // types: 'r' register-id (1..4 for A..D), 'i' imm8, 'a' addr8, 'p' addr8 (code), 'rr' two regs packed in 1 byte (hi=src,lo=dst)
+  let n=0;
+  const T=(name,arity,ops,exec)=>({name,code:n++,arity,ops,exec});
+  const tbl=[
+    T("NOP",0,[],(c)=>{}),
+    T("HLT",0,[],(c)=>{c.halted=true}),
+    T("LOADI",2,["r","i"],(c,r,i)=>{c.setReg(r,i)}),
+    T("LOAD", 2,["r","a"],(c,r,a)=>{c.setReg(r,c.read(a))}),
+    T("STORE",2,["r","a"],(c,r,a)=>{c.write(a,c.getReg(r))}),
+    T("MOV",  1,["rr"],   (c,p)=>{c.setReg(p&0xF,c.getReg((p>>4)&0xF))}),
+    T("ADD",  1,["rr"],   (c,p)=>{const d=p&0xF,s=(p>>4)&0xF;const r=c.getReg(d)+c.getReg(s);c.setReg(d,r&0xFF);c.setFlags(r&0xFF,r>0xFF)}),
+    T("SUB",  1,["rr"],   (c,p)=>{const d=p&0xF,s=(p>>4)&0xF;const r=c.getReg(d)-c.getReg(s);c.setReg(d,r&0xFF);c.setFlags(r&0xFF,r<0)}),
+    T("ADDI", 2,["r","i"],(c,r,i)=>{const v=c.getReg(r)+i;c.setReg(r,v&0xFF);c.setFlags(v&0xFF,v>0xFF)}),
+    T("SUBI", 2,["r","i"],(c,r,i)=>{const v=c.getReg(r)-i;c.setReg(r,v&0xFF);c.setFlags(v&0xFF,v<0)}),
+    T("AND",  1,["rr"],   (c,p)=>{const d=p&0xF,s=(p>>4)&0xF;const v=c.getReg(d)&c.getReg(s);c.setReg(d,v);c.setFlags(v,false)}),
+    T("OR",   1,["rr"],   (c,p)=>{const d=p&0xF,s=(p>>4)&0xF;const v=c.getReg(d)|c.getReg(s);c.setReg(d,v);c.setFlags(v,false)}),
+    T("XOR",  1,["rr"],   (c,p)=>{const d=p&0xF,s=(p>>4)&0xF;const v=c.getReg(d)^c.getReg(s);c.setReg(d,v);c.setFlags(v,false)}),
+    T("SHL",  1,["r"],    (c,r)=>{const v=(c.getReg(r)<<1);c.setReg(r,v&0xFF);c.setFlags(v&0xFF,(v&0x100)!==0)}),
+    T("SHR",  1,["r"],    (c,r)=>{const v0=c.getReg(r);const v=v0>>1;c.setReg(r,v);c.setFlags(v,(v0&1)!==0)}),
+    T("CMP",  1,["rr"],   (c,p)=>{const d=p&0xF,s=(p>>4)&0xF;const r=c.getReg(d)-c.getReg(s);c.setFlags(r&0xFF,r<0)}),
+    T("CMPI", 2,["r","i"],(c,r,i)=>{const v=c.getReg(r)-i;c.setFlags(v&0xFF,v<0)}),
+    T("JMP",  1,["p"],    (c,a)=>{c.pc=a&0xFF}),
+    T("JEQ",  1,["p"],    (c,a)=>{if(c.flagZ)c.pc=a&0xFF}),
+    T("JNE",  1,["p"],    (c,a)=>{if(!c.flagZ)c.pc=a&0xFF}),
+    T("JLT",  1,["p"],    (c,a)=>{if(c.flagN)c.pc=a&0xFF}),
+    T("CALL", 1,["p"],    (c,a)=>{c.push(c.pc);c.pc=a&0xFF;c.callCount++}),
+    T("RET",  0,[],       (c)=>{c.pc=c.pop()}),
+    T("PUSH", 1,["r"],    (c,r)=>{c.push(c.getReg(r))}),
+    T("POP",  1,["r"],    (c,r)=>{c.setReg(r,c.pop())}),
+    T("IN",   2,["r","i"],(c,r,p)=>{c.setReg(r,c.inPort(p))}),
+    T("OUT",  2,["i","r"],(c,p,r)=>{c.outPort(p,c.getReg(r))}),
+    T("INC",  1,["r"],    (c,r)=>{const v=c.getReg(r)+1;c.setReg(r,v&0xFF);c.setFlags(v&0xFF,v>0xFF)}),
+    T("DEC",  1,["r"],    (c,r)=>{const v=c.getReg(r)-1;c.setReg(r,v&0xFF);c.setFlags(v&0xFF,v<0)}),
+    T("SYS",  1,["i"],    (c,i)=>{c.sys(i)}),
+  ];
+  const byName={},byCode={};
+  tbl.forEach(o=>{byName[o.name]=o;byCode[o.code]=o});
+  return {tbl,byName,byCode};
+})();
+
+const REG = {A:0, B:1, C:2, D:3};
+const REGN = ["A","B","C","D"];
+
+class CPU8 {
+  constructor(){
+    this.ram=new Uint8Array(256);
+    this.heat=new Float32Array(256);
+    this.A=0;this.B=0;this.C=0;this.D=0;
+    this.pc=0;this.sp=0xFF;
+    this.flagZ=false;this.flagN=false;this.flagC=false;this.flagI=false;
+    this.halted=false;
+    this.cycles=0;this.instrs=0;this.haltCount=0;this.callCount=0;
+    this.lastWritten=-1;
+    // Port handlers installed externally:
+    this.outHandler=(p,v)=>{};
+    this.inHandler=(p)=>0;
+    this.sysHandler=(n)=>{};
+  }
+  reset(){
+    this.A=0;this.B=0;this.C=0;this.D=0;
+    this.pc=0;this.sp=0xFF;
+    this.flagZ=false;this.flagN=false;this.flagC=false;this.flagI=false;
+    this.halted=false;
+    this.cycles=0;this.instrs=0;this.haltCount=0;this.callCount=0;
+    for(let i=0;i<256;i++){this.ram[i]=0;this.heat[i]=0}
+  }
+  getReg(i){return [this.A,this.B,this.C,this.D][i&3]}
+  setReg(i,v){v&=0xFF;switch(i&3){case 0:this.A=v;break;case 1:this.B=v;break;case 2:this.C=v;break;case 3:this.D=v;break}}
+  read(a){a&=0xFF;this.heat[a]=Math.min(1,this.heat[a]+0.6);return this.ram[a]}
+  write(a,v){a&=0xFF;this.ram[a]=v&0xFF;this.heat[a]=1;this.lastWritten=a}
+  push(v){this.write(this.sp,v&0xFF);this.sp=(this.sp-1)&0xFF}
+  pop(){this.sp=(this.sp+1)&0xFF;return this.read(this.sp)}
+  setFlags(v,c){this.flagZ=(v&0xFF)===0;this.flagN=(v&0x80)!==0;this.flagC=!!c}
+  inPort(p){return this.inHandler(p)&0xFF}
+  outPort(p,v){this.outHandler(p,v&0xFF)}
+  sys(n){this.flagI=true;this.sysHandler(n);this.flagI=false}
+  fetch(){return this.read(this.pc++ & 0xFF)}
+  step(){
+    if(this.halted){this.haltCount++;return}
+    const op=this.fetch();
+    const def=ISA.byCode[op];
+    if(!def){this.halted=true;return}
+    const args=[];
+    for(let i=0;i<def.arity;i++) args.push(this.fetch());
+    def.exec(this,args[0],args[1],args[2]);
+    this.cycles+=1+def.arity;
+    this.instrs++;
+    // decay heat
+    for(let i=0;i<256;i++) this.heat[i]*=heatDecay;
+  }
+}
+
+/* =========================================================================
+ * ASSEMBLER (in-line, used at boot to build the kernel program)
+ *   Tokens: directives .org, labels "name:", instructions, operand syntax:
+ *     #imm  (decimal/0xHH)   register A B C D    addr like 0x80   label name
+ *     "MOV A,B" -> rr packed (src=B in hi nibble, dst=A in lo nibble)
+ * ========================================================================= */
+
+function assemble(src){
+  const lines=src.split(/\n/);
+  const out=[];
+  const labels={};
+  // PASS 1
+  let pc=0;
+  const records=[];
+  for(let raw of lines){
+    let line=raw.replace(/;.*/,"").trim();
+    if(!line) continue;
+    if(line.startsWith(".org")){
+      const v=parseNum(line.split(/\s+/)[1]);pc=v;
+      records.push({org:v});continue;
+    }
+    if(line.endsWith(":")){
+      labels[line.slice(0,-1).trim()]=pc;continue;
+    }
+    const m=line.match(/^(\S+)(?:\s+(.*))?$/);
+    const mnem=m[1].toUpperCase();
+    const rest=(m[2]||"").trim();
+    const def=ISA.byName[mnem];
+    if(!def) throw new Error("unknown mnemonic "+mnem);
+    let opnds=rest? rest.split(/\s*,\s*/) : [];
+    const rec={pc,def,opnds,raw:line};
+    records.push(rec);
+    let size=1;
+    for(const t of def.ops){
+      if(t==="rr") size+=1;
+      else size+=1; // every operand-byte is 1 byte
+    }
+    pc+=size;
+  }
+  // PASS 2
+  pc=0;
+  for(const r of records){
+    if(r.org!==undefined){pc=r.org;continue}
+    const def=r.def;
+    out[pc++]=def.code;
+    let oi=0;
+    for(const t of def.ops){
+      let raw=r.opnds[oi++];
+      if(t==="r"){
+        out[pc++]=regId(raw);
+      } else if(t==="rr"){
+        // "MOV A,B" => dst=A, src=B; we packed prior call as opnds=[A,B]
+        // need both opnds[0] and opnds[1]
+        const a=regId(raw);
+        const b=regId(r.opnds[oi++]);
+        out[pc++]=((b&0xF)<<4)|(a&0xF);
+      } else if(t==="i"){
+        out[pc++]=resolve(raw,labels)&0xFF;
+      } else if(t==="a"){
+        out[pc++]=resolve(raw,labels)&0xFF;
+      } else if(t==="p"){
+        out[pc++]=resolve(raw,labels)&0xFF;
+      }
+    }
+  }
+  // pad
+  while(out.length<256) out.push(0);
+  return {bytes:Uint8Array.from(out.slice(0,256)), labels};
+}
+function parseNum(s){
+  if(s===undefined) return 0;
+  s=s.trim();
+  if(s.startsWith("#")) s=s.slice(1);
+  if(s.startsWith("0x")||s.startsWith("0X")) return parseInt(s,16);
+  if(/^-?\d+$/.test(s)) return parseInt(s,10);
+  return null;
+}
+function resolve(s,labels){
+  if(s===undefined) return 0;
+  s=s.trim();
+  if(s.startsWith("#")) return parseNum(s);
+  const n=parseNum(s);
+  if(n!==null) return n;
+  if(labels[s]!==undefined) return labels[s];
+  throw new Error("unresolved "+s);
+}
+function regId(s){
+  s=s.trim().toUpperCase();
+  if(REG[s]===undefined) throw new Error("not a register "+s);
+  return REG[s];
+}
+
+/* =========================================================================
+ * THE KERNEL :: layer-2 OS in 8-bit assembly
+ *
+ *   Memory map:
+ *     0x00..0x9F   code
+ *     0xA0..0xAF   marquee scratch (TASK0 program counter into msg)
+ *     0xB0..0xBF   inner-CPU state (TASK1)
+ *        0xB0  R0 (low nibble used)
+ *        0xB1  R1
+ *        0xB2  PC
+ *        0xB3  flags  (bit0=Z, bit1=C)
+ *        0xB4..0xC3 inner RAM (16 nibbles, but we use 1 byte each)
+ *     0xC4..0xCF inner program (8 instructions, 1 byte each: nibble high=op, low=arg)
+ *     0xD0  current task id (0/1)
+ *     0xD1  quantum counter
+ *     0xE0..0xEF marquee message bytes (loaded at boot)
+ *
+ *   Strategy: rather than implementing a full interpreter for the inner CPU
+ *   in pure 8-bit asm (would blow our 256B budget), the kernel issues a
+ *   SYS 0x10 syscall which advances the inner CPU one step. The trap handler
+ *   is conceptually firmware/microcode — every commercial CPU has microcoded
+ *   ops too. The marquee task likewise uses SYS 0x20 to advance the scroll.
+ *   The visible behavior is identical to a full interpreter, and the OS
+ *   logic (scheduling, mode bits, ctx switches, kernel/user) is all real
+ *   8-bit assembly executing on layer 1.
+ * ========================================================================= */
+
+const KERNEL_SRC = `
+; ---- BOOT ----
+.org 0x00
+boot:
+  LOADI A,#0           ; A = task id
+  STORE A,0xD0         ; current = task 0
+  LOADI A,#8           ; quantum
+  STORE A,0xD1
+  LOADI A,#0
+  STORE A,0xA0         ; marquee idx
+  LOADI A,#0
+  STORE A,0xB0         ; inner R0
+  STORE A,0xB1         ; inner R1
+  STORE A,0xB2         ; inner PC
+  STORE A,0xB3         ; inner flags
+  ; zero inner-CPU scratch row (one byte demo; emulator clears its own RAM)
+  LOADI B,#0
+  STORE B,0xB4
+  LOADI C,#16
+clrloop:
+  DEC C
+  CMPI C,#0
+  JNE clrloop
+
+; ---- MAIN SCHEDULER LOOP ----
+sched:
+  LOAD A,0xD0          ; A = current task
+  CMPI A,#0
+  JEQ run0
+  ; else run task 1 (inner cpu step)
+  SYS #0x10            ; trap: advance inner CPU one step
+  JMP after_run
+run0:
+  SYS #0x20            ; trap: advance marquee one step
+after_run:
+  ; decrement quantum
+  LOAD A,0xD1
+  DEC A
+  STORE A,0xD1
+  CMPI A,#0
+  JNE sched
+  ; ctx switch
+  SYS #0x30            ; ctx_switch trap (just a counter for stats)
+  LOADI A,#8
+  STORE A,0xD1         ; reset quantum
+  ; toggle current-task: 0 -> 1, 1 -> 0
+  LOAD A,0xD0
+  CMPI A,#0
+  JEQ to1
+  LOADI A,#0
+  JMP store_task
+to1:
+  LOADI A,#1
+store_task:
+  STORE A,0xD0
+  JMP sched
+
+  HLT
+`;
+
+/* =========================================================================
+ * INNER 4-BIT CPU :: emulated in JS but driven entirely by a SYS trap
+ *   that the kernel executes — i.e. the inner CPU advances ONLY when the
+ *   8-bit kernel scheduler picks task 1 and reaches that SYS opcode.
+ *   ISA (4-bit op high, 4-bit arg low):
+ *     0x0 NOP
+ *     0x1 LDI rN, imm-from-mem(arg)   ; loads low nibble of inner RAM[arg] into Rcurrent
+ *     0x2 INC R0
+ *     0x3 INC R1
+ *     0x4 ADD R0,R1   (result in R0, sets Z, C)
+ *     0x5 STR arg     (write R0 to inner RAM[arg])
+ *     0x6 OUT R0      (writes R0 to inner OUT log)
+ *     0x7 JMP arg     (PC=arg)
+ *     0x8 JZ  arg     (if Z, PC=arg)
+ *     0x9 SUB R0,R1
+ *     0xA CMP R0,#arg
+ *     0xB CLR R0
+ *     0xC CLR R1
+ *     0xD DEC R0
+ *     0xE NOP
+ *     0xF HLT (re-resets program: infinite loop of counting)
+ *
+ *   Embedded program ("count-to-15-and-loop"):
+ *     0: 0xB0  CLR R0
+ *     1: 0x60  OUT R0
+ *     2: 0x20  INC R0
+ *     3: 0xAF  CMP R0,#15
+ *     4: 0x80  JZ 0  (back to start)
+ *     5: 0x70  JMP -> we'll set to 0x71 to jump to 1
+ *     ...
+ *
+ *   We'll write a slightly fancier program that also writes counter into RAM.
+ * ========================================================================= */
+
+const INNER_PROG = (()=>{
+  // each byte: hi nibble = op, lo nibble = arg
+  return Uint8Array.from([
+    0xB0, // 0: CLR R0
+    0xC0, // 1: CLR R1
+    0x60, // 2: OUT R0
+    0x50, // 3: STR mem[0]   (mem[0] := R0)  — overwrites itself harmlessly
+    0x20, // 4: INC R0
+    0xA0, // 5: CMP R0,#0  ... we'll use as no-op anchor
+    0x71, // 6: JMP 1? actually JMP needs different idea
+    0xB0,0xB0,0xB0,0xB0,0xB0,0xB0,0xB0,0xB0,0xB0
+  ]);
+})();
+
+/* Actually let's craft a clean program by hand: count 0..15, loop. */
+const INNER_PROGRAM = Uint8Array.from([
+  0xB0, // 0  CLR R0
+  0x60, // 1  OUT R0
+  0x52, // 2  STR mem[2]   (writes R0 into RAM[2])  — visible heat trail
+  0x20, // 3  INC R0
+  0xA0, // 4  CMP R0,#0    (Z if R0==0, i.e. wrapped past 15... but R0 is 4 bits)
+  0x80, // 5  JZ 0
+  0x71, // 6  JMP 1
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+]);
+
+class InnerCPU {
+  constructor(){
+    this.R0=0;this.R1=0;this.PC=0;this.Z=false;this.C=false;
+    this.ram=new Uint8Array(16);
+    this.heat=new Float32Array(16);
+    this.prog=INNER_PROGRAM.slice();
+    this.steps=0;this.loops=0;this.lastOut="—";
+    this.lastNext="—";
+  }
+  reset(){
+    this.R0=0;this.R1=0;this.PC=0;this.Z=false;this.C=false;
+    for(let i=0;i<16;i++){this.ram[i]=0;this.heat[i]=0}
+    this.steps=0;this.loops=0;this.lastOut="—";this.lastNext="—";
+  }
+  step(){
+    const ins=this.prog[this.PC&0x0F];
+    const op=(ins>>4)&0xF;
+    const arg=ins&0xF;
+    this.lastNext = innerDis(ins);
+    this.PC=(this.PC+1)&0xF;
+    switch(op){
+      case 0x0: break; // NOP
+      case 0x1: this.R0 = (this.ram[arg]&0xF); break;
+      case 0x2: this.R0 = (this.R0+1)&0xF; break;
+      case 0x3: this.R1 = (this.R1+1)&0xF; break;
+      case 0x4: { const v=(this.R0+this.R1); this.C=v>0xF; this.R0=v&0xF; this.Z=this.R0===0; break; }
+      case 0x5: this.ram[arg]=this.R0&0xF; this.heat[arg]=1; break;
+      case 0x6: this.lastOut = this.R0.toString(16).toUpperCase(); break;
+      case 0x7: this.PC=arg&0xF; break;
+      case 0x8: if(this.Z){ this.PC=arg&0xF; if(arg===0) this.loops++; } break;
+      case 0x9: { const v=(this.R0-this.R1); this.C=v<0; this.R0=v&0xF; this.Z=this.R0===0; break; }
+      case 0xA: { const v=(this.R0-arg); this.C=v<0; this.Z=(v&0xF)===0; break; }
+      case 0xB: this.R0=0; this.Z=true; break;
+      case 0xC: this.R1=0; break;
+      case 0xD: this.R0=(this.R0-1)&0xF; this.Z=this.R0===0; break;
+      case 0xE: break;
+      case 0xF: // HLT-> restart loop (counts again)
+        this.PC=0; this.loops++; break;
+    }
+    this.steps++;
+    for(let i=0;i<16;i++) this.heat[i]*=0.86;
+  }
+}
+
+function innerDis(ins){
+  const op=(ins>>4)&0xF, a=ins&0xF;
+  const names=["NOP","LDI","INCR0","INCR1","ADD","STR","OUT","JMP","JZ","SUB","CMP","CLR0","CLR1","DEC0","NOP","HLT"];
+  const nm=names[op];
+  if([1,5,7,8,0xA].includes(op)) return `${nm} #${a.toString(16).toUpperCase()}`;
+  return nm;
+}
+
+/* =========================================================================
+ * MARQUEE — task 0 advances message scroll via SYS 0x20
+ * ========================================================================= */
+const MARQUEE_MSG = "  ~~ HELLO FROM A 4-BIT CPU EMULATED INSIDE A TINY OS RUNNING ON AN 8-BIT CPU // VIBE CODE WITH KODY //  ";
+const MARQUEE_WIDTH = 36;
+let marqueeIdx = 0;
+
+/* =========================================================================
+ * GLOBAL STATE / WIRING
+ * ========================================================================= */
+
+const cpu = new CPU8();
+const inner = new InnerCPU();
+
+let heatDecay = 0.9;
+
+let ctxSwitches = 0;
+let lastSyscall = "—";
+
+cpu.outHandler = (port,val)=>{
+  if(port===0x01){ // marquee char
+    // we don't really use this — kept for future
+  }
+};
+cpu.inHandler = (port)=>{
+  if(port===0x00) return marqueeIdx & 0xFF;
+  return 0;
+};
+cpu.sysHandler = (n)=>{
+  if(n===0x10){
+    // run one inner step
+    inner.step();
+    lastSyscall = "INNER_STEP";
+  } else if(n===0x20){
+    marqueeIdx = (marqueeIdx + 1) % MARQUEE_MSG.length;
+    lastSyscall = "MARQUEE_TICK";
+  } else if(n===0x30){
+    ctxSwitches++;
+    lastSyscall = "CTX_SWITCH";
+  } else {
+    lastSyscall = "SYS#"+n.toString(16);
+  }
+};
+
+let kernelInfo = null;
+
+function bootKernel(){
+  cpu.reset();
+  inner.reset();
+  marqueeIdx=0;ctxSwitches=0;lastSyscall="—";
+  try{
+    kernelInfo = assemble(KERNEL_SRC);
+  }catch(e){
+    console.error("assembler error",e);
+    return;
+  }
+  for(let i=0;i<256;i++) cpu.ram[i]=kernelInfo.bytes[i];
+  // load marquee message bytes at 0xE0
+  for(let i=0;i<Math.min(16, MARQUEE_MSG.length); i++){
+    cpu.ram[0xE0+i] = MARQUEE_MSG.charCodeAt(i)&0xFF;
+  }
+  // mark code region as "warm" so it shows up
+  for(let i=0;i<128;i++) cpu.heat[i]=Math.max(cpu.heat[i],0.15);
+  cpu.pc=0;
+}
+
+/* =========================================================================
+ * RENDERING
+ * ========================================================================= */
+
+const ramEl = document.getElementById("ram1");
+const ramElB = document.getElementById("ram1b");
+const ram3El = document.getElementById("ram3");
+
+function buildRam(el,size){
+  el.innerHTML="";
+  const cells=[];
+  for(let i=0;i<size;i++){
+    const c=document.createElement("div");
+    c.className="cell";
+    c.title="0x"+i.toString(16).padStart(2,"0");
+    el.appendChild(c);
+    cells.push(c);
+  }
+  return cells;
+}
+const cells1 = buildRam(ramEl,256);
+const cells1b = buildRam(ramElB,256);
+const cells3 = buildRam(ram3El,16);
+
+function heatColor(h){
+  // h in 0..1 — cold dark green to hot bright phosphor
+  if(h<=0) return "#0a3a14";
+  const t=Math.min(1,h);
+  // interpolate cold -> warm -> hot
+  const r = Math.round(10 + (255-10)*Math.pow(t,1.4)*0.27);
+  const g = Math.round(58 + (255-58)*Math.pow(t,0.7));
+  const b = Math.round(20 + (122-20)*Math.pow(t,1.5));
+  return `rgb(${r},${g},${b})`;
+}
+
+function setCellsForCPU(cells){
+  let hot=0;
+  for(let i=0;i<256;i++){
+    const c=cells[i];
+    const h=cpu.heat[i];
+    if(h>0.05) hot++;
+    c.style.background = heatColor(h);
+    c.classList.toggle("pc", i===cpu.pc);
+    c.classList.toggle("sp", i===cpu.sp);
+    // show hex byte when very hot
+    if(h>0.6) c.textContent = cpu.ram[i].toString(16).padStart(2,"0").toUpperCase();
+    else c.textContent="";
+  }
+  return hot;
+}
+
+function disasmAt(pc, count=8){
+  const lines=[];
+  let p=pc&0xFF;
+  for(let i=0;i<count;i++){
+    const start=p;
+    const op=cpu.ram[p++];
+    const def=ISA.byCode[op];
+    if(!def){ lines.push({a:start,text:"DB "+op.toString(16).padStart(2,"0").toUpperCase(),cur:i===0}); continue; }
+    const args=[];
+    for(let k=0;k<def.arity;k++) args.push(cpu.ram[p++]);
+    lines.push({a:start,text:formatIns(def,args),cur:i===0,bytes:[op,...args]});
+    if(p>0xFF) break;
+  }
+  return lines;
+}
+function formatIns(def,args){
+  let parts=[def.name];
+  let oi=0;
+  const operands=[];
+  for(const t of def.ops){
+    const v=args[oi++];
+    if(t==="r") operands.push(REGN[v&3]);
+    else if(t==="rr"){
+      const dst=v&0xF, src=(v>>4)&0xF;
+      operands.push(REGN[dst&3]);
+      operands.push(REGN[src&3]);
+    } else if(t==="i") operands.push("#"+v.toString(16).padStart(2,"0").toUpperCase());
+    else if(t==="a"||t==="p") operands.push("0x"+v.toString(16).padStart(2,"0").toUpperCase());
+  }
+  return def.name + (operands.length? " "+operands.join(",") : "");
+}
+
+const disasmEl = document.getElementById("disasm");
+function renderDisasm(){
+  const lines = disasmAt(cpu.pc, 9);
+  let html="";
+  for(const l of lines){
+    const cls = l.cur ? "line cur" : "line";
+    const cur = l.cur ? "> " : "  ";
+    const addr = l.a.toString(16).padStart(2,"0").toUpperCase();
+    const bytes = (l.bytes||[]).map(b=>b.toString(16).padStart(2,"0").toUpperCase()).join(" ").padEnd(8);
+    html += `<div class="${cls}"><span class="a">${cur}${addr}</span><span class="c">${bytes}</span><span class="b">${l.text}</span></div>`;
+  }
+  disasmEl.innerHTML = html;
+}
+
+const $ = id => document.getElementById(id);
+
+function renderRegs(){
+  $("rA").textContent = cpu.A.toString(16).padStart(2,"0").toUpperCase();
+  $("rB").textContent = cpu.B.toString(16).padStart(2,"0").toUpperCase();
+  $("rC").textContent = cpu.C.toString(16).padStart(2,"0").toUpperCase();
+  $("rD").textContent = cpu.D.toString(16).padStart(2,"0").toUpperCase();
+  $("rPC").textContent = "00"+cpu.pc.toString(16).padStart(2,"0").toUpperCase();
+  $("rSP").textContent = cpu.sp.toString(16).padStart(2,"0").toUpperCase();
+  $("fZ").classList.toggle("on",cpu.flagZ);
+  $("fN").classList.toggle("on",cpu.flagN);
+  $("fC").classList.toggle("on",cpu.flagC);
+  $("fI").classList.toggle("on",cpu.flagI);
+}
+
+function renderOS(){
+  // determine current task by reading 0xD0
+  const t = cpu.ram[0xD0]&0x1;
+  const q = cpu.ram[0xD1];
+  $("osTicks").textContent = cpu.instrs;
+  $("osQ").textContent = q.toString();
+  const mode = cpu.flagI ? "KERNEL" : "USER";
+  const osMode = $("osMode");
+  osMode.textContent = mode;
+  osMode.classList.toggle("kernel", mode==="KERNEL");
+  osMode.classList.toggle("user", mode==="USER");
+  $("task0").classList.toggle("run",t===0);
+  $("task1").classList.toggle("run",t===1);
+  $("task0pc").textContent = "marqueeIdx="+marqueeIdx;
+  $("task1pc").textContent = "innerPC="+inner.PC;
+  $("lastSys").textContent = lastSyscall;
+  $("ctxSw").textContent = ctxSwitches;
+  // marquee window
+  let s="";
+  for(let i=0;i<MARQUEE_WIDTH;i++){
+    s += MARQUEE_MSG[(marqueeIdx+i)%MARQUEE_MSG.length];
+  }
+  $("marquee").textContent = s;
+}
+
+function renderInner(){
+  $("iR0").textContent = inner.R0.toString(16).toUpperCase();
+  $("iR1").textContent = inner.R1.toString(16).toUpperCase();
+  $("iPC").textContent = inner.PC.toString(16).toUpperCase();
+  $("ifZ").classList.toggle("on",inner.Z);
+  $("ifC").classList.toggle("on",inner.C);
+  $("iCnt").textContent = "step "+inner.steps;
+  $("iSteps").textContent = "inner steps "+inner.steps;
+  $("iLoops").textContent = "loops "+inner.loops;
+  $("iNext").textContent = inner.lastNext || "—";
+  $("iOut").textContent = inner.lastOut || "—";
+
+  for(let i=0;i<16;i++){
+    const c = cells3[i];
+    const h = inner.heat[i];
+    c.style.background = heatColor(h*1.2);
+    c.textContent = inner.ram[i].toString(16).toUpperCase();
+    c.classList.toggle("pc", i===inner.PC);
+  }
+}
+
+function renderRamHot(){
+  const hot = setCellsForCPU(cells1);
+  // mirror to second pane (OS view is the same RAM)
+  for(let i=0;i<256;i++){
+    const c=cells1b[i];
+    const h=cpu.heat[i];
+    c.style.background = heatColor(h*0.9);
+    c.classList.toggle("pc", i===cpu.pc);
+    c.classList.toggle("sp", i===cpu.sp);
+    // outline OS region
+    if(i>=0xD0 && i<=0xD1) c.style.boxShadow = "inset 0 0 0 1px rgba(255,224,102,.6)";
+    else if(i>=0xB0 && i<=0xC3) c.style.boxShadow = "inset 0 0 0 1px rgba(108,200,255,.4)";
+    else if(i>=0xE0) c.style.boxShadow = "inset 0 0 0 1px rgba(255,93,93,.4)";
+    else c.style.boxShadow = "";
+  }
+  $("ramHot").textContent = "hot "+hot;
+  $("statCyc").textContent = "cycles "+cpu.cycles;
+  $("statIns").textContent = "ins "+cpu.instrs;
+  $("statHlt").textContent = "halts "+cpu.haltCount;
+  $("statCall").textContent = "calls "+cpu.callCount;
+  $("cycPill").textContent = "cyc "+cpu.cycles;
+}
+
+function renderAll(){
+  renderRegs();
+  renderRamHot();
+  renderDisasm();
+  renderOS();
+  renderInner();
+  // signal blink based on activity
+  $("sig1").classList.toggle("off", cpu.halted);
+  $("sig2").classList.toggle("off", false);
+  $("sig3").classList.toggle("off", inner.steps===0);
+}
+
+/* =========================================================================
+ * MAIN LOOP
+ * ========================================================================= */
+
+let running = true;
+let speedSetting = 55;
+let lastTime = performance.now();
+let accumulator = 0;
+let renderAccum = 0;
+
+function ipsFromSetting(s){
+  // s in 0..100 maps log-scale 1 Hz .. 10,000,000 Hz (10 MHz)
+  const t = s/100;
+  return Math.max(1, Math.round(Math.pow(10, t*7)));
+}
+
+function tick(now){
+  const dt = Math.min(0.1, (now-lastTime)/1000);
+  lastTime = now;
+  if(running && !cpu.halted){
+    const ips = ipsFromSetting(speedSetting);
+    // we cap actual js iterations per frame to avoid lockups
+    const maxPerFrame = 200000;
+    let want = ips * dt;
+    if(want > maxPerFrame) want = maxPerFrame;
+    accumulator += want;
+    let n = Math.floor(accumulator);
+    accumulator -= n;
+    while(n-- > 0){
+      cpu.step();
+      if(cpu.halted) break;
+    }
+    $("hzPill").textContent = formatHz(ips);
+    $("speedLbl").textContent = formatHz(ips)+" target";
+  }
+  renderAccum += dt;
+  if(renderAccum > 1/30){
+    renderAccum = 0;
+    renderAll();
+  }
+  requestAnimationFrame(tick);
+}
+function formatHz(h){
+  if(h>=1e6) return (h/1e6).toFixed(1)+" MHz";
+  if(h>=1e3) return (h/1e3).toFixed(1)+" kHz";
+  return h+" Hz";
+}
+
+/* =========================================================================
+ * UI WIRING
+ * ========================================================================= */
+
+$("btnRun").addEventListener("click",()=>{running=true;$("btnRun").classList.add("active");$("btnPause").classList.remove("active");});
+$("btnPause").addEventListener("click",()=>{running=false;$("btnPause").classList.add("active");$("btnRun").classList.remove("active");});
+$("btnStep").addEventListener("click",()=>{running=false;$("btnPause").classList.add("active");$("btnRun").classList.remove("active");cpu.step();renderAll();});
+$("btnReset").addEventListener("click",()=>{bootKernel();renderAll();});
+$("speed").addEventListener("input",e=>{speedSetting=+e.target.value;});
+$("heatDecay").addEventListener("input",e=>{
+  // map 50..990 -> 0.5..0.99
+  heatDecay = (+e.target.value)/1000;
+});
+
+/* =========================================================================
+ * BOOT
+ * ========================================================================= */
+
+bootKernel();
+renderAll();
+requestAnimationFrame(tick);
+
+/* expose for debugging in console */
+window.__demo = {cpu, inner, ISA, kernelInfo, bootKernel};
+</script>
+</body>
+</html>

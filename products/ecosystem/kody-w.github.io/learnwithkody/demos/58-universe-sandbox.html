@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Universe Sandbox — N-Body Gravity</title>
+<style>
+  :root{
+    --fg:#e6f0ff;
+    --bg:#02030a;
+    --panel:rgba(8,12,28,0.78);
+    --line:rgba(120,160,255,0.25);
+    --accent:#7ab6ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;overflow:hidden;cursor:crosshair}
+  canvas{display:block;position:absolute;inset:0}
+  #ui{
+    position:absolute;top:12px;left:12px;z-index:10;
+    background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;font-size:12px;line-height:1.5;
+    min-width:280px;
+    box-shadow:0 8px 30px rgba(0,0,0,0.6);
+  }
+  #ui h1{margin:0 0 6px 0;font-size:14px;letter-spacing:0.5px;color:var(--accent)}
+  #ui .row{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:4px 0}
+  #ui .stats{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:#aac8ff}
+  #ui label{display:block;margin-top:8px;font-size:11px;color:#9bb6e0;text-transform:uppercase;letter-spacing:0.6px}
+  #ui input[type=range]{width:100%;accent-color:var(--accent)}
+  #ui button{
+    background:rgba(60,100,180,0.25);color:var(--fg);
+    border:1px solid var(--line);border-radius:6px;
+    padding:5px 10px;font-size:11px;cursor:pointer;margin:2px 2px;
+    transition:all 0.15s;
+  }
+  #ui button:hover{background:rgba(120,170,255,0.35)}
+  #ui button.active{background:rgba(120,170,255,0.55);box-shadow:0 0 10px rgba(120,170,255,0.5)}
+  #help{
+    position:absolute;bottom:12px;left:12px;z-index:10;
+    background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:10px;
+    padding:10px 14px;font-size:11px;line-height:1.6;
+    color:#aac8ff;font-family:"SF Mono",Menlo,monospace;
+    max-width:340px;
+  }
+  #help kbd{background:rgba(120,160,255,0.18);padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--fg);font-size:10px}
+  #info{
+    position:absolute;top:12px;right:12px;z-index:10;
+    background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;font-size:12px;line-height:1.5;
+    min-width:220px;display:none;
+    font-family:"SF Mono",Menlo,monospace;
+  }
+  #info h2{margin:0 0 6px 0;font-size:13px;color:var(--accent);font-family:-apple-system,sans-serif}
+  #spawnHint{
+    position:absolute;z-index:5;pointer-events:none;
+    color:#fff;font-size:11px;font-family:"SF Mono",Menlo,monospace;
+    background:rgba(0,0,0,0.6);padding:3px 7px;border-radius:4px;
+    border:1px solid var(--line);display:none;
+  }
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>UNIVERSE SANDBOX</h1>
+  <div class="row stats">
+    <span>Bodies: <span id="bodyCount">0</span></span>
+    <span>FPS: <span id="fps">--</span></span>
+  </div>
+  <div class="row stats">
+    <span>Time: <span id="timeScale">1.00x</span></span>
+    <span>Sim t: <span id="simTime">0</span></span>
+  </div>
+
+  <label>Time Scale (logarithmic)</label>
+  <input type="range" id="time" min="-2" max="6" step="0.01" value="0" />
+
+  <label>Spawn Mass (wheel to adjust)</label>
+  <input type="range" id="mass" min="0.1" max="100" step="0.1" value="5" />
+  <div class="row stats"><span>Mass: <span id="massVal">5.0</span></span></div>
+
+  <div class="row" style="margin-top:8px">
+    <button id="playBtn" class="active">Pause</button>
+    <button id="stepBtn">Step</button>
+    <button id="comBtn">Center COM</button>
+  </div>
+  <div class="row">
+    <button id="clearBtn">Clear (C)</button>
+    <button id="randBtn">Cluster (R)</button>
+    <button id="orbitBtn">Orbit (O)</button>
+    <button id="diskBtn">Galaxy (1)</button>
+  </div>
+</div>
+
+<div id="info">
+  <h2 id="infoTitle">Body Info</h2>
+  <div>Type: <span id="iType"></span></div>
+  <div>Mass: <span id="iMass"></span></div>
+  <div>Speed: <span id="iSpeed"></span></div>
+  <div>KE: <span id="iKE"></span></div>
+  <div>Pos: <span id="iPos"></span></div>
+</div>
+
+<div id="help">
+  <div><kbd>L-Drag</kbd> spawn planet  <span class="swatch" style="background:#6ec1ff"></span></div>
+  <div><kbd>R-Drag</kbd> spawn star  <span class="swatch" style="background:#ffd86e"></span></div>
+  <div><kbd>Ctrl+Drag</kbd> spawn black hole  <span class="swatch" style="background:#000;border:1px solid #fff"></span></div>
+  <div><kbd>Wheel</kbd> mass / zoom (when over scene)  <kbd>Shift+Wheel</kbd> = mass only</div>
+  <div><kbd>MMB-Drag</kbd> orbit camera  <kbd>Click body</kbd> to select</div>
+  <div><kbd>C</kbd> clear  <kbd>R</kbd> cluster  <kbd>O</kbd> orbit demo  <kbd>1</kbd> galaxy</div>
+  <div><kbd>Space</kbd> pause/play  <kbd>.</kbd> step</div>
+</div>
+
+<div id="spawnHint"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ===========================================================
+// CONSTANTS / WORLD
+// ===========================================================
+const G = 1.0;                  // gravitational constant (sim units)
+const SOFTENING = 0.25;         // avoid singularities
+const COLLIDE_K = 0.85;         // collision proximity factor
+const TRAIL_LEN = 200;
+const MAX_BODIES = 2500;
+const THETA = 0.7;              // Barnes-Hut opening angle
+const BH_THRESHOLD = 100;       // bodies above this -> use Barnes-Hut
+
+// ===========================================================
+// THREE SETUP
+// ===========================================================
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000005, 0.0008);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 100000);
+camera.position.set(0, 80, 220);
+
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000005, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+// Procedural starfield
+function makeStarfield(){
+  const N = 5000;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(N*3);
+  const col = new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const r = 8000 + Math.random()*2000;
+    const t = Math.random()*Math.PI*2;
+    const p = Math.acos(2*Math.random()-1);
+    pos[i*3]   = r*Math.sin(p)*Math.cos(t);
+    pos[i*3+1] = r*Math.sin(p)*Math.sin(t);
+    pos[i*3+2] = r*Math.cos(p);
+    const c = 0.4 + 0.6*Math.random();
+    const tint = Math.random();
+    col[i*3]   = c * (0.7 + 0.3*tint);
+    col[i*3+1] = c * (0.85);
+    col[i*3+2] = c * (1.0 - 0.2*tint);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+  const mat = new THREE.PointsMaterial({
+    size: 1.6, sizeAttenuation: false, vertexColors: true,
+    transparent: true, opacity: 0.9, depthWrite: false
+  });
+  return new THREE.Points(geo, mat);
+}
+scene.add(makeStarfield());
+
+// Ambient base light so non-emitting bodies aren't pitch black
+scene.add(new THREE.AmbientLight(0x202535, 0.4));
+
+// Reusable geometries
+const SPHERE_GEO = new THREE.SphereGeometry(1, 16, 12);
+const SPHERE_GEO_LOW = new THREE.SphereGeometry(1, 8, 6);
+
+// ===========================================================
+// BODY CLASS
+// ===========================================================
+let nextId = 0;
+class Body {
+  constructor(opts){
+    this.id = nextId++;
+    this.type = opts.type || 'planet';
+    this.mass = opts.mass || 1;
+    this.pos = opts.pos.clone();
+    this.vel = opts.vel ? opts.vel.clone() : new THREE.Vector3();
+    this.acc = new THREE.Vector3();
+    this.prevAcc = new THREE.Vector3();
+    this.alive = true;
+    this.updateRadius();
+
+    // visual
+    const c = this.colorForType();
+    let mat;
+    if(this.type === 'star'){
+      mat = new THREE.MeshBasicMaterial({color: c});
+    } else if(this.type === 'blackhole'){
+      mat = new THREE.MeshBasicMaterial({color: 0x000000});
+    } else {
+      mat = new THREE.MeshStandardMaterial({
+        color: c, roughness: 0.85, metalness: 0.05,
+        emissive: c, emissiveIntensity: 0.05
+      });
+    }
+    this.mesh = new THREE.Mesh(this.type === 'planet' ? SPHERE_GEO : SPHERE_GEO_LOW, mat);
+    this.mesh.scale.setScalar(this.radius);
+    this.mesh.position.copy(this.pos);
+    this.mesh.userData.bodyId = this.id;
+    scene.add(this.mesh);
+
+    // glow halo
+    if(this.type === 'star'){
+      const haloMat = new THREE.SpriteMaterial({
+        map: GLOW_TEX, color: c, transparent:true,
+        blending:THREE.AdditiveBlending, depthWrite:false, opacity:0.95
+      });
+      this.halo = new THREE.Sprite(haloMat);
+      this.halo.scale.setScalar(this.radius*8);
+      this.halo.position.copy(this.pos);
+      scene.add(this.halo);
+      // point light
+      this.light = new THREE.PointLight(c, 2.0, 600, 1.6);
+      this.light.position.copy(this.pos);
+      scene.add(this.light);
+    } else if(this.type === 'blackhole'){
+      const haloMat = new THREE.SpriteMaterial({
+        map: GLOW_TEX, color: 0xff8030, transparent:true,
+        blending:THREE.AdditiveBlending, depthWrite:false, opacity:0.7
+      });
+      this.halo = new THREE.Sprite(haloMat);
+      this.halo.scale.setScalar(this.radius*6);
+      this.halo.position.copy(this.pos);
+      scene.add(this.halo);
+      // accretion ring
+      const ringGeo = new THREE.RingGeometry(this.radius*1.5, this.radius*3.0, 48);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xff7020, transparent:true, opacity:0.8,
+        side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite:false
+      });
+      this.ring = new THREE.Mesh(ringGeo, ringMat);
+      this.ring.rotation.x = Math.PI/2;
+      scene.add(this.ring);
+    } else {
+      const haloMat = new THREE.SpriteMaterial({
+        map: GLOW_TEX, color: c, transparent:true,
+        blending:THREE.AdditiveBlending, depthWrite:false, opacity:0.35
+      });
+      this.halo = new THREE.Sprite(haloMat);
+      this.halo.scale.setScalar(this.radius*3);
+      this.halo.position.copy(this.pos);
+      scene.add(this.halo);
+    }
+
+    // trail
+    this.trailPos = new Float32Array(TRAIL_LEN*3);
+    this.trailIdx = 0;
+    this.trailFilled = 0;
+    for(let i=0;i<TRAIL_LEN;i++){
+      this.trailPos[i*3]   = this.pos.x;
+      this.trailPos[i*3+1] = this.pos.y;
+      this.trailPos[i*3+2] = this.pos.z;
+    }
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(this.trailPos, 3));
+    const trailCol = new Float32Array(TRAIL_LEN*3);
+    for(let i=0;i<TRAIL_LEN;i++){
+      const t = i/TRAIL_LEN;
+      trailCol[i*3]   = c.r*t;
+      trailCol[i*3+1] = c.g*t;
+      trailCol[i*3+2] = c.b*t;
+    }
+    trailGeo.setAttribute('color', new THREE.BufferAttribute(trailCol,3));
+    const trailMat = new THREE.LineBasicMaterial({
+      vertexColors:true, transparent:true, opacity:0.7,
+      blending: THREE.AdditiveBlending, depthWrite:false
+    });
+    this.trail = new THREE.Line(trailGeo, trailMat);
+    this.trail.frustumCulled = false;
+    scene.add(this.trail);
+  }
+
+  colorForType(){
+    if(this.type === 'star'){
+      // mass-based color: smaller -> orange, larger -> blue-white
+      const t = Math.min(1, this.mass/300);
+      return new THREE.Color().setHSL(0.12 - 0.12*t, 0.9, 0.55 + 0.15*t);
+    } else if(this.type === 'blackhole'){
+      return new THREE.Color(0,0,0);
+    }
+    // planet: hue varies
+    const h = 0.55 + (Math.random()-0.5)*0.4;
+    return new THREE.Color().setHSL(h, 0.6, 0.55);
+  }
+
+  updateRadius(){
+    if(this.type === 'star')      this.radius = Math.cbrt(this.mass) * 1.4;
+    else if(this.type === 'blackhole') this.radius = Math.cbrt(this.mass) * 0.9;
+    else this.radius = Math.cbrt(this.mass) * 0.7 + 0.25;
+  }
+
+  applyMassChange(){
+    this.updateRadius();
+    this.mesh.scale.setScalar(this.radius);
+    if(this.halo) this.halo.scale.setScalar(this.radius * (this.type==='star'?8:this.type==='blackhole'?6:3));
+    if(this.ring){
+      scene.remove(this.ring);
+      this.ring.geometry.dispose();
+      const ringGeo = new THREE.RingGeometry(this.radius*1.5, this.radius*3.0, 48);
+      this.ring.geometry = ringGeo;
+      scene.add(this.ring);
+    }
+    if(this.light) this.light.intensity = 2.0 + this.mass*0.01;
+  }
+
+  pushTrail(){
+    this.trailPos[this.trailIdx*3]   = this.pos.x;
+    this.trailPos[this.trailIdx*3+1] = this.pos.y;
+    this.trailPos[this.trailIdx*3+2] = this.pos.z;
+    this.trailIdx = (this.trailIdx + 1) % TRAIL_LEN;
+    if(this.trailFilled < TRAIL_LEN) this.trailFilled++;
+    // we re-order positions on draw via an index? Simpler: just mark needsUpdate and live with the wrap
+    this.trail.geometry.attributes.position.needsUpdate = true;
+  }
+
+  updateMeshes(){
+    this.mesh.position.copy(this.pos);
+    if(this.halo) this.halo.position.copy(this.pos);
+    if(this.light) this.light.position.copy(this.pos);
+    if(this.ring) this.ring.position.copy(this.pos);
+  }
+
+  destroy(){
+    scene.remove(this.mesh);
+    if(this.halo) scene.remove(this.halo);
+    if(this.light) scene.remove(this.light);
+    if(this.ring){ scene.remove(this.ring); this.ring.geometry.dispose(); this.ring.material.dispose(); }
+    scene.remove(this.trail);
+    this.trail.geometry.dispose();
+    this.trail.material.dispose();
+    this.mesh.material.dispose();
+    if(this.halo) this.halo.material.dispose();
+    this.alive = false;
+  }
+}
+
+// Glow texture (radial gradient sprite)
+function makeGlowTexture(){
+  const s = 128;
+  const c = document.createElement('canvas');
+  c.width=s; c.height=s;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(s/2,s/2,0, s/2,s/2,s/2);
+  g.addColorStop(0,'rgba(255,255,255,1.0)');
+  g.addColorStop(0.2,'rgba(255,255,255,0.6)');
+  g.addColorStop(0.5,'rgba(255,255,255,0.18)');
+  g.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,s,s);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const GLOW_TEX = makeGlowTexture();
+
+// ===========================================================
+// SIMULATION STATE
+// ===========================================================
+const bodies = [];
+let simTime = 0;
+let timeScale = 1.0;
+let paused = false;
+let stepOnce = false;
+let centerCOM = false;
+let selected = null;
+
+// ===========================================================
+// BARNES-HUT OCTREE
+// ===========================================================
+class OctNode {
+  constructor(cx, cy, cz, half){
+    this.cx=cx; this.cy=cy; this.cz=cz; this.half=half;
+    this.mass=0; this.mx=0; this.my=0; this.mz=0;
+    this.children=null; // 8 children when subdivided
+    this.body=null;     // single body if leaf
+  }
+  insert(b){
+    if(this.body===null && this.children===null){
+      this.body = b;
+      this.mass = b.mass;
+      this.mx = b.pos.x*b.mass;
+      this.my = b.pos.y*b.mass;
+      this.mz = b.pos.z*b.mass;
+      return;
+    }
+    if(this.children===null){
+      // subdivide and re-insert existing
+      this.children = new Array(8).fill(null);
+      const old = this.body;
+      this.body = null;
+      this._insertIntoChild(old);
+    }
+    this._insertIntoChild(b);
+    this.mass += b.mass;
+    this.mx += b.pos.x*b.mass;
+    this.my += b.pos.y*b.mass;
+    this.mz += b.pos.z*b.mass;
+  }
+  _insertIntoChild(b){
+    let oct = 0;
+    if(b.pos.x > this.cx) oct |= 1;
+    if(b.pos.y > this.cy) oct |= 2;
+    if(b.pos.z > this.cz) oct |= 4;
+    if(this.children[oct] === null){
+      const h = this.half*0.5;
+      const nx = this.cx + ((oct&1)?h:-h);
+      const ny = this.cy + ((oct&2)?h:-h);
+      const nz = this.cz + ((oct&4)?h:-h);
+      this.children[oct] = new OctNode(nx, ny, nz, h);
+    }
+    // safety: if too deep, just average
+    if(this.half < 0.001){
+      const ch = this.children[oct];
+      ch.mass += b.mass;
+      ch.mx += b.pos.x*b.mass;
+      ch.my += b.pos.y*b.mass;
+      ch.mz += b.pos.z*b.mass;
+      return;
+    }
+    this.children[oct].insert(b);
+  }
+}
+
+function buildTree(bodies){
+  // bbox
+  let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
+  for(const b of bodies){
+    if(b.pos.x<minX)minX=b.pos.x; if(b.pos.x>maxX)maxX=b.pos.x;
+    if(b.pos.y<minY)minY=b.pos.y; if(b.pos.y>maxY)maxY=b.pos.y;
+    if(b.pos.z<minZ)minZ=b.pos.z; if(b.pos.z>maxZ)maxZ=b.pos.z;
+  }
+  const cx = (minX+maxX)*0.5, cy=(minY+maxY)*0.5, cz=(minZ+maxZ)*0.5;
+  const half = Math.max(maxX-minX, maxY-minY, maxZ-minZ)*0.55 + 1;
+  const root = new OctNode(cx,cy,cz,half);
+  for(const b of bodies) root.insert(b);
+  return root;
+}
+
+function bhForce(node, b, ax){
+  if(!node || node.mass===0) return;
+  if(node.body === b) return;
+  const cx = node.mx/node.mass, cy = node.my/node.mass, cz = node.mz/node.mass;
+  const dx = cx - b.pos.x, dy = cy - b.pos.y, dz = cz - b.pos.z;
+  const r2 = dx*dx + dy*dy + dz*dz + SOFTENING*SOFTENING;
+  const r = Math.sqrt(r2);
+  const s = node.half*2;
+  if(node.body !== null || (s/r) < THETA){
+    // treat as single mass
+    const f = G * node.mass / (r2 * r);
+    ax.x += dx * f;
+    ax.y += dy * f;
+    ax.z += dz * f;
+  } else if(node.children){
+    for(let i=0;i<8;i++){
+      if(node.children[i]) bhForce(node.children[i], b, ax);
+    }
+  }
+}
+
+// ===========================================================
+// PHYSICS STEP
+// ===========================================================
+const _tmpA = new THREE.Vector3();
+
+function computeAccelerationsBruteForce(){
+  // O(N²)
+  for(const b of bodies) b.acc.set(0,0,0);
+  for(let i=0;i<bodies.length;i++){
+    const a = bodies[i];
+    for(let j=i+1;j<bodies.length;j++){
+      const b = bodies[j];
+      const dx = b.pos.x - a.pos.x;
+      const dy = b.pos.y - a.pos.y;
+      const dz = b.pos.z - a.pos.z;
+      const r2 = dx*dx+dy*dy+dz*dz + SOFTENING*SOFTENING;
+      const r = Math.sqrt(r2);
+      const f = G / (r2 * r);
+      const fa = f * b.mass;
+      const fb = f * a.mass;
+      a.acc.x += dx * fa; a.acc.y += dy * fa; a.acc.z += dz * fa;
+      b.acc.x -= dx * fb; b.acc.y -= dy * fb; b.acc.z -= dz * fb;
+    }
+  }
+}
+
+function computeAccelerationsBH(){
+  if(bodies.length===0) return;
+  const root = buildTree(bodies);
+  for(const b of bodies){
+    b.acc.set(0,0,0);
+    bhForce(root, b, b.acc);
+  }
+}
+
+function physicsStep(dt){
+  // Velocity Verlet:
+  // x_{n+1} = x_n + v_n*dt + 0.5*a_n*dt²
+  // a_{n+1} from new positions
+  // v_{n+1} = v_n + 0.5*(a_n + a_{n+1})*dt
+
+  // Save old accelerations
+  for(const b of bodies) b.prevAcc.copy(b.acc);
+
+  // Update positions using current velocity & old acc
+  for(const b of bodies){
+    b.pos.x += b.vel.x * dt + 0.5 * b.prevAcc.x * dt * dt;
+    b.pos.y += b.vel.y * dt + 0.5 * b.prevAcc.y * dt * dt;
+    b.pos.z += b.vel.z * dt + 0.5 * b.prevAcc.z * dt * dt;
+  }
+
+  // Compute new accelerations
+  if(bodies.length > BH_THRESHOLD) computeAccelerationsBH();
+  else computeAccelerationsBruteForce();
+
+  // Update velocities
+  for(const b of bodies){
+    b.vel.x += 0.5 * (b.prevAcc.x + b.acc.x) * dt;
+    b.vel.y += 0.5 * (b.prevAcc.y + b.acc.y) * dt;
+    b.vel.z += 0.5 * (b.prevAcc.z + b.acc.z) * dt;
+  }
+
+  // Collision detection (simple O(N²) — fast for moderate N)
+  // Do limited pass to keep it cheap
+  if(bodies.length < 600){
+    for(let i=0;i<bodies.length;i++){
+      const a = bodies[i];
+      if(!a.alive) continue;
+      for(let j=i+1;j<bodies.length;j++){
+        const b = bodies[j];
+        if(!b.alive) continue;
+        const dx = b.pos.x - a.pos.x;
+        const dy = b.pos.y - a.pos.y;
+        const dz = b.pos.z - a.pos.z;
+        const d2 = dx*dx+dy*dy+dz*dz;
+        const sumR = (a.radius + b.radius) * COLLIDE_K;
+        if(d2 < sumR*sumR){
+          handleCollision(a, b);
+        }
+      }
+    }
+  } else {
+    // For huge sims, only do collisions involving black holes (the dramatic ones)
+    for(const a of bodies){
+      if(!a.alive || a.type !== 'blackhole') continue;
+      const r2max = (a.radius * 4) * (a.radius * 4);
+      for(const b of bodies){
+        if(!b.alive || b===a) continue;
+        const dx = b.pos.x - a.pos.x;
+        const dy = b.pos.y - a.pos.y;
+        const dz = b.pos.z - a.pos.z;
+        const d2 = dx*dx+dy*dy+dz*dz;
+        if(d2 < r2max){
+          handleCollision(a, b);
+        }
+      }
+    }
+  }
+
+  // Cleanup dead
+  for(let i=bodies.length-1;i>=0;i--){
+    if(!bodies[i].alive){
+      if(selected === bodies[i]) { selected = null; document.getElementById('info').style.display='none'; }
+      bodies[i].destroy();
+      bodies.splice(i,1);
+    }
+  }
+
+  simTime += dt;
+}
+
+function handleCollision(a, b){
+  // The more massive one absorbs the lighter one
+  const big   = a.mass >= b.mass ? a : b;
+  const small = a.mass >= b.mass ? b : a;
+  if(!big.alive || !small.alive) return;
+
+  // momentum conservation
+  const totalMass = big.mass + small.mass;
+  big.vel.x = (big.vel.x*big.mass + small.vel.x*small.mass)/totalMass;
+  big.vel.y = (big.vel.y*big.mass + small.vel.y*small.mass)/totalMass;
+  big.vel.z = (big.vel.z*big.mass + small.vel.z*small.mass)/totalMass;
+  // center of mass position
+  big.pos.x = (big.pos.x*big.mass + small.pos.x*small.mass)/totalMass;
+  big.pos.y = (big.pos.y*big.mass + small.pos.y*small.mass)/totalMass;
+  big.pos.z = (big.pos.z*big.mass + small.pos.z*small.mass)/totalMass;
+  big.mass = totalMass;
+
+  // type promotion
+  if(big.type !== 'blackhole'){
+    if(small.type === 'blackhole') {
+      // small is BH but more massive merge — switch type
+      // (already big = more massive, so only fires if small is BH and somehow more massive? skip)
+    }
+    if(big.type === 'planet' && big.mass > 60) promoteToStar(big);
+    if(big.type === 'star'   && big.mass > 800) promoteToBlackHole(big);
+  }
+  big.applyMassChange();
+
+  // visual burst & audio
+  spawnBurst(small.pos, small.mass);
+  if(big.type === 'blackhole'){
+    audio.rumble(0.5 + Math.min(1, small.mass/30));
+  } else {
+    audio.blip(220 + Math.random()*80, 0.07);
+  }
+
+  small.alive = false;
+}
+
+function promoteToStar(b){
+  // Re-create as star
+  const oldPos = b.pos.clone(), oldVel = b.vel.clone(), m = b.mass;
+  b.destroy();
+  const s = new Body({type:'star', mass:m, pos:oldPos, vel:oldVel});
+  // Replace in bodies array
+  const idx = bodies.indexOf(b);
+  if(idx>=0) bodies[idx] = s; else bodies.push(s);
+}
+function promoteToBlackHole(b){
+  const oldPos = b.pos.clone(), oldVel = b.vel.clone(), m = b.mass;
+  b.destroy();
+  const s = new Body({type:'blackhole', mass:m, pos:oldPos, vel:oldVel});
+  const idx = bodies.indexOf(b);
+  if(idx>=0) bodies[idx] = s; else bodies.push(s);
+}
+
+// ===========================================================
+// PARTICLE BURSTS
+// ===========================================================
+const bursts = [];
+function spawnBurst(pos, mass){
+  const N = Math.min(40, 10 + Math.floor(mass));
+  const positions = new Float32Array(N*3);
+  const velocities = new Float32Array(N*3);
+  const colors = new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    positions[i*3]   = pos.x;
+    positions[i*3+1] = pos.y;
+    positions[i*3+2] = pos.z;
+    const t = Math.random()*Math.PI*2;
+    const p = Math.acos(2*Math.random()-1);
+    const v = 4 + Math.random()*8;
+    velocities[i*3]   = v*Math.sin(p)*Math.cos(t);
+    velocities[i*3+1] = v*Math.sin(p)*Math.sin(t);
+    velocities[i*3+2] = v*Math.cos(p);
+    colors[i*3]   = 1.0;
+    colors[i*3+1] = 0.6 + Math.random()*0.4;
+    colors[i*3+2] = 0.2;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+  const mat = new THREE.PointsMaterial({
+    size: 1.6, vertexColors:true, transparent:true, opacity:1,
+    blending:THREE.AdditiveBlending, depthWrite:false
+  });
+  const pts = new THREE.Points(geo, mat);
+  scene.add(pts);
+  bursts.push({mesh:pts, vel:velocities, age:0, life:1.5});
+}
+
+function updateBursts(dt){
+  for(let i=bursts.length-1;i>=0;i--){
+    const b = bursts[i];
+    b.age += dt;
+    const pos = b.mesh.geometry.attributes.position.array;
+    for(let k=0;k<pos.length;k+=3){
+      pos[k]   += b.vel[k]   * dt;
+      pos[k+1] += b.vel[k+1] * dt;
+      pos[k+2] += b.vel[k+2] * dt;
+      // tiny drag
+      b.vel[k]   *= 0.985;
+      b.vel[k+1] *= 0.985;
+      b.vel[k+2] *= 0.985;
+    }
+    b.mesh.geometry.attributes.position.needsUpdate = true;
+    b.mesh.material.opacity = Math.max(0, 1 - b.age/b.life);
+    if(b.age >= b.life){
+      scene.remove(b.mesh);
+      b.mesh.geometry.dispose();
+      b.mesh.material.dispose();
+      bursts.splice(i,1);
+    }
+  }
+}
+
+// ===========================================================
+// AUDIO (Web Audio)
+// ===========================================================
+const audio = (()=>{
+  let ctx = null, droneGain = null, masterGain = null, started = false;
+  function ensure(){
+    if(ctx) return;
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = ctx.createGain();
+      masterGain.gain.value = 0.25;
+      masterGain.connect(ctx.destination);
+
+      // Cosmic drone — two detuned oscillators + slow LFO
+      const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=55;
+      const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=55.4;
+      const o3 = ctx.createOscillator(); o3.type='triangle'; o3.frequency.value=110;
+      droneGain = ctx.createGain(); droneGain.gain.value = 0.15;
+      const filter = ctx.createBiquadFilter();
+      filter.type='lowpass'; filter.frequency.value=400; filter.Q.value=2;
+      o1.connect(filter); o2.connect(filter); o3.connect(filter);
+      filter.connect(droneGain); droneGain.connect(masterGain);
+      o1.start(); o2.start(); o3.start();
+
+      // Slow LFO on filter
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.05;
+      const lfoGain = ctx.createGain(); lfoGain.gain.value = 200;
+      lfo.connect(lfoGain); lfoGain.connect(filter.frequency); lfo.start();
+    } catch(e){ /* audio blocked */ }
+  }
+  function unlock(){
+    ensure();
+    if(ctx && ctx.state === 'suspended') ctx.resume();
+    started = true;
+  }
+  function blip(freq=440, dur=0.1){
+    if(!ctx || !started) return;
+    const o = ctx.createOscillator(); o.type='sine'; o.frequency.value = freq;
+    const g = ctx.createGain(); g.gain.value = 0;
+    g.gain.setValueAtTime(0, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.3, ctx.currentTime+0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+dur);
+    o.connect(g); g.connect(masterGain);
+    o.start(); o.stop(ctx.currentTime + dur + 0.05);
+  }
+  function rumble(intensity=1){
+    if(!ctx || !started) return;
+    const o = ctx.createOscillator(); o.type='sawtooth';
+    o.frequency.setValueAtTime(80, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(20, ctx.currentTime+0.5);
+    const f = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=300;
+    const g = ctx.createGain(); g.gain.value=0;
+    g.gain.setValueAtTime(0, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.5*intensity, ctx.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.6);
+    o.connect(f); f.connect(g); g.connect(masterGain);
+    o.start(); o.stop(ctx.currentTime + 0.7);
+  }
+  return {ensure, unlock, blip, rumble};
+})();
+
+// ===========================================================
+// CAMERA CONTROLS (orbit)
+// ===========================================================
+const camTarget = new THREE.Vector3(0,0,0);
+let camRadius = 240;
+let camTheta = 0;
+let camPhi = Math.PI*0.42;
+function applyCamera(){
+  const x = camTarget.x + camRadius * Math.sin(camPhi) * Math.cos(camTheta);
+  const y = camTarget.y + camRadius * Math.cos(camPhi);
+  const z = camTarget.z + camRadius * Math.sin(camPhi) * Math.sin(camTheta);
+  camera.position.set(x,y,z);
+  camera.lookAt(camTarget);
+}
+applyCamera();
+
+// ===========================================================
+// SHADER PASS — Black hole lensing approximation
+// We render the scene to a texture and apply a screen-space distortion
+// around each black hole's projected screen position.
+// ===========================================================
+const rtParams = {
+  type: THREE.HalfFloatType,
+  format: THREE.RGBAFormat
+};
+let renderTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, rtParams);
+
+const lensMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse: {value: null},
+    uHoles:   {value: new Float32Array(8*4)}, // x,y screen [0..1], radius, strength
+    uCount:   {value: 0},
+    uAspect:  {value: innerWidth/innerHeight},
+    uTime:    {value: 0}
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+  `,
+  fragmentShader: `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D tDiffuse;
+    uniform vec4 uHoles[8];
+    uniform int uCount;
+    uniform float uAspect;
+    uniform float uTime;
+    void main(){
+      vec2 uv = vUv;
+      vec2 p = uv;
+      // aspect-correct distance computation
+      vec2 pa = vec2(p.x*uAspect, p.y);
+      for(int i=0;i<8;i++){
+        if(i >= uCount) break;
+        vec4 h = uHoles[i];
+        vec2 ca = vec2(h.x*uAspect, h.y);
+        vec2 d = pa - ca;
+        float r = length(d);
+        float radius = h.z;
+        float strength = h.w;
+        // gravitational lens-ish: pull pixels toward center, increasing near event horizon
+        if(r < radius * 4.0){
+          float falloff = 1.0 - smoothstep(0.0, radius*4.0, r);
+          float pull = strength * falloff * falloff / (r + 0.001);
+          // shift along radial direction
+          vec2 shift = -normalize(d) * pull * 0.04;
+          // convert back to uv space
+          uv += vec2(shift.x/uAspect, shift.y);
+        }
+      }
+      vec4 color = texture2D(tDiffuse, uv);
+      // event horizon darken
+      for(int i=0;i<8;i++){
+        if(i >= uCount) break;
+        vec4 h = uHoles[i];
+        vec2 ca = vec2(h.x*uAspect, h.y);
+        vec2 d = pa - ca;
+        float r = length(d);
+        float horizon = h.z * 0.45;
+        if(r < horizon){
+          color.rgb *= smoothstep(horizon*0.5, horizon, r);
+        }
+      }
+      gl_FragColor = color;
+    }
+  `
+});
+
+// Full-screen quad
+const lensScene = new THREE.Scene();
+const lensCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+const lensQuad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), lensMat);
+lensScene.add(lensQuad);
+
+// ===========================================================
+// MOUSE / INPUT
+// ===========================================================
+const mouse = {x:0, y:0, ndcX:0, ndcY:0, down:false, button:0, dragStart:null, dragPos3:null, modeCtrl:false};
+let spawnMass = 5;
+
+const raycaster = new THREE.Raycaster();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0); // y=0
+
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+renderer.domElement.addEventListener('mousedown', e => {
+  audio.unlock();
+  mouse.down = true;
+  mouse.button = e.button;
+  mouse.modeCtrl = e.ctrlKey || e.metaKey;
+  updateMouse(e);
+  // intersect drag plane to get spawn point
+  const p = intersectDragPlane();
+  if(p){
+    mouse.dragStart = p.clone();
+    mouse.dragPos3 = p.clone();
+  }
+  // Also: if click without drag, attempt to select a body
+  mouse.didDrag = false;
+});
+
+renderer.domElement.addEventListener('mousemove', e => {
+  updateMouse(e);
+  if(mouse.down){
+    if(e.button === 1 || e.buttons === 4){
+      // middle mouse — orbit camera
+      orbitCamera(e.movementX, e.movementY);
+    } else {
+      const p = intersectDragPlane();
+      if(p) mouse.dragPos3 = p;
+      const dx = e.movementX, dy = e.movementY;
+      if(Math.hypot(dx,dy) > 0) mouse.didDrag = true;
+    }
+  } else if(e.buttons === 4){
+    orbitCamera(e.movementX, e.movementY);
+  }
+});
+
+renderer.domElement.addEventListener('mouseup', e => {
+  if(mouse.down){
+    if(mouse.didDrag && mouse.dragStart && mouse.dragPos3 && (e.button === 0 || e.button === 2)){
+      // spawn body with velocity = (end - start) * factor
+      const vel = mouse.dragPos3.clone().sub(mouse.dragStart).multiplyScalar(0.4);
+      let type = 'planet';
+      let mass = spawnMass;
+      if(mouse.modeCtrl){
+        type = 'blackhole';
+        mass = Math.max(800, spawnMass * 200);
+      } else if(e.button === 2){
+        type = 'star';
+        mass = Math.max(80, spawnMass * 20);
+      }
+      addBody({type, mass, pos:mouse.dragStart.clone(), vel});
+      audio.blip(440 + Math.random()*100, 0.08);
+    } else if(!mouse.didDrag && e.button === 0){
+      // selection
+      pickBody();
+    }
+  }
+  mouse.down = false;
+  mouse.dragStart = null;
+  mouse.dragPos3 = null;
+  document.getElementById('spawnHint').style.display='none';
+});
+
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  if(e.shiftKey || mouse.down){
+    spawnMass *= e.deltaY < 0 ? 1.15 : 0.87;
+    spawnMass = Math.max(0.1, Math.min(100, spawnMass));
+    document.getElementById('mass').value = spawnMass;
+    document.getElementById('massVal').textContent = spawnMass.toFixed(1);
+  } else {
+    camRadius *= e.deltaY > 0 ? 1.1 : 0.9;
+    camRadius = Math.max(5, Math.min(8000, camRadius));
+    applyCamera();
+  }
+}, {passive:false});
+
+function updateMouse(e){
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+  mouse.ndcX = (mouse.x / rect.width) * 2 - 1;
+  mouse.ndcY = -(mouse.y / rect.height) * 2 + 1;
+}
+
+function intersectDragPlane(){
+  raycaster.setFromCamera(new THREE.Vector2(mouse.ndcX, mouse.ndcY), camera);
+  // Use a plane through camera target, perpendicular to view direction
+  const normal = new THREE.Vector3();
+  camera.getWorldDirection(normal);
+  const plane = new THREE.Plane(normal.clone().negate(), -camTarget.dot(normal.clone().negate()));
+  const out = new THREE.Vector3();
+  if(raycaster.ray.intersectPlane(plane, out)) return out;
+  return null;
+}
+
+function orbitCamera(dx, dy){
+  camTheta -= dx * 0.005;
+  camPhi   -= dy * 0.005;
+  camPhi = Math.max(0.05, Math.min(Math.PI - 0.05, camPhi));
+  applyCamera();
+}
+
+function pickBody(){
+  raycaster.setFromCamera(new THREE.Vector2(mouse.ndcX, mouse.ndcY), camera);
+  // We need to test against each body's mesh
+  const meshes = bodies.map(b=>b.mesh);
+  const hits = raycaster.intersectObjects(meshes, false);
+  if(hits.length){
+    const id = hits[0].object.userData.bodyId;
+    selected = bodies.find(b=>b.id===id) || null;
+    if(selected){
+      camTarget.copy(selected.pos);
+      applyCamera();
+      document.getElementById('info').style.display='block';
+    }
+  } else {
+    selected = null;
+    document.getElementById('info').style.display='none';
+  }
+}
+
+// ===========================================================
+// BODY SPAWNING / DEMOS
+// ===========================================================
+function addBody(opts){
+  if(bodies.length >= MAX_BODIES) return null;
+  const b = new Body(opts);
+  bodies.push(b);
+  return b;
+}
+
+function clearAll(){
+  for(const b of bodies) b.destroy();
+  bodies.length = 0;
+  selected = null;
+  simTime = 0;
+  document.getElementById('info').style.display='none';
+}
+
+function spawnRandomCluster(){
+  clearAll();
+  // 1 central star + ~100 planets in disk-ish
+  const star = addBody({type:'star', mass:300, pos:new THREE.Vector3(0,0,0), vel:new THREE.Vector3()});
+  for(let i=0;i<100;i++){
+    const r = 30 + Math.random()*120;
+    const a = Math.random()*Math.PI*2;
+    const h = (Math.random()-0.5)*30;
+    const pos = new THREE.Vector3(Math.cos(a)*r, h, Math.sin(a)*r);
+    // approximate orbital velocity around central star
+    const vmag = Math.sqrt(G * star.mass / r);
+    // velocity perpendicular to radial in xz-plane
+    const vel = new THREE.Vector3(-Math.sin(a)*vmag, (Math.random()-0.5)*0.2, Math.cos(a)*vmag);
+    // small random perturbation
+    vel.x += (Math.random()-0.5)*0.4;
+    vel.z += (Math.random()-0.5)*0.4;
+    addBody({type:'planet', mass: 0.5 + Math.random()*3, pos, vel});
+  }
+  camTarget.set(0,0,0); camRadius = 280; applyCamera();
+}
+
+function spawnOrbitDemo(){
+  clearAll();
+  const star = addBody({type:'star', mass:500, pos:new THREE.Vector3(0,0,0), vel:new THREE.Vector3()});
+  // planet
+  const r1 = 60;
+  const v1 = Math.sqrt(G * star.mass / r1);
+  const planet = addBody({type:'planet', mass:8, pos:new THREE.Vector3(r1,0,0), vel:new THREE.Vector3(0,0,v1)});
+  // moon
+  const r2 = 6;
+  const vm = Math.sqrt(G * planet.mass / r2);
+  addBody({type:'planet', mass:0.3, pos:new THREE.Vector3(r1+r2,0,0), vel:new THREE.Vector3(0,0,v1+vm)});
+  camTarget.set(0,0,0); camRadius = 160; applyCamera();
+}
+
+function spawnGalacticDisk(){
+  clearAll();
+  // Massive central black hole
+  const bh = addBody({type:'blackhole', mass:50000, pos:new THREE.Vector3(0,0,0), vel:new THREE.Vector3()});
+  const N = 1000;
+  for(let i=0;i<N;i++){
+    const r = 40 + Math.pow(Math.random(), 0.5)*400;
+    const a = Math.random()*Math.PI*2;
+    const h = (Math.random()-0.5)*15 * (1 - r/450);
+    const pos = new THREE.Vector3(Math.cos(a)*r, h, Math.sin(a)*r);
+    // Keplerian rotation
+    const vmag = Math.sqrt(G * bh.mass / r) * 0.95;
+    const vel = new THREE.Vector3(-Math.sin(a)*vmag, 0, Math.cos(a)*vmag);
+    // tiny scatter
+    vel.x += (Math.random()-0.5)*1.5;
+    vel.z += (Math.random()-0.5)*1.5;
+    addBody({type:'planet', mass: 0.2 + Math.random()*0.8, pos, vel});
+  }
+  camTarget.set(0,0,0); camRadius = 700; applyCamera();
+}
+
+// ===========================================================
+// UI WIRING
+// ===========================================================
+const $time = document.getElementById('time');
+const $massSlider = document.getElementById('mass');
+const $massVal = document.getElementById('massVal');
+const $bodyCount = document.getElementById('bodyCount');
+const $fps = document.getElementById('fps');
+const $timeScale = document.getElementById('timeScale');
+const $simTime = document.getElementById('simTime');
+const $playBtn = document.getElementById('playBtn');
+const $stepBtn = document.getElementById('stepBtn');
+const $comBtn = document.getElementById('comBtn');
+const $clearBtn = document.getElementById('clearBtn');
+const $randBtn = document.getElementById('randBtn');
+const $orbitBtn = document.getElementById('orbitBtn');
+const $diskBtn = document.getElementById('diskBtn');
+
+$time.addEventListener('input', () => {
+  timeScale = Math.pow(10, parseFloat($time.value));
+  $timeScale.textContent = timeScale < 1 ? timeScale.toFixed(3)+'x'
+                          : timeScale < 1000 ? timeScale.toFixed(2)+'x'
+                          : timeScale.toExponential(2)+'x';
+});
+$massSlider.addEventListener('input', () => {
+  spawnMass = parseFloat($massSlider.value);
+  $massVal.textContent = spawnMass.toFixed(1);
+});
+
+$playBtn.addEventListener('click', () => {
+  paused = !paused;
+  $playBtn.textContent = paused ? 'Play' : 'Pause';
+  $playBtn.classList.toggle('active', !paused);
+});
+$stepBtn.addEventListener('click', () => { stepOnce = true; });
+$comBtn.addEventListener('click', () => {
+  centerCOM = !centerCOM;
+  $comBtn.classList.toggle('active', centerCOM);
+});
+$clearBtn.addEventListener('click', clearAll);
+$randBtn.addEventListener('click', spawnRandomCluster);
+$orbitBtn.addEventListener('click', spawnOrbitDemo);
+$diskBtn.addEventListener('click', spawnGalacticDisk);
+
+window.addEventListener('keydown', e => {
+  if(e.target.tagName === 'INPUT') return;
+  switch(e.key.toLowerCase()){
+    case 'c': clearAll(); break;
+    case 'r': spawnRandomCluster(); audio.unlock(); break;
+    case 'o': spawnOrbitDemo(); audio.unlock(); break;
+    case '1': spawnGalacticDisk(); audio.unlock(); break;
+    case ' ': e.preventDefault(); $playBtn.click(); break;
+    case '.': stepOnce = true; break;
+  }
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  renderTarget.dispose();
+  renderTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, rtParams);
+  lensMat.uniforms.uAspect.value = innerWidth/innerHeight;
+});
+
+// ===========================================================
+// SPAWN PREVIEW LINE
+// ===========================================================
+const previewGeo = new THREE.BufferGeometry();
+previewGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6),3));
+const previewMat = new THREE.LineBasicMaterial({color:0xffffff, transparent:true, opacity:0.85});
+const previewLine = new THREE.Line(previewGeo, previewMat);
+previewLine.frustumCulled = false;
+previewLine.visible = false;
+scene.add(previewLine);
+const previewBall = new THREE.Mesh(SPHERE_GEO, new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.5, wireframe:true}));
+previewBall.visible = false;
+scene.add(previewBall);
+
+// ===========================================================
+// MAIN LOOP
+// ===========================================================
+let lastTime = performance.now();
+let fpsAcc = 0, fpsCount = 0, fpsTimer = 0;
+
+// Initial demo so screen isn't empty
+spawnOrbitDemo();
+
+function animate(now){
+  const realDt = Math.min(0.05, (now - lastTime)/1000);
+  lastTime = now;
+
+  // FPS
+  fpsAcc += realDt; fpsCount++;
+  fpsTimer += realDt;
+  if(fpsTimer > 0.5){
+    $fps.textContent = (fpsCount/fpsAcc).toFixed(0);
+    fpsAcc = 0; fpsCount = 0; fpsTimer = 0;
+  }
+
+  // Step physics — substep when timeScale is large
+  if(!paused || stepOnce){
+    let dt = realDt * timeScale;
+    // cap per-frame dt and substep
+    const baseStep = 0.016;
+    let nSteps = Math.min(60, Math.max(1, Math.ceil(Math.abs(dt)/baseStep)));
+    const sub = dt / nSteps;
+    for(let s=0;s<nSteps;s++){
+      physicsStep(sub);
+    }
+    // push trails (only every few frames for huge sims to keep cost down)
+    if(bodies.length < 400 || (now|0)%2===0){
+      for(const b of bodies) b.pushTrail();
+    }
+    stepOnce = false;
+  }
+
+  // Update meshes
+  for(const b of bodies) b.updateMeshes();
+
+  // Update bursts
+  updateBursts(realDt);
+
+  // Center of mass camera
+  if(centerCOM && bodies.length){
+    let mx=0,my=0,mz=0,m=0;
+    for(const b of bodies){ mx+=b.pos.x*b.mass; my+=b.pos.y*b.mass; mz+=b.pos.z*b.mass; m+=b.mass; }
+    if(m>0){
+      camTarget.lerp(new THREE.Vector3(mx/m,my/m,mz/m), 0.1);
+      applyCamera();
+    }
+  } else if(selected){
+    camTarget.lerp(selected.pos, 0.15);
+    applyCamera();
+  }
+
+  // Spawn preview
+  if(mouse.down && mouse.dragStart && mouse.dragPos3){
+    previewLine.visible = true;
+    previewBall.visible = true;
+    const arr = previewLine.geometry.attributes.position.array;
+    arr[0]=mouse.dragStart.x; arr[1]=mouse.dragStart.y; arr[2]=mouse.dragStart.z;
+    arr[3]=mouse.dragPos3.x;  arr[4]=mouse.dragPos3.y;  arr[5]=mouse.dragPos3.z;
+    previewLine.geometry.attributes.position.needsUpdate = true;
+    let pmass = spawnMass;
+    let pcolor = 0x6ec1ff;
+    if(mouse.modeCtrl){ pmass = Math.max(800, spawnMass*200); pcolor = 0x000000; }
+    else if(mouse.button === 2){ pmass = Math.max(80, spawnMass*20); pcolor = 0xffd86e; }
+    previewBall.material.color.setHex(pcolor);
+    previewBall.position.copy(mouse.dragStart);
+    previewBall.scale.setScalar(Math.cbrt(pmass)*0.7 + 0.25);
+  } else {
+    previewLine.visible = false;
+    previewBall.visible = false;
+  }
+
+  // Update info panel
+  if(selected){
+    document.getElementById('iType').textContent = selected.type;
+    document.getElementById('iMass').textContent = selected.mass.toFixed(2);
+    const sp = selected.vel.length();
+    document.getElementById('iSpeed').textContent = sp.toFixed(2);
+    document.getElementById('iKE').textContent = (0.5 * selected.mass * sp*sp).toFixed(2);
+    document.getElementById('iPos').textContent =
+      `${selected.pos.x.toFixed(1)}, ${selected.pos.y.toFixed(1)}, ${selected.pos.z.toFixed(1)}`;
+  }
+
+  // Update lens shader uniforms
+  const holesArr = lensMat.uniforms.uHoles.value;
+  let holeCount = 0;
+  const _v = new THREE.Vector3();
+  for(const b of bodies){
+    if(b.type !== 'blackhole') continue;
+    if(holeCount >= 8) break;
+    _v.copy(b.pos).project(camera); // NDC
+    const sx = (_v.x*0.5 + 0.5);
+    const sy = (_v.y*0.5 + 0.5);
+    if(sx < -0.2 || sx > 1.2 || sy < -0.2 || sy > 1.2 || _v.z > 1) continue;
+    // estimate screen radius
+    const dist = camera.position.distanceTo(b.pos);
+    const screenR = Math.min(0.3, (b.radius*2.2) / dist);
+    const strength = Math.min(0.3, b.mass * 0.000004 + 0.02);
+    holesArr[holeCount*4]   = sx;
+    holesArr[holeCount*4+1] = sy;
+    holesArr[holeCount*4+2] = screenR;
+    holesArr[holeCount*4+3] = strength;
+    holeCount++;
+  }
+  lensMat.uniforms.uCount.value = holeCount;
+  lensMat.uniforms.uTime.value = simTime;
+
+  // Render scene -> RT, then lens pass to screen
+  if(holeCount > 0){
+    renderer.setRenderTarget(renderTarget);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    lensMat.uniforms.tDiffuse.value = renderTarget.texture;
+    renderer.render(lensScene, lensCam);
+  } else {
+    renderer.render(scene, camera);
+  }
+
+  // Update text
+  $bodyCount.textContent = bodies.length;
+  $simTime.textContent = simTime.toFixed(1);
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

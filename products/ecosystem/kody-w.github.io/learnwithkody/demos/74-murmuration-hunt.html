@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>74 — Murmuration Hunt</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#0a0418;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,'SF Mono','Menlo',monospace;
+    color:#e8e0ff;-webkit-font-smoothing:antialiased;}
+  #stage{position:fixed;inset:0;display:block;}
+  #hud{position:fixed;top:14px;left:16px;font-size:12px;letter-spacing:.06em;
+    text-transform:uppercase;line-height:1.55;pointer-events:none;
+    text-shadow:0 0 8px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.9);user-select:none;}
+  #hud .row{display:flex;align-items:center;gap:8px;}
+  #hud .dot{width:8px;height:8px;border-radius:50%;display:inline-block;
+    box-shadow:0 0 8px currentColor,0 0 2px currentColor;}
+  #hud .label{opacity:.55;font-size:10px;}
+  #hud .count{font-variant-numeric:tabular-nums;min-width:3ch;display:inline-block;}
+  #title{position:fixed;top:14px;right:18px;font-size:11px;letter-spacing:.18em;
+    opacity:.5;text-transform:uppercase;pointer-events:none;user-select:none;}
+  #banner{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.95);
+    padding:18px 34px;border-radius:14px;
+    background:rgba(10,4,24,.55);backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,.08);
+    font-size:14px;letter-spacing:.22em;text-transform:uppercase;
+    text-align:center;line-height:1.7;
+    opacity:0;transition:opacity .55s ease,transform .55s cubic-bezier(.2,.8,.3,1);
+    pointer-events:none;user-select:none;
+    box-shadow:0 18px 60px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.04) inset;}
+  #banner.show{opacity:1;transform:translate(-50%,-50%) scale(1);}
+  #banner .big{font-size:22px;letter-spacing:.34em;font-weight:700;display:block;
+    margin-bottom:6px;text-shadow:0 0 18px currentColor;}
+  #banner .small{font-size:10px;opacity:.6;letter-spacing:.3em;}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="hud">
+  <div class="row"><span class="dot" style="color:#ff4a6e"></span>
+    <span class="label">red</span><span class="count" id="cR">0</span></div>
+  <div class="row"><span class="dot" style="color:#46e7ff"></span>
+    <span class="label">cyan</span><span class="count" id="cC">0</span></div>
+  <div class="row"><span class="dot" style="color:#ffd24a"></span>
+    <span class="label">yellow</span><span class="count" id="cY">0</span></div>
+  <div class="row" style="margin-top:6px;opacity:.45;font-size:10px;">
+    <span id="rounds">round 1</span>
+  </div>
+</div>
+<div id="title">murmuration · hunt</div>
+<div id="banner"><span class="big" id="bMain">—</span><span class="small" id="bSub">survivors of the watch</span></div>
+
+<script>
+(() => {
+'use strict';
+
+const cv = document.getElementById('stage');
+const ctx = cv.getContext('2d', { alpha: false });
+const banner = document.getElementById('banner');
+const bMain = document.getElementById('bMain');
+const bSub  = document.getElementById('bSub');
+const elR = document.getElementById('cR');
+const elC = document.getElementById('cC');
+const elY = document.getElementById('cY');
+const elRounds = document.getElementById('rounds');
+
+let W = 0, H = 0, DPR = 1;
+let bgCanvas = null;          // cached twilight gradient
+let bgCanvasW = 0, bgCanvasH = 0;
+let trailCanvas = null;       // offscreen for additive boid layer
+let trailCtx = null;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  cv.width = Math.floor(W * DPR);
+  cv.height = Math.floor(H * DPR);
+  cv.style.width = W + 'px';
+  cv.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  buildBackground();
+  // offscreen for additive bloom layer at full DPR
+  trailCanvas = document.createElement('canvas');
+  trailCanvas.width = cv.width;
+  trailCanvas.height = cv.height;
+  trailCtx = trailCanvas.getContext('2d');
+  trailCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+
+function buildBackground() {
+  bgCanvas = document.createElement('canvas');
+  bgCanvas.width = Math.max(2, Math.floor(W));
+  bgCanvas.height = Math.max(2, Math.floor(H));
+  bgCanvasW = bgCanvas.width; bgCanvasH = bgCanvas.height;
+  const g = bgCanvas.getContext('2d');
+  // Twilight sky gradient: deep indigo at top → violet → warm orange near horizon
+  const grd = g.createLinearGradient(0, 0, 0, bgCanvas.height);
+  grd.addColorStop(0.00, '#070418');
+  grd.addColorStop(0.18, '#0d0930');
+  grd.addColorStop(0.45, '#27144d');
+  grd.addColorStop(0.72, '#5a2856');
+  grd.addColorStop(0.90, '#a04a4e');
+  grd.addColorStop(1.00, '#f0a36b');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+  // Soft sun glow near lower right
+  const cx = bgCanvas.width * 0.74, cy = bgCanvas.height * 0.92;
+  const sun = g.createRadialGradient(cx, cy, 0, cx, cy, bgCanvas.height * 0.7);
+  sun.addColorStop(0, 'rgba(255,210,160,0.55)');
+  sun.addColorStop(0.35, 'rgba(255,160,120,0.18)');
+  sun.addColorStop(1, 'rgba(255,160,120,0)');
+  g.fillStyle = sun;
+  g.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+  // Subtle stars in upper sky
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 220; i++) {
+    const sx = Math.random() * bgCanvas.width;
+    const sy = Math.random() * bgCanvas.height * 0.55;
+    const a = Math.random() * 0.7 + 0.05;
+    const r = Math.random() * 1.2 + 0.2;
+    g.fillStyle = 'rgba(255,240,220,' + a.toFixed(3) + ')';
+    g.beginPath(); g.arc(sx, sy, r, 0, Math.PI * 2); g.fill();
+  }
+  // Distant horizon haze line
+  g.globalCompositeOperation = 'source-over';
+  const haze = g.createLinearGradient(0, bgCanvas.height * 0.78, 0, bgCanvas.height);
+  haze.addColorStop(0, 'rgba(255,180,140,0)');
+  haze.addColorStop(1, 'rgba(255,180,140,0.13)');
+  g.fillStyle = haze;
+  g.fillRect(0, bgCanvas.height * 0.78, bgCanvas.width, bgCanvas.height * 0.22);
+}
+
+window.addEventListener('resize', resize, { passive: true });
+resize();
+
+// ---------- Boid system ----------
+const FLOCKS = 3;
+const PER_FLOCK = 200;
+const N = FLOCKS * PER_FLOCK; // 600
+
+// Per-flock visual + tactical color
+const COLORS = [
+  { name: 'red',    r: 255, g:  74, b: 110, hex: '#ff4a6e' },
+  { name: 'cyan',   r:  70, g: 231, b: 255, hex: '#46e7ff' },
+  { name: 'yellow', r: 255, g: 210, b:  74, hex: '#ffd24a' },
+];
+
+// Structure of arrays
+const px  = new Float32Array(N);
+const py  = new Float32Array(N);
+const vx  = new Float32Array(N);
+const vy  = new Float32Array(N);
+const hp  = new Float32Array(N);
+const flk = new Uint8Array(N);
+const alive = new Uint8Array(N);
+
+// Tuning
+const PERCEPTION = 50;
+const SEP_DIST   = 18;
+const ATTACK_DIST = 15;
+const MAX_SPEED  = 2.6;
+const MIN_SPEED  = 1.4;
+const MAX_FORCE  = 0.07;
+const DAMAGE_PER_TICK = 0.55;  // closest enemy in range takes this each frame
+const HP_MAX     = 6.0;
+
+// Spatial hash
+const CELL = PERCEPTION; // perception radius ≈ cell size
+let GW = 1, GH = 1;
+let head = null;       // cell -> first index (Int32Array)
+let next = null;       // index -> next index (Int32Array)
+
+function rebuildGrid() {
+  GW = Math.max(1, Math.ceil(W / CELL));
+  GH = Math.max(1, Math.ceil(H / CELL));
+  const cells = GW * GH;
+  if (!head || head.length !== cells) head = new Int32Array(cells);
+  if (!next || next.length !== N)     next = new Int32Array(N);
+  head.fill(-1);
+  for (let i = 0; i < N; i++) {
+    if (!alive[i]) continue;
+    const cx = Math.min(GW - 1, Math.max(0, (px[i] / CELL) | 0));
+    const cy = Math.min(GH - 1, Math.max(0, (py[i] / CELL) | 0));
+    const c = cy * GW + cx;
+    next[i] = head[c];
+    head[c] = i;
+  }
+}
+
+// Particles for death sparks
+const PMAX = 600;
+const ppx = new Float32Array(PMAX);
+const ppy = new Float32Array(PMAX);
+const pvx = new Float32Array(PMAX);
+const pvy = new Float32Array(PMAX);
+const pli = new Float32Array(PMAX);  // life remaining 0..1
+const pcol = new Uint8Array(PMAX);
+let pHead = 0;
+
+function emitParticles(x, y, color, n) {
+  for (let k = 0; k < n; k++) {
+    const i = pHead;
+    pHead = (pHead + 1) % PMAX;
+    ppx[i] = x; ppy[i] = y;
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * 1.8 + 0.4;
+    pvx[i] = Math.cos(a) * s;
+    pvy[i] = Math.sin(a) * s - 0.4;
+    pli[i] = 1.0;
+    pcol[i] = color;
+  }
+}
+
+let round = 1;
+let resolving = false;
+let resolveTimer = 0;
+
+function spawn() {
+  for (let f = 0; f < FLOCKS; f++) {
+    // Each flock starts as a loose cloud at a different location
+    const cx = W * (0.2 + 0.3 * f) + (Math.random() - 0.5) * 60;
+    const cy = H * (0.25 + Math.random() * 0.25);
+    const ang0 = Math.random() * Math.PI * 2;
+    for (let k = 0; k < PER_FLOCK; k++) {
+      const i = f * PER_FLOCK + k;
+      const r = Math.random() * 70 + 10;
+      const a = Math.random() * Math.PI * 2;
+      px[i] = cx + Math.cos(a) * r;
+      py[i] = cy + Math.sin(a) * r;
+      const v = MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED);
+      vx[i] = Math.cos(ang0 + (Math.random() - 0.5) * 0.4) * v;
+      vy[i] = Math.sin(ang0 + (Math.random() - 0.5) * 0.4) * v;
+      hp[i] = HP_MAX;
+      flk[i] = f;
+      alive[i] = 1;
+    }
+  }
+  resolving = false;
+  resolveTimer = 0;
+  banner.classList.remove('show');
+}
+
+spawn();
+
+function step() {
+  rebuildGrid();
+
+  // Per-frame counts
+  const counts = [0, 0, 0];
+
+  for (let i = 0; i < N; i++) {
+    if (!alive[i]) continue;
+    counts[flk[i]]++;
+
+    const myF = flk[i];
+    const x = px[i], y = py[i];
+    const cx = Math.min(GW - 1, Math.max(0, (x / CELL) | 0));
+    const cy = Math.min(GH - 1, Math.max(0, (y / CELL) | 0));
+
+    // Reynolds accumulators
+    let sepX = 0, sepY = 0, sepN = 0;
+    let aliX = 0, aliY = 0, aliN = 0;
+    let cohX = 0, cohY = 0, cohN = 0;
+
+    // Combat: closest enemy in range
+    let nearestD2 = ATTACK_DIST * ATTACK_DIST + 1;
+    let nearestIdx = -1;
+    // Avoidance / threat
+    let fleeX = 0, fleeY = 0, fleeN = 0;
+    // Hunt: nearest enemy within perception (for prowling)
+    let huntD2 = PERCEPTION * PERCEPTION + 1;
+    let huntX = 0, huntY = 0, huntFound = 0;
+
+    const PER2 = PERCEPTION * PERCEPTION;
+    const SEP2 = SEP_DIST * SEP_DIST;
+    const FLEE_R = 28; // recoil radius from enemies up close
+    const FLEE2 = FLEE_R * FLEE_R;
+
+    for (let oy = -1; oy <= 1; oy++) {
+      const ry = cy + oy;
+      if (ry < 0 || ry >= GH) continue;
+      for (let ox = -1; ox <= 1; ox++) {
+        const rx = cx + ox;
+        if (rx < 0 || rx >= GW) continue;
+        let j = head[ry * GW + rx];
+        while (j !== -1) {
+          if (j !== i) {
+            const dx = px[j] - x;
+            const dy = py[j] - y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < PER2 && d2 > 0.0001) {
+              if (flk[j] === myF) {
+                // Alignment
+                aliX += vx[j]; aliY += vy[j]; aliN++;
+                // Cohesion
+                cohX += px[j]; cohY += py[j]; cohN++;
+                // Separation
+                if (d2 < SEP2) {
+                  const inv = 1 / Math.sqrt(d2);
+                  sepX -= dx * inv; sepY -= dy * inv; sepN++;
+                }
+              } else {
+                // Enemy: track nearest in attack range
+                if (d2 < nearestD2) { nearestD2 = d2; nearestIdx = j; }
+                // Hunt vector — center of nearby enemies, mildly attractive
+                if (d2 < huntD2) { huntD2 = d2; huntX = px[j]; huntY = py[j]; huntFound = 1; }
+                // Flee very close ones (so swarms scatter when surrounded)
+                if (d2 < FLEE2) {
+                  const inv = 1 / Math.sqrt(d2);
+                  fleeX -= dx * inv; fleeY -= dy * inv; fleeN++;
+                }
+              }
+            }
+          }
+          j = next[j];
+        }
+      }
+    }
+
+    let ax = 0, ay = 0;
+
+    // Separation
+    if (sepN > 0) {
+      const len = Math.hypot(sepX, sepY) || 1;
+      sepX = (sepX / len) * MAX_SPEED - vx[i];
+      sepY = (sepY / len) * MAX_SPEED - vy[i];
+      const lim = Math.hypot(sepX, sepY); const k = lim > MAX_FORCE * 1.7 ? (MAX_FORCE * 1.7) / lim : 1;
+      ax += sepX * k * 1.55; ay += sepY * k * 1.55;
+    }
+    // Alignment
+    if (aliN > 0) {
+      aliX /= aliN; aliY /= aliN;
+      const len = Math.hypot(aliX, aliY) || 1;
+      aliX = (aliX / len) * MAX_SPEED - vx[i];
+      aliY = (aliY / len) * MAX_SPEED - vy[i];
+      const lim = Math.hypot(aliX, aliY); const k = lim > MAX_FORCE ? MAX_FORCE / lim : 1;
+      ax += aliX * k * 1.0; ay += aliY * k * 1.0;
+    }
+    // Cohesion
+    if (cohN > 0) {
+      cohX = cohX / cohN - x;
+      cohY = cohY / cohN - y;
+      const len = Math.hypot(cohX, cohY) || 1;
+      cohX = (cohX / len) * MAX_SPEED - vx[i];
+      cohY = (cohY / len) * MAX_SPEED - vy[i];
+      const lim = Math.hypot(cohX, cohY); const k = lim > MAX_FORCE ? MAX_FORCE / lim : 1;
+      ax += cohX * k * 0.85; ay += cohY * k * 0.85;
+    }
+    // Flee close enemies (scatter when surrounded)
+    if (fleeN > 0) {
+      const len = Math.hypot(fleeX, fleeY) || 1;
+      fleeX = (fleeX / len) * MAX_SPEED - vx[i];
+      fleeY = (fleeY / len) * MAX_SPEED - vy[i];
+      // scatter strength scales with how surrounded we are
+      const intensity = Math.min(1.6, 0.7 + fleeN * 0.18);
+      const lim = Math.hypot(fleeX, fleeY); const k = lim > MAX_FORCE * 2 ? (MAX_FORCE * 2) / lim : 1;
+      ax += fleeX * k * intensity; ay += fleeY * k * intensity;
+    }
+    // Hunt — gentle pull toward nearest enemy if not too close (ambush behavior).
+    // Bias slightly toward attacking from above (negative y).
+    if (huntFound && fleeN === 0) {
+      let hxv = huntX - x;
+      let hyv = huntY - y - 22; // bias to come from above
+      const len = Math.hypot(hxv, hyv) || 1;
+      hxv = (hxv / len) * MAX_SPEED - vx[i];
+      hyv = (hyv / len) * MAX_SPEED - vy[i];
+      const lim = Math.hypot(hxv, hyv); const k = lim > MAX_FORCE * 0.9 ? (MAX_FORCE * 0.9) / lim : 1;
+      ax += hxv * k * 0.55; ay += hyv * k * 0.55;
+    }
+
+    // Edge soft-bounce — keep boids on screen with smooth turn-in
+    const margin = 60;
+    if (x < margin)            ax += (margin - x) * 0.0030;
+    else if (x > W - margin)   ax -= (x - (W - margin)) * 0.0030;
+    if (y < margin)            ay += (margin - y) * 0.0030;
+    else if (y > H - margin)   ay -= (y - (H - margin)) * 0.0030;
+
+    // Tiny stochastic jitter so flocks feel alive
+    ax += (Math.random() - 0.5) * 0.012;
+    ay += (Math.random() - 0.5) * 0.012;
+
+    // Integrate
+    vx[i] += ax;
+    vy[i] += ay;
+
+    // Clamp speed
+    let sp = Math.hypot(vx[i], vy[i]);
+    if (sp > MAX_SPEED) { vx[i] *= MAX_SPEED / sp; vy[i] *= MAX_SPEED / sp; sp = MAX_SPEED; }
+    else if (sp < MIN_SPEED && sp > 0.0001) { vx[i] *= MIN_SPEED / sp; vy[i] *= MIN_SPEED / sp; }
+
+    px[i] += vx[i];
+    py[i] += vy[i];
+
+    // Combat: damage closest enemy in attack range
+    if (nearestIdx !== -1) {
+      hp[nearestIdx] -= DAMAGE_PER_TICK;
+      if (hp[nearestIdx] <= 0 && alive[nearestIdx]) {
+        alive[nearestIdx] = 0;
+        emitParticles(px[nearestIdx], py[nearestIdx], flk[nearestIdx], 8);
+      }
+    }
+  }
+
+  return counts;
+}
+
+function drawBoids() {
+  // Clear trail buffer with subtle fade for soft motion blur
+  trailCtx.globalCompositeOperation = 'destination-out';
+  trailCtx.fillStyle = 'rgba(0,0,0,0.32)';
+  trailCtx.fillRect(0, 0, W, H);
+
+  trailCtx.globalCompositeOperation = 'lighter'; // additive bloom
+
+  for (let i = 0; i < N; i++) {
+    if (!alive[i]) continue;
+    const c = COLORS[flk[i]];
+    const x = px[i], y = py[i];
+    const ang = Math.atan2(vy[i], vx[i]);
+    const hpFrac = Math.max(0.25, hp[i] / HP_MAX);
+    const a = 0.55 + 0.45 * hpFrac;
+
+    // Outer halo
+    trailCtx.fillStyle = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + (0.22 * a).toFixed(3) + ')';
+    trailCtx.beginPath();
+    trailCtx.arc(x, y, 6.5, 0, Math.PI * 2);
+    trailCtx.fill();
+
+    // Triangle pointing along velocity
+    const cosA = Math.cos(ang), sinA = Math.sin(ang);
+    const fx = 5.5, sx = -3.2, sy = 2.6;
+    const x1 = x + cosA *  fx,           y1 = y + sinA *  fx;
+    const x2 = x + cosA * sx - sinA * sy, y2 = y + sinA * sx + cosA * sy;
+    const x3 = x + cosA * sx + sinA * sy, y3 = y + sinA * sx - cosA * sy;
+
+    trailCtx.fillStyle = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + (0.95 * a).toFixed(3) + ')';
+    trailCtx.beginPath();
+    trailCtx.moveTo(x1, y1);
+    trailCtx.lineTo(x2, y2);
+    trailCtx.lineTo(x3, y3);
+    trailCtx.closePath();
+    trailCtx.fill();
+
+    // Hot core
+    trailCtx.fillStyle = 'rgba(255,255,255,' + (0.55 * a).toFixed(3) + ')';
+    trailCtx.beginPath();
+    trailCtx.arc(x + cosA * 2, y + sinA * 2, 1.0, 0, Math.PI * 2);
+    trailCtx.fill();
+  }
+
+  // Death particles
+  for (let i = 0; i < PMAX; i++) {
+    const life = pli[i];
+    if (life <= 0) continue;
+    pli[i] = life - 0.018;
+    ppx[i] += pvx[i];
+    ppy[i] += pvy[i];
+    pvy[i] += 0.04; // gravity
+    pvx[i] *= 0.985; pvy[i] *= 0.985;
+    const c = COLORS[pcol[i]];
+    const a = life * 0.85;
+    trailCtx.fillStyle = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + a.toFixed(3) + ')';
+    trailCtx.beginPath();
+    trailCtx.arc(ppx[i], ppy[i], 1.6 + life * 1.6, 0, Math.PI * 2);
+    trailCtx.fill();
+  }
+}
+
+function frame() {
+  // Background
+  ctx.drawImage(bgCanvas, 0, 0, W, H);
+
+  // Sim
+  const counts = step();
+  drawBoids();
+
+  // Composite trail buffer over background (additive)
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.drawImage(trailCanvas, 0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over';
+
+  // HUD
+  elR.textContent = counts[0];
+  elC.textContent = counts[1];
+  elY.textContent = counts[2];
+  elRounds.textContent = 'round ' + round;
+
+  // Win check
+  const aliveFlocks = (counts[0] > 0 ? 1 : 0) + (counts[1] > 0 ? 1 : 0) + (counts[2] > 0 ? 1 : 0);
+
+  if (!resolving) {
+    if (aliveFlocks <= 1) {
+      resolving = true;
+      resolveTimer = 0;
+      let winner = -1;
+      for (let f = 0; f < FLOCKS; f++) if (counts[f] > 0) winner = f;
+      if (winner >= 0) {
+        const c = COLORS[winner];
+        bMain.style.color = c.hex;
+        bMain.textContent = c.name + ' survives';
+        bSub.textContent  = counts[winner] + ' of ' + PER_FLOCK + ' remain';
+      } else {
+        bMain.style.color = '#fff';
+        bMain.textContent = 'mutual collapse';
+        bSub.textContent  = 'no survivors';
+      }
+      banner.classList.add('show');
+    }
+  } else {
+    resolveTimer++;
+    if (resolveTimer > 200) {
+      round++;
+      spawn();
+    }
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

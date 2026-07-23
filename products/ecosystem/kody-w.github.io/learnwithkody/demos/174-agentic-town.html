@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BRAMBLESTOKE — Agentic Story Engine · Round 18</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Bramblestoke Village: a cozy fictional medieval town with 12 named villagers thinking out loud across 5 districts.">
+<style>
+  html,body{margin:0;padding:0;background:#0b0d12;color:#f1ead0;font-family:Georgia,'Times New Roman',serif;overflow:hidden;height:100%;}
+  canvas{display:block;}
+  #hud,#brain,#chyron,#minimap,#relgraph,#title,#cycle{position:fixed;z-index:5;pointer-events:none;}
+  #title{top:10px;left:14px;font-size:13px;letter-spacing:.18em;color:#f6e6b8;text-shadow:0 1px 2px #000;}
+  #title b{color:#ffd17a;}
+  #cycle{top:30px;left:14px;font-size:11px;color:#c8b98a;text-shadow:0 1px 2px #000;letter-spacing:.1em;}
+  #hud{top:10px;left:50%;transform:translateX(-50%);background:rgba(20,18,12,.62);border:1px solid #6a5a32;border-radius:6px;padding:6px 14px;font-size:13px;letter-spacing:.12em;color:#ffe9b1;text-shadow:0 1px 2px #000;}
+  #hud b{color:#ffd17a;}
+  #brain{top:10px;right:14px;width:280px;background:rgba(18,16,10,.72);border:1px solid #6a5a32;border-radius:8px;padding:10px 12px;font-size:12px;color:#f3e7c2;line-height:1.5;text-shadow:0 1px 1px #000;}
+  #brain h3{margin:0 0 4px;font-size:13px;color:#ffd17a;letter-spacing:.06em;}
+  #brain .row{margin:2px 0;}
+  #brain .lab{color:#9fb37a;display:inline-block;width:48px;}
+  #brain .ok{color:#9fe19f;}
+  #brain .miss{color:#e69a9a;}
+  #brain .plan{color:#e8d28a;font-style:italic;}
+  #chyron{bottom:0;left:0;right:0;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(10,8,4,.85));padding:8px 0 10px;font-size:13px;color:#ffe9b1;text-shadow:0 1px 2px #000;overflow:hidden;white-space:nowrap;}
+  #chyron .strip{display:inline-block;padding-left:100%;animation:slide 36s linear infinite;}
+  @keyframes slide{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+  #minimap{bottom:46px;left:14px;width:160px;height:160px;}
+  #minimap canvas{background:rgba(8,10,14,.55);border:1px solid #6a5a32;border-radius:80px;}
+  #relgraph{bottom:46px;right:14px;width:200px;height:160px;background:rgba(18,16,10,.72);border:1px solid #6a5a32;border-radius:8px;padding:6px;font-size:10px;color:#e8d28a;display:none;}
+  #relgraph.show{display:block;}
+  #relgraph h4{margin:2px 0 4px;color:#ffd17a;font-size:11px;letter-spacing:.08em;}
+  #relgraph canvas{width:100%;height:130px;}
+  .vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.45) 100%);z-index:3;}
+  .flash{position:fixed;inset:0;pointer-events:none;background:#fff;opacity:0;z-index:4;transition:opacity .8s ease;}
+  .flash.on{opacity:.85;}
+</style>
+</head>
+<body>
+<!-- ROUND18_AGENT v1 -->
+<div id="title"><b>BRAMBLESTOKE</b> · Agentic Story Engine</div>
+<div id="cycle">Day 1 · Act 1 · Cycle 1</div>
+<div id="hud">DISTRICT 1 OF 5: MARKET SQUARE · 0 VILLAGERS</div>
+<div id="brain">
+  <h3 id="bName">—</h3>
+  <div class="row" id="bRole">—</div>
+  <div class="row"><span class="lab">GOAL</span><span id="bGoal">—</span></div>
+  <div class="row"><span class="lab">NEED</span><span id="bNeed">—</span></div>
+  <div class="row"><span class="lab">HAVE</span><span id="bHave">—</span></div>
+  <div class="row plan"><span class="lab" style="color:#9fb37a">PLAN</span><span id="bPlan">—</span></div>
+  <div class="row"><span class="lab">STEP</span><span id="bStep">—</span></div>
+  <div class="row"><span class="lab">MOOD</span><span id="bMood">—</span></div>
+</div>
+<div id="minimap"><canvas id="mmCanvas" width="160" height="160"></canvas></div>
+<div id="relgraph"><h4>RELATIONSHIPS</h4><canvas id="rgCanvas" width="190" height="130"></canvas></div>
+<div id="chyron"><div class="strip" id="chyStrip">Day 1 · Act 1 — The bells of Bramblestoke ring at dawn. Karina sets out to commission an iron sword. Ellis kindles the oven. Mayor Wilfred convenes the council in the timbered hall.</div></div>
+<div class="vignette"></div>
+<div class="flash" id="flash"></div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+'use strict';
+(function(){
+  if(!window.THREE){console.warn('three.js missing');return;}
+  var STORE_KEY='bramblestoke_brain_v1';
+  var memory=loadMem();
+  var scene,renderer,camera,clock;
+  var disposables=[];
+  var instancedCrowd=null;
+  var groundTrailsCanvas,groundTrailsTex,groundTrailsCtx;
+  var district=0;
+  var districts=[
+    {name:'MARKET SQUARE',sky:0xc6dcef,fog:0xc6dcef,ground:0xb39666,accent:0xd66a3a,center:new THREE.Vector3(0,0,0)},
+    {name:'RESIDENTIAL ROW',sky:0xe6cfa3,fog:0xd9bf8e,ground:0x9ab06a,accent:0x8d4a2a,center:new THREE.Vector3(60,0,0)},
+    {name:'WORKSHOPS',sky:0x9aa6b3,fog:0x8a8a90,ground:0x7d6a4a,accent:0xa54a2a,center:new THREE.Vector3(0,0,60)},
+    {name:'GREEN COMMONS',sky:0xa9d6b9,fog:0xb6d8c1,ground:0x6a9a4a,accent:0x6a8a2a,center:new THREE.Vector3(-60,0,0)},
+    {name:'TOWN HALL',sky:0xb6a8c6,fog:0xa090b0,ground:0x8a7a5a,accent:0xa68a3a,center:new THREE.Vector3(0,0,-60)}
+  ];
+  var villagerDefs=[
+    {n:'Karina',role:'Smith\'s apprentice',color:0xd6743a,goal:'Commission iron sword',need:'200 gold',have:'320 gold ✓',plan:['Walk to Brom','Pay 200 gold','Wait three days','Receive sword'],home:1,work:2,mood:'Determined'},
+    {n:'Brom',role:'Smith',color:0x6e3a2a,goal:'Keep the forge stocked',need:'Iron + coal',have:'Low iron',plan:['Stoke coals','Hammer hinges','Order iron from Hob','Mind apprentice'],home:1,work:2,mood:'Focused'},
+    {n:'Mayor Wilfred',role:'Mayor',color:0x6a4aa6,goal:'Settle disputes',need:'Quiet ear',have:'Council bell',plan:['Open chamber','Hear the miller','Hear the weaver','Render judgment'],home:4,work:4,mood:'Patient'},
+    {n:'Ellis',role:'Baker',color:0xe8c27a,goal:'Deliver bread by noon',need:'Flour from Hob',have:'Warm oven',plan:['Knead dough','Bake six loaves','Pack basket','Walk the round'],home:1,work:2,mood:'Cheerful'},
+    {n:'Tilda',role:'Weaver',color:0xb86a8a,goal:'Finish Mayor\'s commission',need:'Indigo wool',have:'Shuttle ready',plan:['Warp the loom','Weave the band','Hem the edge','Deliver to hall'],home:1,work:2,mood:'Quiet'},
+    {n:'Hob',role:'Miller',color:0xa6a68a,goal:'Grind eight sacks of flour',need:'Wind on sail',have:'Six sacks',plan:['Hoist sacks','Set the stones','Bag the flour','Trade with Ellis'],home:1,work:2,mood:'Steady'},
+    {n:'Vianne',role:'Herbalist',color:0x6aa66a,goal:'Pick wild thyme',need:'Sunlit meadow',have:'Empty basket',plan:['Cross the green','Crouch among stones','Snip thyme sprigs','Bind a posy'],home:1,work:3,mood:'Peaceful'},
+    {n:'Father Cormac',role:'Chaplain',color:0x9a8a6a,goal:'Tend the chapel garden',need:'A watering can',have:'A blessing',plan:['Open the gate','Water the rows','Prune the vine','Ring the small bell'],home:4,work:3,mood:'Gentle'},
+    {n:'Ned',role:'Town crier',color:0xd6a64a,goal:'Announce five events',need:'Strong lungs',have:'Brass bell',plan:['Wake the square','Cry the bake','Cry the mill','Cry the wedding','Cry the dusk'],home:0,work:0,mood:'Boisterous'},
+    {n:'Marjorie',role:'Librarian',color:0x4a6aa6,goal:'Shelve all returns',need:'Quiet hour',have:'Stack of forty',plan:['Sort by spine','Climb the ladder','Slot the volumes','Dust the desk'],home:4,work:4,mood:'Studious'},
+    {n:'Dorian',role:'Wandering bard',color:0x9a4a8a,goal:'Earn fifty coppers',need:'A friendly crowd',have:'A new ballad',plan:['Tune the lute','Play the square','Walk the row','Pass the cap'],home:0,work:0,mood:'Sly'},
+    {n:'Rina',role:'Village kid',color:0xe6d24a,goal:'Chase the cat through five districts',need:'Quick feet',have:'A muddy hem',plan:['Spot Whiskers','Sprint the row','Dodge the smith','Loop the green','Corner the cat'],home:1,work:0,mood:'Gleeful'}
+  ];
+  var namePool=['Tomas','Brigid','Aldwin','Maeve','Cedric','Rowan','Iola','Galen','Nesta','Perrin','Sable','Quinn','Mabel','Wat','Hester','Otis','Lila','Bryn','Cuthbert','Edda','Falk','Gretta','Ham','Inken','Joren','Kit','Lonan','Magda','Noll','Orla'];
+  var villagers=[];
+  var crowdData=[];
+  var sparkles=[];
+  var diamonds=[];
+  var trails=[];
+  var nameplates=[];
+  var portalStartTime=0;
+  var portalDuration=70000;
+  var lastReseed=performance.now();
+  var dayStart=performance.now();
+  var act=1;
+  var day=memory.day||1;
+  var cycle=memory.cycle||1;
+  var cameraDefs=[];
+  var camIdx=0;
+  var camStart=0;
+  var camDuration=4500;
+  var followIdx=0;
+  var lastPortal=0;
+  var nextPortalGap=60000+Math.random()*30000;
+  var lastInteraction=0;
+  var lastChyronUpdate=0;
+  var lastRelGraphToggle=0;
+  var lastRelGraphRedraw=0;
+  var relGraphVisible=false;
+
+  function loadMem(){
+    try{var s=localStorage.getItem(STORE_KEY);if(s){var m=JSON.parse(s);if(m&&typeof m==='object')return m;}}catch(e){}
+    return {day:1,cycle:1,relations:{},helped:{},gossip:[]};
+  }
+  function saveMem(){
+    try{localStorage.setItem(STORE_KEY,JSON.stringify(memory));}catch(e){}
+  }
+  function relKey(a,b){return a<b?a+'|'+b:b+'|'+a;}
+  function noteRelation(a,b){
+    var k=relKey(a,b);
+    memory.relations[k]=(memory.relations[k]||0)+1;
+  }
+  function noteHelp(a,b){
+    var k=a+'>'+b;
+    memory.helped[k]=(memory.helped[k]||0)+1;
+  }
+  function pushGossip(line){
+    memory.gossip=(memory.gossip||[]).concat([line]).slice(-12);
+  }
+
+  function makeNameplate(text,color){
+    var c=document.createElement('canvas');c.width=256;c.height=64;
+    var ctx=c.getContext('2d');
+    ctx.fillStyle='rgba(20,16,10,0.78)';
+    ctx.fillRect(0,16,256,32);
+    ctx.strokeStyle='#'+color.toString(16).padStart(6,'0');
+    ctx.lineWidth=2;ctx.strokeRect(1,17,254,30);
+    ctx.fillStyle='#ffe9b1';
+    ctx.font='600 22px Georgia';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(text,128,33);
+    var tex=new THREE.CanvasTexture(c);tex.minFilter=THREE.LinearFilter;
+    var mat=new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false});
+    var spr=new THREE.Sprite(mat);spr.scale.set(4.2,1.05,1);
+    disposables.push(tex,mat);
+    return spr;
+  }
+  function makeDiamondTex(){
+    var c=document.createElement('canvas');c.width=64;c.height=64;
+    var ctx=c.getContext('2d');
+    ctx.translate(32,32);ctx.rotate(Math.PI/4);
+    var grd=ctx.createLinearGradient(-22,-22,22,22);
+    grd.addColorStop(0,'#fff7c8');grd.addColorStop(1,'#d6a64a');
+    ctx.fillStyle=grd;
+    ctx.fillRect(-18,-18,36,36);
+    ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.strokeRect(-18,-18,36,36);
+    var tex=new THREE.CanvasTexture(c);disposables.push(tex);return tex;
+  }
+  function makeSparkleTex(){
+    var c=document.createElement('canvas');c.width=64;c.height=64;
+    var ctx=c.getContext('2d');
+    var g=ctx.createRadialGradient(32,32,0,32,32,30);
+    g.addColorStop(0,'rgba(255,255,210,1)');
+    g.addColorStop(.4,'rgba(255,220,140,.7)');
+    g.addColorStop(1,'rgba(255,200,80,0)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,64,64);
+    var tex=new THREE.CanvasTexture(c);disposables.push(tex);return tex;
+  }
+  var diamondTex,sparkleTex;
+
+  function build(){
+    scene=new THREE.Scene();
+    scene.background=new THREE.Color(districts[0].sky);
+    scene.fog=new THREE.Fog(districts[0].fog,30,160);
+    var hemi=new THREE.HemisphereLight(0xfff2c8,0x4a3a20,0.8);scene.add(hemi);
+    var sun=new THREE.DirectionalLight(0xfff0c4,0.85);sun.position.set(40,80,30);scene.add(sun);
+    var amb=new THREE.AmbientLight(0x6a5a3a,0.35);scene.add(amb);
+
+    diamondTex=makeDiamondTex();
+    sparkleTex=makeSparkleTex();
+
+    buildGround();
+    buildDistricts();
+    buildVillagers();
+    buildCrowd();
+    buildCameras();
+
+    onResize();
+  }
+
+  function buildGround(){
+    groundTrailsCanvas=document.createElement('canvas');
+    groundTrailsCanvas.width=512;groundTrailsCanvas.height=512;
+    groundTrailsCtx=groundTrailsCanvas.getContext('2d');
+    groundTrailsCtx.fillStyle='rgba(0,0,0,0)';
+    groundTrailsCtx.clearRect(0,0,512,512);
+    groundTrailsTex=new THREE.CanvasTexture(groundTrailsCanvas);
+    groundTrailsTex.minFilter=THREE.LinearFilter;
+    disposables.push(groundTrailsTex);
+
+    var g=new THREE.PlaneGeometry(220,220,1,1);
+    g.rotateX(-Math.PI/2);
+    var m=new THREE.MeshLambertMaterial({color:0xa68a5a});
+    var ground=new THREE.Mesh(g,m);ground.position.y=-0.02;scene.add(ground);
+    disposables.push(g,m);
+
+    // overlay plane for trails (slightly above)
+    var tg=new THREE.PlaneGeometry(220,220);tg.rotateX(-Math.PI/2);
+    var tm=new THREE.MeshBasicMaterial({map:groundTrailsTex,transparent:true,depthWrite:false,opacity:0.85});
+    var trailMesh=new THREE.Mesh(tg,tm);trailMesh.position.y=0.04;scene.add(trailMesh);
+    disposables.push(tg,tm);
+
+    // cobble grid pattern (sandstone tiles around districts)
+    for(var i=0;i<5;i++){
+      var c=districts[i].center;
+      var pg=new THREE.RingGeometry(8,18,24,1);pg.rotateX(-Math.PI/2);
+      var pm=new THREE.MeshLambertMaterial({color:districts[i].ground});
+      var ring=new THREE.Mesh(pg,pm);ring.position.set(c.x,0.01,c.z);scene.add(ring);
+      disposables.push(pg,pm);
+    }
+    // pathways between districts
+    for(var i=1;i<5;i++){
+      var c=districts[i].center;
+      var pg=new THREE.PlaneGeometry(c.length()-12,3.5);pg.rotateX(-Math.PI/2);
+      var pm=new THREE.MeshLambertMaterial({color:0xb39666});
+      var path=new THREE.Mesh(pg,pm);
+      var midX=c.x*0.5,midZ=c.z*0.5;
+      path.position.set(midX,0.02,midZ);
+      var ang=Math.atan2(c.z,c.x);
+      path.rotation.y=-ang;
+      scene.add(path);disposables.push(pg,pm);
+    }
+  }
+
+  function buildDistricts(){
+    // 1. MARKET SQUARE
+    addFountain(districts[0].center);
+    for(var i=0;i<6;i++){
+      var ang=i/6*Math.PI*2;
+      addStall(districts[0].center.x+Math.cos(ang)*9,districts[0].center.z+Math.sin(ang)*9,ang);
+    }
+    addCrierPost(districts[0].center.x+0,districts[0].center.z+13);
+
+    // 2. RESIDENTIAL ROW
+    var rc=districts[1].center;
+    for(var i=0;i<8;i++){
+      var x=rc.x-12+i*3.4;
+      var z=rc.z+(i%2===0?-6:6);
+      addCottage(x,z,i%2===0?0:Math.PI);
+      addPicketFence(x,z+(i%2===0?-2.5:2.5),3.2);
+    }
+    addGardenPatch(rc.x-2,rc.z+3);
+    addGardenPatch(rc.x+4,rc.z-3);
+
+    // 3. WORKSHOPS
+    var wc=districts[2].center;
+    addSmithy(wc.x-7,wc.z+0);
+    addMill(wc.x+7,wc.z+2);
+    addWeaverHouse(wc.x-2,wc.z-7);
+    addBakery(wc.x+4,wc.z-7);
+
+    // 4. GREEN COMMONS
+    var gc=districts[3].center;
+    addOakTree(gc.x,gc.z);
+    addPicnic(gc.x+5,gc.z+3);
+    for(var i=0;i<14;i++){
+      addBush(gc.x+(Math.random()-0.5)*22,gc.z+(Math.random()-0.5)*22);
+    }
+    addChapel(gc.x-9,gc.z-6);
+
+    // 5. TOWN HALL
+    var tc=districts[4].center;
+    addTownHall(tc.x,tc.z);
+    addLibrary(tc.x-9,tc.z+2);
+    addCouncilGarden(tc.x+8,tc.z-3);
+
+    // sky distant trees ring
+    for(var i=0;i<60;i++){
+      var ang=i/60*Math.PI*2;
+      var r=110+Math.random()*8;
+      addPineSilhouette(Math.cos(ang)*r,Math.sin(ang)*r);
+    }
+  }
+
+  function addFountain(c){
+    var g=new THREE.CylinderGeometry(2.5,2.5,0.6,18);
+    var m=new THREE.MeshLambertMaterial({color:0xc8b696});
+    var base=new THREE.Mesh(g,m);base.position.set(c.x,0.3,c.z);scene.add(base);
+    var g2=new THREE.CylinderGeometry(0.5,0.5,2.2,12);
+    var m2=new THREE.MeshLambertMaterial({color:0xb09a76});
+    var col=new THREE.Mesh(g2,m2);col.position.set(c.x,1.4,c.z);scene.add(col);
+    var g3=new THREE.SphereGeometry(0.7,12,10);
+    var m3=new THREE.MeshLambertMaterial({color:0x6aa8d6});
+    var top=new THREE.Mesh(g3,m3);top.position.set(c.x,2.7,c.z);scene.add(top);
+    disposables.push(g,m,g2,m2,g3,m3);
+  }
+  function addStall(x,z,ang){
+    var g=new THREE.BoxGeometry(2.4,0.5,1.6);
+    var m=new THREE.MeshLambertMaterial({color:0xb08a4a});
+    var t=new THREE.Mesh(g,m);t.position.set(x,0.55,z);t.rotation.y=-ang+Math.PI/2;scene.add(t);
+    var g2=new THREE.BoxGeometry(2.6,0.15,1.8);
+    var m2=new THREE.MeshLambertMaterial({color:0xd66a3a});
+    var roof=new THREE.Mesh(g2,m2);roof.position.set(x,1.4,z);roof.rotation.y=-ang+Math.PI/2;scene.add(roof);
+    disposables.push(g,m,g2,m2);
+  }
+  function addCrierPost(x,z){
+    var g=new THREE.BoxGeometry(1.6,1.2,1.6);
+    var m=new THREE.MeshLambertMaterial({color:0x8a6a3a});
+    var t=new THREE.Mesh(g,m);t.position.set(x,0.6,z);scene.add(t);
+    disposables.push(g,m);
+  }
+  function addCottage(x,z,rot){
+    var g=new THREE.BoxGeometry(3,2.2,2.6);
+    var m=new THREE.MeshLambertMaterial({color:0xd9c290});
+    var w=new THREE.Mesh(g,m);w.position.set(x,1.1,z);w.rotation.y=rot;scene.add(w);
+    var g2=new THREE.ConeGeometry(2.4,1.6,4);
+    var m2=new THREE.MeshLambertMaterial({color:0x8d4a2a});
+    var roof=new THREE.Mesh(g2,m2);roof.position.set(x,3,z);roof.rotation.y=Math.PI/4+rot;scene.add(roof);
+    var g3=new THREE.BoxGeometry(0.4,0.8,0.1);
+    var m3=new THREE.MeshLambertMaterial({color:0x6a4a2a});
+    var door=new THREE.Mesh(g3,m3);door.position.set(x,0.5,z+(rot===0?1.32:-1.32));scene.add(door);
+    disposables.push(g,m,g2,m2,g3,m3);
+  }
+  function addPicketFence(x,z,len){
+    var g=new THREE.BoxGeometry(len,0.5,0.06);
+    var m=new THREE.MeshLambertMaterial({color:0xeae0c2});
+    var f=new THREE.Mesh(g,m);f.position.set(x,0.25,z);scene.add(f);
+    disposables.push(g,m);
+  }
+  function addGardenPatch(x,z){
+    for(var i=0;i<5;i++){
+      var g=new THREE.SphereGeometry(0.3,6,5);
+      var m=new THREE.MeshLambertMaterial({color:[0x8aa64a,0xb8c272,0xa68a4a][i%3]});
+      var b=new THREE.Mesh(g,m);b.position.set(x+(Math.random()-0.5)*1.4,0.3,z+(Math.random()-0.5)*1.4);scene.add(b);
+      disposables.push(g,m);
+    }
+  }
+  function addSmithy(x,z){
+    var g=new THREE.BoxGeometry(4,2.4,3.2);
+    var m=new THREE.MeshLambertMaterial({color:0x6a4a2a});
+    var w=new THREE.Mesh(g,m);w.position.set(x,1.2,z);scene.add(w);
+    var g2=new THREE.BoxGeometry(4.2,0.4,3.4);
+    var m2=new THREE.MeshLambertMaterial({color:0x3a2a1a});
+    var roof=new THREE.Mesh(g2,m2);roof.position.set(x,2.6,z);scene.add(roof);
+    var g3=new THREE.CylinderGeometry(0.3,0.3,1.6,8);
+    var m3=new THREE.MeshLambertMaterial({color:0x222});
+    var ch=new THREE.Mesh(g3,m3);ch.position.set(x+1.5,3.4,z-1);scene.add(ch);
+    var g4=new THREE.BoxGeometry(1,0.6,1);
+    var m4=new THREE.MeshStandardMaterial({color:0xff6a2a,emissive:0xff4400,emissiveIntensity:0.6});
+    var forge=new THREE.Mesh(g4,m4);forge.position.set(x,0.6,z+1.5);scene.add(forge);
+    disposables.push(g,m,g2,m2,g3,m3,g4,m4);
+  }
+  function addMill(x,z){
+    var g=new THREE.CylinderGeometry(2,2.2,3.2,12);
+    var m=new THREE.MeshLambertMaterial({color:0xb09a76});
+    var w=new THREE.Mesh(g,m);w.position.set(x,1.6,z);scene.add(w);
+    var g2=new THREE.ConeGeometry(2.3,1.4,12);
+    var m2=new THREE.MeshLambertMaterial({color:0x8d4a2a});
+    var roof=new THREE.Mesh(g2,m2);roof.position.set(x,3.9,z);scene.add(roof);
+    var bladeG=new THREE.BoxGeometry(0.1,4,0.6);
+    var bladeM=new THREE.MeshLambertMaterial({color:0xeae0c2});
+    var pivot=new THREE.Object3D();pivot.position.set(x,3,z+2.1);scene.add(pivot);
+    for(var i=0;i<4;i++){
+      var b=new THREE.Mesh(bladeG,bladeM);
+      b.rotation.z=i*Math.PI/2;b.position.y=2;
+      var holder=new THREE.Object3D();holder.rotation.z=i*Math.PI/2;
+      holder.add(b);pivot.add(holder);
+    }
+    pivot.userData.windmill=true;
+    scene.add(pivot);
+    disposables.push(g,m,g2,m2,bladeG,bladeM);
+  }
+  function addWeaverHouse(x,z){
+    var g=new THREE.BoxGeometry(3.4,2,3);
+    var m=new THREE.MeshLambertMaterial({color:0xc6a86a});
+    var w=new THREE.Mesh(g,m);w.position.set(x,1,z);scene.add(w);
+    var g2=new THREE.ConeGeometry(2.3,1.2,4);
+    var m2=new THREE.MeshLambertMaterial({color:0x5a3a2a});
+    var r=new THREE.Mesh(g2,m2);r.position.set(x,2.6,z);r.rotation.y=Math.PI/4;scene.add(r);
+    disposables.push(g,m,g2,m2);
+  }
+  function addBakery(x,z){
+    var g=new THREE.BoxGeometry(3,2,2.8);
+    var m=new THREE.MeshLambertMaterial({color:0xd9b482});
+    var w=new THREE.Mesh(g,m);w.position.set(x,1,z);scene.add(w);
+    var g2=new THREE.ConeGeometry(2.1,1.1,4);
+    var m2=new THREE.MeshLambertMaterial({color:0x8d4a2a});
+    var r=new THREE.Mesh(g2,m2);r.position.set(x,2.5,z);r.rotation.y=Math.PI/4;scene.add(r);
+    var g3=new THREE.CylinderGeometry(0.25,0.25,1.4,8);
+    var m3=new THREE.MeshLambertMaterial({color:0x222});
+    var ch=new THREE.Mesh(g3,m3);ch.position.set(x+1,3.2,z-0.8);scene.add(ch);
+    disposables.push(g,m,g2,m2,g3,m3);
+  }
+  function addOakTree(x,z){
+    var g=new THREE.CylinderGeometry(0.7,0.9,3,10);
+    var m=new THREE.MeshLambertMaterial({color:0x6a4a2a});
+    var t=new THREE.Mesh(g,m);t.position.set(x,1.5,z);scene.add(t);
+    var g2=new THREE.SphereGeometry(3.2,12,10);
+    var m2=new THREE.MeshLambertMaterial({color:0x4a8a3a});
+    var crown=new THREE.Mesh(g2,m2);crown.position.set(x,4.6,z);crown.scale.set(1.2,0.9,1.2);scene.add(crown);
+    disposables.push(g,m,g2,m2);
+  }
+  function addPicnic(x,z){
+    var g=new THREE.BoxGeometry(2.2,0.15,1.2);
+    var m=new THREE.MeshLambertMaterial({color:0xb6a474});
+    var t=new THREE.Mesh(g,m);t.position.set(x,0.6,z);scene.add(t);
+    disposables.push(g,m);
+  }
+  function addBush(x,z){
+    var g=new THREE.SphereGeometry(0.5+Math.random()*0.4,6,5);
+    var m=new THREE.MeshLambertMaterial({color:[0x6a8a4a,0x8aa64a,0x4a7a3a][Math.floor(Math.random()*3)]});
+    var b=new THREE.Mesh(g,m);b.position.set(x,0.4,z);scene.add(b);
+    disposables.push(g,m);
+  }
+  function addChapel(x,z){
+    var g=new THREE.BoxGeometry(2.6,2.2,3.4);
+    var m=new THREE.MeshLambertMaterial({color:0xeae0c2});
+    var w=new THREE.Mesh(g,m);w.position.set(x,1.1,z);scene.add(w);
+    var g2=new THREE.ConeGeometry(1.9,1.4,4);
+    var m2=new THREE.MeshLambertMaterial({color:0x6a4a8a});
+    var r=new THREE.Mesh(g2,m2);r.position.set(x,2.9,z);r.rotation.y=Math.PI/4;scene.add(r);
+    var g3=new THREE.BoxGeometry(0.16,1.2,0.16);
+    var m3=new THREE.MeshLambertMaterial({color:0xc8b08a});
+    var c1=new THREE.Mesh(g3,m3);c1.position.set(x,4.1,z);scene.add(c1);
+    var c2=new THREE.Mesh(g3.clone(),m3);c2.scale.x=4;c2.position.set(x,4.4,z);scene.add(c2);
+    disposables.push(g,m,g2,m2,g3,m3);
+  }
+  function addTownHall(x,z){
+    var g=new THREE.BoxGeometry(7,3.2,5.4);
+    var m=new THREE.MeshLambertMaterial({color:0xd9c290});
+    var w=new THREE.Mesh(g,m);w.position.set(x,1.6,z);scene.add(w);
+    var g2=new THREE.ConeGeometry(5.2,2.2,4);
+    var m2=new THREE.MeshLambertMaterial({color:0x6a4a8a});
+    var r=new THREE.Mesh(g2,m2);r.position.set(x,4.3,z);r.rotation.y=Math.PI/4;scene.add(r);
+    var g3=new THREE.BoxGeometry(1.2,2,0.2);
+    var m3=new THREE.MeshLambertMaterial({color:0x6a4a2a});
+    var d=new THREE.Mesh(g3,m3);d.position.set(x,1,z+2.7);scene.add(d);
+    var g4=new THREE.CylinderGeometry(0.3,0.3,3,8);
+    var m4=new THREE.MeshLambertMaterial({color:0xb09a76});
+    for(var i=-1;i<=1;i+=2){
+      var p=new THREE.Mesh(g4,m4);p.position.set(x+i*2,1.5,z+2.7);scene.add(p);
+    }
+    disposables.push(g,m,g2,m2,g3,m3,g4,m4);
+  }
+  function addLibrary(x,z){
+    var g=new THREE.BoxGeometry(4,2.4,3);
+    var m=new THREE.MeshLambertMaterial({color:0xc69a6a});
+    var w=new THREE.Mesh(g,m);w.position.set(x,1.2,z);scene.add(w);
+    var g2=new THREE.BoxGeometry(4.2,0.3,3.2);
+    var m2=new THREE.MeshLambertMaterial({color:0x4a3a2a});
+    var r=new THREE.Mesh(g2,m2);r.position.set(x,2.55,z);scene.add(r);
+    disposables.push(g,m,g2,m2);
+  }
+  function addCouncilGarden(x,z){
+    for(var i=0;i<6;i++){
+      var g=new THREE.SphereGeometry(0.45,7,6);
+      var m=new THREE.MeshLambertMaterial({color:0x8aa64a});
+      var b=new THREE.Mesh(g,m);b.position.set(x+(i-3)*0.8,0.45,z);scene.add(b);
+      disposables.push(g,m);
+    }
+  }
+  function addPineSilhouette(x,z){
+    var g=new THREE.ConeGeometry(2.2,7,6);
+    var m=new THREE.MeshLambertMaterial({color:0x3a4a2a});
+    var t=new THREE.Mesh(g,m);t.position.set(x,3.5,z);scene.add(t);
+    disposables.push(g,m);
+  }
+
+  function buildVillagers(){
+    villagers.length=0;
+    for(var i=0;i<villagerDefs.length;i++){
+      var d=villagerDefs[i];
+      var grp=new THREE.Group();
+      var bodyG=new THREE.CylinderGeometry(0.32,0.4,1,10);
+      var bodyM=new THREE.MeshLambertMaterial({color:d.color});
+      var body=new THREE.Mesh(bodyG,bodyM);body.position.y=0.5;grp.add(body);
+      var headG=new THREE.SphereGeometry(0.28,10,8);
+      var headM=new THREE.MeshLambertMaterial({color:0xf2d2a0});
+      var head=new THREE.Mesh(headG,headM);head.position.y=1.25;grp.add(head);
+      var hatG=(i%3===0)?new THREE.ConeGeometry(0.35,0.4,8):new THREE.CylinderGeometry(0.36,0.36,0.18,10);
+      var hatM=new THREE.MeshLambertMaterial({color:d.color*0.7|0});
+      var hat=new THREE.Mesh(hatG,hatM);hat.position.y=1.5;grp.add(hat);
+      // arms
+      var armG=new THREE.BoxGeometry(0.16,0.7,0.16);
+      var armM=new THREE.MeshLambertMaterial({color:d.color});
+      var armL=new THREE.Mesh(armG,armM);armL.position.set(-0.42,0.6,0);grp.add(armL);
+      var armR=new THREE.Mesh(armG,armM);armR.position.set(0.42,0.6,0);grp.add(armR);
+      // nameplate
+      var np=makeNameplate(d.n,d.color);np.position.y=2.05;grp.add(np);
+      // diamond sprite
+      var diaMat=new THREE.SpriteMaterial({map:diamondTex,transparent:true,depthWrite:false,opacity:0});
+      var dia=new THREE.Sprite(diaMat);dia.position.y=2.6;dia.scale.set(0.7,0.7,1);grp.add(dia);
+      disposables.push(bodyG,bodyM,headG,headM,hatG,hatM,armG,armM,diaMat);
+      var startC=districts[d.home].center;
+      grp.position.set(startC.x+(Math.random()-0.5)*4,0,startC.z+(Math.random()-0.5)*4);
+      scene.add(grp);
+      var v={def:d,obj:grp,body:body,armL:armL,armR:armR,diamond:dia,planStep:0,district:d.home,target:null,trailColor:d.color,lastTrailT:0,lastDecisionT:0,interactCooldown:0,phase:Math.random()*Math.PI*2};
+      v.target=pickGoalTarget(v);
+      villagers.push(v);
+    }
+  }
+
+  function pickGoalTarget(v){
+    // step 0..N traverses: home -> work -> home etc, with district crossings
+    var n=v.def.plan.length;
+    var step=v.planStep%n;
+    var districtIdx;
+    if(step===0)districtIdx=v.def.home;
+    else if(step===1)districtIdx=v.def.work;
+    else if(step===2)districtIdx=(v.def.work+1)%5;
+    else if(step===3)districtIdx=v.def.home;
+    else districtIdx=(v.def.home+step)%5;
+    v.district=districtIdx;
+    var c=districts[districtIdx].center;
+    return new THREE.Vector3(c.x+(Math.random()-0.5)*10,0,c.z+(Math.random()-0.5)*10);
+  }
+
+  function buildCrowd(){
+    var count=80;
+    var geom=new THREE.CylinderGeometry(0.25,0.32,0.9,8);
+    var mat=new THREE.MeshLambertMaterial({color:0xd9c290,vertexColors:false});
+    instancedCrowd=new THREE.InstancedMesh(geom,mat,count);
+    var dummy=new THREE.Object3D();
+    crowdData.length=0;
+    var col=new THREE.Color();
+    for(var i=0;i<count;i++){
+      var d=Math.floor(Math.random()*5);
+      var c=districts[d].center;
+      var x=c.x+(Math.random()-0.5)*22;
+      var z=c.z+(Math.random()-0.5)*22;
+      crowdData.push({x:x,z:z,d:d,phase:Math.random()*Math.PI*2,name:namePool[i%namePool.length]+' '+(['the elder','of the row','of the green','from the mill','of the row',''][i%6]).trim()});
+      dummy.position.set(x,0.45,z);
+      dummy.rotation.y=Math.random()*Math.PI*2;
+      dummy.updateMatrix();
+      instancedCrowd.setMatrixAt(i,dummy.matrix);
+      col.setHSL((i*0.137)%1,0.35,0.55);
+      // we don't really set per-instance color (saves memory) but we could
+    }
+    scene.add(instancedCrowd);
+    disposables.push(geom,mat);
+  }
+
+  function buildCameras(){
+    cameraDefs=[
+      {label:'market wide',d:0,off:new THREE.Vector3(20,14,20),look:districts[0].center.clone()},
+      {label:'market vendor close',d:0,off:new THREE.Vector3(8,3,8),look:districts[0].center.clone()},
+      {label:'market fountain spin',d:0,off:new THREE.Vector3(0,5,12),look:districts[0].center.clone(),spin:true},
+      {label:'crier post',d:0,off:new THREE.Vector3(2,2.6,16),look:new THREE.Vector3(0,1,12)},
+      {label:'residential row',d:1,off:new THREE.Vector3(60,10,18),look:districts[1].center.clone()},
+      {label:'cottage door',d:1,off:new THREE.Vector3(54,2.6,4),look:new THREE.Vector3(60,1,0)},
+      {label:'garden patch',d:1,off:new THREE.Vector3(58,3.5,8),look:new THREE.Vector3(60,0,3)},
+      {label:'workshops wide',d:2,off:new THREE.Vector3(0,12,80),look:districts[2].center.clone()},
+      {label:'smithy close',d:2,off:new THREE.Vector3(-7,2.4,67),look:new THREE.Vector3(-7,1,60)},
+      {label:'mill blade',d:2,off:new THREE.Vector3(11,5,68),look:new THREE.Vector3(7,3,62)},
+      {label:'bakery oven',d:2,off:new THREE.Vector3(4,2.4,56),look:new THREE.Vector3(4,1,53)},
+      {label:'green commons wide',d:3,off:new THREE.Vector3(-60,12,18),look:districts[3].center.clone()},
+      {label:'oak tree top',d:3,off:new THREE.Vector3(-58,7,3),look:new THREE.Vector3(-60,4,0)},
+      {label:'chapel garden',d:3,off:new THREE.Vector3(-69,2.6,-6),look:new THREE.Vector3(-69,0.6,-6)},
+      {label:'town hall front',d:4,off:new THREE.Vector3(0,5,-50),look:new THREE.Vector3(0,2,-60)},
+      {label:'mayor office',d:4,off:new THREE.Vector3(2,3,-58),look:new THREE.Vector3(0,2,-60)},
+      {label:'library window',d:4,off:new THREE.Vector3(-9,2.5,-54),look:new THREE.Vector3(-9,1.5,-58)},
+      {label:'council garden',d:4,off:new THREE.Vector3(8,2,-59),look:new THREE.Vector3(8,0.6,-63)},
+      {label:'follow Karina',d:-1,follow:0,off:new THREE.Vector3(3,2.6,3)},
+      {label:'follow Mayor',d:-1,follow:2,off:new THREE.Vector3(3,2.6,3)},
+      {label:'follow Rina',d:-1,follow:11,off:new THREE.Vector3(2,2,3)},
+      {label:'follow Dorian',d:-1,follow:10,off:new THREE.Vector3(2,2.4,3)},
+      {label:'aerial drift',d:-1,off:new THREE.Vector3(0,40,40),look:new THREE.Vector3(0,0,0),aerial:true},
+      {label:'pentagon orbit',d:-1,off:new THREE.Vector3(0,30,0),look:new THREE.Vector3(0,0,0),orbit:true}
+    ];
+  }
+
+  function setDistrict(idx,smooth){
+    district=idx;
+    var d=districts[idx];
+    if(smooth){
+      // gentle transition: just set fog/sky immediately, the flash will mask
+    }
+    scene.background=new THREE.Color(d.sky);
+    scene.fog=new THREE.Fog(d.fog,30,160);
+    updateHUD();
+  }
+
+  function flash(){
+    var f=document.getElementById('flash');
+    f.classList.add('on');
+    setTimeout(function(){f.classList.remove('on');},650);
+  }
+
+  function updateHUD(){
+    var count=0;
+    for(var i=0;i<villagers.length;i++)if(villagers[i].district===district)count++;
+    var hud=document.getElementById('hud');
+    hud.innerHTML='DISTRICT '+(district+1)+' OF 5: <b>'+districts[district].name+'</b> · '+count+' VILLAGER'+(count===1?'':'S');
+  }
+
+  function updateBrainPanel(v){
+    document.getElementById('bName').textContent=v.def.n;
+    document.getElementById('bRole').textContent=v.def.role;
+    document.getElementById('bGoal').textContent=v.def.goal;
+    document.getElementById('bNeed').textContent=v.def.need;
+    var have=document.getElementById('bHave');
+    have.textContent=v.def.have;
+    have.className='';
+    if(v.def.have.indexOf('✓')>-1)have.className='ok';
+    else if(v.def.have.indexOf('Low')>-1||v.def.have.indexOf('Empty')>-1)have.className='miss';
+    var n=v.def.plan.length;
+    var step=(v.planStep%n)+1;
+    document.getElementById('bPlan').textContent=v.def.plan.join(' → ');
+    var dest=districts[v.district].name;
+    document.getElementById('bStep').textContent=step+' of '+n+' (Walking to '+titlecase(dest)+')';
+    document.getElementById('bMood').textContent=v.def.mood;
+  }
+  function titlecase(s){return s.charAt(0)+s.slice(1).toLowerCase();}
+
+  function popDecisionDiamond(v){
+    v.diamond.material.opacity=1;
+    v.lastDecisionT=performance.now();
+    diamonds.push({v:v,t:performance.now(),life:1400});
+  }
+
+  function spawnSparkle(pos){
+    var mat=new THREE.SpriteMaterial({map:sparkleTex,transparent:true,depthWrite:false,opacity:1,blending:THREE.AdditiveBlending});
+    var spr=new THREE.Sprite(mat);spr.position.copy(pos);spr.position.y+=1.5;spr.scale.set(0.9,0.9,1);
+    scene.add(spr);
+    sparkles.push({s:spr,t:performance.now(),life:900,m:mat});
+    disposables.push(mat);
+  }
+
+  function paintTrailDot(x,z,colorHex,intensity){
+    var u=(x+110)/220;var w=(z+110)/220;
+    var px=u*512,py=(1-w)*512;
+    var ctx=groundTrailsCtx;
+    var c=new THREE.Color(colorHex);
+    ctx.fillStyle='rgba('+(c.r*255|0)+','+(c.g*255|0)+','+(c.b*255|0)+','+(0.18*intensity)+')';
+    ctx.beginPath();ctx.arc(px,py,3,0,Math.PI*2);ctx.fill();
+    groundTrailsTex.needsUpdate=true;
+  }
+  function fadeTrails(){
+    var ctx=groundTrailsCtx;
+    ctx.globalCompositeOperation='destination-out';
+    ctx.fillStyle='rgba(0,0,0,0.012)';
+    ctx.fillRect(0,0,512,512);
+    ctx.globalCompositeOperation='source-over';
+    groundTrailsTex.needsUpdate=true;
+  }
+
+  function drawMinimap(){
+    var c=document.getElementById('mmCanvas');var ctx=c.getContext('2d');
+    ctx.clearRect(0,0,160,160);
+    ctx.fillStyle='rgba(8,10,14,.55)';ctx.beginPath();ctx.arc(80,80,76,0,Math.PI*2);ctx.fill();
+    // pentagon
+    var radius=58;
+    ctx.strokeStyle='#6a5a32';ctx.lineWidth=1;ctx.beginPath();
+    for(var i=0;i<5;i++){
+      var a=-Math.PI/2+i/5*Math.PI*2;
+      var x=80+Math.cos(a)*radius,y=80+Math.sin(a)*radius;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.closePath();ctx.stroke();
+    // nodes
+    var labels=['M','R','W','G','T'];
+    for(var i=0;i<5;i++){
+      var a=-Math.PI/2+i/5*Math.PI*2;
+      var x=80+Math.cos(a)*radius,y=80+Math.sin(a)*radius;
+      ctx.fillStyle=(i===district)?'#ffd17a':'#6a5a32';
+      ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=(i===district)?'#1a1a0a':'#f1ead0';
+      ctx.font='600 10px Georgia';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(labels[i],x,y);
+    }
+    // villager dots
+    for(var k=0;k<villagers.length;k++){
+      var v=villagers[k];
+      var a=-Math.PI/2+v.district/5*Math.PI*2;
+      var bx=80+Math.cos(a)*radius+(Math.random()-0.5)*4;
+      var by=80+Math.sin(a)*radius+(Math.random()-0.5)*4;
+      ctx.fillStyle='#'+v.def.color.toString(16).padStart(6,'0');
+      ctx.beginPath();ctx.arc(bx,by,2.2,0,Math.PI*2);ctx.fill();
+    }
+    // center label
+    ctx.fillStyle='#ffd17a';ctx.font='600 9px Georgia';ctx.textAlign='center';
+    ctx.fillText('BRAMBLESTOKE',80,80);
+    ctx.fillStyle='#c8b98a';ctx.font='8px Georgia';
+    ctx.fillText('D '+(district+1)+'/5',80,92);
+  }
+
+  function drawRelGraph(){
+    var c=document.getElementById('rgCanvas');var ctx=c.getContext('2d');
+    ctx.clearRect(0,0,c.width,c.height);
+    var n=villagers.length;
+    var radius=Math.min(c.width,c.height)*0.42;
+    var cx=c.width/2,cy=c.height/2;
+    // nodes
+    var pts=[];
+    for(var i=0;i<n;i++){
+      var a=i/n*Math.PI*2;
+      pts.push({x:cx+Math.cos(a)*radius,y:cy+Math.sin(a)*radius,name:villagers[i].def.n,color:villagers[i].def.color});
+    }
+    // edges
+    ctx.lineWidth=1;
+    for(var k in memory.relations){
+      var ix=k.split('|');
+      var ia=indexOfName(ix[0]);var ib=indexOfName(ix[1]);
+      if(ia<0||ib<0)continue;
+      var w=Math.min(memory.relations[k]/3,1);
+      ctx.strokeStyle='rgba(232,210,138,'+(0.2+w*0.6)+')';
+      ctx.beginPath();ctx.moveTo(pts[ia].x,pts[ia].y);ctx.lineTo(pts[ib].x,pts[ib].y);ctx.stroke();
+    }
+    // dots
+    for(var i=0;i<n;i++){
+      ctx.fillStyle='#'+pts[i].color.toString(16).padStart(6,'0');
+      ctx.beginPath();ctx.arc(pts[i].x,pts[i].y,3,0,Math.PI*2);ctx.fill();
+    }
+    ctx.fillStyle='#ffd17a';ctx.font='8px Georgia';ctx.textAlign='center';
+    ctx.fillText('Day '+day+' Cycle '+cycle,cx,cy);
+  }
+  function indexOfName(n){for(var i=0;i<villagers.length;i++)if(villagers[i].def.n===n)return i;return -1;}
+
+  function chyron(text){
+    document.getElementById('chyStrip').textContent=text;
+  }
+
+  function actChyron(){
+    var lines=[];
+    var actLabel='Act '+act;
+    if(act===1){
+      lines.push('Day '+day+' · '+actLabel+' — Karina sets out to commission an iron sword. Ellis bakes for noon delivery. Mayor Wilfred convenes the council in the timbered hall.');
+    } else if(act===2){
+      lines.push('Day '+day+' · '+actLabel+' — Brom warns of low iron. Tilda finishes the indigo band. Vianne crouches in the meadow with thyme in her basket.');
+    } else {
+      lines.push('Day '+day+' · '+actLabel+' — Ned cries the dusk. Dorian counts coppers by the fountain. Rina chases the cat past the chapel and home.');
+    }
+    if(memory.gossip&&memory.gossip.length){
+      lines.push(memory.gossip.slice(-3).join('  ·  '));
+    }
+    chyron(lines.join('   //   '));
+  }
+
+  function init(){
+    renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+    renderer.setSize(window.innerWidth,window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    document.body.appendChild(renderer.domElement);
+    camera=new THREE.PerspectiveCamera(58,window.innerWidth/window.innerHeight,0.1,400);
+    camera.position.set(20,14,20);camera.lookAt(0,0,0);
+    clock=new THREE.Clock();
+    build();
+    setDistrict(0,false);
+    actChyron();
+    window.addEventListener('resize',onResize);
+    requestAnimationFrame(animate);
+  }
+
+  function onResize(){
+    if(!renderer||!camera)return;
+    renderer.setSize(window.innerWidth,window.innerHeight);
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+  }
+
+  function animate(t){
+    requestAnimationFrame(animate);
+    var dt=clock.getDelta();
+    var now=performance.now();
+
+    // reseed
+    if(now-lastReseed>600000){
+      reseed();return;
+    }
+
+    // act/day timer
+    var elapsed=now-dayStart;
+    var newAct=elapsed<180000?1:elapsed<360000?2:3;
+    if(newAct!==act){act=newAct;if(act===1){day++;memory.day=day;saveMem();}actChyron();}
+
+    // portal switch
+    if(now-lastPortal>nextPortalGap){
+      switchDistrict();
+      lastPortal=now;
+      nextPortalGap=60000+Math.random()*30000;
+    }
+
+    // camera switching
+    if(now-camStart>camDuration){
+      camIdx=(camIdx+1)%cameraDefs.length;
+      camStart=now;
+      var cd=cameraDefs[camIdx];
+      if(typeof cd.follow==='number')followIdx=cd.follow;
+      else if(cd.d>=0){
+        // stay where we are; if a fixed cam outside current district, also switch
+        if(cd.d!==district)setDistrict(cd.d,false);
+      }
+    }
+
+    // update villagers
+    for(var i=0;i<villagers.length;i++){
+      var v=villagers[i];
+      var p=v.obj.position;
+      var tg=v.target;
+      var dx=tg.x-p.x,dz=tg.z-p.z;
+      var dist=Math.sqrt(dx*dx+dz*dz);
+      var spd=(i===11?2.4:1.1)*dt;
+      if(dist<0.6){
+        // arrived → next plan step
+        v.planStep++;
+        v.target=pickGoalTarget(v);
+        if(Math.random()<0.6)popDecisionDiamond(v);
+      } else {
+        var nx=dx/dist,nz=dz/dist;
+        p.x+=nx*spd;p.z+=nz*spd;
+        v.obj.rotation.y=Math.atan2(nx,nz);
+        // bob arms/body
+        v.phase+=dt*8;
+        v.body.position.y=0.5+Math.sin(v.phase)*0.04;
+        v.armL.rotation.x=Math.sin(v.phase)*0.6;
+        v.armR.rotation.x=-Math.sin(v.phase)*0.6;
+        // trails
+        if(now-v.lastTrailT>120){
+          paintTrailDot(p.x,p.z,v.def.color,1);
+          v.lastTrailT=now;
+        }
+      }
+      // diamond fade
+      if(v.diamond.material.opacity>0){
+        v.diamond.material.opacity-=dt*0.7;
+        if(v.diamond.material.opacity<0)v.diamond.material.opacity=0;
+        v.diamond.position.y=2.6+Math.sin(now*0.005)*0.1;
+      }
+      // interactions
+      if(v.interactCooldown>0)v.interactCooldown-=dt*1000;
+      for(var j=i+1;j<villagers.length;j++){
+        var u=villagers[j];
+        var ux=u.obj.position.x-p.x,uz=u.obj.position.z-p.z;
+        var d2=ux*ux+uz*uz;
+        if(d2<9 && v.interactCooldown<=0 && u.interactCooldown<=0){
+          spawnSparkle(p.clone().lerp(u.obj.position,0.5));
+          v.interactCooldown=4000;u.interactCooldown=4000;
+          noteRelation(v.def.n,u.def.n);
+          if(Math.random()<0.5){
+            var line=v.def.n+' tells '+u.def.n+': "'+gossipFor(v,u)+'"';
+            pushGossip(line);
+            saveMem();
+          }
+          if(Math.random()<0.3){
+            noteHelp(v.def.n,u.def.n);
+            saveMem();
+          }
+          popDecisionDiamond(v);
+        }
+      }
+    }
+
+    // sparkles
+    for(var i=sparkles.length-1;i>=0;i--){
+      var s=sparkles[i];
+      var age=now-s.t;
+      s.s.position.y+=dt*1.2;
+      s.m.opacity=Math.max(0,1-age/s.life);
+      if(age>s.life){scene.remove(s.s);sparkles.splice(i,1);}
+    }
+
+    fadeTrails();
+
+    // windmill blades
+    scene.traverse(function(o){if(o.userData&&o.userData.windmill)o.rotation.z+=dt*0.6;});
+
+    // brain panel
+    var followV=villagers[followIdx]||villagers[0];
+    if(followV)updateBrainPanel(followV);
+
+    // camera positioning
+    var cd=cameraDefs[camIdx];
+    var targetPos=new THREE.Vector3(),targetLook=new THREE.Vector3();
+    if(typeof cd.follow==='number'){
+      var fv=villagers[cd.follow];
+      var ang=now*0.0005;
+      targetPos.set(fv.obj.position.x+Math.cos(ang)*cd.off.x,fv.obj.position.y+cd.off.y,fv.obj.position.z+Math.sin(ang)*cd.off.z);
+      targetLook.copy(fv.obj.position).y+=1.3;
+    } else if(cd.aerial){
+      var ang=now*0.0001;
+      targetPos.set(Math.cos(ang)*60,40,Math.sin(ang)*60);
+      targetLook.set(0,0,0);
+    } else if(cd.orbit){
+      var ang=now*0.0003;
+      targetPos.set(Math.cos(ang)*50,30,Math.sin(ang)*50);
+      targetLook.set(0,0,0);
+    } else if(cd.spin){
+      var c=districts[cd.d].center;
+      var ang=now*0.00035;
+      targetPos.set(c.x+Math.cos(ang)*12,5,c.z+Math.sin(ang)*12);
+      targetLook.copy(c);
+    } else {
+      var c=districts[cd.d].center;
+      targetPos.copy(cd.off);
+      targetLook.copy(cd.look);
+    }
+    camera.position.lerp(targetPos,0.05);
+    var lookCurrent=camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(10));
+    var newLook=lookCurrent.lerp(targetLook,0.06);
+    camera.lookAt(targetLook);
+
+    // minimap
+    drawMinimap();
+
+    // relgraph toggle every 30s
+    if(now-lastRelGraphToggle>30000){
+      relGraphVisible=!relGraphVisible;
+      document.getElementById('relgraph').classList.toggle('show',relGraphVisible);
+      lastRelGraphToggle=now;
+    }
+    if(relGraphVisible && now-lastRelGraphRedraw>500){
+      drawRelGraph();lastRelGraphRedraw=now;
+    }
+
+    // crowd subtle wander
+    if(instancedCrowd){
+      var dummy=new THREE.Object3D();
+      for(var i=0;i<crowdData.length;i++){
+        var cw=crowdData[i];
+        cw.x+=Math.cos(cw.phase+now*0.0006)*0.01;
+        cw.z+=Math.sin(cw.phase+now*0.0006)*0.01;
+        dummy.position.set(cw.x,0.45+Math.sin(now*0.003+cw.phase)*0.05,cw.z);
+        dummy.rotation.y=cw.phase+now*0.0006;
+        dummy.updateMatrix();
+        instancedCrowd.setMatrixAt(i,dummy.matrix);
+      }
+      instancedCrowd.instanceMatrix.needsUpdate=true;
+    }
+
+    // hud refresh
+    if(Math.floor(now/1000)!==Math.floor((now-dt*1000)/1000))updateHUD();
+    document.getElementById('cycle').textContent='Day '+day+' · Act '+act+' · Cycle '+cycle;
+
+    renderer.render(scene,camera);
+  }
+
+  function gossipFor(a,b){
+    var lines=[
+      'iron supply runs low at the forge',
+      'the mayor will hear the dispute today',
+      'thyme grows thick by the chapel wall',
+      'six loaves left in Ellis\'s basket',
+      'the cat was last seen by the oak',
+      'the indigo wool came in this dawn',
+      'the bard knows a new ballad about a fox'
+    ];
+    return lines[Math.floor(Math.random()*lines.length)];
+  }
+
+  function switchDistrict(){
+    var nd=(district+1+Math.floor(Math.random()*4))%5;
+    flash();
+    setTimeout(function(){
+      setDistrict(nd,true);
+    },300);
+    pushGossip('Day '+day+' — the bell tolls; folk drift toward '+districts[nd].name);
+    saveMem();
+  }
+
+  function reseed(){
+    cycle++;memory.cycle=cycle;memory.day=day;saveMem();
+    // dispose
+    for(var i=0;i<disposables.length;i++){var d=disposables[i];if(d&&d.dispose)try{d.dispose();}catch(e){}}
+    disposables.length=0;
+    if(scene){
+      scene.traverse(function(o){
+        if(o.geometry&&o.geometry.dispose)try{o.geometry.dispose();}catch(e){}
+        if(o.material){
+          if(Array.isArray(o.material))o.material.forEach(function(m){if(m.dispose)m.dispose();});
+          else if(o.material.dispose)o.material.dispose();
+        }
+      });
+    }
+    if(renderer){renderer.dispose();renderer.forceContextLoss&&renderer.forceContextLoss();}
+    while(document.body.firstChild&&document.body.firstChild.tagName==='CANVAS'){document.body.removeChild(document.body.firstChild);}
+    villagers.length=0;crowdData.length=0;sparkles.length=0;diamonds.length=0;trails.length=0;
+    scene=null;renderer=null;camera=null;
+    lastReseed=performance.now();dayStart=performance.now();act=1;
+    day++;memory.day=day;saveMem();
+    init();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

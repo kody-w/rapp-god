@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MSX LIVE FLOOR — Mercatio Stock Exchange</title>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Helvetica Neue',Arial,sans-serif;color:#fff}
+#stage{position:fixed;inset:0;z-index:1}
+#stage canvas{display:block;width:100%;height:100%}
+#vignette{position:fixed;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse at center,transparent 30%,rgba(0,0,0,.55) 78%,rgba(0,0,0,.92) 100%)}
+.ui{position:fixed;z-index:10;pointer-events:none;user-select:none}
+#logo{top:18px;left:22px;display:flex;align-items:center;gap:14px}
+#logo .badge{background:linear-gradient(135deg,#0a3d2c,#08543b);border:2px solid #d4af37;padding:8px 14px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.6)}
+#logo .badge .top{font-size:10px;letter-spacing:3px;color:#d4af37;font-weight:700}
+#logo .badge .big{font-size:22px;font-weight:900;letter-spacing:2px;color:#fff;line-height:1}
+#logo .live{background:#d12c1f;padding:6px 12px;border-radius:4px;font-weight:900;letter-spacing:2px;font-size:14px;display:flex;align-items:center;gap:8px;box-shadow:0 0 18px rgba(209,44,31,.7)}
+#logo .live::before{content:"";width:9px;height:9px;background:#fff;border-radius:50%;animation:pulse 1.1s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.4)}}
+#cam{top:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);border-left:4px solid #d4af37;padding:7px 16px;font-size:12px;letter-spacing:3px;font-weight:700;color:#d4af37;backdrop-filter:blur(6px)}
+#index{top:18px;right:22px;background:linear-gradient(135deg,rgba(8,30,22,.92),rgba(0,0,0,.85));border:1px solid #d4af37;padding:10px 16px;min-width:230px;border-radius:4px;font-family:'Courier New',monospace}
+#index .lbl{font-size:10px;letter-spacing:2px;color:#d4af37;margin-bottom:4px}
+#index .val{font-size:26px;font-weight:900;letter-spacing:1px}
+#index .delta{font-size:13px;font-weight:700;margin-top:2px}
+.up{color:#3df57f}.down{color:#ff5050}
+#gainers,#losers{top:120px;width:230px;background:rgba(0,0,0,.75);border:1px solid rgba(212,175,55,.45);font-family:'Courier New',monospace;font-size:12px;backdrop-filter:blur(4px)}
+#gainers{right:22px}
+#losers{right:262px}
+.panel-h{background:linear-gradient(90deg,#08543b,#0a3d2c);padding:6px 10px;font-size:11px;letter-spacing:2px;font-weight:700;border-bottom:1px solid #d4af37}
+.panel-h.red{background:linear-gradient(90deg,#5a1010,#3a0808)}
+.row{display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.row .sym{font-weight:700;letter-spacing:1px}
+#anchor{bottom:60px;right:22px;width:240px;height:135px;border:2px solid #d4af37;background:rgba(0,0,0,.85);overflow:hidden;box-shadow:0 6px 22px rgba(0,0,0,.7)}
+#anchor .pip-h{position:absolute;top:0;left:0;right:0;background:rgba(0,0,0,.7);padding:4px 8px;font-size:10px;letter-spacing:2px;color:#d4af37;font-weight:700;display:flex;justify-content:space-between}
+#anchor .pip-name{position:absolute;bottom:6px;left:6px;background:rgba(8,30,22,.92);padding:4px 8px;font-size:11px;font-weight:700;letter-spacing:1px;border-left:2px solid #d4af37}
+#anchor .pip-canvas{width:100%;height:100%}
+#trader-pip{bottom:60px;left:22px;width:220px;height:124px;border:2px solid #d4af37;background:rgba(0,0,0,.85);overflow:hidden;box-shadow:0 6px 22px rgba(0,0,0,.7);transform:translateX(-130%);transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+#trader-pip.show{transform:translateX(0)}
+#trader-pip .pip-h{position:absolute;top:0;left:0;right:0;background:rgba(209,44,31,.85);padding:4px 8px;font-size:10px;letter-spacing:2px;font-weight:700}
+#trader-pip .pip-name{position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.85);padding:4px 8px;font-size:11px;font-weight:700;letter-spacing:1px;border-left:2px solid #d4af37}
+#lower3{position:fixed;bottom:200px;left:0;z-index:11;background:linear-gradient(90deg,#08543b 0%,#0a3d2c 80%,transparent 100%);padding:14px 60px 14px 22px;min-width:480px;border-left:6px solid #d4af37;transform:translateX(-110%);transition:transform .55s cubic-bezier(.2,.8,.2,1);box-shadow:0 6px 22px rgba(0,0,0,.7)}
+#lower3.show{transform:translateX(0)}
+#lower3 .kicker{font-size:11px;letter-spacing:3px;color:#d4af37;font-weight:700;margin-bottom:4px}
+#lower3 .head{font-size:22px;font-weight:900;letter-spacing:1px;line-height:1.05}
+#lower3 .sub{font-size:12px;color:#bcd;margin-top:5px;letter-spacing:1px}
+#breaking{position:fixed;top:88px;left:0;right:0;z-index:12;background:linear-gradient(90deg,#d12c1f 0%,#7a0c08 100%);padding:11px 22px;font-weight:900;font-size:18px;letter-spacing:2px;transform:translateY(-110%);transition:transform .5s cubic-bezier(.2,.8,.2,1);box-shadow:0 6px 22px rgba(0,0,0,.7);display:flex;align-items:center;gap:14px}
+#breaking.show{transform:translateY(0)}
+#breaking .tag{background:#fff;color:#d12c1f;padding:5px 11px;font-size:13px;letter-spacing:3px;border-radius:3px}
+#chyron{position:fixed;bottom:36px;left:0;right:0;z-index:11;height:24px;background:linear-gradient(180deg,#0a3d2c,#062018);border-top:1px solid #d4af37;border-bottom:1px solid #d4af37;overflow:hidden;display:flex;align-items:center}
+#chyron .news{font-size:12px;font-weight:700;letter-spacing:2px;white-space:nowrap;animation:scrollX 60s linear infinite;padding-left:100%}
+#chyron .tag{position:absolute;left:0;top:0;bottom:0;background:#d12c1f;padding:0 14px;display:flex;align-items:center;font-size:11px;letter-spacing:3px;font-weight:900;z-index:2}
+#ticker{position:fixed;bottom:0;left:0;right:0;z-index:11;height:36px;background:linear-gradient(180deg,#000,#0a0a0a);border-top:2px solid #d4af37;overflow:hidden;display:flex;align-items:center}
+#ticker .tape{font-family:'Courier New',monospace;font-size:14px;font-weight:700;white-space:nowrap;animation:scrollX 80s linear infinite;padding-left:100%;letter-spacing:1px}
+@keyframes scrollX{0%{transform:translateX(0)}100%{transform:translateX(-100%)}}
+#ticker .label{position:absolute;left:0;top:0;bottom:0;background:#d4af37;color:#000;padding:0 14px;display:flex;align-items:center;font-size:12px;letter-spacing:3px;font-weight:900;z-index:2}
+#movers{position:fixed;top:50%;left:22px;z-index:10;transform:translate(-130%,-50%);transition:transform .55s cubic-bezier(.2,.8,.2,1);background:linear-gradient(135deg,rgba(8,30,22,.95),rgba(0,0,0,.9));border:1px solid #d4af37;padding:14px 18px;min-width:240px}
+#movers.show{transform:translate(0,-50%)}
+#movers .h{font-size:11px;letter-spacing:3px;color:#d4af37;font-weight:700;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,.4);padding-bottom:6px}
+#movers .m-row{display:flex;justify-content:space-between;font-family:'Courier New',monospace;font-size:13px;padding:3px 0}
+#volume{position:fixed;top:50%;right:22px;z-index:10;transform:translate(130%,-50%);transition:transform .55s cubic-bezier(.2,.8,.2,1);background:linear-gradient(135deg,rgba(30,8,8,.95),rgba(0,0,0,.9));border:1px solid #ff5050;padding:14px 18px;min-width:220px}
+#volume.show{transform:translate(0,-50%)}
+#volume .h{font-size:11px;letter-spacing:3px;color:#ff8080;font-weight:700;margin-bottom:8px}
+#volume .v-sym{font-size:26px;font-weight:900;letter-spacing:2px}
+#volume .v-vol{font-family:'Courier New',monospace;font-size:13px;color:#bcd;margin-top:4px}
+#crash{position:fixed;top:0;left:0;right:0;bottom:0;z-index:13;pointer-events:none;background:radial-gradient(circle at center,transparent 40%,rgba(180,0,0,.5) 100%);opacity:0;transition:opacity .8s}
+#crash.show{opacity:1}
+#crashbar{position:fixed;top:50%;left:0;right:0;z-index:14;background:linear-gradient(90deg,#000,#7a0c08,#000);padding:18px;text-align:center;font-weight:900;font-size:28px;letter-spacing:6px;color:#fff;transform:translateY(-50%) scaleY(0);transition:transform .5s;border-top:3px solid #d12c1f;border-bottom:3px solid #d12c1f}
+#crashbar.show{transform:translateY(-50%) scaleY(1)}
+.flash-up{animation:fup 1.4s ease-out}
+.flash-dn{animation:fdn 1.4s ease-out}
+@keyframes fup{0%{box-shadow:inset 0 0 0 4px rgba(61,245,127,0)}30%{box-shadow:inset 0 0 0 4px rgba(61,245,127,.9)}100%{box-shadow:inset 0 0 0 4px rgba(61,245,127,0)}}
+@keyframes fdn{0%{box-shadow:inset 0 0 0 4px rgba(255,80,80,0)}30%{box-shadow:inset 0 0 0 4px rgba(255,80,80,.9)}100%{box-shadow:inset 0 0 0 4px rgba(255,80,80,0)}}
+#bell-banner{position:fixed;top:50%;left:50%;z-index:15;transform:translate(-50%,-50%) scale(.5);opacity:0;transition:transform .6s cubic-bezier(.2,1.4,.4,1),opacity .4s;background:linear-gradient(135deg,#d4af37,#a8862c);color:#000;padding:24px 60px;font-weight:900;font-size:42px;letter-spacing:6px;border:4px solid #fff;box-shadow:0 0 60px rgba(212,175,55,.8);text-align:center}
+#bell-banner.show{transform:translate(-50%,-50%) scale(1);opacity:1}
+#bell-banner .sub{font-size:16px;letter-spacing:3px;margin-top:6px;font-weight:700}
+</style>
+</head>
+<body>
+<!-- ROUND14_LIVING v1 -->
+<div id="stage"></div>
+<div id="vignette"></div>
+<div id="logo" class="ui"><div class="badge"><div class="top">MERCATIO STOCK EXCHANGE</div><div class="big">MSX LIVE FLOOR</div></div><div class="live">LIVE</div></div>
+<div id="cam" class="ui">FLOOR WIDE</div>
+<div id="index" class="ui"><div class="lbl">MSX-30 INDEX</div><div class="val" id="idxv">28,450.00</div><div class="delta up" id="idxd">+0.00 (+0.00%)</div></div>
+<div id="gainers" class="ui"><div class="panel-h">TOP GAINERS</div><div id="gain-list"></div></div>
+<div id="losers" class="ui"><div class="panel-h red">TOP LOSERS</div><div id="lose-list"></div></div>
+<div id="anchor" class="ui"><div class="pip-h"><span>STUDIO A</span><span>● LIVE</span></div><canvas class="pip-canvas" id="anchor-cv" width="240" height="135"></canvas><div class="pip-name" id="anchor-name">MADISON BURKE</div></div>
+<div id="trader-pip" class="ui"><div class="pip-h">TRADER OF THE DAY</div><canvas class="pip-canvas" id="trader-cv" width="220" height="124"></canvas><div class="pip-name" id="trader-name">MIKE SOPRANO</div></div>
+<div id="lower3"><div class="kicker" id="l3-kicker">BREAKING</div><div class="head" id="l3-head">MARKET OPEN</div><div class="sub" id="l3-sub">Mercatio Stock Exchange · Floor 1</div></div>
+<div id="breaking"><span class="tag">BREAKING</span><span id="brk-text">MARKETS OPEN HIGHER ON STRONG EARNINGS</span></div>
+<div id="movers" class="ui"><div class="h">MARKET MOVERS</div><div id="movers-list"></div></div>
+<div id="volume" class="ui"><div class="h">VOLUME LEADER</div><div class="v-sym" id="vol-sym">VLAR</div><div class="v-vol" id="vol-vol">12.3M shares</div></div>
+<div id="chyron"><div class="tag">NEWS</div><div class="news" id="chy-text">MSX FUTURES POINT HIGHER · FED MEETING THIS WEEK · TECH SECTOR LEADS · ENERGY MIXED · CRYPTO STEADY · ANALYSTS WATCH JOBS REPORT</div></div>
+<div id="ticker"><div class="label">MSX TAPE</div><div class="tape" id="tape-text">LOADING...</div></div>
+<div id="crash"></div>
+<div id="crashbar">CIRCUIT BREAKER TRIGGERED</div>
+<div id="bell-banner"><div id="bell-text">OPENING BELL</div><div class="sub" id="bell-sub">MARKETS OPEN</div></div>
+<script>
+(function(){
+'use strict';
+var W=window.innerWidth,H=window.innerHeight;
+var stage=document.getElementById('stage');
+var renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(W,H);
+renderer.shadowMap.enabled=false;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+stage.appendChild(renderer.domElement);
+var scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b0d12);
+scene.fog=new THREE.Fog(0x0b0d12,40,140);
+var camera=new THREE.PerspectiveCamera(55,W/H,0.1,400);
+camera.position.set(0,18,40);
+camera.lookAt(0,4,0);
+
+var disposables={geos:[],mats:[],texs:[]};
+function reg(o){if(o.geometry)disposables.geos.push(o.geometry);if(o.material){var m=o.material;(Array.isArray(m)?m:[m]).forEach(function(x){disposables.mats.push(x);if(x.map)disposables.texs.push(x.map)});}return o;}
+function trackGeo(g){disposables.geos.push(g);return g;}
+function trackMat(m){disposables.mats.push(m);return m;}
+function trackTex(t){disposables.texs.push(t);return t;}
+
+var sceneRoot=null;
+var traderBodyMesh,traderHeadMesh,traderArmLMesh,traderArmRMesh;
+var traderState=[];
+var stocks=[];
+var STOCK_COUNT=20,TRADER_COUNT=50;
+var indexBase=28450;
+var indexVal=indexBase;
+var clock=new THREE.Clock();
+var elapsed=0;
+var loopStart=0;
+var crashScheduled=false,crashActive=false,recoveryDone=false;
+var directorIdx=0,directorTimer=0,camLerp=0;
+var camFrom={p:new THREE.Vector3(),t:new THREE.Vector3()};
+var camTo={p:new THREE.Vector3(),t:new THREE.Vector3()};
+var tickerCanvas,tickerCtx,tickerTex,tickerScroll=0;
+var boardCanvas,boardCtx,boardTex;
+var traders=[];
+var pits=[];
+var confettiPts=null;
+var confettiVel=null;
+var confettiLife=0;
+
+var SECTORS=['Tech','Energy','Health','Finance','Retail','Defense','Crypto','Auto'];
+var FIRST_NAMES=['Mike','Sasha','Rico','Penny','Hank','Trey','Jules','Marco','Dani','Gus','Vito','Chen','Omar','Lila','Bea','Nico','Sven','Pia','Jack','Tess','Ron','Ed','Sal','Rae','Lou','Kai','Max','Cleo'];
+var LAST_NAMES=['Soprano','Yang','Vargas','Brookline','Dolan','Burke','Castellano','Reyes','Park','Okafor','Russo','Cohen','Demir','Kim','Ali','Voss','Lin','Marek','Ortiz','Webb','Cole','Rhodes','Patel','Quinn'];
+var FIRMS=['Apex','Halberd','Crown','Ironside','Vault','Meridian','Trident','Beacon','Granite','North'];
+
+function rng(seed){var s=seed||Date.now();return function(){s=(s*9301+49297)%233280;return s/233280;};}
+var rand=rng();
+function ri(a,b){return Math.floor(rand()*(b-a+1))+a;}
+function rf(a,b){return rand()*(b-a)+a;}
+function pick(a){return a[Math.floor(rand()*a.length)];}
+
+function makeSymbol(){
+  var c='BCDFGHJKLMNPQRSTVWXZ',v='AEIOU';
+  return c[ri(0,c.length-1)]+v[ri(0,v.length-1)]+c[ri(0,c.length-1)]+v[ri(0,v.length-1)];
+}
+
+function genStocks(){
+  stocks=[];
+  var used={};
+  for(var i=0;i<STOCK_COUNT;i++){
+    var s;do{s=makeSymbol()}while(used[s]);used[s]=1;
+    var p=rf(15,480);
+    stocks.push({sym:s,price:p,base:p,change:0,changePct:0,vol:ri(2,150)*100000,sector:pick(SECTORS),trend:rf(-.4,.4)});
+  }
+  // ensure named symbols exist for vignettes
+  var named=['VLAR','KOXM','BLST','FRAK','CYNE','NORX','TRAQ','GIVE','HALC','WYRE'];
+  for(var j=0;j<5;j++){stocks[j].sym=named[j];}
+}
+
+function buildScene(){
+  sceneRoot=new THREE.Group();
+  scene.add(sceneRoot);
+
+  // Lighting
+  var amb=new THREE.AmbientLight(0xfff4d6,0.55);
+  sceneRoot.add(amb);
+  var hemi=new THREE.HemisphereLight(0xfff0c0,0x202830,0.5);
+  sceneRoot.add(hemi);
+  var key=new THREE.DirectionalLight(0xffe9b8,1.1);
+  key.position.set(20,40,20);
+  sceneRoot.add(key);
+  var fill=new THREE.PointLight(0xff8844,0.6,80);
+  fill.position.set(-15,12,5);
+  sceneRoot.add(fill);
+  var fill2=new THREE.PointLight(0x66aaff,0.5,80);
+  fill2.position.set(15,12,-5);
+  sceneRoot.add(fill2);
+
+  // Marble floor
+  var floorTex=makeMarbleTex();
+  var floorGeo=trackGeo(new THREE.PlaneGeometry(200,200));
+  var floorMat=trackMat(new THREE.MeshStandardMaterial({map:floorTex,roughness:0.35,metalness:0.05,color:0xffffff}));
+  var floor=new THREE.Mesh(floorGeo,floorMat);
+  floor.rotation.x=-Math.PI/2;
+  sceneRoot.add(floor);
+
+  // Inlay border
+  var inlayGeo=trackGeo(new THREE.RingGeometry(28,29.5,64));
+  var inlayMat=trackMat(new THREE.MeshStandardMaterial({color:0xd4af37,roughness:0.3,metalness:0.8,side:THREE.DoubleSide}));
+  var inlay=new THREE.Mesh(inlayGeo,inlayMat);
+  inlay.rotation.x=-Math.PI/2;
+  inlay.position.y=0.02;
+  sceneRoot.add(inlay);
+
+  // Columns - grand marble
+  var colGeo=trackGeo(new THREE.CylinderGeometry(1.2,1.4,22,16));
+  var colMat=trackMat(new THREE.MeshStandardMaterial({color:0xeae0c8,roughness:0.6,metalness:0.05}));
+  var capGeo=trackGeo(new THREE.BoxGeometry(3.4,1.2,3.4));
+  var capMat=trackMat(new THREE.MeshStandardMaterial({color:0xd4af37,roughness:0.4,metalness:0.7}));
+  var colPositions=[[-26,-26],[-26,0],[-26,26],[26,-26],[26,0],[26,26],[0,-26],[0,26]];
+  for(var c=0;c<colPositions.length;c++){
+    var col=new THREE.Mesh(colGeo,colMat);
+    col.position.set(colPositions[c][0],11,colPositions[c][1]);
+    sceneRoot.add(col);
+    var cap=new THREE.Mesh(capGeo,capMat);
+    cap.position.set(colPositions[c][0],22.6,colPositions[c][1]);
+    sceneRoot.add(cap);
+    var base=new THREE.Mesh(capGeo,capMat);
+    base.position.set(colPositions[c][0],0.6,colPositions[c][1]);
+    sceneRoot.add(base);
+  }
+
+  // Ceiling
+  var ceilGeo=trackGeo(new THREE.PlaneGeometry(200,200));
+  var ceilMat=trackMat(new THREE.MeshStandardMaterial({color:0x1a1612,roughness:0.85}));
+  var ceil=new THREE.Mesh(ceilGeo,ceilMat);
+  ceil.rotation.x=Math.PI/2;
+  ceil.position.y=24;
+  sceneRoot.add(ceil);
+
+  // Chandelier
+  var chandGroup=new THREE.Group();
+  var chRing=trackGeo(new THREE.TorusGeometry(3.2,0.18,12,40));
+  var chMat=trackMat(new THREE.MeshStandardMaterial({color:0xd4af37,roughness:0.25,metalness:0.95,emissive:0x553311,emissiveIntensity:0.35}));
+  var ring=new THREE.Mesh(chRing,chMat);
+  ring.rotation.x=Math.PI/2;
+  chandGroup.add(ring);
+  var bulbGeo=trackGeo(new THREE.SphereGeometry(0.18,10,10));
+  var bulbMat=trackMat(new THREE.MeshBasicMaterial({color:0xfff0a8}));
+  for(var b=0;b<24;b++){
+    var ang=b/24*Math.PI*2;
+    var bulb=new THREE.Mesh(bulbGeo,bulbMat);
+    bulb.position.set(Math.cos(ang)*3.2,0,Math.sin(ang)*3.2);
+    chandGroup.add(bulb);
+  }
+  chandGroup.position.set(0,21,0);
+  sceneRoot.add(chandGroup);
+  var chandLight=new THREE.PointLight(0xffd699,1.4,40);
+  chandLight.position.set(0,20,0);
+  sceneRoot.add(chandLight);
+
+  // Walls
+  var wallMat=trackMat(new THREE.MeshStandardMaterial({color:0x2a2218,roughness:0.85}));
+  var wallW=trackGeo(new THREE.PlaneGeometry(80,24));
+  var wallN=new THREE.Mesh(wallW,wallMat);
+  wallN.position.set(0,12,-30);
+  sceneRoot.add(wallN);
+  var wallS=new THREE.Mesh(wallW,wallMat);
+  wallS.position.set(0,12,30);
+  wallS.rotation.y=Math.PI;
+  sceneRoot.add(wallS);
+  var wallSide=trackGeo(new THREE.PlaneGeometry(60,24));
+  var wallE=new THREE.Mesh(wallSide,wallMat);
+  wallE.position.set(40,12,0);
+  wallE.rotation.y=-Math.PI/2;
+  sceneRoot.add(wallE);
+  var wallWside=new THREE.Mesh(wallSide,wallMat);
+  wallWside.position.set(-40,12,0);
+  wallWside.rotation.y=Math.PI/2;
+  sceneRoot.add(wallWside);
+
+  // Ticker LED wall (north wall, big)
+  tickerCanvas=document.createElement('canvas');
+  tickerCanvas.width=2048;tickerCanvas.height=256;
+  tickerCtx=tickerCanvas.getContext('2d');
+  tickerTex=trackTex(new THREE.CanvasTexture(tickerCanvas));
+  tickerTex.colorSpace=THREE.SRGBColorSpace;
+  var tickerGeo=trackGeo(new THREE.PlaneGeometry(70,9));
+  var tickerMat=trackMat(new THREE.MeshBasicMaterial({map:tickerTex}));
+  var tickerWall=new THREE.Mesh(tickerGeo,tickerMat);
+  tickerWall.position.set(0,17,-29.85);
+  sceneRoot.add(tickerWall);
+  // Ticker frame
+  var frameGeo=trackGeo(new THREE.BoxGeometry(72,11,0.4));
+  var frameMat=trackMat(new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.6,metalness:0.5}));
+  var frame=new THREE.Mesh(frameGeo,frameMat);
+  frame.position.set(0,17,-29.95);
+  sceneRoot.add(frame);
+
+  // Electronic display board (south wall opposite)
+  boardCanvas=document.createElement('canvas');
+  boardCanvas.width=1024;boardCanvas.height=512;
+  boardCtx=boardCanvas.getContext('2d');
+  boardTex=trackTex(new THREE.CanvasTexture(boardCanvas));
+  boardTex.colorSpace=THREE.SRGBColorSpace;
+  var boardGeo=trackGeo(new THREE.PlaneGeometry(36,18));
+  var boardMat=trackMat(new THREE.MeshBasicMaterial({map:boardTex}));
+  var board=new THREE.Mesh(boardGeo,boardMat);
+  board.position.set(0,14,29.85);
+  board.rotation.y=Math.PI;
+  sceneRoot.add(board);
+
+  // Opening bell platform - elevated, brass podium with bell
+  var platGeo=trackGeo(new THREE.CylinderGeometry(4.5,5,1.2,12));
+  var platMat=trackMat(new THREE.MeshStandardMaterial({color:0x6b3a1a,roughness:0.5,metalness:0.2}));
+  var plat=new THREE.Mesh(platGeo,platMat);
+  plat.position.set(0,0.6,-22);
+  sceneRoot.add(plat);
+  var podGeo=trackGeo(new THREE.BoxGeometry(2.2,1.6,1.5));
+  var podMat=trackMat(new THREE.MeshStandardMaterial({color:0xd4af37,roughness:0.35,metalness:0.85}));
+  var pod=new THREE.Mesh(podGeo,podMat);
+  pod.position.set(0,2,-22);
+  sceneRoot.add(pod);
+  var bellGeo=trackGeo(new THREE.ConeGeometry(0.7,1.2,12,1,true));
+  var bellMat=trackMat(new THREE.MeshStandardMaterial({color:0xd4af37,roughness:0.2,metalness:0.95,side:THREE.DoubleSide,emissive:0x553311,emissiveIntensity:0.3}));
+  var bell=new THREE.Mesh(bellGeo,bellMat);
+  bell.position.set(0,3.6,-22);
+  sceneRoot.add(bell);
+
+  // 8 octagonal trading pits arranged around the floor
+  pits=[];
+  for(var p=0;p<8;p++){
+    var ang=p/8*Math.PI*2;
+    var px=Math.cos(ang)*14;
+    var pz=Math.sin(ang)*14;
+    var pitGroup=new THREE.Group();
+    var pitGeo=trackGeo(new THREE.CylinderGeometry(2.6,2.8,0.6,8));
+    var pitMat=trackMat(new THREE.MeshStandardMaterial({color:0x4a2a18,roughness:0.7,metalness:0.1}));
+    var pitMesh=new THREE.Mesh(pitGeo,pitMat);
+    pitMesh.position.y=0.3;
+    pitGroup.add(pitMesh);
+    var deskGeo=trackGeo(new THREE.CylinderGeometry(2.4,2.5,0.18,8));
+    var deskMat=trackMat(new THREE.MeshStandardMaterial({color:0x8a6638,roughness:0.5,metalness:0.2}));
+    var desk=new THREE.Mesh(deskGeo,deskMat);
+    desk.position.y=0.7;
+    pitGroup.add(desk);
+    // monitor cluster on each pit
+    var monGeo=trackGeo(new THREE.BoxGeometry(0.9,0.6,0.08));
+    for(var mi=0;mi<4;mi++){
+      var mang=mi/4*Math.PI*2;
+      var monMat=trackMat(new THREE.MeshBasicMaterial({color:Math.random()<0.5?0x0a4030:0x401010}));
+      var mon=new THREE.Mesh(monGeo,monMat);
+      mon.position.set(Math.cos(mang)*1.5,1.2,Math.sin(mang)*1.5);
+      mon.lookAt(0,1.2,0);
+      pitGroup.add(mon);
+    }
+    pitGroup.position.set(px,0,pz);
+    sceneRoot.add(pitGroup);
+    pits.push({x:px,z:pz,ang:ang});
+  }
+
+  // Mezzanine seating - upper ring
+  var mezzGeo=trackGeo(new THREE.RingGeometry(32,36,32,1,0,Math.PI*2));
+  var mezzMat=trackMat(new THREE.MeshStandardMaterial({color:0x3a2a1a,roughness:0.7,side:THREE.DoubleSide}));
+  var mezz=new THREE.Mesh(mezzGeo,mezzMat);
+  mezz.rotation.x=-Math.PI/2;
+  mezz.position.y=8;
+  sceneRoot.add(mezz);
+  var mezzRail=trackGeo(new THREE.TorusGeometry(32,0.1,8,48));
+  var mezzRailMat=trackMat(new THREE.MeshStandardMaterial({color:0xd4af37,roughness:0.3,metalness:0.85}));
+  var rail=new THREE.Mesh(mezzRail,mezzRailMat);
+  rail.rotation.x=Math.PI/2;
+  rail.position.y=9;
+  sceneRoot.add(rail);
+
+  // Build 50 traders (InstancedMesh: body, head, two arms)
+  var bodyGeo=trackGeo(new THREE.CapsuleGeometry(0.3,0.8,4,8));
+  var headGeo=trackGeo(new THREE.SphereGeometry(0.22,10,10));
+  var armGeo=trackGeo(new THREE.CapsuleGeometry(0.08,0.5,3,6));
+  var bodyMat=trackMat(new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.65,vertexColors:false}));
+  var headMat=trackMat(new THREE.MeshStandardMaterial({color:0xd9b48a,roughness:0.6}));
+  var armMat=trackMat(new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.65,vertexColors:false}));
+
+  traderBodyMesh=new THREE.InstancedMesh(bodyGeo,bodyMat,TRADER_COUNT);
+  traderHeadMesh=new THREE.InstancedMesh(headGeo,headMat,TRADER_COUNT);
+  traderArmLMesh=new THREE.InstancedMesh(armGeo,armMat,TRADER_COUNT);
+  traderArmRMesh=new THREE.InstancedMesh(armGeo,armMat,TRADER_COUNT);
+  traderBodyMesh.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(TRADER_COUNT*3),3);
+  traderArmLMesh.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(TRADER_COUNT*3),3);
+  traderArmRMesh.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(TRADER_COUNT*3),3);
+
+  traders=[];
+  var col=new THREE.Color();
+  var tmpM=new THREE.Matrix4();
+  for(var i=0;i<TRADER_COUNT;i++){
+    var pitIdx=i%8;
+    var pit=pits[pitIdx];
+    var ang2=(i/TRADER_COUNT)*Math.PI*2+rand()*0.3;
+    var rad=2.9+rand()*0.6;
+    var bx=pit.x+Math.cos(ang2)*rad;
+    var bz=pit.z+Math.sin(ang2)*rad;
+    var role=rand();
+    var vest;
+    if(role<0.45){vest=0xd12c1f;}
+    else if(role<0.85){vest=0x1f5fd1;}
+    else{vest=0xd4af37;}
+    var trader={
+      x:bx,y:1.2,z:bz,baseX:bx,baseZ:bz,
+      vest:vest,
+      state:'idle',
+      stateTimer:rf(1,3),
+      shake:0,
+      rotY:Math.atan2(pit.x-bx,pit.z-bz)+Math.PI,
+      armLPhase:rand()*Math.PI*2,
+      armRPhase:rand()*Math.PI*2,
+      name:pick(FIRST_NAMES)+' '+pick(LAST_NAMES)
+    };
+    traders.push(trader);
+    col.setHex(vest);
+    traderBodyMesh.instanceColor.setXYZ(i,col.r,col.g,col.b);
+    traderArmLMesh.instanceColor.setXYZ(i,col.r,col.g,col.b);
+    traderArmRMesh.instanceColor.setXYZ(i,col.r,col.g,col.b);
+  }
+  traderBodyMesh.instanceColor.needsUpdate=true;
+  traderArmLMesh.instanceColor.needsUpdate=true;
+  traderArmRMesh.instanceColor.needsUpdate=true;
+  sceneRoot.add(traderBodyMesh);
+  sceneRoot.add(traderHeadMesh);
+  sceneRoot.add(traderArmLMesh);
+  sceneRoot.add(traderArmRMesh);
+
+  updateTraderInstances(0);
+}
+
+function makeMarbleTex(){
+  var c=document.createElement('canvas');c.width=512;c.height=512;
+  var x=c.getContext('2d');
+  x.fillStyle='#e8e2d5';x.fillRect(0,0,512,512);
+  // checker pattern of marble
+  for(var i=0;i<8;i++)for(var j=0;j<8;j++){
+    if((i+j)%2){x.fillStyle='#cdbfa0';x.fillRect(i*64,j*64,64,64);}
+  }
+  // veins
+  x.strokeStyle='rgba(80,60,40,0.25)';x.lineWidth=1.5;
+  for(var v=0;v<40;v++){
+    x.beginPath();
+    x.moveTo(Math.random()*512,Math.random()*512);
+    for(var s=0;s<5;s++){x.lineTo(Math.random()*512,Math.random()*512);}
+    x.stroke();
+  }
+  var t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  t.repeat.set(8,8);
+  t.colorSpace=THREE.SRGBColorSpace;
+  trackTex(t);
+  return t;
+}
+
+var _m=new THREE.Matrix4();
+var _q=new THREE.Quaternion();
+var _v=new THREE.Vector3();
+var _s=new THREE.Vector3(1,1,1);
+var _e=new THREE.Euler();
+function updateTraderInstances(dt){
+  for(var i=0;i<TRADER_COUNT;i++){
+    var t=traders[i];
+    t.stateTimer-=dt;
+    if(t.stateTimer<=0){
+      var r=rand();
+      if(r<0.20)t.state='shouting';
+      else if(r<0.30)t.state='phone';
+      else if(r<0.45)t.state='typing';
+      else if(r<0.55)t.state='slamming';
+      else if(r<0.62)t.state='papers';
+      else if(r<0.75)t.state='fistpump';
+      else if(r<0.82)t.state='headhands';
+      else t.state='idle';
+      t.stateTimer=rf(1.5,4);
+    }
+    var dx=0,dy=0,dz=0,bobY=0,armL=0,armR=0,headY=0,bodyTilt=0;
+    var time=elapsed;
+    switch(t.state){
+      case 'shouting':
+        dx=Math.sin(time*22+i)*0.06;
+        bobY=Math.abs(Math.sin(time*16+i))*0.05;
+        armL=Math.sin(time*15+i)*1.4-0.4;
+        armR=Math.sin(time*15+i+1)*1.4-0.4;
+        headY=Math.sin(time*22+i)*0.05;
+        break;
+      case 'phone':
+        armR=-1.6;
+        bodyTilt=0.05;
+        break;
+      case 'typing':
+        armL=Math.sin(time*8+i)*0.3-0.4;
+        armR=Math.sin(time*8+i+1)*0.3-0.4;
+        bodyTilt=0.1;
+        break;
+      case 'slamming':
+        var sl=(Math.sin(time*8+i)+1)*0.5;
+        dy=-sl*0.15;
+        armL=-1.2+sl*0.6;
+        armR=-1.2+sl*0.6;
+        bodyTilt=0.18*sl;
+        break;
+      case 'papers':
+        bobY=Math.abs(Math.sin(time*4+i))*0.1;
+        armL=Math.sin(time*4+i)*1.3+0.4;
+        armR=Math.sin(time*4+i+1)*1.3+0.4;
+        break;
+      case 'fistpump':
+        var fp=(Math.sin(time*6+i)+1)*0.5;
+        armR=-1.8+fp*0.5;
+        bobY=fp*0.15;
+        break;
+      case 'headhands':
+        bodyTilt=0.25;
+        armL=-1.8;
+        armR=-1.8;
+        break;
+      default:
+        bobY=Math.sin(time*1.5+i)*0.03;
+        armL=Math.sin(time*1.5+i+t.armLPhase)*0.15-0.4;
+        armR=Math.sin(time*1.5+i+t.armRPhase)*0.15-0.4;
+    }
+    var bx=t.baseX+dx,by=t.y+dy+bobY,bz=t.baseZ+dz;
+    // body
+    _e.set(bodyTilt,t.rotY,0);
+    _q.setFromEuler(_e);
+    _v.set(bx,by,bz);
+    _m.compose(_v,_q,_s);
+    traderBodyMesh.setMatrixAt(i,_m);
+    // head
+    _v.set(bx,by+0.7,bz);
+    _e.set(0,t.rotY+headY,0);
+    _q.setFromEuler(_e);
+    _m.compose(_v,_q,_s);
+    traderHeadMesh.setMatrixAt(i,_m);
+    // armL (left)
+    var lx=bx+Math.cos(t.rotY)*0.32,lz=bz-Math.sin(t.rotY)*0.32;
+    _e.set(armL,t.rotY,0.2);
+    _q.setFromEuler(_e);
+    _v.set(lx,by+0.2,lz);
+    _m.compose(_v,_q,_s);
+    traderArmLMesh.setMatrixAt(i,_m);
+    // armR (right)
+    var rx=bx-Math.cos(t.rotY)*0.32,rz=bz+Math.sin(t.rotY)*0.32;
+    _e.set(armR,t.rotY,-0.2);
+    _q.setFromEuler(_e);
+    _v.set(rx,by+0.2,rz);
+    _m.compose(_v,_q,_s);
+    traderArmRMesh.setMatrixAt(i,_m);
+  }
+  traderBodyMesh.instanceMatrix.needsUpdate=true;
+  traderHeadMesh.instanceMatrix.needsUpdate=true;
+  traderArmLMesh.instanceMatrix.needsUpdate=true;
+  traderArmRMesh.instanceMatrix.needsUpdate=true;
+}
+
+function drawTickerWall(){
+  var x=tickerCtx,c=tickerCanvas;
+  x.fillStyle='#0a0a0a';x.fillRect(0,0,c.width,c.height);
+  // soft scanlines
+  x.fillStyle='rgba(255,180,40,0.04)';
+  for(var i=0;i<c.height;i+=4)x.fillRect(0,i,c.width,1);
+  x.font='bold 96px monospace';
+  var tx=-tickerScroll;
+  for(var s=0;s<stocks.length*2;s++){
+    var st=stocks[s%stocks.length];
+    var label=st.sym;
+    var pStr=st.price.toFixed(2);
+    var dStr=(st.change>=0?'+':'')+st.change.toFixed(2);
+    var arrow=st.change>=0?'▲':'▼';
+    var color=st.change>=0?'#3df57f':'#ff5050';
+    x.fillStyle='#ffd23a';
+    x.fillText(label,tx,140);
+    var w1=x.measureText(label).width;
+    x.fillStyle='#ffffff';
+    x.fillText(pStr,tx+w1+30,140);
+    var w2=x.measureText(pStr).width;
+    x.fillStyle=color;
+    x.fillText(arrow+dStr,tx+w1+w2+60,140);
+    var w3=x.measureText(arrow+dStr).width;
+    tx+=w1+w2+w3+140;
+  }
+  tickerScroll+=3;
+  if(tickerScroll>4000)tickerScroll=0;
+  tickerTex.needsUpdate=true;
+}
+
+function drawBoard(){
+  var x=boardCtx,c=boardCanvas;
+  x.fillStyle='#050a08';x.fillRect(0,0,c.width,c.height);
+  // header
+  x.fillStyle='#08543b';x.fillRect(0,0,c.width,60);
+  x.fillStyle='#d4af37';x.font='bold 32px monospace';x.fillText('MSX BIG BOARD',24,42);
+  x.fillStyle='#fff';x.font='16px monospace';x.fillText('LIVE QUOTES',c.width-180,42);
+  // grid
+  x.font='bold 22px monospace';
+  var rowH=36;
+  for(var i=0;i<10;i++){
+    var st=stocks[i];
+    var y=80+i*rowH;
+    x.fillStyle=i%2?'#0a1612':'#081410';x.fillRect(0,y-22,c.width,rowH);
+    x.fillStyle='#ffd23a';x.fillText(st.sym,24,y);
+    x.fillStyle='#fff';x.fillText(st.price.toFixed(2),180,y);
+    x.fillStyle=st.change>=0?'#3df57f':'#ff5050';
+    var ds=(st.change>=0?'+':'')+st.change.toFixed(2);
+    x.fillText(ds,360,y);
+    var ps=(st.change>=0?'+':'')+st.changePct.toFixed(2)+'%';
+    x.fillText(ps,500,y);
+    x.fillStyle='#a0c0b0';
+    x.fillText((st.vol/1000).toFixed(0)+'K',680,y);
+  }
+  boardTex.needsUpdate=true;
+}
+
+function drawAnchorPip(){
+  var cv=document.getElementById('anchor-cv');var x=cv.getContext('2d');
+  var w=cv.width,h=cv.height;
+  x.fillStyle='#1a2030';x.fillRect(0,0,w,h);
+  // gradient backdrop
+  var grad=x.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,'#08543b');grad.addColorStop(1,'#040c08');
+  x.fillStyle=grad;x.fillRect(0,0,w,h);
+  // figure
+  var bob=Math.sin(elapsed*1.5)*1.2;
+  // body suit
+  x.fillStyle='#1a1a22';x.fillRect(w/2-32,h*0.55+bob,64,h*0.5);
+  // shirt
+  x.fillStyle='#fff';x.fillRect(w/2-10,h*0.55+bob,20,h*0.3);
+  // tie
+  x.fillStyle=anchorIdx===0?'#d12c1f':'#1f5fd1';x.fillRect(w/2-3,h*0.55+bob,6,h*0.25);
+  // head
+  x.fillStyle='#d9b48a';x.beginPath();x.arc(w/2,h*0.42+bob,14,0,Math.PI*2);x.fill();
+  // hair
+  x.fillStyle=anchorIdx===0?'#5a3a20':'#2a1a10';x.beginPath();x.arc(w/2,h*0.36+bob,14,Math.PI,Math.PI*2);x.fill();
+  // mouth talking
+  x.fillStyle='#3a1a14';
+  var mh=Math.abs(Math.sin(elapsed*9))*4+1;
+  x.fillRect(w/2-3,h*0.45+bob,6,mh);
+  // desk
+  x.fillStyle='#3a2a18';x.fillRect(0,h*0.85,w,h*0.15);
+  x.fillStyle='#d4af37';x.fillRect(0,h*0.85,w,2);
+  // logo on desk
+  x.fillStyle='#d4af37';x.font='bold 11px Arial';x.fillText('MSX',w/2-12,h*0.95);
+}
+
+function drawTraderPip(){
+  var cv=document.getElementById('trader-cv');var x=cv.getContext('2d');
+  var w=cv.width,h=cv.height;
+  x.fillStyle='#0a0a0a';x.fillRect(0,0,w,h);
+  // floor backdrop chaos
+  x.fillStyle='#1a1410';x.fillRect(0,0,w,h);
+  for(var i=0;i<6;i++){
+    var bx=Math.sin(elapsed*0.7+i)*40+w/2;
+    var by=Math.cos(elapsed*0.5+i*1.3)*8+h*0.6;
+    x.fillStyle='rgba(212,175,55,0.18)';
+    x.fillRect(bx-3,by-12,6,12);
+  }
+  // featured trader
+  var bob=Math.abs(Math.sin(elapsed*8))*4;
+  // vest
+  x.fillStyle='#d12c1f';x.fillRect(w/2-22,h*0.5+bob,44,h*0.45);
+  // shirt
+  x.fillStyle='#fff';x.fillRect(w/2-8,h*0.5+bob,16,h*0.35);
+  // arm (raised)
+  var armA=Math.sin(elapsed*10)*0.4-0.5;
+  x.save();
+  x.translate(w/2+22,h*0.55+bob);
+  x.rotate(armA);
+  x.fillStyle='#d12c1f';
+  x.fillRect(0,0,8,30);
+  x.restore();
+  // head
+  x.fillStyle='#d9b48a';x.beginPath();x.arc(w/2,h*0.4+bob,16,0,Math.PI*2);x.fill();
+  // hair
+  x.fillStyle='#3a2010';x.beginPath();x.arc(w/2,h*0.35+bob,16,Math.PI,Math.PI*2);x.fill();
+  // mouth (shouting)
+  x.fillStyle='#1a0808';
+  x.beginPath();x.arc(w/2,h*0.45+bob,4,0,Math.PI*2);x.fill();
+}
+
+// Director cameras
+var cams=[
+  {label:'FLOOR WIDE',p:[0,18,38],t:[0,4,0]},
+  {label:'OPENING BELL',p:[0,5,-12],t:[0,3,-22]},
+  {label:'TRADING PIT',p:[8,3.5,8],t:[14,1,0]},
+  {label:'SPECIALIST DESK',p:[-10,2.4,-5],t:[-14,1,0]},
+  {label:'TICKER WALL',p:[0,11,8],t:[0,17,-29]},
+  {label:'MEZZANINE',p:[24,12,24],t:[0,4,0]},
+  {label:'BREAKING NEWS',p:[-6,3,18],t:[0,2,-5]},
+  {label:'TRADER OF THE DAY',p:[14,2.5,-6],t:[14,1.2,0]},
+  {label:'CHANDELIER',p:[0,15,15],t:[0,21,0]},
+  {label:'BIG BOARD',p:[0,8,-5],t:[0,14,29]}
+];
+function setCam(idx,inst){
+  directorIdx=idx;
+  camFrom.p.copy(camera.position);
+  camFrom.t.copy(_lookAt);
+  camTo.p.set(cams[idx].p[0],cams[idx].p[1],cams[idx].p[2]);
+  camTo.t.set(cams[idx].t[0],cams[idx].t[1],cams[idx].t[2]);
+  camLerp=inst?1:0;
+  document.getElementById('cam').textContent=cams[idx].label;
+}
+var _lookAt=new THREE.Vector3(0,4,0);
+
+// News & events
+var NEWS=[
+  {tag:'EARNINGS',txt:'{S} BEATS Q3 EARNINGS, GUIDANCE RAISED',pct:[3,9],color:'up'},
+  {tag:'EARNINGS',txt:'{S} MISSES ESTIMATES, SHARES TUMBLE',pct:[-9,-4],color:'down'},
+  {tag:'FED',txt:'FED CUTS RATES BY 25 BASIS POINTS',pct:[1,3],color:'up',broad:true},
+  {tag:'FED',txt:'FED HOLDS RATES STEADY, HAWKISH TONE',pct:[-2,-0.5],color:'down',broad:true},
+  {tag:'INFLATION',txt:'CPI COMES IN HOTTER THAN EXPECTED',pct:[-4,-1],color:'down',broad:true},
+  {tag:'INFLATION',txt:'INFLATION COOLS, MARKETS RALLY',pct:[1,4],color:'up',broad:true},
+  {tag:'CEO',txt:'{S} CEO RESIGNS AMID INVESTIGATION',pct:[-12,-6],color:'down'},
+  {tag:'M&A',txt:'{S}-{S2} MERGER TALKS CONFIRMED',pct:[6,15],color:'up',pair:true},
+  {tag:'PROBE',txt:'SEC OPENS PROBE INTO {S}',pct:[-10,-5],color:'down'},
+  {tag:'IPO',txt:'{S} POPS 40% ON IPO DEBUT',pct:[15,40],color:'up'},
+  {tag:'GUIDANCE',txt:'{S} RAISES FY GUIDANCE',pct:[2,7],color:'up'},
+  {tag:'DOWNGRADE',txt:'ANALYSTS DOWNGRADE {S} TO SELL',pct:[-6,-2],color:'down'},
+  {tag:'UPGRADE',txt:'{S} UPGRADED TO STRONG BUY',pct:[3,8],color:'up'},
+  {tag:'BUYBACK',txt:'{S} ANNOUNCES $5B BUYBACK',pct:[2,6],color:'up'},
+  {tag:'DIVIDEND',txt:'{S} HIKES DIVIDEND 20%',pct:[1,4],color:'up'},
+  {tag:'GEOPOLITICS',txt:'OIL SPIKES ON GEOPOLITICAL TENSIONS',pct:[2,7],color:'up',sector:'Energy'},
+  {tag:'CYBER',txt:'{S} HIT BY MAJOR CYBER ATTACK',pct:[-9,-4],color:'down'},
+  {tag:'CHIPS',txt:'CHIP DEMAND SURGES, TECH RALLIES',pct:[2,6],color:'up',sector:'Tech'},
+  {tag:'CRYPTO',txt:'CRYPTO RIPS HIGHER, RECORD INFLOWS',pct:[5,15],color:'up',sector:'Crypto'},
+  {tag:'JOBS',txt:'JOBS REPORT BLOWS PAST EXPECTATIONS',pct:[1,3],color:'up',broad:true}
+];
+
+var l3El=document.getElementById('lower3'),l3K=document.getElementById('l3-kicker'),l3H=document.getElementById('l3-head'),l3S=document.getElementById('l3-sub');
+var brkEl=document.getElementById('breaking'),brkT=document.getElementById('brk-text');
+var moversEl=document.getElementById('movers'),moversList=document.getElementById('movers-list');
+var volumeEl=document.getElementById('volume'),volSym=document.getElementById('vol-sym'),volVol=document.getElementById('vol-vol');
+var bellEl=document.getElementById('bell-banner'),bellT=document.getElementById('bell-text'),bellS=document.getElementById('bell-sub');
+var crashOv=document.getElementById('crash'),crashBar=document.getElementById('crashbar');
+var anchorNameEl=document.getElementById('anchor-name'),traderNameEl=document.getElementById('trader-name');
+var anchorIdx=0;
+var anchorNames=['MADISON BURKE','HANK DOLAN'];
+function showLower3(kicker,head,sub){
+  l3K.textContent=kicker;l3H.textContent=head;l3S.textContent=sub;
+  l3El.classList.add('show');
+  setTimeout(function(){l3El.classList.remove('show');},6500);
+}
+function showBreaking(txt){
+  brkT.textContent=txt;
+  brkEl.classList.add('show');
+  setTimeout(function(){brkEl.classList.remove('show');},5500);
+}
+function showMovers(){
+  var sorted=stocks.slice().sort(function(a,b){return Math.abs(b.changePct)-Math.abs(a.changePct);});
+  var html='';
+  for(var i=0;i<5;i++){
+    var s=sorted[i];
+    var cls=s.changePct>=0?'up':'down';
+    var sign=s.changePct>=0?'+':'';
+    html+='<div class="m-row"><span>'+s.sym+'</span><span class="'+cls+'">'+sign+s.changePct.toFixed(2)+'%</span></div>';
+  }
+  moversList.innerHTML=html;
+  moversEl.classList.add('show');
+  setTimeout(function(){moversEl.classList.remove('show');},6000);
+}
+function showVolume(){
+  var top=stocks.slice().sort(function(a,b){return b.vol-a.vol;})[0];
+  volSym.textContent=top.sym;
+  volVol.textContent=(top.vol/1000000).toFixed(1)+'M shares';
+  volumeEl.classList.add('show');
+  setTimeout(function(){volumeEl.classList.remove('show');},5500);
+}
+function showBell(opening){
+  bellT.textContent=opening?'OPENING BELL':'CLOSING BELL';
+  bellS.textContent=opening?'MARKETS OPEN':'MARKETS CLOSED';
+  bellEl.classList.add('show');
+  setTimeout(function(){bellEl.classList.remove('show');},3500);
+  if(opening)launchConfetti();
+}
+function launchConfetti(){
+  var n=180;
+  var positions=new Float32Array(n*3);
+  var colors=new Float32Array(n*3);
+  confettiVel=new Float32Array(n*3);
+  for(var i=0;i<n;i++){
+    positions[i*3]=rf(-1,1);
+    positions[i*3+1]=2.6+rf(0,0.5);
+    positions[i*3+2]=-22+rf(-1,1);
+    confettiVel[i*3]=rf(-2,2);
+    confettiVel[i*3+1]=rf(4,8);
+    confettiVel[i*3+2]=rf(-2,2);
+    var c=[0xd4af37,0xff5050,0x3df57f,0xffffff,0x66aaff][ri(0,4)];
+    var col2=new THREE.Color(c);
+    colors[i*3]=col2.r;colors[i*3+1]=col2.g;colors[i*3+2]=col2.b;
+  }
+  var g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(positions,3));
+  g.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  var m=new THREE.PointsMaterial({size:0.18,vertexColors:true,transparent:true,opacity:1});
+  if(confettiPts){sceneRoot.remove(confettiPts);confettiPts.geometry.dispose();confettiPts.material.dispose();}
+  confettiPts=new THREE.Points(g,m);
+  sceneRoot.add(confettiPts);
+  confettiLife=4;
+}
+function updateConfetti(dt){
+  if(!confettiPts)return;
+  confettiLife-=dt;
+  var pos=confettiPts.geometry.attributes.position.array;
+  for(var i=0;i<pos.length/3;i++){
+    pos[i*3]+=confettiVel[i*3]*dt;
+    pos[i*3+1]+=confettiVel[i*3+1]*dt;
+    pos[i*3+2]+=confettiVel[i*3+2]*dt;
+    confettiVel[i*3+1]-=12*dt;
+  }
+  confettiPts.geometry.attributes.position.needsUpdate=true;
+  confettiPts.material.opacity=Math.max(0,confettiLife/4);
+  if(confettiLife<=0){
+    sceneRoot.remove(confettiPts);
+    confettiPts.geometry.dispose();
+    confettiPts.material.dispose();
+    confettiPts=null;confettiVel=null;
+  }
+}
+
+function applyEvent(){
+  var n=NEWS[ri(0,NEWS.length-1)];
+  var s1=stocks[ri(0,STOCK_COUNT-1)];
+  var s2=stocks[ri(0,STOCK_COUNT-1)];
+  var pct=rf(n.pct[0],n.pct[1]);
+  var txt=n.txt;
+  if(n.broad){
+    for(var i=0;i<STOCK_COUNT;i++){
+      var p=stocks[i];
+      var d=pct/100*p.price*rf(.5,1.2);
+      p.price=Math.max(1,p.price+d);
+    }
+  }else if(n.sector){
+    for(var j=0;j<STOCK_COUNT;j++){
+      if(stocks[j].sector===n.sector){
+        var d2=pct/100*stocks[j].price*rf(.5,1.3);
+        stocks[j].price=Math.max(1,stocks[j].price+d2);
+      }
+    }
+  }else if(n.pair){
+    var d3=pct/100*s1.price;s1.price+=d3;
+    var d4=pct/100*s2.price*0.7;s2.price+=d4;
+    txt=txt.replace('{S}',s1.sym).replace('{S2}',s2.sym);
+  }else{
+    var d5=pct/100*s1.price;s1.price=Math.max(1,s1.price+d5);
+    txt=txt.replace('{S}',s1.sym);
+  }
+  if(!txt.indexOf||txt.indexOf('{S}')>=0)txt=txt.replace('{S}',s1.sym);
+  showBreaking(txt);
+  showLower3(n.tag,txt,'MSX FLOOR · '+(n.color==='up'?'BULLS':'BEARS')+' WIN ROUND');
+  document.body.classList.remove('flash-up','flash-dn');
+  void document.body.offsetWidth;
+  document.body.classList.add(n.color==='up'?'flash-up':'flash-dn');
+}
+
+function startCrash(){
+  crashActive=true;
+  crashOv.classList.add('show');
+  crashBar.classList.add('show');
+  showBreaking('MARKET CRASH — CIRCUIT BREAKER TRIGGERED');
+  showLower3('CRASH','SELLOFF ACCELERATES ACROSS SECTORS','MSX-30 PLUNGES · TRADING HALTED MOMENTARILY');
+  for(var i=0;i<STOCK_COUNT;i++){
+    var pct=rf(-8,-4);
+    stocks[i].price=Math.max(1,stocks[i].price*(1+pct/100));
+  }
+  setTimeout(function(){
+    crashBar.classList.remove('show');
+    setTimeout(function(){crashOv.classList.remove('show');},2000);
+  },5000);
+}
+function startRecovery(){
+  recoveryDone=true;
+  showBreaking('MARKETS RECOVER — DIP BUYERS RETURN');
+  showLower3('RECOVERY','BARGAIN HUNTERS SPARK RALLY','MSX-30 CLAWS BACK · BULLS IN CHARGE');
+  for(var i=0;i<STOCK_COUNT;i++){
+    var pct=rf(3,6);
+    stocks[i].price=stocks[i].price*(1+pct/100);
+  }
+  document.body.classList.remove('flash-up','flash-dn');
+  void document.body.offsetWidth;
+  document.body.classList.add('flash-up');
+}
+
+function updateMarket(dt){
+  for(var i=0;i<STOCK_COUNT;i++){
+    var s=stocks[i];
+    var noise=(rand()-0.5)*0.6;
+    var drift=s.trend*0.03;
+    s.price=Math.max(1,s.price+noise+drift);
+    s.change=s.price-s.base;
+    s.changePct=s.change/s.base*100;
+    if(rand()<0.05)s.vol+=ri(1000,30000);
+    s.trend+=(rand()-0.5)*0.05;
+    s.trend=Math.max(-0.6,Math.min(0.6,s.trend));
+  }
+  // index
+  var sum=0;
+  for(var k=0;k<STOCK_COUNT;k++)sum+=stocks[k].changePct;
+  var avgPct=sum/STOCK_COUNT;
+  indexVal=indexBase*(1+avgPct/100);
+  document.getElementById('idxv').textContent=indexVal.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  var idxDelta=indexVal-indexBase;
+  var dEl=document.getElementById('idxd');
+  var sign=idxDelta>=0?'+':'';
+  dEl.textContent=sign+idxDelta.toFixed(2)+' ('+sign+avgPct.toFixed(2)+'%)';
+  dEl.className='delta '+(idxDelta>=0?'up':'down');
+}
+
+function updateHUDLists(){
+  var sorted=stocks.slice().sort(function(a,b){return b.changePct-a.changePct;});
+  var gh='',lh='';
+  for(var i=0;i<5;i++){
+    var g=sorted[i];
+    gh+='<div class="row"><span class="sym">'+g.sym+'</span><span class="up">+'+g.changePct.toFixed(2)+'%</span></div>';
+    var l=sorted[STOCK_COUNT-1-i];
+    lh+='<div class="row"><span class="sym">'+l.sym+'</span><span class="down">'+l.changePct.toFixed(2)+'%</span></div>';
+  }
+  document.getElementById('gain-list').innerHTML=gh;
+  document.getElementById('lose-list').innerHTML=lh;
+}
+
+function updateTape(){
+  var s='';
+  for(var i=0;i<stocks.length;i++){
+    var st=stocks[i];
+    var arrow=st.change>=0?'▲':'▼';
+    var sign=st.change>=0?'+':'';
+    s+=' '+st.sym+' '+st.price.toFixed(2)+' '+arrow+sign+st.change.toFixed(2)+'  ·  ';
+  }
+  document.getElementById('tape-text').textContent=s+s;
+}
+
+function updateChyron(){
+  var headlines=[
+    'MSX-30 '+(indexVal>=indexBase?'GAINS':'SLIDES')+' '+Math.abs((indexVal-indexBase)/indexBase*100).toFixed(2)+'%',
+    'VOLUME LEADER: '+stocks.slice().sort(function(a,b){return b.vol-a.vol;})[0].sym,
+    'TOP GAINER: '+stocks.slice().sort(function(a,b){return b.changePct-a.changePct;})[0].sym,
+    'TOP LOSER: '+stocks.slice().sort(function(a,b){return a.changePct-b.changePct;})[0].sym,
+    'FED MEETING NEXT WEEK',
+    'EARNINGS SEASON CONTINUES',
+    'TRADERS WATCH JOBS REPORT',
+    'BOND YIELDS '+(rand()<0.5?'RISE':'FALL'),
+    'DOLLAR INDEX '+(rand()<0.5?'STRENGTHENS':'WEAKENS'),
+    'OIL '+(rand()<0.5?'CLIMBS':'DIPS')+' ON DEMAND OUTLOOK'
+  ];
+  document.getElementById('chy-text').textContent=headlines.join(' · ')+' · ';
+}
+
+function disposeAll(){
+  if(!sceneRoot)return;
+  scene.remove(sceneRoot);
+  sceneRoot.traverse(function(o){
+    if(o.geometry)o.geometry.dispose&&o.geometry.dispose();
+    if(o.material){
+      var arr=Array.isArray(o.material)?o.material:[o.material];
+      for(var i=0;i<arr.length;i++){
+        if(arr[i].map&&arr[i].map.dispose)arr[i].map.dispose();
+        arr[i].dispose&&arr[i].dispose();
+      }
+    }
+  });
+  for(var i=0;i<disposables.geos.length;i++)disposables.geos[i].dispose&&disposables.geos[i].dispose();
+  for(var j=0;j<disposables.mats.length;j++)disposables.mats[j].dispose&&disposables.mats[j].dispose();
+  for(var k=0;k<disposables.texs.length;k++)disposables.texs[k].dispose&&disposables.texs[k].dispose();
+  disposables.geos.length=0;disposables.mats.length=0;disposables.texs.length=0;
+  if(confettiPts){confettiPts=null;confettiVel=null;confettiLife=0;}
+  sceneRoot=null;
+}
+
+function reseed(){
+  disposeAll();
+  rand=rng(Date.now());
+  genStocks();
+  buildScene();
+  loopStart=elapsed;
+  crashScheduled=false;
+  crashActive=false;
+  recoveryDone=false;
+  indexBase=28000+Math.floor(rand()*4000);
+  showBell(true);
+  setTimeout(function(){
+    showBreaking('MARKETS OPEN — TRADING UNDER WAY');
+    showLower3('OPEN','MSX FLOOR LIVE — '+anchorNames[anchorIdx]+' REPORTING','MERCATIO STOCK EXCHANGE · NEW SESSION');
+  },1500);
+}
+
+// Event scheduler
+var nextNews=8,nextMovers=20,nextVolume=14,nextSwitch=3,nextAnchorSwap=45,nextTraderSpotlight=22;
+function tick(dt){
+  elapsed+=dt;
+  var rel=elapsed-loopStart;
+  // crash schedule (~min 4-5)
+  if(!crashScheduled&&rel>240+rand()*60){crashScheduled=true;startCrash();}
+  if(crashScheduled&&!recoveryDone&&rel>360+rand()*60){startRecovery();}
+  // closing bell at ~10 min
+  if(rel>600){
+    showBell(false);
+    setTimeout(function(){showLower3('CLOSE','MARKETS CLOSE — MSX-30 '+(indexVal>=indexBase?'UP':'DOWN'),'TRADING SESSION ENDS');},800);
+    setTimeout(reseed,4500);
+    loopStart=elapsed+10000; // prevent re-trigger
+  }
+  // news
+  nextNews-=dt;
+  if(nextNews<=0){applyEvent();nextNews=15+rand()*15;}
+  // movers cut-in
+  nextMovers-=dt;
+  if(nextMovers<=0){showMovers();nextMovers=22+rand()*20;}
+  // volume leader callout
+  nextVolume-=dt;
+  if(nextVolume<=0){showVolume();nextVolume=18+rand()*15;}
+  // anchor swap
+  nextAnchorSwap-=dt;
+  if(nextAnchorSwap<=0){anchorIdx=1-anchorIdx;anchorNameEl.textContent=anchorNames[anchorIdx];nextAnchorSwap=40+rand()*30;}
+  // trader spotlight
+  nextTraderSpotlight-=dt;
+  if(nextTraderSpotlight<=0){
+    var t=traders[ri(0,traders.length-1)];
+    traderNameEl.textContent=t.name.toUpperCase();
+    var pip=document.getElementById('trader-pip');
+    pip.classList.add('show');
+    setTimeout(function(){pip.classList.remove('show');},9000);
+    nextTraderSpotlight=28+rand()*18;
+  }
+  // director switch
+  nextSwitch-=dt;
+  if(nextSwitch<=0){
+    var nx=ri(0,cams.length-1);
+    if(nx===directorIdx)nx=(nx+1)%cams.length;
+    setCam(nx,false);
+    nextSwitch=8+rand()*5;
+  }
+}
+
+// initial
+function init(){
+  genStocks();
+  buildScene();
+  setCam(0,true);
+  camera.position.copy(camTo.p);
+  _lookAt.copy(camTo.t);
+  camera.lookAt(_lookAt);
+  showBell(true);
+  setTimeout(function(){
+    showBreaking('OPENING BELL — MSX FLOOR IS LIVE');
+    showLower3('OPEN','MERCATIO STOCK EXCHANGE OPENS HIGHER','LIVE FROM THE FLOOR · MADISON BURKE & HANK DOLAN');
+  },1200);
+}
+init();
+
+window.addEventListener('resize',function(){
+  W=window.innerWidth;H=window.innerHeight;
+  camera.aspect=W/H;camera.updateProjectionMatrix();
+  renderer.setSize(W,H);
+});
+
+var lastHud=0,lastTape=0,lastChy=0;
+function frame(){
+  var dt=Math.min(clock.getDelta(),0.05);
+  tick(dt);
+  if(sceneRoot){
+    updateMarket(dt);
+    updateTraderInstances(dt);
+    updateConfetti(dt);
+    drawTickerWall();
+    drawBoard();
+    drawAnchorPip();
+    drawTraderPip();
+  }
+  // HUD throttled
+  lastHud-=dt;lastTape-=dt;lastChy-=dt;
+  if(lastHud<=0){updateHUDLists();lastHud=0.6;}
+  if(lastTape<=0){updateTape();lastTape=2.5;}
+  if(lastChy<=0){updateChyron();lastChy=4.5;}
+  // camera lerp
+  camLerp=Math.min(1,camLerp+dt*1.1);
+  var ease=camLerp<.5?2*camLerp*camLerp:1-Math.pow(-2*camLerp+2,2)/2;
+  camera.position.lerpVectors(camFrom.p,camTo.p,ease);
+  _lookAt.lerpVectors(camFrom.t,camTo.t,ease);
+  // tiny breathing
+  camera.position.y+=Math.sin(elapsed*0.6)*0.012;
+  camera.lookAt(_lookAt);
+  renderer.render(scene,camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script></body></html>

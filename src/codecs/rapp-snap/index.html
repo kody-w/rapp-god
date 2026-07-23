@@ -1,0 +1,168 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>rapp-snap — your photo becomes a creature</title>
+<style>
+ :root{--bg:#0a0d13;--panel:#131924;--line:#26303f;--ink:#e8eef7;--muted:#8b98a9;--accent:#58a6ff;--accent2:#bc8cff;--good:#3fb950}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,system-ui,Segoe UI,sans-serif;line-height:1.5}
+ .wrap{max-width:760px;margin:0 auto;padding:26px 18px 60px}
+ h1{margin:0 0 4px;font-size:24px;letter-spacing:-.3px} .sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+ code{font-family:ui-monospace,Menlo,monospace;font-size:.85em;background:#0a1018;border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+ .stage{position:relative;border:1px solid var(--line);border-radius:16px;background:#05080d;overflow:hidden;aspect-ratio:1/1;max-height:460px;margin:0 auto 12px;width:100%;display:flex;align-items:center;justify-content:center}
+ video,#shot,#player{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border:0}
+ #player{object-fit:contain;background:#05080d}
+ video{transform:scaleX(-1)}
+ .hidden{display:none!important}
+ #idle{color:var(--muted);text-align:center;padding:24px}
+ #idle .big{font-size:46px;opacity:.85}
+ .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center;margin:0 0 12px}
+ button{font:inherit;font-size:14px;cursor:pointer;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:9px 16px}
+ button:hover{border-color:var(--accent)} button:disabled{opacity:.4;cursor:default}
+ button.primary{background:#12365e;border-color:#2f6bb0;color:#cfe6ff;font-weight:600}
+ button.snap{background:#0d419d;border-color:#58a6ff;color:#fff;font-weight:700;font-size:16px;padding:12px 28px;border-radius:999px}
+ .split{display:grid;grid-template-columns:80px 1fr;gap:12px;align-items:center;margin:2px 0 6px}
+ #thumb{width:80px;height:80px;border-radius:12px;object-fit:cover;border:1px solid var(--line)}
+ .read{font-size:14px} .read b{color:var(--ink)} .read .m{color:var(--muted);font-size:12.5px}
+ .hint{color:var(--muted);font-size:12px;text-align:center;margin-top:2px}
+ .status{color:var(--muted);font-size:12.5px;min-height:18px;text-align:center;margin-top:8px}
+ .status.err{color:#ff8080}
+ details{margin-top:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:0 14px}
+ summary{cursor:pointer;padding:12px 0;color:var(--muted);font-size:13px}
+ details p{margin:0 0 12px;color:var(--muted);font-size:13px}
+</style></head>
+<body>
+<div class="wrap">
+ <h1>📸 rapp-snap</h1>
+ <p class="sub">Open your camera, snap a picture — and the photo becomes a living creature. Its colors, light, and texture grow a one-of-a-kind 3D organism you can keep. Nothing leaves your device; no photo is stored, only the creature it becomes.</p>
+
+ <div class="stage">
+  <div id="idle"><div class="big">◉</div><div><b style="color:var(--ink)">Snap a photo →</b> watch it hatch</div><div style="font-size:12px;margin-top:6px">bright &amp; warm makes glowing spiky things · dark &amp; cool makes quiet rings</div></div>
+  <video id="cam" class="hidden" autoplay playsinline muted></video>
+  <canvas id="shot" class="hidden"></canvas>
+  <iframe id="player" class="hidden" title="creature"></iframe>
+ </div>
+
+ <div class="bar" id="bar-idle">
+  <button class="primary" id="open">📷 Open camera</button>
+  <button id="pick">🖼️ Choose a photo</button>
+  <input type="file" id="file" accept="image/*" capture="environment" class="hidden">
+ </div>
+ <div class="bar hidden" id="bar-live">
+  <button class="snap" id="snap">◉ Snap</button>
+  <button id="cancel">cancel</button>
+ </div>
+ <div class="bar hidden" id="bar-done">
+  <button class="primary" id="keep">↓ Keep this creature (.egg)</button>
+  <button id="remix">🧬 Breed it at the Cabinet ↗</button>
+  <button id="again">📸 Snap another</button>
+ </div>
+
+ <div class="split hidden" id="reading">
+  <img id="thumb" alt="the photo">
+  <div class="read"><b id="rtitle"></b><div class="m" id="rborn"></div><div class="m" id="rid"></div></div>
+ </div>
+ <div class="hint" id="orbit-hint"></div>
+ <div class="status" id="status"></div>
+
+ <details>
+  <summary>How a photo becomes an organism</summary>
+  <p>The snapshot is analyzed entirely in your browser — no upload. Its <b>dominant colors</b> become the creature's palette, its <b>brightness</b> its glow, its <b>warmth</b> its shape, and its <b>texture / busyness</b> its spikes and limbs. Those become a <code>hologram-cartridge/1.0</code> genome — a self-describing, content-addressed organism the universal <a href="https://kody-w.github.io/rapp-lantern/" target="_blank" rel="noopener">Lantern</a> renders in 3D. Same photo, same creature; a different photo, a different one. Keep it as an <code>.egg</code> and it lives anywhere.</p>
+ </details>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cam = $('cam'), shot = $('shot'), player = $('player'), idle = $('idle');
+let stream = null;
+const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const status = (m, err) => { const s=$('status'); s.textContent=m||''; s.className='status'+(err?' err':''); };
+const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
+function show(state){ // 'idle' | 'live' | 'done'
+  idle.classList.toggle('hidden', state!=='idle');
+  cam.classList.toggle('hidden', state!=='live');
+  player.classList.toggle('hidden', state!=='done');
+  $('bar-idle').classList.toggle('hidden', state!=='idle');
+  $('bar-live').classList.toggle('hidden', state!=='live');
+  $('bar-done').classList.toggle('hidden', state!=='done');
+  $('reading').classList.toggle('hidden', state!=='done');
+  $('orbit-hint').textContent = state==='done' ? 'drag the creature to look around · scroll to zoom' : '';
+}
+async function sha256hex(str){ const b=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+function canonical(v){ if(Array.isArray(v))return '['+v.map(canonical).join(',')+']'; if(v!==null&&typeof v==='object')return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}'; return JSON.stringify(v); }
+const genomeId = async g => (await sha256hex(canonical(g))).slice(0,12);
+function hslHex(h,s,l){ h=((h%360)+360)%360/360; const f=n=>{const k=(n+h*12)%12,a=s*Math.min(l,1-l);return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1))));}; const x=n=>f(n).toString(16).padStart(2,'0'); return '#'+x(0)+x(8)+x(4); }
+function rgb2hsl(r,g,b){ r/=255;g/=255;b/=255; const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn; let h=0; if(d){ if(mx===r)h=((g-b)/d)%6; else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360;} const l=(mx+mn)/2, s=d?d/(1-Math.abs(2*l-1)):0; return [h,s,l]; }
+
+// ── the mapping: a photo → a hologram-cartridge/1.0 organism ─────────────────
+async function photoToCreature(source, sw, sh){
+  const N=44; const c=document.createElement('canvas'); c.width=N;c.height=N;
+  const ctx=c.getContext('2d'); ctx.drawImage(source,0,0,N,N);
+  const d=ctx.getImageData(0,0,N,N).data;
+  let rs=0,gs=0,bs=0, lumSum=0, satSum=0, warm=0, n=0;
+  const lum=[]; const hueBins=new Array(12).fill(0); const hueColor=Array.from({length:12},()=>[0,0,0,0]);
+  for(let i=0;i<d.length;i+=4){ const r=d[i],g=d[i+1],b=d[i+2]; rs+=r;gs+=g;bs+=b;
+    const [h,s,l]=rgb2hsl(r,g,b); lumSum+=l; satSum+=s; lum.push(l);
+    if(h<60||h>=300)warm++; const bin=Math.floor(h/30)%12; hueBins[bin]+=s+0.05; const hc=hueColor[bin]; hc[0]+=r;hc[1]+=g;hc[2]+=b;hc[3]++; n++; }
+  const avgL=lumSum/n, avgS=satSum/n, warmth=warm/n;
+  const lVar=lum.reduce((a,x)=>a+(x-avgL)*(x-avgL),0)/n, contrast=Math.sqrt(lVar);
+  // edge/busyness: mean abs luminance diff to right+down neighbour
+  let edge=0,en=0; for(let y=0;y<N;y++)for(let x=0;x<N-1;x++){const i=(y*N+x)*4, j=(y*N+x+1)*4; edge+=Math.abs((d[i]*.3+d[i+1]*.59+d[i+2]*.11)-(d[j]*.3+d[j+1]*.59+d[j+2]*.11)); en++;}
+  edge=(edge/en)/255;
+  // palette: the 4 most colourful hue bins → their average colour
+  const order=[...hueBins.keys()].sort((a,b)=>hueBins[b]-hueBins[a]);
+  const palette=order.slice(0,4).map(bin=>{const hc=hueColor[bin]; if(!hc[3])return '#8899aa'; return '#'+[hc[0],hc[1],hc[2]].map(v=>Math.round(clamp(v/hc[3]*1.05,0,255)).toString(16).padStart(2,'0')).join('');});
+  while(palette.length<4)palette.push(palette[palette.length-1]||'#8899aa');
+  // shape from warmth × texture: busy → star, warm&smooth → blob, cool&dim → ring, muted → segment
+  let shape='blob';
+  if(edge>0.18) shape='star'; else if(warmth>0.45&&avgL>0.4) shape='blob'; else if(warmth<0.3&&avgL<0.45) shape='ring'; else shape='segment';
+  const genome={ layers:[
+    { role:'form', k:30, shape, limbs:Math.round(clamp(contrast*10,0,6)), segments:Math.round(clamp(4+order.filter(b=>hueBins[b]>0.3).length,4,12)),
+      symmetry:'radial', body_r:+clamp(0.19+avgL*0.16,0.18,0.4).toFixed(3), limb_len:+clamp(0.18+contrast*0.5,0.14,0.66).toFixed(3), spikes:Math.round(clamp(edge*13,0,8)) },
+    { role:'surface', k:80, palette, pattern:(avgS>0.42?'glow':(edge>0.16?'stripe':'solid')),
+      glow:+clamp(0.14+avgL*0.6+avgS*0.15,0.1,0.95).toFixed(3), opacity:+clamp(0.68+avgS*0.28,0.6,0.98).toFixed(2) },
+    { role:'motion', k:55, breathe:+clamp(0.09+avgS*0.22,0.05,0.42).toFixed(3), drift:+clamp(0.08+edge*0.5,0.05,0.6).toFixed(3),
+      pulse:+clamp(0.14+avgL*0.4,0.1,0.9).toFixed(3), reach:+clamp(0.12+contrast*0.5,0.1,0.7).toFixed(3) },
+  ], compose:{ windows:[[0,1,2]], loop:true } };
+  const phash=(await sha256hex([...d.filter((_,i)=>i%16===0)].join(','))).slice(0,10);
+  const mood=(avgL>0.5?'bright':'dark')+' & '+(warmth>0.4?'warm':'cool')+(edge>0.18?' & busy':avgS<0.2?' & muted':'');
+  const now=new Date();
+  const cart={ schema:'hologram-cartridge/1.0', id:'', title:'Snapshot', author:'@you',
+    born:{ coord:'photo:'+phash+'·'+now.getTime(), from:'from a photo · '+mood+' · '+now.toLocaleDateString(undefined,{month:'long',day:'numeric'}) },
+    parents:[], genome, sig:'' };
+  cart.id=await genomeId(genome);
+  return {cart, thumb:c.toDataURL('image/jpeg',0.6), mood};
+}
+
+let current=null;
+async function hatchFrom(source, sw, sh){
+  status('reading the light…');
+  const {cart, thumb, mood}=await photoToCreature(source, sw, sh);
+  current=cart;
+  player.src='player.html#'+b64url(JSON.stringify(cart));
+  $('thumb').src=thumb; $('rtitle').textContent=cart.title;
+  $('rborn').textContent=cart.born.from; $('rid').textContent='id '+cart.id+' · a one-of-a-kind organism';
+  show('done'); status('');
+  stopCam();
+}
+function stopCam(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
+async function openCam(){
+  try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false}); cam.srcObject=stream; show('live'); status(''); }
+  catch(e){ status('No camera — choose a photo instead.', true); }
+}
+function snap(){
+  const w=cam.videoWidth||640, h=cam.videoHeight||480; shot.width=w; shot.height=h;
+  shot.getContext('2d').drawImage(cam,0,0,w,h);
+  hatchFrom(shot,w,h);
+}
+$('open').onclick=openCam;
+$('pick').onclick=()=>$('file').click();
+$('file').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const img=new Image(); img.onload=()=>hatchFrom(img,img.width,img.height); img.onerror=()=>status('Could not read that image.',true); img.src=URL.createObjectURL(f); };
+$('snap').onclick=snap;
+$('cancel').onclick=()=>{ stopCam(); show('idle'); };
+$('again').onclick=()=>{ show('idle'); openCam(); };
+$('keep').onclick=()=>{ if(!current)return; const blob=new Blob([JSON.stringify(current,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(current.title||'snapshot').toLowerCase()+'-'+current.id+'.egg'; a.click(); };
+$('remix').onclick=()=>{ if(current) window.open('https://kody-w.github.io/rapp-static-apis/hologram/#remix='+b64url(JSON.stringify(current))); };
+show('idle');
+</script>
+</body></html>

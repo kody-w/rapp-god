@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mini Metro — Vibe Coding</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#fafaf7;
+    font-family: 'Helvetica Neue', Arial, sans-serif; user-select:none; color:#222; }
+  canvas { display:block; cursor: crosshair; touch-action:none; }
+  #app { position: fixed; inset: 0; }
+
+  #topbar {
+    position:absolute; top:0; left:0; right:0; height:56px; padding: 0 18px;
+    display:flex; align-items:center; gap:22px; z-index:10;
+    background: rgba(255,255,255,0.78); backdrop-filter: blur(10px);
+    border-bottom:1px solid #e6e6df;
+  }
+  .stat { display:flex; flex-direction:column; gap:2px; min-width:48px; }
+  .stat .lbl { font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:#888; }
+  .stat .val { font-size:20px; font-weight:600; color:#222; line-height:1; }
+  .res { display:flex; gap:14px; margin-left:6px; }
+  .res .item { display:flex; align-items:center; gap:6px; font-size:13px; color:#444;
+    background:#fff; border:1px solid #e2e2da; border-radius:14px; padding:5px 10px; }
+  .res .item .ico { width:16px; height:16px; }
+  .res .item .k { font-weight:700; min-width:10px; text-align:right; color:#222; }
+  .spacer { flex:1; }
+
+  button.ui { font-family:inherit; cursor:pointer; }
+  #pauseBtn { background:#fff; border:2px solid #222; padding:6px 14px; border-radius:4px;
+    font-weight:600; font-size:13px; letter-spacing:1px; }
+  #pauseBtn:hover { background:#222; color:#fff; }
+  #speed { display:flex; gap:4px; }
+  #speed button {
+    background:#fff; border:2px solid #ccc; padding:6px 9px; border-radius:4px;
+    font-family:inherit; cursor:pointer;
+    font-weight:700; font-size:12px; min-width:30px; color:#888;
+  }
+  #speed button.active { border-color:#222; color:#222; }
+
+  #weekbar {
+    position:absolute; left:50%; transform:translateX(-50%); top:62px; width:240px; height:5px;
+    background:#e8e6dc; border-radius:3px; overflow:hidden; z-index:6;
+  }
+  #weekbar > div { height:100%; background:#222; width:0%; transition: width 0.1s linear; }
+
+  #modal {
+    position:absolute; inset:0; z-index:30; background:rgba(250,250,247,0.88);
+    display:none; align-items:center; justify-content:center; backdrop-filter: blur(4px);
+  }
+  #modal.show { display:flex; }
+  #modal .panel {
+    background:#fff; border:3px solid #222; border-radius:10px; padding: 26px 30px;
+    max-width: 660px; box-shadow: 0 18px 60px rgba(0,0,0,0.15);
+  }
+  #modal h2 { font-size:22px; margin-bottom:4px; font-weight:600; letter-spacing:0.5px; }
+  #modal .sub { font-size:13px; color:#666; margin-bottom:20px; }
+  #modal .opts { display:flex; gap:14px; }
+  #modal .opt {
+    flex:1; border:2px solid #ddd; padding:18px 14px; border-radius:6px; cursor:pointer;
+    text-align:center; transition: border-color .15s, transform .15s, background .15s;
+    background:#fff; min-width:160px;
+  }
+  #modal .opt:hover { border-color:#222; transform:translateY(-3px); background:#fffef9; }
+  #modal .opt svg { display:block; margin: 0 auto 10px; }
+  #modal .opt .ttl { font-weight:600; font-size:14px; }
+  #modal .opt .desc { font-size:11px; color:#888; margin-top:4px; line-height:1.3; }
+
+  #gameOver {
+    position:absolute; inset:0; z-index:40; background:rgba(255,255,255,0.96);
+    display:none; align-items:center; justify-content:center; flex-direction:column;
+  }
+  #gameOver.show { display:flex; }
+  #gameOver .label { font-size:11px; letter-spacing:3px; color:#888; text-transform:uppercase; }
+  #gameOver h1 { font-size:46px; font-weight:300; letter-spacing:8px; margin:6px 0 18px; }
+  #gameOver .score { font-size:84px; font-weight:600; line-height:1; margin:6px 0; }
+  #gameOver button { margin-top:24px; background:#222; color:#fff; border:none;
+    padding:12px 32px; border-radius:4px; font-size:13px; letter-spacing:2px;
+    cursor:pointer; font-family:inherit; }
+  #gameOver button:hover { background:#000; }
+
+  #help {
+    position:absolute; bottom:14px; left:14px; z-index:5; font-size:11px; color:#666;
+    background:rgba(255,255,255,0.7); padding:8px 12px; border-radius:4px; line-height:1.5;
+    max-width:340px;
+  }
+  #help b { color:#222; }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="cv"></canvas>
+
+  <div id="topbar">
+    <div class="stat"><span class="lbl">Score</span><span class="val" id="scoreVal">0</span></div>
+    <div class="stat"><span class="lbl">Week</span><span class="val" id="weekVal">1</span></div>
+    <div class="stat"><span class="lbl">Stations</span><span class="val" id="statVal">0</span></div>
+    <div class="res">
+      <div class="item" title="Lines available"><svg class="ico" viewBox="0 0 16 16"><path d="M2 8 H14" stroke="#dc2626" stroke-width="3" fill="none" stroke-linecap="round"/></svg><span class="k" id="lineRes">0</span></div>
+      <div class="item" title="Trains"><svg class="ico" viewBox="0 0 16 16"><rect x="2" y="5" width="12" height="6" rx="1" fill="#222"/></svg><span class="k" id="trainRes">0</span></div>
+      <div class="item" title="Tunnels / Bridges"><svg class="ico" viewBox="0 0 16 16"><path d="M2 11 Q8 3 14 11" stroke="#222" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg><span class="k" id="tunnelRes">0</span></div>
+      <div class="item" title="Carriages"><svg class="ico" viewBox="0 0 18 16"><rect x="1" y="5" width="7" height="6" rx="1" fill="#222"/><rect x="10" y="5" width="7" height="6" rx="1" fill="#222"/></svg><span class="k" id="carRes">0</span></div>
+    </div>
+    <div class="spacer"></div>
+    <div id="speed">
+      <button data-s="1" class="active">1×</button>
+      <button data-s="2">2×</button>
+      <button data-s="3">3×</button>
+    </div>
+    <button id="pauseBtn" class="ui">PAUSE</button>
+  </div>
+
+  <div id="weekbar"><div id="weekFill"></div></div>
+
+  <div id="help">
+    <b>Drag</b> from a station through others to build a line.
+    Crossing the river costs <b>1 tunnel</b>.
+    Don't let any station overflow for <b>30 seconds</b>.
+  </div>
+
+  <div id="modal">
+    <div class="panel">
+      <h2>Week <span id="modalWeek">2</span> — Choose a reward</h2>
+      <div class="sub">Your network is growing. Pick one upgrade to keep up with demand.</div>
+      <div class="opts" id="opts"></div>
+    </div>
+  </div>
+
+  <div id="gameOver">
+    <div class="label">A station has overflowed</div>
+    <h1>GAME OVER</h1>
+    <div class="label">Passengers Delivered</div>
+    <div class="score" id="finalScore">0</div>
+    <button onclick="location.reload()">TRY AGAIN</button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// MINI METRO — single-file canvas clone
+// ============================================================
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W=0, H=0;
+const DPR = Math.min(window.devicePixelRatio||1, 2);
+function resize(){
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.floor(W*DPR); cv.height = Math.floor(H*DPR);
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ====== Constants ======
+const SHAPES = ['circle','triangle','square','diamond','plus','star'];
+const COMMON_SHAPES = 3;
+const LINE_COLORS = ['#dc2626','#2563eb','#16a34a','#eab308','#ea580c','#7c3aed','#92400e'];
+const STATION_R = 14;
+const PAX_R = 4.5;
+const TRAIN_LEN = 28, TRAIN_W = 14, CAR_LEN = 16, CAR_GAP = 3;
+const TRAIN_SPEED = 78;
+const STOP_TIME = 0.42;
+const STATION_CAP = 6;
+const OVERFLOW_TIME = 30;
+const WEEK_TIME = 30;
+
+// ====== State ======
+const state = {
+  stations: [],
+  river: null,
+  lines: [],
+  usedColors: new Set(),
+  resources: { lines: 3, trains: 3, tunnels: 1, carriages: 0 },
+  score: 0,
+  week: 1,
+  weekTimer: 0,
+  stationTimer: 7,
+  paxTimer: 5,
+  speed: 1,
+  paused: false,
+  gameOver: false,
+  draw: null,
+  modalOpen: false,
+};
+
+// ====== Utils ======
+const rnd = (a=1,b)=> b===undefined ? Math.random()*a : a + Math.random()*(b-a);
+const choice = arr => arr[Math.floor(Math.random()*arr.length)];
+
+// ====== River ======
+function makeRiver(){
+  const pts = [];
+  if (Math.random() < 0.5) {
+    let x = -50, y = H*rnd(0.25,0.75);
+    while (x < W+60) {
+      pts.push([x, y]);
+      x += rnd(70,130);
+      y += rnd(-95,95);
+      y = Math.max(110, Math.min(H-90, y));
+    }
+  } else {
+    let y = -50, x = W*rnd(0.3,0.7);
+    while (y < H+60) {
+      pts.push([x, y]);
+      y += rnd(70,130);
+      x += rnd(-95,95);
+      x = Math.max(110, Math.min(W-90, x));
+    }
+  }
+  state.river = { points: pts, width: 30 };
+}
+
+function segIntersect(p1,p2,p3,p4){
+  const x1=p1[0],y1=p1[1],x2=p2[0],y2=p2[1],x3=p3[0],y3=p3[1],x4=p4[0],y4=p4[1];
+  const d = (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4);
+  if (Math.abs(d)<1e-9) return false;
+  const t = ((x1-x3)*(y3-y4)-(y1-y3)*(x3-x4))/d;
+  const u = -((x1-x2)*(y1-y3)-(y1-y2)*(x1-x3))/d;
+  return t>=0&&t<=1&&u>=0&&u<=1;
+}
+function countRiverCrossings(stations){
+  if (!state.river) return 0;
+  let n = 0;
+  const pts = state.river.points;
+  for (let i=0;i<stations.length-1;i++){
+    const a=stations[i], b=stations[i+1];
+    for (let j=0;j<pts.length-1;j++){
+      if (segIntersect([a.x,a.y],[b.x,b.y],pts[j],pts[j+1])){ n++; break; }
+    }
+  }
+  return n;
+}
+function pointToRiver(x,y){
+  if (!state.river) return Infinity;
+  const pts = state.river.points;
+  let best = Infinity;
+  for (let i=0;i<pts.length-1;i++){
+    const [x1,y1]=pts[i],[x2,y2]=pts[i+1];
+    const dx=x2-x1, dy=y2-y1;
+    const len2 = dx*dx+dy*dy;
+    if (len2 < 0.001) continue;
+    let t = ((x-x1)*dx+(y-y1)*dy)/len2;
+    t = Math.max(0,Math.min(1,t));
+    const px=x1+t*dx, py=y1+t*dy;
+    best = Math.min(best, Math.hypot(px-x,py-y));
+  }
+  return best;
+}
+
+// ====== Spawning ======
+function pickShape(){
+  const rareUnlocked = state.week >= 4;
+  const rareChance = rareUnlocked ? Math.min(0.28, 0.10 + (state.week-4)*0.02) : 0;
+  if (Math.random() < rareChance) return SHAPES[3 + Math.floor(Math.random()*3)];
+  return SHAPES[Math.floor(Math.random()*COMMON_SHAPES)];
+}
+function findStationSpot(minDist){
+  let best = null, bestScore = -Infinity;
+  for (let tries=0; tries<60; tries++){
+    const x = rnd(80, W-80);
+    const y = rnd(100, H-50);
+    if (pointToRiver(x,y) < 26) continue;
+    let near = Infinity;
+    for (const s of state.stations) near = Math.min(near, Math.hypot(s.x-x,s.y-y));
+    if (near < minDist) continue;
+    const score = near + Math.random()*30;
+    if (score > bestScore) { bestScore = score; best = {x,y}; }
+  }
+  return best;
+}
+function spawnStation(forcedShape){
+  if (state.stations.length >= 32) return;
+  const spot = findStationSpot(78);
+  if (!spot) return;
+  const shape = forcedShape || pickShape();
+  state.stations.push({
+    x: spot.x, y: spot.y, shape,
+    passengers: [], overflow: 0, born: performance.now(),
+  });
+}
+function spawnPassenger(){
+  if (state.stations.length < 2) return;
+  const s = choice(state.stations);
+  const allowed = state.week>=4 ? 6 : 3;
+  const candidates = SHAPES.slice(0, allowed).filter(sh => sh !== s.shape && state.stations.some(st=>st.shape===sh));
+  if (!candidates.length) return;
+  const dest = choice(candidates);
+  s.passengers.push({ shape: dest });
+}
+
+// ====== Lines ======
+function nextColor(){
+  for (const c of LINE_COLORS) if (!state.usedColors.has(c)) return c;
+  return LINE_COLORS[0];
+}
+function commitLine(stationIdxList){
+  if (stationIdxList.length < 2) return false;
+  if (state.resources.lines < 1 || state.resources.trains < 1) return false;
+  const sts = stationIdxList.map(i=>state.stations[i]);
+  const cross = countRiverCrossings(sts);
+  if (cross > state.resources.tunnels) return false;
+  state.resources.lines--;
+  state.resources.trains--;
+  state.resources.tunnels -= cross;
+  const color = nextColor();
+  state.usedColors.add(color);
+  const line = { color, stations: stationIdxList.slice(), crossings: cross, trains: [] };
+  line.trains.push(makeTrain(line));
+  state.lines.push(line);
+  return true;
+}
+function makeTrain(line){
+  const tr = {
+    line, seg: 0, t: 0, dir: 1, stopT: STOP_TIME,
+    capacity: 6 + state.resources.carriages*2,
+    passengers: [],
+  };
+  trainArriveAt(tr, state.stations[line.stations[0]]);
+  return tr;
+}
+
+// ====== Train logic ======
+function lineSegLen(line, segIdx){
+  const a = state.stations[line.stations[segIdx]];
+  const b = state.stations[line.stations[segIdx+1]];
+  return Math.hypot(a.x-b.x,a.y-b.y);
+}
+function trainPos(tr){
+  const line = tr.line;
+  const a = state.stations[line.stations[tr.seg]];
+  const b = state.stations[line.stations[tr.seg+1]];
+  return {
+    x: a.x + (b.x-a.x)*tr.t,
+    y: a.y + (b.y-a.y)*tr.t,
+    angle: Math.atan2(b.y-a.y, b.x-a.x) * tr.dir // not strictly correct but visually fine
+  };
+}
+function trainArriveAt(tr, station){
+  // drop off matching
+  for (let i=tr.passengers.length-1; i>=0; i--){
+    if (tr.passengers[i].shape === station.shape) {
+      tr.passengers.splice(i,1);
+      state.score++;
+    }
+  }
+  // pickup smart-FIFO: take any whose dest exists on this line
+  let i=0;
+  while (tr.passengers.length < tr.capacity && i < station.passengers.length){
+    const want = station.passengers[i].shape;
+    const lineHas = tr.line.stations.some(idx=> state.stations[idx].shape===want);
+    if (lineHas){
+      tr.passengers.push(station.passengers.splice(i,1)[0]);
+    } else { i++; }
+  }
+}
+function updateTrains(dt){
+  for (const line of state.lines){
+    if (line.stations.length < 2) continue;
+    for (const tr of line.trains){
+      if (tr.stopT > 0) { tr.stopT -= dt; continue; }
+      const segLen = lineSegLen(line, tr.seg);
+      const dPos = (TRAIN_SPEED * dt) / Math.max(1, segLen);
+
+      if (tr.dir > 0) {
+        tr.t += dPos;
+        if (tr.t >= 1) {
+          const arrived = tr.seg + 1;
+          tr.t = 1;
+          trainArriveAt(tr, state.stations[line.stations[arrived]]);
+          tr.stopT = STOP_TIME;
+          if (arrived >= line.stations.length-1) {
+            tr.dir = -1; tr.seg = arrived-1; tr.t = 1;
+          } else {
+            tr.seg = arrived; tr.t = 0;
+          }
+        }
+      } else {
+        tr.t -= dPos;
+        if (tr.t <= 0) {
+          const arrived = tr.seg;
+          tr.t = 0;
+          trainArriveAt(tr, state.stations[line.stations[arrived]]);
+          tr.stopT = STOP_TIME;
+          if (arrived <= 0) {
+            tr.dir = 1; tr.seg = 0; tr.t = 0;
+          } else {
+            tr.seg = arrived-1; tr.t = 1;
+          }
+        }
+      }
+    }
+  }
+}
+
+// ====== Game loop ======
+let lastT = performance.now();
+function tick(now){
+  requestAnimationFrame(tick);
+  const realDt = Math.min(0.05, (now-lastT)/1000);
+  lastT = now;
+  if (!state.paused && !state.gameOver && !state.modalOpen){
+    updateGame(realDt * state.speed);
+  }
+  render();
+  hud();
+}
+
+function updateGame(dt){
+  // station spawns
+  state.stationTimer -= dt;
+  if (state.stationTimer <= 0){
+    spawnStation();
+    const baseInt = Math.max(2.6, 6.5 - state.week*0.25);
+    state.stationTimer = baseInt * (0.7 + Math.random()*0.6);
+  }
+
+  // passenger spawns
+  state.paxTimer -= dt;
+  if (state.paxTimer <= 0){
+    spawnPassenger();
+    const intensity = Math.max(0.45, 1 - state.stations.length*0.02);
+    state.paxTimer = 2.4 * intensity * (0.6 + Math.random()*0.7);
+  }
+
+  updateTrains(dt);
+
+  // overflow
+  for (const s of state.stations){
+    if (s.passengers.length > STATION_CAP){
+      s.overflow += dt;
+      if (s.overflow >= OVERFLOW_TIME){ endGame(); return; }
+    } else {
+      s.overflow = Math.max(0, s.overflow - dt*0.6);
+    }
+  }
+
+  // week
+  state.weekTimer += dt;
+  if (state.weekTimer >= WEEK_TIME){
+    state.weekTimer = 0;
+    state.week++;
+    openModal();
+  }
+}
+
+function endGame(){
+  state.gameOver = true;
+  document.getElementById('finalScore').textContent = state.score;
+  document.getElementById('gameOver').classList.add('show');
+}
+
+// ====== Modal ======
+const REWARDS = [
+  { key:'line',    ttl:'New Line + Train',  desc:'+1 line capacity, +1 locomotive.',
+    apply:()=>{ state.resources.lines++; state.resources.trains++; },
+    icon:`<svg width="56" height="40" viewBox="0 0 56 40"><path d="M6 20 H50" stroke="#2563eb" stroke-width="6" fill="none" stroke-linecap="round"/><rect x="20" y="13" width="16" height="14" rx="2" fill="#2563eb" stroke="#222" stroke-width="2"/></svg>`
+  },
+  { key:'tunnel',  ttl:'Tunnel / Bridge',   desc:'Cross the river once with a new line.',
+    apply:()=>{ state.resources.tunnels++; },
+    icon:`<svg width="56" height="40" viewBox="0 0 56 40"><path d="M4 32 Q28 4 52 32" stroke="#222" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M4 36 H52" stroke="#bcd9ed" stroke-width="6" fill="none" stroke-linecap="round"/></svg>`
+  },
+  { key:'carriage',ttl:'Carriage',          desc:'+2 capacity for every existing & future train.',
+    apply:()=>{ state.resources.carriages++; for (const l of state.lines) for (const t of l.trains) t.capacity+=2; },
+    icon:`<svg width="56" height="40" viewBox="0 0 56 40"><rect x="6" y="14" width="20" height="14" rx="2" fill="#222"/><rect x="30" y="14" width="20" height="14" rx="2" fill="#fff" stroke="#222" stroke-width="2"/></svg>`
+  },
+];
+function openModal(){
+  state.modalOpen = true;
+  document.getElementById('modalWeek').textContent = state.week;
+  const optsEl = document.getElementById('opts');
+  optsEl.innerHTML = '';
+  for (const r of REWARDS){
+    const d = document.createElement('div');
+    d.className = 'opt';
+    d.innerHTML = `${r.icon}<div class="ttl">${r.ttl}</div><div class="desc">${r.desc}</div>`;
+    d.onclick = ()=>{ r.apply(); closeModal(); };
+    optsEl.appendChild(d);
+  }
+  document.getElementById('modal').classList.add('show');
+}
+function closeModal(){
+  state.modalOpen = false;
+  document.getElementById('modal').classList.remove('show');
+}
+
+// ====== Drawing ======
+function shapePath(shape, r){
+  ctx.beginPath();
+  if (shape === 'circle'){
+    ctx.arc(0,0,r,0,Math.PI*2);
+  } else if (shape === 'square'){
+    ctx.rect(-r*0.95,-r*0.95, r*1.9, r*1.9);
+  } else if (shape === 'triangle'){
+    const h = r * 1.2;
+    ctx.moveTo(0,-h);
+    ctx.lineTo(h*0.866, h*0.55);
+    ctx.lineTo(-h*0.866, h*0.55);
+    ctx.closePath();
+  } else if (shape === 'diamond'){
+    ctx.moveTo(0,-r*1.25); ctx.lineTo(r*1.05,0);
+    ctx.lineTo(0,r*1.25);  ctx.lineTo(-r*1.05,0); ctx.closePath();
+  } else if (shape === 'plus'){
+    const a = r*0.42, b = r*1.1;
+    ctx.moveTo(-a,-b); ctx.lineTo(a,-b); ctx.lineTo(a,-a); ctx.lineTo(b,-a);
+    ctx.lineTo(b,a);  ctx.lineTo(a,a);  ctx.lineTo(a,b);   ctx.lineTo(-a,b);
+    ctx.lineTo(-a,a); ctx.lineTo(-b,a); ctx.lineTo(-b,-a); ctx.lineTo(-a,-a);
+    ctx.closePath();
+  } else if (shape === 'star'){
+    const N=5;
+    for (let i=0;i<N*2;i++){
+      const ang = -Math.PI/2 + i*Math.PI/N;
+      const rr = i%2===0 ? r*1.25 : r*0.55;
+      const x = Math.cos(ang)*rr, y = Math.sin(ang)*rr;
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+  }
+}
+function drawShape(shape, x, y, r, opt={}){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.lineWidth = opt.stroke ?? 4;
+  ctx.strokeStyle = opt.color || '#222';
+  ctx.fillStyle = opt.fill || '#fff';
+  ctx.lineJoin = 'round';
+  shapePath(shape, r);
+  if (opt.fill !== 'none') ctx.fill();
+  if (opt.stroke !== 'none' && opt.stroke !== 0) ctx.stroke();
+  ctx.restore();
+}
+
+function render(){
+  // background
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#fafaf7');
+  grad.addColorStop(1,'#efece1');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
+  // soft terrain blobs (decorative, deterministic)
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  for (let i=0;i<5;i++){
+    const cx=((i*173)+97)%W, cy=((i*239)+157)%H;
+    const r=140+(i*53)%80;
+    const g = ctx.createRadialGradient(cx,cy,0,cx,cy,r);
+    g.addColorStop(0,'#ece6d2');
+    g.addColorStop(1,'rgba(236,230,210,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+
+  // river
+  if (state.river){
+    ctx.save();
+    ctx.strokeStyle = '#bcd9ed';
+    ctx.lineWidth = state.river.width;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    const pts = state.river.points;
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.stroke();
+    // subtle inner highlight
+    ctx.strokeStyle = '#d1e7f4';
+    ctx.lineWidth = state.river.width*0.45;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // committed lines
+  for (const line of state.lines) drawLine(line);
+
+  // current preview line
+  if (state.draw) drawDrawingLine(state.draw);
+
+  // stations
+  for (const s of state.stations) drawStation(s);
+
+  // trains on top
+  for (const line of state.lines) for (const tr of line.trains) drawTrain(tr);
+
+  // tunnel/bridge markers on lines crossing river
+  drawTunnelMarkers();
+}
+
+function drawLine(line){
+  const sts = line.stations.map(i=>state.stations[i]);
+  if (sts.length<2) return;
+  ctx.save();
+  ctx.strokeStyle = line.color;
+  ctx.lineWidth = 6;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(sts[0].x, sts[0].y);
+  for (let i=1;i<sts.length;i++) ctx.lineTo(sts[i].x, sts[i].y);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawDrawingLine(d){
+  const sts = d.path.map(i=>state.stations[i]);
+  if (!sts.length) return;
+  ctx.save();
+  ctx.strokeStyle = d.color;
+  ctx.globalAlpha = 0.75;
+  ctx.lineWidth = 6;
+  ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(sts[0].x, sts[0].y);
+  for (let i=1;i<sts.length;i++) ctx.lineTo(sts[i].x, sts[i].y);
+  if (d.cur) ctx.lineTo(d.cur.x, d.cur.y);
+  ctx.stroke();
+  // hint at end
+  ctx.fillStyle = d.color;
+  if (d.cur) {
+    ctx.beginPath(); ctx.arc(d.cur.x, d.cur.y, 5, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawTunnelMarkers(){
+  if (!state.river) return;
+  const pts = state.river.points;
+  for (const line of state.lines){
+    for (let i=0;i<line.stations.length-1;i++){
+      const a = state.stations[line.stations[i]];
+      const b = state.stations[line.stations[i+1]];
+      for (let j=0;j<pts.length-1;j++){
+        // find intersection point
+        const I = segIntersectPoint([a.x,a.y],[b.x,b.y],pts[j],pts[j+1]);
+        if (I) {
+          ctx.save();
+          ctx.fillStyle = '#fff';
+          ctx.strokeStyle = '#222';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(I[0], I[1], 5, 0, Math.PI*2);
+          ctx.fill(); ctx.stroke();
+          ctx.restore();
+          break;
+        }
+      }
+    }
+  }
+}
+function segIntersectPoint(p1,p2,p3,p4){
+  const x1=p1[0],y1=p1[1],x2=p2[0],y2=p2[1],x3=p3[0],y3=p3[1],x4=p4[0],y4=p4[1];
+  const d = (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4);
+  if (Math.abs(d)<1e-9) return null;
+  const t = ((x1-x3)*(y3-y4)-(y1-y3)*(x3-x4))/d;
+  const u = -((x1-x2)*(y1-y3)-(y1-y2)*(x1-x3))/d;
+  if (t>=0&&t<=1&&u>=0&&u<=1) return [x1+t*(x2-x1), y1+t*(y2-y1)];
+  return null;
+}
+
+function drawStation(s){
+  // birth pop
+  const age = (performance.now() - s.born)/1000;
+  const popScale = age < 0.5 ? (1 - Math.pow(1-age/0.5, 2))*0.4 + 0.6 : 1;
+
+  // overflow ring
+  if (s.overflow > 0){
+    ctx.save();
+    ctx.beginPath();
+    const frac = Math.min(1, s.overflow/OVERFLOW_TIME);
+    ctx.arc(s.x, s.y, STATION_R+9, -Math.PI/2, -Math.PI/2 + Math.PI*2*frac);
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // soft shadow
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.10)';
+  ctx.beginPath(); ctx.ellipse(s.x, s.y+4, STATION_R*0.95, STATION_R*0.5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  drawShape(s.shape, s.x, s.y, STATION_R*popScale, { fill:'#fff', color:'#222', stroke: 4 });
+
+  // passengers around station
+  for (let i=0;i<s.passengers.length;i++){
+    const ang = -Math.PI/2 + i * 0.55;
+    const r = STATION_R + 13;
+    const px = s.x + Math.cos(ang)*r;
+    const py = s.y + Math.sin(ang)*r;
+    drawShape(s.passengers[i].shape, px, py, PAX_R, { fill:'#222', color:'#222', stroke:1.5 });
+  }
+}
+
+function drawTrain(tr){
+  const line = tr.line;
+  const a = state.stations[line.stations[tr.seg]];
+  const b = state.stations[line.stations[tr.seg+1]];
+  const x = a.x + (b.x-a.x)*tr.t;
+  const y = a.y + (b.y-a.y)*tr.t;
+  const angle = Math.atan2(b.y-a.y, b.x-a.x) + (tr.dir<0 ? Math.PI : 0);
+
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(angle);
+
+  // carriages (drawn behind body)
+  const carCount = state.resources.carriages;
+  for (let i=0;i<carCount;i++){
+    const off = - (TRAIN_LEN/2 + CAR_GAP + (CAR_LEN+CAR_GAP)*i + CAR_LEN/2);
+    ctx.fillStyle = tr.line.color;
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    roundRect(ctx, off-CAR_LEN/2, -TRAIN_W/2+1, CAR_LEN, TRAIN_W-2, 2);
+    ctx.fill(); ctx.stroke();
+  }
+
+  // body
+  ctx.fillStyle = tr.line.color;
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  roundRect(ctx, -TRAIN_LEN/2, -TRAIN_W/2, TRAIN_LEN, TRAIN_W, 3);
+  ctx.fill(); ctx.stroke();
+
+  // window / front
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  roundRect(ctx, TRAIN_LEN/2-7, -TRAIN_W/2+3, 4, TRAIN_W-6, 1);
+  ctx.fill();
+
+  // passenger dots
+  const pcount = Math.min(tr.passengers.length, tr.capacity);
+  ctx.fillStyle = '#fff';
+  for (let i=0;i<pcount;i++){
+    const cx = -TRAIN_LEN/2 + 5 + (i%4)*6;
+    const cy = -TRAIN_W/2 + 4 + Math.floor(i/4)*5;
+    ctx.beginPath(); ctx.arc(cx,cy,1.5,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+function roundRect(c, x, y, w, h, r){
+  c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r);
+  c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r);
+  c.arcTo(x,y,x+w,y,r);
+}
+
+// ====== Input ======
+function localPoint(e){
+  const r = cv.getBoundingClientRect();
+  const t = e.touches?.[0];
+  const cx = (t? t.clientX : e.clientX) - r.left;
+  const cy = (t? t.clientY : e.clientY) - r.top;
+  return {x: cx, y: cy};
+}
+function stationAt(x,y, slack=0){
+  for (let i=0;i<state.stations.length;i++){
+    const s = state.stations[i];
+    if (Math.hypot(s.x-x,s.y-y) < STATION_R + slack) return i;
+  }
+  return -1;
+}
+function startDraw(e){
+  if (state.paused||state.gameOver||state.modalOpen) return;
+  const {x,y} = localPoint(e);
+  const idx = stationAt(x,y, 8);
+  if (idx<0) return;
+  if (state.resources.lines<1 || state.resources.trains<1) return;
+  state.draw = { path: [idx], cur: {x,y}, color: nextColor() };
+  e.preventDefault();
+}
+function moveDraw(e){
+  const {x,y} = localPoint(e);
+  if (state.draw){
+    state.draw.cur = {x,y};
+    const idx = stationAt(x,y, 8);
+    if (idx>=0 && idx !== state.draw.path[state.draw.path.length-1]
+        && !state.draw.path.includes(idx)) {
+      state.draw.path.push(idx);
+    }
+    e.preventDefault();
+  }
+}
+function endDraw(e){
+  if (!state.draw) return;
+  commitLine(state.draw.path);
+  state.draw = null;
+  if (e && e.preventDefault) e.preventDefault();
+}
+cv.addEventListener('mousedown', startDraw);
+cv.addEventListener('mousemove', moveDraw);
+cv.addEventListener('mouseup',   endDraw);
+cv.addEventListener('mouseleave',()=>{ state.draw = null; });
+cv.addEventListener('touchstart', startDraw, {passive:false});
+cv.addEventListener('touchmove',  moveDraw,  {passive:false});
+cv.addEventListener('touchend',   endDraw);
+
+// ====== HUD ======
+function hud(){
+  document.getElementById('scoreVal').textContent = state.score;
+  document.getElementById('weekVal').textContent = state.week;
+  document.getElementById('statVal').textContent = state.stations.length;
+  document.getElementById('lineRes').textContent = state.resources.lines;
+  document.getElementById('trainRes').textContent = state.resources.trains;
+  document.getElementById('tunnelRes').textContent = state.resources.tunnels;
+  document.getElementById('carRes').textContent = state.resources.carriages;
+  document.getElementById('weekFill').style.width = (state.weekTimer/WEEK_TIME*100)+'%';
+}
+
+// ====== UI controls ======
+document.getElementById('pauseBtn').addEventListener('click', ()=>{
+  state.paused = !state.paused;
+  document.getElementById('pauseBtn').textContent = state.paused?'RESUME':'PAUSE';
+});
+document.querySelectorAll('#speed button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    state.speed = parseFloat(b.dataset.s);
+    document.querySelectorAll('#speed button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+});
+document.addEventListener('keydown', e=>{
+  if (e.code === 'Space'){
+    state.paused = !state.paused;
+    document.getElementById('pauseBtn').textContent = state.paused?'RESUME':'PAUSE';
+    e.preventDefault();
+  } else if (e.code === 'Digit1'){ setSpeed(1); }
+  else if (e.code === 'Digit2'){ setSpeed(2); }
+  else if (e.code === 'Digit3'){ setSpeed(3); }
+});
+function setSpeed(s){
+  state.speed = s;
+  document.querySelectorAll('#speed button').forEach(x=>{
+    x.classList.toggle('active', parseFloat(x.dataset.s)===s);
+  });
+}
+
+// ====== Init ======
+makeRiver();
+// 3 starter stations, one of each common shape
+for (let i=0;i<3;i++) spawnStation(SHAPES[i]);
+// quick fallback in case any failed to place
+let safety=0;
+while (state.stations.length<3 && safety<10){ spawnStation(SHAPES[state.stations.length]); safety++; }
+
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

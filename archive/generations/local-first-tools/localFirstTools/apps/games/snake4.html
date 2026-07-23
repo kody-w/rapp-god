@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Snake 4 — Voxel</title>
+<meta name="description" content="Snake reborn as a Minecraft voxel game. Drive a blocky serpent across a procedurally-textured grass arena, devour glowing golden apples, and grow. Built on the voxel-world Three.js engine with the snake3 lineage — WASD/arrows/swipe, smooth block movement, day sky, soft shadows, and cross-app 'score' telepathy for shared leaderboards.">
+<meta name="keywords" content="snake,voxel,minecraft,three.js,3d,game,worm,blocks,arena">
+<meta name="icon" content="🟩">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9F%A9%3C/text%3E%3C/svg%3E">
+
+<!-- Same engine as voxel-world.html: three r160 ES module via importmap. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<!-- Telepathy bus (idempotent) — defined early so the game module can publish
+     on the 'score' channel exactly like snake3.html for cross-app leaderboards. -->
+<script>
+(function () {
+  try {
+    if (window.bus && window.bus.__telepathy) return;
+    var subs = Object.create(null), seen = Object.create(null), bc = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('telepathy');
+        bc.onmessage = function (ev) {
+          var m = ev && ev.data;
+          if (!m || !m.id || seen[m.id]) return;
+          seen[m.id] = 1; dispatch(m);
+        };
+      }
+    } catch (e) { bc = null; }
+    function dispatch(m) {
+      var l = (subs[m.channel] || []).concat(subs['*'] || []);
+      l.forEach(function (fn) { try { fn(m.payload, m); } catch (_) {} });
+    }
+    try {
+      window.addEventListener('storage', function (ev) {
+        if (!ev.key || ev.key.indexOf('telepathy:msg:') !== 0 || !ev.newValue) return;
+        try {
+          var m = JSON.parse(ev.newValue);
+          if (!m || !m.id || seen[m.id]) return;
+          seen[m.id] = 1; dispatch(m);
+        } catch (_) {}
+      });
+    } catch (_) {}
+    window.bus = {
+      __telepathy: true,
+      transport: bc ? 'BroadcastChannel' : 'storage',
+      publish: function (channel, payload) {
+        var msg = {
+          id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          channel: String(channel), payload: payload, ts: Date.now(),
+          src: (location && location.pathname) || ''
+        };
+        seen[msg.id] = 1;
+        try {
+          var k = 'telepathy:history:' + msg.channel;
+          var h = JSON.parse(localStorage.getItem(k)) || [];
+          h.push(msg); while (h.length > 50) h.shift();
+          localStorage.setItem(k, JSON.stringify(h));
+        } catch (_) {}
+        dispatch(msg);
+        try { if (bc) bc.postMessage(msg); } catch (_) {}
+        try { localStorage.setItem('telepathy:msg:' + msg.channel, JSON.stringify(msg)); } catch (_) {}
+        return msg;
+      },
+      subscribe: function (c, f) {
+        if (typeof f !== 'function') return function () {};
+        (subs[c] = subs[c] || []).push(f);
+        return function () { subs[c] = (subs[c] || []).filter(function (g) { return g !== f; }); };
+      },
+      history: function (c, n) {
+        try {
+          var h = JSON.parse(localStorage.getItem('telepathy:history:' + c)) || [];
+          return (typeof n === 'number' && n > 0) ? h.slice(-n) : h;
+        } catch (_) { return []; }
+      }
+    };
+  } catch (_) {}
+})();
+</script>
+
+<style>
+  :root{ --ink:#0d1b0d; --gold:#ffcf3f; --grass:#7ec850; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; width:100%; overflow:hidden; background:#79b7ff;
+    font-family:'Courier New',ui-monospace,monospace; color:#fff; -webkit-tap-highlight-color:transparent; }
+  #game{ position:fixed; inset:0; }
+  canvas{ display:block; }
+
+  .panel{ position:fixed; z-index:20; text-shadow:0 2px 4px rgba(0,0,0,0.65), 0 0 2px rgba(0,0,0,0.9); pointer-events:none; }
+  #hud{ top:14px; left:16px; }
+  #score{ font-size:30px; font-weight:bold; letter-spacing:1px; }
+  #score .num{ color:var(--gold); }
+  #sub{ margin-top:4px; font-size:13px; opacity:0.92; line-height:1.7; }
+  #sub b{ color:var(--gold); font-weight:bold; }
+  #stats{ top:14px; right:16px; text-align:right; font-size:13px; line-height:1.8; }
+  #stats .k{ opacity:0.7; }
+  #stats .v{ color:var(--gold); font-weight:bold; }
+  #hint{ bottom:14px; left:16px; font-size:12px; opacity:0.72; max-width:60vw; line-height:1.6; }
+  #hint b{ color:var(--gold); font-weight:normal; }
+  #hint kbd{ background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.25); border-radius:4px; padding:1px 6px; font-family:inherit; }
+
+  .overlay{ position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, rgba(10,20,10,0.55), rgba(5,10,5,0.85)); backdrop-filter:blur(3px); }
+  .card{ background:linear-gradient(180deg,#2b1c10,#1a1208); border:2px solid rgba(255,207,63,0.4);
+    box-shadow:0 30px 90px rgba(0,0,0,0.7), inset 0 0 60px rgba(0,0,0,0.5);
+    padding:34px 40px; border-radius:6px; text-align:center; max-width:min(460px,90vw); }
+  .card h1{ font-size:34px; letter-spacing:2px; margin-bottom:6px; color:#eafbe0; text-shadow:0 3px 0 #163a12; }
+  .card .tag{ font-size:12px; letter-spacing:3px; color:var(--gold); text-transform:uppercase; margin-bottom:18px; opacity:0.85; }
+  .card p{ font-size:14px; line-height:1.9; color:#d8e6cf; text-align:left; margin:6px 0; }
+  .card p .em{ color:var(--gold); }
+  .card .big{ font-size:20px; color:var(--gold); font-weight:bold; text-align:center; margin:14px 0 4px; }
+  .btn{ margin-top:20px; pointer-events:auto; cursor:pointer; font-family:inherit; font-size:16px; font-weight:bold;
+    letter-spacing:1px; color:#10240f; background:linear-gradient(180deg,#a6e86a,#6db93f);
+    border:none; border-bottom:4px solid #3f7727; border-radius:6px; padding:12px 30px; transition:transform .08s, filter .15s; }
+  .btn:hover{ filter:brightness(1.08); }
+  .btn:active{ transform:translateY(2px); border-bottom-width:2px; }
+  .hidden{ display:none !important; }
+
+  #toast{ position:fixed; top:74px; left:50%; transform:translateX(-50%) translateY(-8px); z-index:30;
+    background:rgba(0,0,0,0.6); border:1px solid rgba(255,207,63,0.5); border-radius:20px; padding:6px 16px;
+    font-size:14px; color:var(--gold); font-weight:bold; opacity:0; transition:opacity .2s, transform .2s; pointer-events:none; }
+  #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  #comboPill{ display:inline-block; margin-top:6px; padding:2px 11px; border-radius:14px; font-size:0.72rem; font-weight:bold;
+    color:#1a1207; background:linear-gradient(90deg,#ffd54a,#ff9800); opacity:0; transform:translateY(-4px) scale(0.9);
+    transition:opacity .15s, transform .15s; text-shadow:none; }
+  #comboPill.show{ opacity:1; transform:translateY(0) scale(1); animation:comboPulse .3s ease; }
+  @keyframes comboPulse{ 0%{ transform:scale(1.28); } 100%{ transform:scale(1); } }
+  #smashBar{ position:relative; display:none; margin-top:8px; width:138px; height:15px; border-radius:8px;
+    background:rgba(0,0,0,0.38); border:1px solid rgba(160,160,166,0.55); overflow:hidden; }
+  #smashBar.show{ display:block; }
+  #smashFill{ position:absolute; left:0; top:0; bottom:0; width:0%; background:linear-gradient(90deg,#7d7d84,#d7d7dc); transition:width .18s ease; }
+  #smashBar b{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:0.58rem;
+    letter-spacing:2px; color:#fff; text-shadow:0 1px 2px #000; font-weight:bold; }
+  #smashBar.ready{ border-color:#ffd54a; box-shadow:0 0 12px rgba(255,213,74,0.7); animation:smashPulse .6s ease infinite alternate; }
+  #smashBar.ready #smashFill{ background:linear-gradient(90deg,#ffd54a,#ff9800); }
+  @keyframes smashPulse{ to{ box-shadow:0 0 22px rgba(255,213,74,0.95); } }
+  #terrainTag{ display:inline-block; margin-top:5px; padding:2px 10px; border-radius:12px; font-size:0.66rem; font-weight:bold; letter-spacing:.4px; }
+  #comboTimer{ display:none; width:132px; height:4px; margin-top:5px; border-radius:3px; background:rgba(0,0,0,0.35); overflow:hidden; }
+  #comboTimer.show{ display:block; }
+  #comboTimer i{ display:block; height:100%; width:100%; background:linear-gradient(90deg,#ff9800,#ffd54a); transition:width .1s linear; }
+  #terrainTag.grass{ background:rgba(74,124,58,0.85); color:#eaffe0; }
+  #terrainTag.sand{ background:rgba(205,175,115,0.92); color:#3a2c10; }
+  #terrainTag.ice{ background:rgba(180,222,240,0.92); color:#0c2230; }
+  .metaRow{ display:flex; gap:12px; justify-content:center; align-items:center; margin-top:12px; }
+  .bankLbl{ color:var(--gold); font-weight:bold; font-size:0.85rem; }
+  #shopGrid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin:14px auto; max-width:400px; }
+  .skinCard{ display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); font-size:0.8rem; }
+  .skinCard.on{ border-color:var(--gold); box-shadow:0 0 10px rgba(255,207,63,0.4); }
+  .skinCard .sw{ width:20px; height:20px; border-radius:5px; border:1px solid rgba(0,0,0,0.4); flex:none; }
+  .skinCard .nm{ flex:1; text-align:left; font-weight:bold; }
+  .skinCard .eq{ color:var(--gold); font-size:0.68rem; }
+  .skinCard .lock{ opacity:0.5; font-size:0.72rem; }
+  .skinCard .skinBtn{ margin:0; padding:3px 8px; font-size:0.7rem; }
+  .legend{ margin-top:14px; font-size:0.66rem; color:#9fb0c8; line-height:1.8; max-width:360px; }
+  .legend kbd{ background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.25); border-radius:4px; padding:0 5px; font-family:inherit; }
+  #countdown{ position:fixed; top:44%; left:50%; transform:translate(-50%,-50%); z-index:34; pointer-events:none;
+    font-size:150px; font-weight:900; color:#fff; opacity:0; text-shadow:0 6px 30px rgba(0,0,0,0.6), 0 0 40px rgba(255,213,74,0.55);
+    -webkit-text-stroke:3px rgba(126,200,80,0.9); letter-spacing:2px; }
+  #countdown.show{ opacity:1; }
+  #countdown.go{ font-size:96px; color:var(--gold); -webkit-text-stroke:3px rgba(255,152,0,0.9); }
+  #countdown.pop{ animation:countPop .45s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes countPop{ 0%{ transform:translate(-50%,-50%) scale(2.1); opacity:0; } 30%{ opacity:1; } 100%{ transform:translate(-50%,-50%) scale(1); opacity:1; } }
+  #coach{ position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(16px); z-index:33; max-width:min(560px,92vw);
+    background:linear-gradient(180deg,rgba(24,32,20,0.96),rgba(14,20,12,0.96)); border:1px solid rgba(126,200,80,0.55);
+    border-radius:14px; padding:13px 18px; font-size:14px; line-height:1.5; color:#eaf5e0; text-align:center;
+    box-shadow:0 10px 40px rgba(0,0,0,0.5); opacity:0; transition:opacity .3s, transform .3s; pointer-events:auto; cursor:pointer; }
+  #coach.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  #coach b{ color:var(--gold); }
+  #flash{ position:fixed; inset:0; z-index:35; pointer-events:none; background:#ff3b30; opacity:0; }
+  #flash.on{ animation:flashFade .26s ease-out; }
+  @keyframes flashFade{ 0%{ opacity:0.5; } 100%{ opacity:0; } }
+
+  #board{ position:fixed; top:120px; right:16px; z-index:20; min-width:154px; text-align:right; font-size:12px;
+    background:rgba(8,14,22,0.5); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:7px 10px;
+    backdrop-filter:blur(6px); display:none; }
+  #board.show{ display:block; }
+  #board .bt{ font-size:9px; letter-spacing:1.5px; color:#00bcd4; margin-bottom:5px; }
+  #board .br{ display:flex; justify-content:space-between; gap:12px; padding:1px 0; color:#c8ccd4; }
+  #board .br.me .bn, #board .br.me .bs{ color:var(--gold); font-weight:bold; }
+  #board .bs{ font-variant-numeric:tabular-nums; }
+  .opts{ display:flex; gap:14px; justify-content:center; margin-top:14px; font-size:0.72rem; color:#9fb0c8; flex-wrap:wrap; }
+  .opts label{ display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+  .opts input{ accent-color:var(--gold); cursor:pointer; }
+  .opts kbd{ background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.25); border-radius:4px; padding:0 5px; font-family:inherit; }
+  .btn.ghost{ background:rgba(255,255,255,0.08); color:#cfe0ff; border-bottom-color:rgba(0,0,0,0.3); margin-top:10px; }
+
+  /* Mobile dpad */
+  #pad{ position:fixed; bottom:20px; right:20px; z-index:30; display:none; grid-template-columns:repeat(3,54px);
+    grid-template-rows:repeat(3,54px); gap:6px; }
+  #pad.show{ display:grid; }
+  #pad button{ pointer-events:auto; border:none; border-radius:10px; background:rgba(0,0,0,0.42);
+    border:1px solid rgba(255,255,255,0.18); color:#fff; font-size:22px; font-family:inherit; }
+  #pad button:active{ background:rgba(255,207,63,0.35); }
+  .p-up{ grid-column:2; grid-row:1; } .p-left{ grid-column:1; grid-row:2; }
+  .p-pause{ grid-column:2; grid-row:2; font-size:16px !important; } .p-right{ grid-column:3; grid-row:2; }
+  .p-down{ grid-column:2; grid-row:3; }
+
+  #boot{ position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; flex-direction:column;
+    background:#0a140a; color:#cfe6c2; font-size:14px; letter-spacing:1px; gap:16px; text-align:center; padding:24px; }
+  #boot .spin{ width:44px; height:44px; border:4px solid rgba(126,200,80,0.25); border-top-color:var(--grass);
+    border-radius:50%; animation:sp .8s linear infinite; }
+  @keyframes sp{ to{ transform:rotate(360deg); } }
+  #boot.err a{ color:var(--gold); }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="flash"></div>
+
+<div class="panel" id="hud">
+  <div id="score">Score: <span class="num" id="scoreVal">0</span></div>
+  <div id="sub">🍎 <b>Steer the apple</b> · the snake chases it — feed it!</div>
+  <div id="terrainTag" class="grass" data-t="0">🌲 Grass</div>
+  <div id="comboPill"></div>
+  <div id="comboTimer"><i></i></div>
+  <div id="smashBar" aria-hidden="true"><i id="smashFill"></i><b>SMASH</b></div>
+</div>
+
+<div class="panel" id="stats">
+  <div><span class="k">Length</span> <span class="v" id="lenVal">3</span></div>
+  <div><span class="k">Best</span> <span class="v" id="bestVal">0</span></div>
+  <div><span class="k">Speed</span> <span class="v" id="spdVal">1.0×</span></div>
+  <div><span class="k">Time</span> <span class="v" id="timeVal">0s</span></div>
+</div>
+
+<div class="panel" id="board"></div>
+
+<div class="panel" id="hint">
+  <b>Steer the 🍎</b> <kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> / swipe &nbsp;·&nbsp; the snake chases it &nbsp;·&nbsp; <b>Pause</b> <kbd>Space</kbd> &nbsp;·&nbsp; <b>Restart</b> <kbd>R</kbd> &nbsp;·&nbsp; <b>Camera</b> <kbd>C</kbd>
+</div>
+
+<div id="toast"></div>
+<div id="countdown"></div>
+<div id="coach"></div>
+
+<div id="pad">
+  <button class="p-up" data-dir="up" aria-label="Up">▲</button>
+  <button class="p-left" data-dir="left" aria-label="Left">◀</button>
+  <button class="p-pause" data-dir="pause" aria-label="Pause">⏸</button>
+  <button class="p-right" data-dir="right" aria-label="Right">▶</button>
+  <button class="p-down" data-dir="down" aria-label="Down">▼</button>
+</div>
+
+<div class="overlay" id="welcome">
+  <div class="card">
+    <div class="tag">Voxel · Generation 4</div>
+    <h1>SNAKE&nbsp;4</h1>
+    <p>🍎 You control the <span class="em">golden apple</span> — steer it with <kbd>WASD</kbd> / arrows / swipe.</p>
+    <p>🟩 The hungry <span class="em">voxel snake</span> chases your apple all on its own.</p>
+    <p>🎯 <span class="em">Feed it</span> to grow &amp; score — but lead it wisely: if it hits a <span class="em">wall</span>, its own <span class="em">maze</span>, or itself, it's game over.</p>
+    <p>⚡ Every apple it eats makes it a little <span class="em">faster</span> — and harder to keep alive.</p>
+    <p>🧱 Its trail sculpts a <span class="em">maze</span> of pillars — combos auto-charge <span class="em">💥 SMASH</span> so it can crash through its own walls.</p>
+    <p>🌍 The ground has <span class="em">biomes</span>: 🧊 ice slides you straight · 🏜 sand gives no boost · 🌲 grass is normal.</p>
+    <button class="btn" id="startBtn">▶ Play</button>
+    <button class="btn ghost" id="dailyBtn">🗓 Daily Challenge</button>
+    <div class="metaRow"><button class="btn ghost" id="shopBtn">🎨 Skins</button><span class="bankLbl">🪙 0</span></div>
+    <div class="opts">
+      <label><input type="checkbox" id="rmToggle"> Reduced motion</label>
+      <label><input type="checkbox" id="muteToggle"> Mute <kbd>M</kbd></label>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="gameover">
+  <div class="card">
+    <div class="tag" id="goTag">Game Over</div>
+    <h1>💀</h1>
+    <div class="big">Score <span id="goScore">0</span></div>
+    <p style="text-align:center" id="goBest">Best 0</p>
+    <p style="text-align:center; opacity:0.8" id="goLen">Length 3</p>
+    <button class="btn" id="againBtn">↻ Play Again</button>
+    <div class="metaRow"><button class="btn ghost" id="trophyBtn">📸 Trophy</button><button class="btn ghost" id="linkBtn">🔗 Link</button></div>
+    <div class="metaRow"><button class="btn ghost" id="shopBtn2">🎨 Skins</button><span class="bankLbl">🪙 0</span></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="shop">
+  <div class="card">
+    <div class="tag">Voxel Wardrobe</div>
+    <h1 style="font-size:1.7rem">🎨 Skins</h1>
+    <p style="text-align:center">Bank: <span class="bankLbl">🪙 0</span> &nbsp;·&nbsp; earn 🪙 by eating apples</p>
+    <div id="shopGrid"></div>
+    <button class="btn" id="shopClose">← Back</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="pauseMenu">
+  <div class="card">
+    <div class="tag">Paused</div>
+    <h1 style="font-size:2rem">⏸</h1>
+    <button class="btn" id="resumeBtn">▶ Resume <kbd>Space</kbd></button>
+    <button class="btn ghost" id="restartBtn2">↻ Restart</button>
+    <button class="btn ghost" id="pauseShopBtn">🎨 Skins</button>
+    <div class="opts">
+      <label><input type="checkbox" id="rmToggle2"> Reduced motion</label>
+      <label><input type="checkbox" id="muteToggle2"> Mute</label>
+    </div>
+    <div class="legend">Steer 🍎 <kbd>WASD</kbd> / <kbd>↑ ← ↓ →</kbd> &nbsp;·&nbsp; the snake chases it &nbsp;·&nbsp; Camera <kbd>C</kbd> &nbsp;·&nbsp; 🧊 ice makes it slide &nbsp;·&nbsp; combos auto-💥 SMASH</div>
+  </div>
+</div>
+
+<div id="boot">
+  <div class="spin"></div>
+  <div id="bootMsg">Loading voxel engine…</div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Snake 4 — Voxel.  Classic direct-control snake set in the voxel-world
+//  Minecraft engine: procedurally textured blocks, day sky, soft shadows.
+// ─────────────────────────────────────────────────────────────────────────
+
+const N = 18;                       // arena is N×N cells of grass
+const HALF = N / 2;
+const cellToWorld = (c) => c - HALF + 0.5;   // grid cell -> world coord (centered)
+
+// ── seeded RNG + procedural block textures (voxel-world style) ───────────
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+function makeTex(draw, seed){
+  const S = 32, cnv = document.createElement('canvas'); cnv.width = cnv.height = S;
+  const ctx = cnv.getContext('2d'); const rng = mulberry32(seed || 1);
+  const px = (x,y,r,g,b)=>{ ctx.fillStyle='rgb('+(r|0)+','+(g|0)+','+(b|0)+')'; ctx.fillRect(x,y,1,1); };
+  draw(ctx, rng, px, S);
+  const tex = new THREE.CanvasTexture(cnv);
+  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false; tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const T = {};
+function buildTextures(){
+  T.grassTop = makeTex((c,rng,px,S)=>{ for(let y=0;y<S;y++)for(let x=0;x<S;x++){ const d=rng()*34-17;
+    if(rng()<0.06) px(x,y,140+d,196+d,92+d); else px(x,y,96+d,158+d,66+d); } }, 7);
+  T.grassSide = makeTex((c,rng,px,S)=>{ const fr=[]; for(let x=0;x<S;x++) fr.push(5+Math.floor(rng()*5));
+    for(let y=0;y<S;y++)for(let x=0;x<S;x++){ const d=rng()*28-14;
+      if(y<fr[x]) px(x,y,96+d,158+d,66+d); else if(rng()<0.05) px(x,y,96+d,70+d,48+d); else px(x,y,134+d,96+d,67+d); } }, 11);
+  T.dirt = makeTex((c,rng,px,S)=>{ for(let y=0;y<S;y++)for(let x=0;x<S;x++){ const d=rng()*32-16;
+    if(rng()<0.05) px(x,y,98+d,70+d,48+d); else px(x,y,134+d,96+d,67+d); } }, 2);
+  T.stone = makeTex((c,rng,px,S)=>{ for(let y=0;y<S;y++)for(let x=0;x<S;x++){ const d=rng()*26-13;
+    if(rng()<0.045) px(x,y,88+d,88+d,92+d); else if((x*7+y*13)%31===0) px(x,y,102+d,102+d,106+d); else px(x,y,126+d,126+d,130+d);
+    if((x%8===0)||(y%8===0)) { const g=rng()*10; px(x,y,150+g,150+g,154+g); } } }, 3); // brick grout lines
+  T.body = makeTex((c,rng,px,S)=>{ for(let y=0;y<S;y++)for(let x=0;x<S;x++){ const d=rng()*24-12;
+    const scale=(((x+ (y%2?4:0))%8)<4)?18:0; if(rng()<0.06) px(x,y,40,110,44); else px(x,y,58+scale+d,150+scale+d,64+d); } }, 21);
+  T.head = makeTex((c,rng,px,S)=>{ for(let y=0;y<S;y++)for(let x=0;x<S;x++){ const d=rng()*20-10; px(x,y,70+d,168+d,74+d); }
+    // eyes + nostrils on the front face texture
+    const eye=(ex,ey)=>{ for(let y=0;y<7;y++)for(let x=0;x<7;x++){ const dx=x-3,dy=y-3,r=dx*dx+dy*dy;
+      if(r<=9){ if(dx>=0&&dy<=0&&r<=2) px(ex+x,ey+y,235,235,240); else px(ex+x,ey+y,18,20,18); } } };
+    eye(6,8); eye(19,8);
+    for(let x=13;x<19;x++){ px(x,24,44,120,48); } px(14,26,20,60,24); px(17,26,20,60,24); }, 42);
+  T.apple = makeTex((c,rng,px,S)=>{ for(let y=0;y<S;y++)for(let x=0;x<S;x++){ const dx=x-16,dy=y-17;
+    const r=Math.sqrt(dx*dx+dy*dy); const d=rng()*22-11;
+    if(r>15){ px(x,y,10,14,10); continue; }
+    let R=228,G=52,B=44; const shade=(15-r)*3; R+=shade*0.2-d*0.4; G+=shade*0.5+d; B+=shade*0.3+d;
+    if(dx<-4&&dy<-2&&r<11) { R+=70; G+=60; B+=60; } // specular highlight
+    px(x,y,R,G,B); } }, 88);
+}
+
+// ── scene ────────────────────────────────────────────────────────────────
+const container = document.getElementById('game');
+let renderer, scene, camera;
+let sun, hemi, skyCanvas, skyCtx, skyTex, starField, moonMesh, composer, bloomPass, ghostMesh;
+const CLIENT_ID = 's4-' + Math.random().toString(36).slice(2,8);
+const lerpHex=(a,b,t)=>{ const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255,br=(b>>16)&255,bg=(b>>8)&255,bb=b&255;
+  return (((ar+(br-ar)*t)|0)<<16)|(((ag+(bg-ag)*t)|0)<<8)|((ab+(bb-ab)*t)|0); };
+const hexStr=(h)=>'#'+('000000'+((h>>>0).toString(16))).slice(-6);
+const SKY_TOP = 0x5aa0ee, SKY_BOT = 0xbfe6ff, FOG = 0xa9dbff;
+
+function skyTexture(){
+  skyCanvas=document.createElement('canvas'); skyCanvas.width=8; skyCanvas.height=256;
+  skyCtx=skyCanvas.getContext('2d');
+  skyTex=new THREE.CanvasTexture(skyCanvas); skyTex.colorSpace=THREE.SRGBColorSpace;
+  drawSky('#4f97ea','#79b7ff','#c7e9ff');
+  return skyTex;
+}
+function drawSky(top,mid,bot){
+  const g=skyCtx.createLinearGradient(0,0,0,256);
+  g.addColorStop(0,top); g.addColorStop(0.55,mid); g.addColorStop(1,bot);
+  skyCtx.fillStyle=g; skyCtx.fillRect(0,0,8,256); if(skyTex) skyTex.needsUpdate=true;
+}
+
+function buildSkyBodies(){
+  const R=N*3.2, cnt=260, pos=new Float32Array(cnt*3);
+  for(let i=0;i<cnt;i++){ const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+    pos[i*3]=R*Math.sin(ph)*Math.cos(th); pos[i*3+1]=Math.abs(R*Math.cos(ph))*0.85+6; pos[i*3+2]=R*Math.sin(ph)*Math.sin(th); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  starField=new THREE.Points(g, new THREE.PointsMaterial({color:0xffffff,size:0.7,transparent:true,opacity:0,depthWrite:false,fog:false}));
+  scene.add(starField);
+  moonMesh=new THREE.Mesh(new THREE.SphereGeometry(2.2,14,14), new THREE.MeshBasicMaterial({color:0xdfe6ff,transparent:true,opacity:0,fog:false}));
+  scene.add(moonMesh);
+}
+function updateDayNight(dt){
+  Game.timeOfDay = (Game.timeOfDay + dt/(Game.dayLen||110)) % 1;
+  const ang = Game.timeOfDay*Math.PI*2, sh = Math.sin(ang);
+  const dayF = 0.45 + 0.55*Math.max(0, Math.min(1, sh*0.5 + 0.5));   // clamp: never pitch-black, always playable
+  Game.dayF = dayF;
+  if(sun){ sun.intensity = 0.4 + dayF*0.95; sun.color.setHex(lerpHex(0x6b6f86, 0xfff3d8, dayF));
+    sun.position.set(Math.cos(ang)*N*1.1, Math.max(0.15, sh)*N*1.5, Math.sin(ang)*N*0.6 + N*0.3); }
+  if(hemi){ hemi.intensity = 0.5 + dayF*0.6; hemi.color.setHex(lerpHex(0x6a7590, 0xdff0ff, dayF)); }
+  if(scene && scene.fog){ scene.fog.color.setHex(lerpHex(0x0b1526, 0xa9dbff, dayF)); }
+  if(Math.abs(dayF-(Game._lastSkyF==null?-9:Game._lastSkyF))>0.004){ Game._lastSkyF=dayF;
+    drawSky(hexStr(lerpHex(0x0a1330,0x4f97ea,dayF)), hexStr(lerpHex(0x122048,0x79b7ff,dayF)), hexStr(lerpHex(0x243056,0xc7e9ff,dayF))); }
+  const night = 1-Math.min(1, dayF*1.5);
+  if(starField) starField.material.opacity = night;
+  if(moonMesh){ moonMesh.material.opacity = night*0.9;
+    moonMesh.position.set(-Math.cos(ang)*N*1.4, Math.max(-2, -sh)*N*1.3+3, -Math.sin(ang)*N*0.6+N*0.3); }
+  if(bloomPass) bloomPass.strength = 0.5 + night*0.85;   // skyline/apple glow harder at night
+  if(Game.pillars) for(const [,p] of Game.pillars){   // maze becomes a neon skyline after dark
+    const m=p.mesh.material; if(m && m.emissive){ m.emissive.setHex(p.h>=4?0x5a3fff:0x1f6fff); m.emissiveIntensity = night*(0.18+p.h*0.09); } }
+}
+
+function initScene(){
+  renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance', preserveDrawingBuffer:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.background = skyTexture();
+  scene.fog = new THREE.Fog(FOG, N*1.4, N*3.4);
+
+  camera = new THREE.PerspectiveCamera(52, window.innerWidth/window.innerHeight, 0.1, 400);
+
+  hemi = new THREE.HemisphereLight(0xdff0ff, 0x5a7040, 0.85); scene.add(hemi);
+  sun = new THREE.DirectionalLight(0xfff3d8, 1.15);
+  sun.position.set(N*0.7, N*1.5, N*0.5); sun.castShadow = true;
+  sun.shadow.mapSize.set(1024,1024);
+  const s = N*0.9; const cam = sun.shadow.camera;
+  cam.left=-s; cam.right=s; cam.top=s; cam.bottom=-s; cam.near=1; cam.far=N*4; cam.updateProjectionMatrix();
+  sun.shadow.bias = -0.0008;
+  scene.add(sun);
+  buildSkyBodies();
+
+  window.addEventListener('resize', onResize);
+}
+
+// Post-processing (bloom + vignette). Loaded async from the three addons path;
+// if the import fails (offline/CDN), we silently keep plain rendering — the
+// game must never break because of an optional visual layer.
+async function initPostFX(){
+  if(Game.reducedMotion) return;   // respect reduced-motion: no bloom
+  try{
+    const [{EffectComposer},{RenderPass},{UnrealBloomPass},{ShaderPass},{OutputPass}] = await Promise.all([
+      import('three/addons/postprocessing/EffectComposer.js'),
+      import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'),
+      import('three/addons/postprocessing/ShaderPass.js'),
+      import('three/addons/postprocessing/OutputPass.js'),
+    ]);
+    const c=new EffectComposer(renderer);
+    c.addPass(new RenderPass(scene, camera));
+    bloomPass=new UnrealBloomPass(new THREE.Vector2(window.innerWidth,window.innerHeight), 0.6, 0.4, 0.85);
+    c.addPass(bloomPass);
+    const vign={ uniforms:{ tDiffuse:{value:null}, offset:{value:1.15}, darkness:{value:0.33} },
+      vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader:'uniform sampler2D tDiffuse; uniform float offset; uniform float darkness; varying vec2 vUv; void main(){ vec4 tex=texture2D(tDiffuse,vUv); vec2 uv=(vUv-0.5)*offset; float v=clamp(1.0-dot(uv,uv)*darkness,0.0,1.0); gl_FragColor=vec4(tex.rgb*v,tex.a); }' };
+    c.addPass(new ShaderPass(vign));
+    c.addPass(new OutputPass());
+    composer=c;
+  }catch(e){ composer=null; /* plain render fallback */ }
+}
+function onResize(){
+  if(!renderer) return;
+  camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  if(composer) composer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ── static world: grass floor + brick border + trees + clouds ────────────
+const CUBE = new THREE.BoxGeometry(1,1,1);
+let clouds = [];
+function buildWorld(){
+  // floor grass (instanced), top face grassTop, sides grassSide
+  const grassMat = [
+    new THREE.MeshLambertMaterial({ map:T.grassSide }), new THREE.MeshLambertMaterial({ map:T.grassSide }),
+    new THREE.MeshLambertMaterial({ map:T.grassTop  }), new THREE.MeshLambertMaterial({ map:T.dirt      }),
+    new THREE.MeshLambertMaterial({ map:T.grassSide }), new THREE.MeshLambertMaterial({ map:T.grassSide }),
+  ];
+  const floor = new THREE.InstancedMesh(CUBE, grassMat, N*N);
+  floor.receiveShadow = true;
+  const m = new THREE.Matrix4(); const col = new THREE.Color(); let i=0;
+  for(let x=0;x<N;x++) for(let z=0;z<N;z++){
+    m.setPosition(cellToWorld(x), -0.5, cellToWorld(z)); floor.setMatrixAt(i, m);
+    const chk = (x+z)%2===0 ? 1.0 : 0.86; col.setRGB(chk,chk,chk); floor.setColorAt(i, col); i++;
+  }
+  floor.instanceMatrix.needsUpdate = true; if(floor.instanceColor) floor.instanceColor.needsUpdate = true;
+  scene.add(floor);
+  floorMesh = floor;   // keep a ref so buildBiomeRing can reskin the arena floor per seed
+
+  // brick border wall, 2 high, ring just outside the play area
+  const stoneMat = new THREE.MeshLambertMaterial({ map:T.stone });
+  const ring = [];
+  for(let x=-1;x<=N;x++){ ring.push([x,-1]); ring.push([x,N]); }
+  for(let z=0;z<N;z++){ ring.push([-1,z]); ring.push([N,z]); }
+  const wall = new THREE.InstancedMesh(CUBE, stoneMat, ring.length*2);
+  wall.castShadow = true; wall.receiveShadow = true;
+  let w=0;
+  for(const [x,z] of ring){ for(let y=0;y<2;y++){ m.setPosition(cellToWorld(x), 0.5+y, cellToWorld(z)); wall.setMatrixAt(w++, m); } }
+  wall.instanceMatrix.needsUpdate = true; scene.add(wall);
+
+  // decorative trees outside the arena
+  const woodMat = new THREE.MeshLambertMaterial({ map:T.dirt });
+  const leafMat = new THREE.MeshLambertMaterial({ color:0x4d9b3f });
+  const treeSpots = [[-4,-4],[N+3,-3],[-3,N+3],[N+4,N+2],[-5,HALF],[N+4,HALF]];
+  for(const [tx,tz] of treeSpots){
+    for(let y=0;y<3;y++){ const tr=new THREE.Mesh(CUBE, woodMat); tr.position.set(cellToWorld(tx),0.5+y,cellToWorld(tz)); tr.castShadow=true; scene.add(tr); }
+    for(let ly=0;ly<2;ly++) for(let lx=-1;lx<=1;lx++) for(let lz=-1;lz<=1;lz++){
+      if(ly===1 && (Math.abs(lx)+Math.abs(lz))>1) continue;
+      const lf=new THREE.Mesh(CUBE, leafMat); lf.position.set(cellToWorld(tx)+lx, 3.5+ly, cellToWorld(tz)+lz); lf.castShadow=true; scene.add(lf);
+    }
+  }
+
+  // drifting clouds
+  const cloudMat = new THREE.MeshLambertMaterial({ color:0xffffff, transparent:true, opacity:0.9 });
+  for(let k=0;k<7;k++){
+    const g=new THREE.Group(); const parts=3+Math.floor(Math.random()*4);
+    for(let p=0;p<parts;p++){ const c=new THREE.Mesh(CUBE, cloudMat);
+      c.scale.set(2+Math.random()*3,1,1.5+Math.random()*2);
+      c.position.set(p*2-parts, 0, (Math.random()-0.5)*3); g.add(c); }
+    g.position.set((Math.random()-0.5)*N*3, N*0.9+Math.random()*4, (Math.random()-0.5)*N*3);
+    g.userData.spd = 0.4+Math.random()*0.5; scene.add(g); clouds.push(g);
+  }
+}
+
+// ── seeded biome ring: forest / desert / snow sectors filling the fog annulus ──
+let biomeBaseMat=null;
+const BIOME_COLORS=[0x4a7c3a, 0xd9c18a, 0xe8eef5];   // 0 forest · 1 desert · 2 snow
+let floorMesh=null;
+const sectorOf=(wx,wz)=>{ let a=Math.atan2(wz,wx); if(a<0)a+=Math.PI*2; return Math.min(7,Math.floor(a/(Math.PI*2)*8)); };
+function biomeAt(x,z){ return Game.biomeSectors ? Game.biomeSectors[sectorOf(cellToWorld(x), cellToWorld(z))] : 0; }
+function disposeBiome(){
+  if(Game.biomeGroup){ scene.remove(Game.biomeGroup);
+    Game.biomeGroup.traverse(o=>{ if(o.isInstancedMesh && o.dispose) o.dispose(); });
+    Game.biomeGroup=null; }
+}
+function biomeProp(kind, wx, wz, rng){
+  const grp=new THREE.Group(); grp.position.set(wx,0,wz);
+  if(kind===0){ // pine
+    const trunk=new THREE.Mesh(CUBE, new THREE.MeshLambertMaterial({map:T.dirt})); trunk.scale.set(0.3,1.2,0.3); trunk.position.y=0.6; grp.add(trunk);
+    for(let k=0;k<2;k++){ const s=1.1-k*0.42; const lf=new THREE.Mesh(CUBE, new THREE.MeshLambertMaterial({color:0x3f7d33})); lf.scale.set(s,0.6,s); lf.position.y=1.35+k*0.55; grp.add(lf); }
+  } else if(kind===1){ // cactus
+    const h=1+Math.floor(rng()*2)*0.5; const c=new THREE.Mesh(CUBE, new THREE.MeshLambertMaterial({color:0x4f9e57})); c.scale.set(0.34,h,0.34); c.position.y=h/2; grp.add(c);
+    if(rng()<0.6){ const arm=new THREE.Mesh(CUBE, new THREE.MeshLambertMaterial({color:0x4f9e57})); arm.scale.set(0.24,0.5,0.24); arm.position.set(0.3,h*0.6,0); grp.add(arm); }
+  } else { // snow rock
+    const s=0.5+rng()*0.5; const r=new THREE.Mesh(CUBE, new THREE.MeshLambertMaterial({color:0xdfe7ee})); r.scale.set(s,s*0.7,s); r.position.y=s*0.35; grp.add(r);
+  }
+  grp.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+  return grp;
+}
+function buildBiomeRing(seed){
+  disposeBiome();
+  if(!biomeBaseMat) biomeBaseMat=new THREE.MeshLambertMaterial({color:0xffffff});
+  const eff=(seed>>>0)||0x5eed; const rng=mulberry32(eff);
+  const sectors=[]; for(let s=0;s<8;s++) sectors.push(Math.floor(rng()*3));   // 8 seeded sector biomes (first draws → deterministic)
+  Game.biomeSectors=sectors;
+  if(floorMesh){   // reskin the ARENA floor to the same sectors (subtle wash keeps the grass readable)
+    const fc=new THREE.Color(), white=new THREE.Color(0xffffff);
+    for(let x=0;x<N;x++) for(let z=0;z<N;z++){ const b=sectors[sectorOf(cellToWorld(x),cellToWorld(z))];
+      const chk=(x+z)%2===0?1.0:0.86; fc.set(BIOME_COLORS[b]).lerp(white,0.5).multiplyScalar(chk); floorMesh.setColorAt(x*N+z, fc); }
+    if(floorMesh.instanceColor) floorMesh.instanceColor.needsUpdate=true;
+  }
+  const g=new THREE.Group(); Game.biomeGroup=g;
+  const RING=7, outer=HALF+RING;
+  const cells=[];
+  for(let x=-RING;x<N+RING;x++) for(let z=-RING;z<N+RING;z++){
+    if(x>=-1 && x<=N && z>=-1 && z<=N) continue;   // skip the arena + wall footprint
+    const wx=cellToWorld(x), wz=cellToWorld(z); if(Math.hypot(wx,wz)>outer) continue;
+    cells.push([x,z,wx,wz]);
+  }
+  const sectorOf2=sectorOf;
+  const inst=new THREE.InstancedMesh(CUBE, biomeBaseMat, cells.length); inst.receiveShadow=true;
+  const m=new THREE.Matrix4(), col=new THREE.Color(); let i=0;
+  for(const [x,z,wx,wz] of cells){
+    const b=sectors[sectorOf2(wx,wz)];
+    m.setPosition(wx,-0.5,wz); inst.setMatrixAt(i,m);
+    const chk=((x+z)&1)?0.9:1.0; col.set(BIOME_COLORS[b]).multiplyScalar(chk); inst.setColorAt(i,col); i++;
+  }
+  inst.instanceMatrix.needsUpdate=true; if(inst.instanceColor) inst.instanceColor.needsUpdate=true;
+  g.add(inst);
+  for(let s=0;s<8;s++){ const b=sectors[s], n=2+Math.floor(rng()*2);
+    for(let k=0;k<n;k++){ const a=(s+0.15+rng()*0.7)/8*Math.PI*2, rad=HALF+1.5+rng()*(RING-2);
+      g.add(biomeProp(b, Math.cos(a)*rad, Math.sin(a)*rad, rng)); } }
+  scene.add(g);
+}
+
+// ── snake + food meshes ──────────────────────────────────────────────────
+const headMatArr = (()=>{ // face texture on +Z (front); plain green elsewhere
+  const plain = ()=> new THREE.MeshLambertMaterial({ color:0x4aa64e });
+  return null; // built after textures load
+})();
+let bodyMat, headMats, appleMats;
+function buildMaterials(){
+  bodyMat = new THREE.MeshLambertMaterial({ map:T.body });
+  const green = new THREE.MeshLambertMaterial({ color:0x4aa64e });
+  // order: +x,-x,+y,-y,+z,-z  → face on +z
+  headMats = [green, green.clone(), green.clone(), green.clone(), new THREE.MeshLambertMaterial({ map:T.head }), green.clone()];
+  appleMats = new THREE.MeshLambertMaterial({ map:T.apple, emissive:0x7a1010, emissiveIntensity:0.35 });
+}
+
+// ── meta progression: apple-bank currency + voxel snake skins ─────────────
+const SKINS=[
+  {id:'classic', name:'Classic', price:0,   map:true,  body:0x4aa64e, head:0x4aa64e, trail:0x4aa64e},
+  {id:'gold',    name:'Gold',    price:60,  map:false, body:0xffcf3f, head:0xffe27a, trail:0xffcf3f},
+  {id:'ender',   name:'Ender',   price:90,  map:false, body:0x6a3fb0, head:0x9a6ae0, trail:0xb388ff},
+  {id:'lava',    name:'Lava',    price:140, map:false, body:0xe0400f, head:0xff7a2a, trail:0xff5a1a},
+  {id:'frost',   name:'Frost',   price:140, map:false, body:0x7fd6ff, head:0xd6f4ff, trail:0x9fe0ff},
+  {id:'shadow',  name:'Shadow',  price:220, map:false, body:0x14141c, head:0x4a4a66, trail:0x8899bb},
+];
+function applySkin(id){
+  const sk=SKINS.find(s=>s.id===id)||SKINS[0]; Game.skin=sk.id; Game.trailColor=sk.trail;
+  if(bodyMat){ if(sk.map){ bodyMat.map=T.body; bodyMat.color.setHex(0xffffff); } else { bodyMat.map=null; bodyMat.color.setHex(sk.body); } bodyMat.needsUpdate=true; }
+  if(headMats) headMats.forEach((m,i)=>{ if(i!==4) m.color.setHex(sk.head); });
+  try{ localStorage.setItem('snake4-skin', sk.id); }catch(_){}
+}
+function loadMeta(){
+  try{ Game.bank = parseInt(localStorage.getItem('snake4-bank')||'0',10)||0; }catch(_){ Game.bank=0; }
+  try{ Game.owned = JSON.parse(localStorage.getItem('snake4-skins')||'["classic"]'); }catch(_){ Game.owned=['classic']; }
+  if(!Array.isArray(Game.owned) || !Game.owned.includes('classic')) Game.owned=['classic'];
+  const eq = localStorage.getItem('snake4-skin')||'classic';
+  applySkin(Game.owned.includes(eq)?eq:'classic');
+}
+function saveBank(){ try{ localStorage.setItem('snake4-bank', String(Game.bank|0)); localStorage.setItem('snake4-skins', JSON.stringify(Game.owned||['classic'])); }catch(_){} }
+function buySkin(id){ const sk=SKINS.find(s=>s.id===id); if(!sk || (Game.owned||[]).includes(id) || (Game.bank|0)<sk.price) return false;
+  Game.bank-=sk.price; Game.owned.push(id); saveBank(); applySkin(id); renderShop(); updateBankLbls(); return true; }
+function equipSkin(id){ if(!(Game.owned||[]).includes(id)) return false; applySkin(id); renderShop(); return true; }
+function updateBankLbls(){ document.querySelectorAll('.bankLbl').forEach(el=>el.textContent='🪙 '+(Game.bank|0)); }
+function renderShop(){
+  const g=document.getElementById('shopGrid'); if(!g) return;
+  g.innerHTML=SKINS.map(sk=>{ const owned=(Game.owned||[]).includes(sk.id), eq=Game.skin===sk.id;
+    const swatch='#'+sk.body.toString(16).padStart(6,'0');
+    const state = eq?'<b class="eq">✓ On</b>' : owned?'<button class="btn ghost skinBtn" data-eq="'+sk.id+'">Equip</button>' : ((Game.bank|0)>=sk.price?'<button class="btn ghost skinBtn" data-buy="'+sk.id+'">🪙 '+sk.price+'</button>':'<span class="lock">🔒 '+sk.price+'</span>');
+    return '<div class="skinCard'+(eq?' on':'')+'"><i class="sw" style="background:'+swatch+'"></i><span class="nm">'+sk.name+'</span>'+state+'</div>'; }).join('');
+  g.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>buySkin(b.dataset.buy));
+  g.querySelectorAll('[data-eq]').forEach(b=>b.onclick=()=>equipSkin(b.dataset.eq));
+  updateBankLbls();
+}
+function openShop(){ renderShop(); document.getElementById('shop').classList.remove('hidden'); }
+function closeShop(){ document.getElementById('shop').classList.add('hidden'); }
+
+// ── shareable artifacts: trophy PNG + reproducible seed deep-links ────────
+function captureTrophy(){
+  try{
+    if(composer && !Game.reducedMotion) composer.render(); else renderer.render(scene,camera);
+    const src=renderer.domElement, W=1200, H=630, c=document.createElement('canvas'); c.width=W; c.height=H;
+    const ctx=c.getContext('2d');
+    const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#7ec8f2'); g.addColorStop(1,'#241a34'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    const sr=src.width/Math.max(1,src.height), dr=W/H; let dw=W,dh=H,dx=0,dy=0;
+    if(sr>dr){ dh=H; dw=H*sr; dx=(W-dw)/2; } else { dw=W; dh=W/sr; dy=(H-dh)/2; }
+    try{ ctx.drawImage(src,dx,dy,dw,dh); }catch(_){}
+    ctx.fillStyle='rgba(8,10,16,0.62)'; ctx.fillRect(0,H-152,W,152);
+    ctx.textBaseline='middle'; ctx.textAlign='left';
+    ctx.fillStyle='#ffcf3f'; ctx.font='bold 62px system-ui,Segoe UI,sans-serif'; ctx.fillText('SNAKE 4', 42, H-104);
+    ctx.fillStyle='#fff'; ctx.font='bold 42px system-ui,Segoe UI,sans-serif';
+    ctx.fillText('Score '+Game.score+'   ·   ×'+Game.bestCombo+' combo   ·   len '+Game.snake.length, 42, H-50);
+    const tag=(Game.mode==='daily'?('Daily #'+Game.seed):(Game.seed!=null?('Seed '+Game.seed):'Classic'))+'   ·   '+(Game.skin||'classic');
+    ctx.fillStyle='#9fd0ff'; ctx.font='26px system-ui,Segoe UI,sans-serif'; ctx.textAlign='right'; ctx.fillText(tag, W-42, H-50); ctx.textAlign='left';
+    return c.toDataURL('image/png');
+  }catch(_){ return ''; }
+}
+function downloadTrophy(){ const url=captureTrophy(); if(!url) return; const a=document.createElement('a'); a.href=url; a.download='snake4-'+Game.score+'.png'; document.body.appendChild(a); a.click(); a.remove(); toast('📸 Trophy saved'); }
+function shareLink(){
+  const frag = Game.mode==='daily' ? 'daily' : ('seed='+(Game.seed!=null?Game.seed:(((Game.score*2654435761)>>>0)%1000000)));
+  const url = location.origin+location.pathname+'#'+frag+'&s='+(Game.score|0);
+  try{ const r=navigator.clipboard && navigator.clipboard.writeText(url); if(r && r.catch) r.catch(()=>{}); toast('🔗 Challenge link copied'); }catch(_){ toast('🔗 '+url); }
+  return url;
+}
+function parseHash(){
+  try{ const h=(location.hash||'').slice(1); if(!h) return; const p=new URLSearchParams(h);
+    if(/(^|&)daily/.test(h)){ Game.mode='daily'; }
+    else if(p.get('seed')){ Game.forcedSeed=parseInt(p.get('seed'),10)||1; Game.mode='seed'; }
+    Game.challengeScore=parseInt(p.get('s'),10)||0;
+  }catch(_){}
+}
+
+let segMeshes = [];
+function ensureSegments(len){
+  while(segMeshes.length < len){
+    const isHead = segMeshes.length===0;
+    const mesh = new THREE.Mesh(CUBE, isHead ? headMats : bodyMat);
+    mesh.castShadow = true; mesh.receiveShadow = false; scene.add(mesh); segMeshes.push(mesh);
+  }
+  while(segMeshes.length > len){ const mx=segMeshes.pop(); scene.remove(mx); }
+  // head material only on index 0
+  segMeshes.forEach((mx,ix)=>{ mx.material = ix===0 ? headMats : bodyMat; });
+}
+
+let foodMesh, foodLight, foodStem, foodLeaf;
+function buildFood(){
+  foodMesh = new THREE.Mesh(CUBE, appleMats); foodMesh.castShadow = true; foodMesh.scale.setScalar(0.72); scene.add(foodMesh);
+  foodStem = new THREE.Mesh(CUBE, new THREE.MeshLambertMaterial({ color:0x5a3a1a })); foodStem.scale.set(0.12,0.28,0.12); scene.add(foodStem);
+  foodLeaf = new THREE.Mesh(CUBE, new THREE.MeshLambertMaterial({ color:0x4d9b3f })); foodLeaf.scale.set(0.28,0.08,0.16); scene.add(foodLeaf);
+  foodLight = new THREE.PointLight(0xffcf6a, 1.4, 6, 2); scene.add(foodLight);
+}
+
+// ── particles (voxel burst) ──────────────────────────────────────────────
+let particles = [];
+const pGeo = new THREE.BoxGeometry(0.16,0.16,0.16);
+function burst(x,z,color){
+  const cnt = Game.reducedMotion?3:16;
+  for(let k=0;k<cnt;k++){
+    const m=new THREE.Mesh(pGeo, new THREE.MeshLambertMaterial({ color }));
+    m.position.set(cellToWorld(x), 0.6, cellToWorld(z));
+    const a=Math.random()*Math.PI*2, sp=1.2+Math.random()*2.4;
+    m.userData.v = new THREE.Vector3(Math.cos(a)*sp, 3+Math.random()*3, Math.sin(a)*sp);
+    m.userData.life = 0.6+Math.random()*0.3; scene.add(m); particles.push(m);
+  }
+}
+function stepParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; const v=p.userData.v;
+    v.y -= 14*dt; p.position.x += v.x*dt; p.position.y += v.y*dt; p.position.z += v.z*dt;
+    if(p.position.y<0.1){ p.position.y=0.1; v.y*=-0.4; v.x*=0.7; v.z*=0.7; }
+    p.userData.life -= dt; p.rotation.x += dt*6; p.rotation.y += dt*5;
+    if(p.userData.life<=0){ scene.remove(p); particles.splice(i,1); } }
+}
+
+// ── Maze: the snake sculpts lethal voxel pillars where it eats ────────────
+// Each eaten apple erupts into a pillar (height = combo at that bite). A pillar
+// arms (becomes lethal) only once the whole snake has vacated its cell, so it
+// rises BEHIND you. A decay valve sinks the oldest once the maze gets dense,
+// so late runs never gridlock.
+let pillarMat=null; const PILLAR_CAP=42; let pillarOrder=0;
+function spawnPillar(x,z,h){
+  if(Game.pillars.has(x+','+z)) return;
+  if(!pillarMat) pillarMat=new THREE.MeshLambertMaterial({ map:T.stone, emissive:0x000000 });
+  const m=new THREE.Mesh(CUBE, pillarMat.clone());
+  m.castShadow=true; m.receiveShadow=true;
+  m.position.set(cellToWorld(x), h/2, cellToWorld(z));
+  m.scale.set(0.98, h, 0.98);
+  scene.add(m);
+  Game.pillars.set(x+','+z, { mesh:m, h, x, z, armed:false, order:pillarOrder++, targetY:h/2 });
+  if(!Game.reducedMotion){ m.position.y=-h; dustRing(x,z); shake=Math.max(shake,0.13); blip(84,0.13,'sine',0.13); }
+  else { m.position.y=h/2; }
+  // decay valve: sink+remove the oldest when the maze is dense
+  if(Game.pillars.size>PILLAR_CAP){
+    let oldestKey=null, oldest=Infinity;
+    for(const [k,p] of Game.pillars){ if(p.order<oldest){ oldest=p.order; oldestKey=k; } }
+    if(oldestKey){ const p=Game.pillars.get(oldestKey); p.decaying=true; }
+  }
+}
+function dustRing(x,z){
+  const cnt=Game.reducedMotion?0:12;
+  for(let k=0;k<cnt;k++){ const m=new THREE.Mesh(pGeo, new THREE.MeshLambertMaterial({color:0xbfa06a}));
+    m.position.set(cellToWorld(x),0.15,cellToWorld(z));
+    const a=Math.random()*Math.PI*2, sp=1.6+Math.random()*1.8;
+    m.userData.v=new THREE.Vector3(Math.cos(a)*sp, 0.4+Math.random()*0.8, Math.sin(a)*sp);
+    m.userData.life=0.4+Math.random()*0.2; scene.add(m); particles.push(m); }
+}
+function stepPillars(dt){
+  for(const [k,p] of Game.pillars){
+    if(p.toppling){   // domino: tip over along the ram axis, sink, then remove
+      p.toppling.t += dt;
+      if(p.toppling.t > p.toppling.delay){
+        const dx=p.toppling.dx||0, dz=p.toppling.dz||0;
+        p.mesh.rotation.z += (-dx)*dt*5; p.mesh.rotation.x += (dz)*dt*5;
+        p.mesh.position.x += dx*dt*1.4; p.mesh.position.z += dz*dt*1.4; p.mesh.position.y -= dt*3.2;
+        if(p.mesh.position.y < -p.h-0.6){ scene.remove(p.mesh); Game.pillars.delete(k); }
+      }
+      continue;
+    }
+    // arm once no snake segment sits on the cell
+    if(!p.armed && !Game.snake.some(s=>s.x===p.x && s.z===p.z)) p.armed=true;
+    if(p.decaying){
+      p.mesh.position.y -= dt*6; p.mesh.scale.y=Math.max(0.02, p.mesh.scale.y-dt*8);
+      if(p.mesh.position.y < -p.h){ scene.remove(p.mesh); Game.pillars.delete(k); }
+    } else if(!Game.reducedMotion && p.mesh.position.y < p.targetY-0.01){
+      p.mesh.position.y += (p.targetY - p.mesh.position.y) * Math.min(1, dt*9); // ease-up
+    }
+  }
+}
+function clearPillars(){
+  if(Game.pillars) for(const [,p] of Game.pillars) scene.remove(p.mesh);
+  Game.pillars = new Map(); pillarOrder=0;
+}
+function pillarArmedAt(x,z){ const p=Game.pillars.get(x+','+z); return p && p.armed; }
+function smashPillar(x,z){
+  const key=x+','+z, p=Game.pillars.get(key);
+  if(p){ scene.remove(p.mesh); Game.pillars.delete(key); }
+  Game.smash=0;
+  burst(x,z,0x9a9a9e);   // stone debris
+  if(!Game.reducedMotion){ shake=Math.max(shake,0.5); Game.hitStop=Math.max(Game.hitStop,42); }
+  blip(120,0.16,'sawtooth',0.18); setTimeout(()=>blip(90,0.20,'sawtooth',0.15),60);
+  toast('💥 SMASH!');
+  updateHUD();
+}
+function chainSmash(x,z,dx,dz){
+  // collect a contiguous line of armed pillars from the impact cell along the ram direction → domino them
+  const chain=[]; let cx=x, cz=z;
+  while(chain.length<12){ const p=Game.pillars.get(cx+','+cz); if(p && p.armed && !p.toppling){ chain.push(p); cx+=dx; cz+=dz; } else break; }
+  if(chain.length===0){ const p=Game.pillars.get(x+','+z); if(p) chain.push(p); }   // safety: smash at least the impact cell
+  Game.smash=0;
+  let i=0;
+  for(const p of chain){
+    p.armed=false;   // disarm immediately so the collapsing row is safe to drive through
+    if(!Game.reducedMotion){ p.toppling={ t:0, delay:i*0.05, dx, dz }; burst(p.x,p.z,0x9a9a9e); }
+    else { scene.remove(p.mesh); Game.pillars.delete(p.x+','+p.z); }
+    i++;
+  }
+  const n=chain.length;
+  Game.score += 25*n;
+  if(!Game.reducedMotion){ shake=Math.max(shake, 0.4+Math.min(0.5,n*0.08)); Game.hitStop=Math.max(Game.hitStop,42); }
+  blip(120,0.16,'sawtooth',0.18); setTimeout(()=>blip(90,0.20,'sawtooth',0.15),60);
+  if(n>=2) for(let k=1;k<Math.min(n,6);k++) setTimeout(()=>blip(150+k*45,0.09,'sawtooth',0.12), 55+k*55);
+  toast(n>=2 ? ('💥 ×'+n+' DOMINO!  +'+(25*n)) : '💥 SMASH!');
+  updateHUD();
+}
+
+
+// ── audio (tiny WebAudio blips, gesture-gated) ───────────────────────────
+let actx=null, master=null, musicGain=null, nextNoteTime=0, sched16=0;
+function initAudio(){ try{ if(!actx){ actx = new (window.AudioContext||window.webkitAudioContext)();
+  master = actx.createGain(); master.gain.value = 1; master.connect(actx.destination);
+  musicGain = actx.createGain(); musicGain.gain.value = 0.0001; musicGain.connect(master);
+} if(actx.state==='suspended'){ actx.resume&&actx.resume().catch(()=>{}); } }catch(_){}}
+function blip(freq, dur, type, vol){
+  if(!actx || Game.muted) return; try{
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type=type||'square'; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol||0.14, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+(dur||0.12));
+    o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime+(dur||0.12));
+  }catch(_){}
+}
+const sEat=(combo)=>{ const c=Math.min(combo||1,6); const b=470+(c-1)*72;
+  blip(b,0.08,'square',0.16); setTimeout(()=>blip(b*1.5,0.09,'square',0.14),52);
+  if(c>=3) setTimeout(()=>blip(b*2,0.09,'square',0.12),104); };
+const sTurn=()=>blip(240,0.04,'square',0.06);
+const sDie=()=>{ blip(300,0.18,'sawtooth',0.18); setTimeout(()=>blip(180,0.28,'sawtooth',0.16),110); };
+
+// ── adaptive generative soundtrack (pure WebAudio, tempo↔speed, layers↔tension, scale↔day-night) ──
+const SCALES={ major:[0,2,4,5,7,9,11], minor:[0,2,3,5,7,8,10] };
+const mtof=(m)=>440*Math.pow(2,(m-69)/12);
+function startMusic(){ Game.music.playing=true; if(actx){ nextNoteTime=actx.currentTime+0.08; } sched16=0; }
+function noteOn(freq,t,dur,type,gain){ try{ const o=actx.createOscillator(), g=actx.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(gain,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(musicGain); o.start(t); o.stop(t+dur+0.02); }catch(_){}}
+function stepMusic(){
+  const M=Game.music; if(!M.playing) return;
+  const speedNorm=Math.max(0,Math.min(1,(180/Game.stepMs-1)/(180/Game.minStep-1)));
+  M.bpm = 84 + speedNorm*72;                                   // tempo tracks speed (84→156)
+  const tgt=Math.min(1, 0.15 + Game.combo*0.12 + Game.smash*0.3
+    + Math.min((Game.snake&&Game.snake.length||0)/40,1)*0.15
+    + Math.min((Game.pillars?Game.pillars.size:0)/42,1)*0.15);
+  M.tension += (tgt-M.tension)*0.06;                            // eased intensity
+  const night = 1 - Math.min(1,(Game.dayF||1)*1.4);
+  M.scaleName = night>0.5?'minor':'major'; M.root = night>0.5?45:48;   // dusk drops to A2 minor
+  const maxLayers = Game.reducedMotion?1:4;
+  M.layers = Math.min(maxLayers, M.tension>0.65?4:M.tension>0.5?3:M.tension>0.25?2:1);
+  if(!actx) return;                                            // no audio device: adaptive state still updated
+  const active = Game.running && !Game.paused && !Game.over && !Game.counting;
+  const vol = (Game.muted||!active) ? 0.0001 : (0.05 + M.tension*0.11);
+  if(musicGain) musicGain.gain.setTargetAtTime(vol, actx.currentTime, 0.08);
+  if(Game.muted||!active){ nextNoteTime=Math.max(nextNoteTime, actx.currentTime); return; }
+  const scale=SCALES[M.scaleName], spb=60/M.bpm/4;
+  while(nextNoteTime < actx.currentTime + 0.12){
+    const s=sched16%16;
+    if(s%4===0) noteOn(mtof(M.root-12+scale[0]), nextNoteTime, spb*3.6, 'triangle', 0.5);          // bass
+    if(M.layers>=2) noteOn(mtof(M.root+12+scale[(s*2)%scale.length]), nextNoteTime, spb*0.9, 'square', 0.13); // arp
+    if(M.layers>=3 && s%2===1) noteOn(5800+Math.random()*500, nextNoteTime, 0.02, 'square', 0.03);  // hat
+    if(M.layers>=4 && s===0) noteOn(mtof(M.root+scale[4]), nextNoteTime, spb*14, 'sawtooth', 0.05);  // pad
+    M.step=s; nextNoteTime+=spb; sched16++;
+  }
+}
+
+// ── game state ───────────────────────────────────────────────────────────
+const Game = {
+  snake: [], prevSnake: [], dir:{x:1,z:0}, nextDir:{x:1,z:0}, dirQueue:[],
+  food:{x:9,z:9}, score:0, best:0, len:3,
+  running:false, paused:false, over:false, started:false,
+  stepMs:180, minStep:82, sinceStep:0, startTime:0, camMode:0,
+  combo:0, bestCombo:0, lastEatAt:0, comboWindow:2600, hitStop:0, headPulse:0, smash:0,
+  counting:false, countUntil:0,
+  timeOfDay:0.28, dayF:1, dayLen:110, mode:'classic', seed:null, rng:Math.random,
+  rec:[], ghost:null, ghostIdx:0, deathCam:null, reducedMotion:false, muted:false,
+  pillars:new Map(), biomeGroup:null, biomeSectors:null, swallow:null,
+  music:{ playing:false, bpm:84, tension:0, step:0, root:48, scaleName:'major', layers:1 }
+};
+function dailySeed(){ return Number(new Date().toISOString().slice(0,10).replace(/-/g,'')) || 1; }
+
+function resetState(){
+  Game.snake = [{x:6,z:9},{x:5,z:9},{x:4,z:9}];
+  Game.prevSnake = Game.snake.map(s=>({...s}));
+  Game.dir={x:1,z:0}; Game.nextDir={x:1,z:0}; Game.dirQueue=[];
+  Game.score=0; Game.len=3; Game.stepMs=180; Game.sinceStep=0; Game.over=false;
+  Game.combo=0; Game.lastEatAt=0; Game.hitStop=0; Game.headPulse=0; Game.deathCam=null; Game.smash=0; Game.applesRun=0; Game.phaseSteps=0; Game._foodCd=0;
+  Game.rec=[]; loadGhost(); clearPillars();
+  if(Game.mode==='daily'){ Game.seed=dailySeed(); Game.rng=mulberry32(Game.seed); }
+  else if(Game.mode==='seed'){ Game.seed=Game.forcedSeed||1; Game.rng=mulberry32(Game.seed); }
+  else { Game.seed=null; Game.rng=Math.random; }
+  buildBiomeRing(Game.seed);   // themed world skin, deterministic per seed
+  Game.startTime = performance.now();
+  placeFood();
+  ensureSegments(Game.snake.length);
+  syncMeshes(1);
+  updateHUD();
+}
+
+function placeFood(){
+  const occ = new Set(Game.snake.map(s=>s.x+','+s.z));
+  if(Game.pillars) for(const [k] of Game.pillars) occ.add(k);
+  let x,z, guard=0;
+  do{ x=Math.floor((Game.rng||Math.random)()*N); z=Math.floor((Game.rng||Math.random)()*N); guard++; }
+  while(occ.has(x+','+z) && guard<500);
+  // occasionally spawn a power food (deterministic in daily via Game.rng), gated by score + a cooldown
+  let kind='apple';
+  if(Game.score>=30 && (Game._foodCd|0)<=0){ const r=(Game.rng||Math.random)();
+    if(r<0.07) kind='tnt'; else if(r<0.12) kind='diamond'; else if(r<0.17) kind='phase'; }
+  Game._foodCd = (kind==='apple') ? (Game._foodCd|0)-1 : 4;
+  Game.food={x,z,kind};
+  if(kind!=='apple' && Game.running){ const NM={tnt:'🧨 TNT',diamond:'💎 Diamond',phase:'🌀 Phase'}; toast(NM[kind]+' appeared!'); }
+}
+function applyPowerFood(kind, cell){
+  if(kind==='tnt'){
+    let cleared=0;
+    for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++){ const key=(cell.x+dx)+','+(cell.z+dz), p=Game.pillars.get(key);
+      if(p){ scene.remove(p.mesh); Game.pillars.delete(key); if(!Game.reducedMotion) burst(cell.x+dx, cell.z+dz, 0x9a9a9e); cleared++; } }
+    Game.score += 20; if(!Game.reducedMotion){ shake=Math.max(shake,0.6); Game.hitStop=Math.max(Game.hitStop,50); }
+    blip(90,0.22,'sawtooth',0.2); toast('🧨 TNT! cleared '+cleared);
+  } else if(kind==='diamond'){
+    Game.score += 50; Game.smash=1; if(!Game.reducedMotion) Game.headPulse=1;
+    blip(880,0.14,'square',0.16); setTimeout(()=>blip(1320,0.16,'square',0.14),80); toast('💎 DIAMOND +50 · SMASH ready!');
+  } else if(kind==='phase'){
+    Game.phaseSteps=6; if(!Game.reducedMotion) shake=Math.max(shake,0.3);
+    blip(520,0.10,'triangle',0.14); toast('🌀 PHASE — walk through walls!');
+  }
+  updateHUD();
+}
+
+// ── input ────────────────────────────────────────────────────────────────
+function queueDir(dx,dz){
+  const last = Game.dirQueue.length ? Game.dirQueue[Game.dirQueue.length-1] : Game.dir;
+  if(dx===-last.x && dz===-last.z) return;      // no 180° reversal
+  if(dx===last.x && dz===last.z) return;         // no duplicate
+  if(Game.dirQueue.length<3) Game.dirQueue.push({x:dx,z:dz});
+  sTurn();
+}
+// ── inverted control: YOU steer the apple, the snake AI chases it ─────────
+function moveFood(dx,dz){
+  if(!Game.running || Game.paused || Game.counting || Game.over) return;
+  const nx=Math.max(0,Math.min(N-1, Game.food.x+dx)), nz=Math.max(0,Math.min(N-1, Game.food.z+dz));
+  if(pillarArmedAt(nx,nz)) return;               // can't push the apple through a wall
+  Game.food.x=nx; Game.food.z=nz; if(!Game.food.kind) Game.food.kind='apple';
+}
+function chooseAIDir(head){
+  const f=Game.food||head, cur=Game.dir;
+  const opts=[{x:1,z:0},{x:-1,z:0},{x:0,z:1},{x:0,z:-1}].filter(d=>!(d.x===-cur.x && d.z===-cur.z));  // never reverse into the neck
+  const bodySet=new Set(Game.snake.slice(0,Game.snake.length-1).map(s=>s.x+','+s.z));
+  const lethal=(d)=>{ const nx=head.x+d.x, nz=head.z+d.z;
+    if(nx<0||nx>=N||nz<0||nz>=N) return true;                      // wall
+    if(pillarArmedAt(nx,nz) && Game.smash<1) return true;          // its own maze (a charged SMASH can crash through)
+    if(bodySet.has(nx+','+nz)) return true; return false; };
+  const dist=(d)=>Math.abs(head.x+d.x-f.x)+Math.abs(head.z+d.z-f.z);
+  const safe=opts.filter(d=>!lethal(d));
+  const pool=safe.length?safe:opts;                                // boxed in with no safe move → best-effort (it dies)
+  pool.sort((a,b)=>dist(a)-dist(b));                               // greedily close the gap to the apple
+  return pool[0]||cur;
+}
+const DIRS = { up:[0,-1], down:[0,1], left:[-1,0], right:[1,0] };
+function handleKey(e){
+  const k=e.key.toLowerCase();
+  if(k===' '){ e.preventDefault(); togglePause(); return; }
+  if(k==='escape'){ e.preventDefault(); togglePause(); return; }
+  if(k==='r'){ restart(); return; }
+  if(k==='c'){ Game.camMode=(Game.camMode+1)%2; toast(Game.camMode? 'Follow cam':'Arena cam'); return; }
+  if(k==='m'){ setMuted(!Game.muted); toast(Game.muted?'🔇 Muted':'🔊 Sound on'); return; }
+  let d=null;
+  if(k==='w'||k==='arrowup') d=DIRS.up;
+  else if(k==='s'||k==='arrowdown') d=DIRS.down;
+  else if(k==='a'||k==='arrowleft') d=DIRS.left;
+  else if(k==='d'||k==='arrowright') d=DIRS.right;
+  if(d){ e.preventDefault(); if(Game.running && !Game.paused) moveFood(d[0],d[1]); }
+}
+
+let touchX=0, touchZ=0, touching=false;
+function bindTouch(){
+  const el = renderer.domElement;
+  el.addEventListener('touchstart', ev=>{ const t=ev.changedTouches[0]; touchX=t.clientX; touchZ=t.clientY; touching=true; }, {passive:true});
+  el.addEventListener('touchend', ev=>{ if(!touching) return; touching=false;
+    const t=ev.changedTouches[0]; const dx=t.clientX-touchX, dy=t.clientY-touchZ;
+    if(Math.abs(dx)<20 && Math.abs(dy)<20) return;
+    if(Math.abs(dx)>Math.abs(dy)) moveFood(dx>0?1:-1,0); else moveFood(0,dy>0?1:-1);
+  }, {passive:true});
+  document.getElementById('pad').querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{ const d=b.dataset.dir; if(d==='pause'){ togglePause(); return; }
+      const v=DIRS[d]; if(v && Game.running && !Game.paused) moveFood(v[0],v[1]); });
+  });
+  if('ontouchstart' in window || navigator.maxTouchPoints>0) document.getElementById('pad').classList.add('show');
+}
+
+// ── stepping ─────────────────────────────────────────────────────────────
+function step(){
+  const head = Game.snake[0];
+  const onIce = biomeAt(head.x, head.z)===2;   // snow biome underfoot = ice
+  if(onIce && !Game._onIce) toast('🧊 ICE — the snake slides!');
+  Game._onIce = onIce;
+  if(!onIce){ Game.dir = chooseAIDir(head); }   // the hungry snake AI beelines to the apple you steer; ice locks its heading
+  const nh = { x:head.x+Game.dir.x, z:head.z+Game.dir.z };
+
+  // wall
+  if(nh.x<0 || nh.x>=N || nh.z<0 || nh.z>=N){ return die('Hit the wall'); }
+  const phasing = (Game.phaseSteps||0)>0;   // ender-phase: walk through your own maze/body
+  // maze pillar you sculpted (armed = you've vacated it)
+  if(pillarArmedAt(nh.x, nh.z)){
+    if(Game.smash>=1){ chainSmash(nh.x, nh.z, Game.dir.x, Game.dir.z); }   // charged ram → domino the row
+    else if(!phasing){ return die('Trapped in your maze'); }
+  }
+  // self (allow moving into current tail cell only if not growing — tail will vacate)
+  const willGrow = (nh.x===Game.food.x && nh.z===Game.food.z);
+  const eatenKind = willGrow ? (Game.food.kind||'apple') : null;
+  const body = willGrow ? Game.snake : Game.snake.slice(0, Game.snake.length-1);
+  if(!phasing && body.some(s=>s.x===nh.x && s.z===nh.z)){ return die('Bit yourself'); }
+  if(Game.phaseSteps>0) Game.phaseSteps--;
+
+  Game.prevSnake = Game.snake.map(s=>({...s}));
+  Game.snake.unshift(nh);
+  Game.rec.push({x:nh.x, z:nh.z});
+  if(willGrow){
+    const nowT = performance.now();
+    Game.combo = (nowT - Game.lastEatAt < Game.comboWindow) ? Game.combo+1 : 1;
+    Game.lastEatAt = nowT;
+    Game.bestCombo = Math.max(Game.bestCombo, Game.combo);
+    const onSand = biomeAt(nh.x, nh.z)===1;   // desert biome drags: no smash charge + no speed-up this bite
+    const _smashPrev = Game.smash;
+    if(!onSand) Game.smash = Math.min(1, Game.smash + 0.10 + Game.combo*0.10);   // combos charge the smash meter
+    const gain = 10 * Game.combo;
+    Game.score += gain; Game.len = Game.snake.length; Game.applesRun = (Game.applesRun||0) + 1;   // bank a coin per apple
+    if(!onSand) Game.stepMs = Math.max(Game.minStep, Game.stepMs - 5);
+    spawnPillar(nh.x, nh.z, Math.min(Game.combo, 5));   // sculpt the maze at the eaten cell
+    if(!Game._coached){ Game._coached=true; if(!localStorage.getItem('snake4-coached')){ try{localStorage.setItem('snake4-coached','1');}catch(_){}; showCoach(); } }
+    placeFood(); burst(nh.x,nh.z, 0xe23a2c); sEat(Game.combo);
+    Game.hitStop = Game.reducedMotion?0:55; Game.headPulse = Game.reducedMotion?0:1; if(!Game.reducedMotion) shake = Math.max(shake, 0.16);   // bite juice
+    if(!Game.reducedMotion) Game.swallow={ t:1, combo:Game.combo };   // peristalsis gulp travels head→tail
+    toast(Game.combo>=2 ? ('+'+gain+'   ×'+Game.combo+' COMBO') : ('+'+gain));
+    if(Game.smash>=1 && _smashPrev<1){ toast('💥 SMASH READY — ram your own walls!'); blip(660,0.10,'square',0.16); }
+    if(eatenKind && eatenKind!=='apple') applyPowerFood(eatenKind, nh);   // TNT / diamond / phase effects
+    publishScore(Game.score);
+    ensureSegments(Game.snake.length);
+  } else {
+    Game.snake.pop();
+  }
+  updateHUD();
+}
+
+function die(reason){
+  if(Game.over) return;
+  Game.over = true; Game.running = false; Game.combo=0; sDie(); shake=Game.reducedMotion?0:0.9;
+  if(!Game.reducedMotion) triggerFlash();
+  for(const s of Game.snake.slice(0,26)) burst(s.x, s.z, Game.trailColor||0x4aa64e);   // shatter into voxel debris (skin-tinted)
+  Game.bank = (Game.bank|0) + (Game.applesRun||0); saveBank(); updateBankLbls();   // cash in this run's apples
+  const newBest = Game.score > Game.best;
+  Game.best = Math.max(Game.best, Game.score);
+  try{ localStorage.setItem('snake4-highscore', String(Game.best)); localStorage.setItem('snake4-bestcombo', String(Game.bestCombo));
+    if(newBest && Game.rec.length) localStorage.setItem('snake4-ghost', JSON.stringify(Game.rec.slice(0,4000))); }catch(_){}
+  if(!Game.reducedMotion){ Game.deathCam={t:0}; }   // cinematic crash-zoom
+  publishScore(Game.score, true);
+  document.getElementById('goScore').textContent = Game.score;
+  document.getElementById('goBest').textContent = 'Best ' + Game.best + (Game.bestCombo>1?('  ·  ×'+Game.bestCombo+' best combo'):'');
+  document.getElementById('goLen').textContent = 'Length ' + Game.snake.length + (Game.pillars&&Game.pillars.size?('  ·  '+Game.pillars.size+' towers sculpted'):'');
+  document.getElementById('goTag').textContent = (reason||'Game Over') + (newBest && Game.score>0 ? ' — New Best!' : '');
+  const revealMs = (!Game.reducedMotion && Game.pillars && Game.pillars.size>0) ? 2400 : 640;
+  setTimeout(()=>document.getElementById('gameover').classList.remove('hidden'), revealMs);
+}
+
+function publishScore(score, final){
+  try{ if(window.bus) window.bus.publish('score', { game:'snake4', score:Number(score)||0, final:!!final, timestamp:Date.now(), client:CLIENT_ID, mode:Game.mode||'classic', seed:Game.seed||null }); }catch(_){}
+}
+
+// ── cross-app leaderboard (subscribes to the telepathy 'score' bus) ───────
+const Board = Object.create(null);
+let lastBeat = 0;
+const escB = (s)=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function ingestScore(p, src){
+  if(!p || typeof p.score!=='number') return false;
+  const key = (p.game||'?')+'@'+(p.client||src||'?');
+  const self = p.client===CLIENT_ID;
+  if(!Board[key] || p.score>Board[key].score){ Board[key] = {label:self?'you':(p.game||'peer'), score:p.score, self}; return true; }
+  return false;
+}
+function onScoreMsg(p, m){
+  try{
+    ingestScore(p, m && m.src); renderBoard();
+    if(p && p.client!==CLIENT_ID && typeof p.score==='number' && p.score>Math.max(Game.score,Game.best) && Date.now()-lastBeat>1500){
+      lastBeat=Date.now(); toast('⚡ '+(p.game||'rival')+' passed you · '+p.score); beatPulse();
+    }
+  }catch(_){}
+}
+function renderBoard(){
+  const el=document.getElementById('board'); if(!el) return;
+  const rows=Object.values(Board).sort((a,b)=>b.score-a.score).slice(0,6);
+  if(!rows.length){ el.classList.remove('show'); return; }
+  el.classList.add('show');
+  el.innerHTML='<div class="bt">◈ TELEPATHY BOARD</div>'+rows.map((r,i)=>
+    '<div class="br'+(r.self?' me':'')+'"><span class="bn">'+(i+1)+'. '+escB(r.label)+'</span><span class="bs">'+r.score+'</span></div>').join('');
+}
+function beatPulse(){ const el=document.getElementById('flash'); if(!el || Game.reducedMotion) return;
+  el.style.background='#ffd54a'; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); setTimeout(()=>{ el.style.background=''; }, 300); }
+function initLeaderboard(){
+  try{ if(!window.bus) return;
+    for(const m of (window.bus.history('score',80)||[])){ if(m&&m.payload) ingestScore(m.payload, m.src); }
+    window.bus.subscribe('score', onScoreMsg); renderBoard();
+  }catch(_){}
+}
+
+// ── rendering / interpolation ────────────────────────────────────────────
+let shake = 0;
+function syncMeshes(t){
+  // interpolate each segment from prevSnake[i] -> snake[i]
+  const ease = t<1 ? (t*t*(3-2*t)) : 1;
+  ensureSegments(Game.snake.length);
+  for(let i=0;i<Game.snake.length;i++){
+    const cur = Game.snake[i];
+    const prev = Game.prevSnake[i] || cur;
+    const wx = cellToWorld(prev.x + (cur.x-prev.x)*ease);
+    const wz = cellToWorld(prev.z + (cur.z-prev.z)*ease);
+    const mesh = segMeshes[i];
+    mesh.position.set(wx, 0.5, wz);
+    if(i===0){
+      const p = Game.headPulse||0;
+      mesh.scale.set(0.98*(1+p*0.32), 0.98*(1-p*0.24), 0.98*(1+p*0.32));   // bite squash
+      const nd = Game.dirQueue.length ? Game.dirQueue[0] : Game.dir;         // preview upcoming turn
+      mesh.rotation.y = Math.atan2(nd.x, nd.z);
+    } else {
+      let s = Math.max(0.62, 0.92 - i*0.012);
+      if(Game.swallow){   // gulp bulge sweeping down the body
+        const w=(1-Game.swallow.t)*Game.snake.length;
+        const bulge=Math.max(0, 1-Math.abs(i-w))*(0.22+Game.swallow.combo*0.05);
+        mesh.scale.set(s*(1+bulge), s*(1-bulge*0.6), s*(1+bulge));
+      } else {
+        mesh.scale.setScalar(s);
+      }
+    }
+  }
+}
+
+// ── Ghost Racer: replay your best run as a translucent phantom ───────────
+let ghostSegs=[];
+function loadGhost(){
+  Game.ghostIdx=0; Game.ghost=null;
+  try{ const raw=localStorage.getItem('snake4-ghost'); if(raw){ const p=JSON.parse(raw); if(Array.isArray(p)&&p.length) Game.ghost=p; } }catch(_){}
+  for(const g of ghostSegs) g.visible=false;
+}
+function ensureGhostSegs(n){
+  while(ghostSegs.length<n){ const m=new THREE.Mesh(CUBE, new THREE.MeshLambertMaterial({color:0x9fd0ff, transparent:true, opacity:0.32, depthWrite:false}));
+    m.renderOrder=2; scene.add(m); ghostSegs.push(m); }
+}
+function stepGhost(dt){
+  const gh=Game.ghost;
+  if(!gh || !Game.running || Game.paused){ for(const g of ghostSegs) g.visible=false; return; }
+  // advance one ghost node per game step, in lockstep with the player's clock
+  const prog = Math.min(1, Game.sinceStep/Game.stepMs);
+  const idx = Math.min(gh.length-1, Game.ghostIdx);
+  if(Game.sinceStep < (Game._ghPrev||0)) Game.ghostIdx = Math.min(gh.length-1, Game.ghostIdx+1); // wrapped => stepped
+  Game._ghPrev = Game.sinceStep;
+  const GLEN=5; ensureGhostSegs(GLEN);
+  for(let i=0;i<GLEN;i++){
+    const a=gh[Math.max(0, idx-i)], b=gh[Math.max(0, idx-i-1)]||a;
+    const wx=cellToWorld(b.x+(a.x-b.x)*(prog*(prog<1?1:1))), wz=cellToWorld(b.z+(a.z-b.z)*prog);
+    const seg=ghostSegs[i]; seg.visible = idx-i>=0 && idx<gh.length-1;
+    seg.position.set(wx, 0.5, wz); seg.scale.setScalar(Math.max(0.6,0.9-i*0.02));
+  }
+}
+
+function frameCamera(dt){
+  const head = segMeshes[0] ? segMeshes[0].position : new THREE.Vector3();
+  let desired, look;
+  // Cinematic crash-zoom on death.
+  if(Game.deathCam){
+    Game.deathCam.t = Math.min(1, Game.deathCam.t + dt/0.6);
+    const e = Game.deathCam.t;
+    if(e<1){   // phase 1: crash-zoom onto the head
+      desired = new THREE.Vector3(head.x, 3+ (1-e)*6, head.z + 5 - e*2.5);
+      look = new THREE.Vector3(head.x, 0.6, head.z);
+      const targetFov = 52 - e*20;
+      camera.fov += (targetFov-camera.fov)*Math.min(1, dt*8); camera.updateProjectionMatrix();
+      camera.position.lerp(desired, 1-Math.pow(0.002, dt)); camera.lookAt(look); return;
+    } else if(Game.pillars && Game.pillars.size>0){   // phase 2: orbit the monument you built
+      Game.deathCam.orbit = (Game.deathCam.orbit||0) + dt*0.5;
+      const a=Game.deathCam.orbit;
+      desired = new THREE.Vector3(Math.cos(a)*N*1.5, N*1.7, Math.sin(a)*N*1.5);
+      const tf=52; camera.fov += (tf-camera.fov)*Math.min(1,dt*4); camera.updateProjectionMatrix();
+      camera.position.lerp(desired, 1-Math.pow(0.01, dt)); camera.lookAt(0,1.5,0); return;
+    }
+  }
+  if(Game.camMode===0){
+    desired = new THREE.Vector3(0, N*1.35, N*1.15);
+    look = new THREE.Vector3(head.x*0.25, 0, head.z*0.25);
+  } else {
+    const back = new THREE.Vector3(-Game.dir.x, 0, -Game.dir.z).multiplyScalar(6);
+    desired = new THREE.Vector3(head.x+back.x, 7, head.z+back.z+0.001);
+    look = new THREE.Vector3(head.x+Game.dir.x*2, 0.5, head.z+Game.dir.z*2);
+  }
+  // Speed-rush dynamic FOV: widen with speed, punch in on each bite.
+  if(!Game.reducedMotion){
+    const speedNorm = Math.max(0, Math.min(1, (180/Game.stepMs - 1) / (180/Game.minStep - 1)));
+    const targetFov = 52 + speedNorm*11 - (Game.headPulse||0)*6;
+    camera.fov += (targetFov-camera.fov)*Math.min(1, dt*5); camera.updateProjectionMatrix();
+  }
+  camera.position.lerp(desired, 1-Math.pow(0.001, dt));
+  if(shake>0){ camera.position.x += (Math.random()-0.5)*shake; camera.position.y += (Math.random()-0.5)*shake; shake=Math.max(0,shake-dt*1.6); }
+  camera.lookAt(look);
+}
+
+function stepFood(time){
+  if(!foodMesh) return;
+  const fx=cellToWorld(Game.food.x), fz=cellToWorld(Game.food.z);
+  const bob = Math.sin(time*3)*0.12;
+  foodMesh.position.set(fx, 0.6+bob, fz); foodMesh.rotation.y = time*1.6;
+  foodStem.position.set(fx, 1.02+bob, fz);
+  foodLeaf.position.set(fx+0.14, 1.02+bob, fz); foodLeaf.rotation.y = time*1.6;
+  foodLight.position.set(fx, 1.4+bob, fz);
+  foodLight.intensity = 1.2 + Math.sin(time*4)*0.4 + (1-(Game.dayF||1))*1.4;
+  const kind=Game.food.kind||'apple', KC={apple:[0xffcf6a,0x7a1010],tnt:[0xff3020,0x901008],diamond:[0x66e0ff,0x104060],phase:[0xb388ff,0x3a1060]};
+  const kc=KC[kind]||KC.apple; foodLight.color.setHex(kc[0]); if(appleMats&&appleMats.emissive) appleMats.emissive.setHex(kc[1]);
+  const sc = kind==='apple' ? 0.72 : 0.72+Math.sin(time*6)*0.08+0.1; foodMesh.scale.setScalar(sc);
+}
+
+// ── loop ─────────────────────────────────────────────────────────────────
+let last = performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  const time = now/1000;
+
+  if(Game.running && !Game.paused){
+    if(Game.counting){
+      const rem = Game.countUntil - now;
+      updateCountdown(rem);
+      if(rem<=0){ Game.counting=false; hideCountdown(); Game.sinceStep=0; Game.startTime=now; }
+      syncMeshes(0);   // hold the snake at rest during the 3-2-1
+    } else {
+    const el = now - (Game._prevNow||now);
+    if(Game.hitStop>0){ Game.hitStop = Math.max(0, Game.hitStop - el); }
+    else {
+      Game.sinceStep += el;
+      if(Game.sinceStep >= Game.stepMs){ Game.sinceStep -= Game.stepMs; if(Game.sinceStep>Game.stepMs) Game.sinceStep=0; step(); }
+    }
+    if(Game.combo>0 && (performance.now()-Game.lastEatAt)>Game.comboWindow){ Game.combo=0; updateHUD(); }
+    syncMeshes(Math.min(1, Game.sinceStep/Game.stepMs));
+    updateTerrainTag();
+    updateComboTimer();
+    document.getElementById('timeVal').textContent = Math.floor((now-Game.startTime)/1000)+'s';
+    }
+  }
+  Game._prevNow = now;
+  Game._frames = (Game._frames||0) + 1;
+  Game.headPulse = Math.max(0, (Game.headPulse||0) - dt*4);
+  if(Game.swallow){ Game.swallow.t -= dt*2; if(Game.swallow.t<=0) Game.swallow=null; }   // decay the gulp wave
+
+  stepParticles(dt);
+  stepPillars(dt);
+  stepFood(time);
+  for(const c of clouds){ c.position.x += c.userData.spd*dt; if(c.position.x>N*2) c.position.x=-N*2; }
+  frameCamera(dt);
+  updateDayNight(dt);
+  stepGhost(dt);
+  stepMusic();
+  if(composer && !Game.reducedMotion) composer.render(); else if(renderer) renderer.render(scene, camera);
+}
+
+// ── UI ───────────────────────────────────────────────────────────────────
+const TERR=[['grass','🌲 Grass'],['sand','🏜 Sand · no boost'],['ice','🧊 Ice · no turning']];
+function updateTerrainTag(){
+  const el=document.getElementById('terrainTag'); if(!el || !Game.snake.length) return;
+  const b=biomeAt(Game.snake[0].x, Game.snake[0].z)||0;
+  if(el.dataset.t===String(b)) return;
+  el.dataset.t=String(b); el.className=TERR[b][0]; el.textContent=TERR[b][1];
+}
+function updateComboTimer(){
+  const el=document.getElementById('comboTimer'); if(!el) return;
+  if(Game.combo>=1 && Game.lastEatAt){ const rem=Math.max(0, 1-(performance.now()-Game.lastEatAt)/Game.comboWindow);
+    el.classList.add('show'); el.firstElementChild.style.width=(rem*100)+'%'; }
+  else el.classList.remove('show');
+}
+function updateHUD(){
+  document.getElementById('scoreVal').textContent = Game.score;  document.getElementById('lenVal').textContent = Game.snake.length;
+  document.getElementById('bestVal').textContent = Game.best;
+  document.getElementById('spdVal').textContent = (180/Game.stepMs).toFixed(1)+'×';
+  const cp=document.getElementById('comboPill');
+  if(cp){ if(Game.combo>=2){ cp.textContent='×'+Game.combo+' COMBO'; cp.classList.add('show'); } else { cp.classList.remove('show'); } }
+  const sb=document.getElementById('smashBar'), sf=document.getElementById('smashFill'), sbl=sb?sb.querySelector('b'):null;
+  if(sb&&sf){ if(Game.smash>0){ sb.classList.add('show'); sf.style.width=Math.min(100,Game.smash*100)+'%'; const rdy=Game.smash>=1; sb.classList.toggle('ready', rdy);
+      if(sbl) sbl.textContent = rdy ? '💥 RAM READY' : ('SMASH '+Math.round(Game.smash*100)+'%'); }
+    else { sb.classList.remove('show','ready'); sf.style.width='0%'; if(sbl) sbl.textContent='SMASH'; } }
+}
+function triggerFlash(){ const el=document.getElementById('flash'); if(!el) return; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
+let toastTimer=null;
+function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'), 900); }
+function updateCountdown(rem){
+  const el=document.getElementById('countdown'); if(!el) return;
+  const n = rem>1333?3:rem>666?2:1;
+  if(el.dataset.n!==String(n)){ el.dataset.n=String(n); el.textContent=n; el.classList.remove('go'); el.classList.add('show');
+    if(!Game.reducedMotion){ el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+    blip(320+(3-n)*90, 0.12, 'square', 0.13); }
+}
+function hideCountdown(){
+  const el=document.getElementById('countdown'); if(!el) return;
+  el.dataset.n='go'; el.textContent='GO!'; el.classList.add('show','go');
+  if(!Game.reducedMotion){ el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  blip(680, 0.16, 'square', 0.16);
+  setTimeout(()=>{ el.classList.remove('show','go','pop'); }, 520);
+}
+function showCoach(){
+  const el=document.getElementById('coach'); if(!el) return;
+  el.innerHTML="🧱 <b>The snake dropped a pillar!</b> Its trail builds a maze — steer the apple so you don't lead it into a dead end or its own walls.";
+  el.classList.add('show');
+  clearTimeout(Game._coachT); Game._coachT=setTimeout(()=>el.classList.remove('show'), 6500);
+}
+
+function togglePause(){ if(!Game.running || Game.over) return;
+  Game.paused=!Game.paused;
+  const pm=document.getElementById('pauseMenu'); if(pm){ pm.classList.toggle('hidden', !Game.paused); if(Game.paused) syncPauseToggles(); }
+  toast(Game.paused?'⏸ Paused':'▶ Resume'); }
+function syncPauseToggles(){ const rm=document.getElementById('rmToggle2'), mu=document.getElementById('muteToggle2');
+  if(rm) rm.checked=!!Game.reducedMotion; if(mu) mu.checked=!!Game.muted; }
+
+function startGame(){
+  initAudio();
+  startMusic();
+  Game.best = parseInt(localStorage.getItem('snake4-highscore')||'0',10)||0;
+  Game.bestCombo = parseInt(localStorage.getItem('snake4-bestcombo')||'0',10)||0;
+  document.getElementById('welcome').classList.add('hidden');
+  document.getElementById('gameover').classList.add('hidden');
+  { const pm=document.getElementById('pauseMenu'); if(pm) pm.classList.add('hidden'); }
+  resetState();
+  Game._coached=false;
+  Game.counting=true; Game.countUntil=performance.now()+2000;   // 3-2-1 armed start
+  Game.running=true; Game.paused=false; Game.started=true;
+  if(Game.mode==='daily') toast('🗓 Daily #'+Game.seed);
+  Game._prevNow = performance.now();
+}
+function restart(){ document.getElementById('gameover').classList.add('hidden'); startGame(); }
+
+// ── boot ─────────────────────────────────────────────────────────────────
+function boot(){
+  try{
+    // load persisted accessibility prefs before building the scene
+    try{ Game.reducedMotion = localStorage.getItem('snake4-rm')!=null
+        ? localStorage.getItem('snake4-rm')==='1'
+        : (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      Game.muted = localStorage.getItem('snake4-muted')==='1'; }catch(_){}
+    buildTextures();
+    initScene();
+    buildMaterials();
+    loadMeta();   // apple bank + equipped skin
+    buildWorld();
+    buildBiomeRing(0x5eed);   // idle/classic world skin (stable default seed)
+    buildFood();
+    ensureSegments(3);
+    // idle preview snake
+    Game.snake=[{x:6,z:9},{x:5,z:9},{x:4,z:9}]; Game.prevSnake=Game.snake.map(s=>({...s}));
+    syncMeshes(1); placeFood(); loadGhost();
+    document.getElementById('boot').classList.add('hidden');
+    document.addEventListener('keydown', handleKey);
+    bindTouch();
+    parseHash();   // #seed=N / #daily deep-links
+    document.getElementById('startBtn').addEventListener('click', ()=>{ Game.mode = (Game.forcedSeed!=null)?'seed':'classic'; startGame(); });
+    const db=document.getElementById('dailyBtn'); if(db) db.addEventListener('click', ()=>{ Game.mode='daily'; startGame(); });
+    document.getElementById('againBtn').addEventListener('click', restart);
+    const sb1=document.getElementById('shopBtn'); if(sb1) sb1.addEventListener('click', openShop);
+    const sb2=document.getElementById('shopBtn2'); if(sb2) sb2.addEventListener('click', openShop);
+    const sc=document.getElementById('shopClose'); if(sc) sc.addEventListener('click', closeShop);
+    const tb=document.getElementById('trophyBtn'); if(tb) tb.addEventListener('click', downloadTrophy);
+    const lb=document.getElementById('linkBtn'); if(lb) lb.addEventListener('click', shareLink);
+    const rb=document.getElementById('resumeBtn'); if(rb) rb.addEventListener('click', ()=>{ if(Game.paused) togglePause(); });
+    const rb2=document.getElementById('restartBtn2'); if(rb2) rb2.addEventListener('click', ()=>{ Game.paused=false; restart(); });
+    const psb=document.getElementById('pauseShopBtn'); if(psb) psb.addEventListener('click', openShop);
+    updateBankLbls();
+    if(Game.forcedSeed!=null){ const s=document.getElementById('startBtn'); if(s) s.textContent='▶ Play Challenge #'+Game.forcedSeed; }
+    const coachEl=document.getElementById('coach'); if(coachEl) coachEl.addEventListener('click', ()=>coachEl.classList.remove('show'));
+    wireToggles();
+    initLeaderboard();
+    initPostFX();
+    Game.best = parseInt(localStorage.getItem('snake4-highscore')||'0',10)||0; updateHUD();
+    last = performance.now(); requestAnimationFrame(loop);
+    // expose for cross-app / debugging, mirroring snake3's window.wormGame
+    window.snake4 = Game;
+    Game.__debug = { renderer, scene, camera, segMeshes:()=>segMeshes, particles:()=>particles, THREE, biomeAt, buySkin, equipSkin, openShop, captureTrophy, shareLink, parseHash, stepMusic, startMusic, setFood:(x,z,kind)=>{ Game.food={x,z,kind:kind||'apple'}; }, updateHUD, updateComboTimer, syncMeshes };
+  }catch(err){ showBootError(err); }
+}
+function setReducedMotion(v){ Game.reducedMotion=!!v; try{localStorage.setItem('snake4-rm', v?'1':'0');}catch(_){}
+  if(v && composer){ composer=null; } else if(!v && !composer){ initPostFX(); }
+  document.querySelectorAll('#rmToggle,#rmToggle2').forEach(c=>{ if(c) c.checked=!!v; }); }
+function setMuted(v){ Game.muted=!!v; try{localStorage.setItem('snake4-muted', v?'1':'0');}catch(_){}
+  document.querySelectorAll('#muteToggle,#muteToggle2').forEach(c=>{ if(c) c.checked=!!v; }); updateHUD(); }
+function wireToggles(){
+  ['rmToggle','rmToggle2'].forEach(id=>{ const el=document.getElementById(id); if(el){ el.checked=!!Game.reducedMotion; el.addEventListener('change',()=>setReducedMotion(el.checked)); } });
+  ['muteToggle','muteToggle2'].forEach(id=>{ const el=document.getElementById(id); if(el){ el.checked=!!Game.muted; el.addEventListener('change',()=>setMuted(el.checked)); } });
+}
+function showBootError(err){
+  const b=document.getElementById('boot'); b.classList.remove('hidden'); b.classList.add('err');
+  b.innerHTML = '<div style="font-size:40px">🧱</div><div>Could not start the voxel engine.</div>'+
+    '<div style="opacity:0.7;max-width:420px">Snake&nbsp;4 loads Three.js (r160) from a CDN, exactly like voxel-world.html. '+
+    'If you are fully offline this can fail. Reconnect and reload.</div>'+
+    '<div style="opacity:0.5;font-size:11px">'+String(err&&err.message||err)+'</div>';
+  console.error('[snake4] boot failed', err);
+}
+
+boot();
+</script>
+</body>
+</html>

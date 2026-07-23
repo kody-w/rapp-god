@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Foldwing — a Learn with Kody fauna</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cellipse cx='16' cy='17' rx='8' ry='10' fill='%23ffd27c'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#e9e4d6; --dim:#9a9484; --line:rgba(255,255,255,.09);
+    --panel:rgba(14,14,20,.55); --panel-b:rgba(255,255,255,.08);
+    --mono:'SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;
+    --ui:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#07070c;color:var(--ink);font-family:var(--ui);overflow:hidden}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%}
+  /* ── overlay UI ── */
+  #hud{position:fixed;inset:0;pointer-events:none;padding:clamp(12px,2.4vw,26px);
+       display:flex;flex-direction:column;justify-content:space-between}
+  .card{pointer-events:auto;background:var(--panel);border:1px solid var(--panel-b);
+        border-radius:14px;backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2)}
+  #top{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+  #plate{padding:12px 15px;min-width:230px}
+  #title{font-size:20px;font-weight:650;letter-spacing:.3px;display:flex;align-items:center;gap:9px}
+  #title .glyph{font-size:19px;filter:drop-shadow(0 0 6px rgba(255,220,170,.5))}
+  #meta{margin-top:7px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  #idtag{font-family:var(--mono);font-size:12.5px;color:var(--dim);letter-spacing:.5px}
+  #rarity{font-size:10.5px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;
+          padding:3px 8px;border-radius:999px;border:1px solid currentColor}
+  #cap{margin-top:9px;font-size:11.5px;line-height:1.45;color:var(--dim);max-width:270px}
+  #cap b{color:#d8cfb8;font-weight:600}
+  /* buttons */
+  #controls{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start}
+  button.btn{pointer-events:auto;font-family:var(--ui);font-size:13px;font-weight:560;color:var(--ink);
+        background:rgba(20,20,28,.6);border:1px solid var(--panel-b);border-radius:11px;
+        padding:9px 13px;cursor:pointer;transition:.16s;backdrop-filter:blur(10px)}
+  button.btn:hover{background:rgba(40,40,54,.75);border-color:rgba(255,255,255,.22);transform:translateY(-1px)}
+  button.btn:active{transform:translateY(0)}
+  #load-wrap{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+  #load-panel{display:none;flex-direction:column;gap:6px;padding:10px;width:min(320px,72vw)}
+  #load-panel.open{display:flex}
+  #load-panel textarea{width:100%;height:74px;resize:vertical;font-family:var(--mono);font-size:11px;
+        color:var(--ink);background:rgba(0,0,0,.35);border:1px solid var(--panel-b);border-radius:9px;padding:8px}
+  #load-row{display:flex;gap:6px}
+  #status{font-size:11px;color:var(--dim);min-height:14px}
+  #status.err{color:#e8887f}
+  #status.ok{color:#8fd0a8}
+  label.file{font-size:11.5px;color:var(--dim);cursor:pointer;text-decoration:underline dotted;align-self:center}
+  input[type=file]{display:none}
+  /* dna panel */
+  #bottom{display:flex;justify-content:flex-start;align-items:flex-end}
+  details#dna{max-width:min(430px,86vw)}
+  details#dna summary{list-style:none;cursor:pointer;padding:9px 13px;font-size:12px;color:var(--dim);
+        display:flex;align-items:center;gap:8px;user-select:none}
+  details#dna summary::-webkit-details-marker{display:none}
+  details#dna[open] summary{border-bottom:1px solid var(--line)}
+  #dna .chev{transition:.2s;font-size:10px}
+  details#dna[open] .chev{transform:rotate(90deg)}
+  #dna pre{margin:0;padding:12px 14px;max-height:44vh;overflow:auto;font-family:var(--mono);
+        font-size:11px;line-height:1.5;color:#c7cbe0}
+  #dna pre::-webkit-scrollbar{width:8px}
+  #dna pre::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:8px}
+  .k{color:#8fb6ff}.s{color:#c7e59a}.n{color:#f0b775}.b{color:#e79ad0}
+  @media (max-width:560px){ #cap{max-width:200px} #plate{min-width:0} }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div id="hud">
+  <div id="top">
+    <div id="plate" class="card">
+      <div id="title"><span class="glyph">✦</span><span id="title-name">Foldwing</span></div>
+      <div id="meta">
+        <span id="idtag">············</span>
+        <span id="rarity">—</span>
+      </div>
+      <div id="cap"></div>
+    </div>
+    <div id="controls">
+      <button class="btn" id="btn-new">✦ New Foldwing</button>
+      <button class="btn" id="btn-save">🥚 Save .egg</button>
+      <div id="load-wrap">
+        <button class="btn" id="btn-load">Load .egg</button>
+        <div id="load-panel" class="card">
+          <textarea id="egg-in" spellcheck="false" placeholder="paste a rappter .egg string…"></textarea>
+          <div id="load-row">
+            <button class="btn" id="btn-hatch">Hatch</button>
+            <label class="file">or choose file<input type="file" id="egg-file" accept=".egg,text/plain"></label>
+          </div>
+          <div id="status"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="bottom">
+    <details id="dna" class="card">
+      <summary><span class="chev">▶</span> genome — the paper DNA</summary>
+      <pre id="dna-json"></pre>
+    </details>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   FAUNA-EGG CORE — verified byte-exact against openrappter-vui / genome.js.
+   Embed VERBATIM in each demo. Do NOT edit: genomeId must stay reproducible
+   or the .egg will not load in rapp·go. (Verified: genomeId of the reference
+   egg === "fb18657910a5", and re-encode reproduces the original bytes.)
+   ══════════════════════════════════════════════════════════════════════════ */
+const EGG = (() => {
+  const b64enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const b64dec = s => { s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); };
+  async function sha256hex(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  function canonical(v){
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v!==null&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  async function genomeId(genome){ return (await sha256hex(canonical(genome))).slice(0,12); }
+  // xmur3 → mulberry32 deterministic PRNG (byte-identical to genome.js mkRng)
+  function mkRng(seed){ let h=1779033703^seed.length; for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),3432918353);h=h<<13|h>>>19;} h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); let s=(h^=h>>>16)>>>0; return function(){s+=0x6D2B79F5;let t=Math.imul(s^s>>>15,1|s);t=(t+Math.imul(t^t>>>7,61|t))^t;return((t^t>>>14)>>>0)/4294967296;}; }
+  // geohash encode (precision 6) so each egg carries a plausible born.coord
+  function geohash(lat,lng,precision=6){ const B='0123456789bcdefghjkmnpqrstuvwxyz'; let even=true,hash='',bits=0,hc=0; const la=[-90,90],lo=[-180,180]; while(hash.length<precision){ if(even){const m=(lo[0]+lo[1])/2; if(lng>m){hc=(hc<<1)|1;lo[0]=m;}else{hc<<=1;lo[1]=m;}} else {const m=(la[0]+la[1])/2; if(lat>m){hc=(hc<<1)|1;la[0]=m;}else{hc<<=1;la[1]=m;}} even=!even; if(++bits===5){hash+=B[hc];bits=0;hc=0;} } return hash; }
+
+  // Pack a genome into a canonical .egg payload (matches openrappter-vui exactly).
+  async function pack(genome, meta={}){
+    const id = await genomeId(genome);
+    const rng = mkRng(id);
+    const payload = {
+      genome, id,
+      born: meta.born || { coord: geohash((rng()*140)-70, (rng()*360)-180), t: 0 },
+      title: meta.title || 'a rappter',
+      rarity: meta.rarity || 'uncommon',
+      source: meta.source || 'learnwithkody-fauna'
+    };
+    return { egg: b64enc(JSON.stringify(payload)), id, payload };
+  }
+  function unpack(b64){ return JSON.parse(b64dec(b64.trim())); }
+  function download(b64, id){ const a=document.createElement('a'); a.href='data:application/octet-stream;base64,'+btoa(b64); /* raw text egg */ a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(b64); a.download=`rappter-${String(id).slice(0,8)}.egg`; document.body.appendChild(a); a.click(); a.remove(); }
+  return { b64enc, b64dec, genomeId, mkRng, geohash, pack, unpack, download };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FOLDWING — an origami paper bird, minted from a real rappter genome.
+   Model : flat-shaded angular tent-fuselage + folded triangular FAN wings,
+           creased accordion panels, paper grain, a single uncanny glint eye.
+   Motion: a wing fold/unfold FLAP → hovering bob + slight forward drift,
+           each stroke crisply creasing the paper (crease pulse peaks midstroke).
+   ══════════════════════════════════════════════════════════════════════════ */
+const TAU = Math.PI*2;
+const clamp = (v,a,b)=>v<a?a:v>b?b:v;
+const lerp  = (a,b,t)=>a+(b-a)*t;
+
+/* ── vec3 ── */
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+function norm(v){const m=Math.hypot(v[0],v[1],v[2])||1;return [v[0]/m,v[1]/m,v[2]/m];}
+function rotX(p,a){const c=Math.cos(a),s=Math.sin(a);return [p[0], p[1]*c-p[2]*s, p[1]*s+p[2]*c];}
+function rotY(p,a){const c=Math.cos(a),s=Math.sin(a);return [p[0]*c+p[2]*s, p[1], -p[0]*s+p[2]*c];}
+
+/* ── color ── */
+function hexRgb(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(x=>x+x).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+const mixc=(a,b,t)=>[lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)];
+const css =(c,al=1)=>`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${al})`;
+/* paper shade: below 1 → toward cool shadow, above 1 → toward warm highlight */
+function paper(base,b){
+  if(b<=1) return mixc([base[0]*0.32+8,base[1]*0.34+10,base[2]*0.40+18], base, clamp(b/1,0,1));
+  return mixc(base,[255,251,240], clamp((b-1)*0.9,0,0.85));
+}
+
+/* ── paper-pastel gene pool ── */
+const PASTELS=['#f4e9d8','#f7d9c4','#f6c6c9','#e9c6e6','#c9d8f0','#c6e6d9','#f0e6b8','#dfeaf2','#f2d1dc','#d9c9f0','#ffe8cc','#cfe8e0','#e8e0f0','#fbe4d0'];
+const ACCENTS=['#e6736b','#6b8ee6','#e6b23a','#5bbf9c','#b06be6','#e28a4c'];
+
+/* ════════ genome generation — biased to the Foldwing identity ════════ */
+function pick(rng,arr){return arr[Math.floor(rng()*arr.length)];}
+function wpick(rng,pairs){let s=0;for(const p of pairs)s+=p[1];let r=rng()*s;for(const p of pairs){if((r-=p[1])<=0)return p[0];}return pairs[0][0];}
+
+function generateGenome(seed){
+  const rng = EGG.mkRng(seed);
+  const symmetry = rng()<0.24 ? 'radial' : 'bilateral';
+  const shape    = wpick(rng,[['star',3],['blob',3],['ring',2]]);
+  const pattern  = wpick(rng,[['stripe',4],['solid',3],['spot',2],['glow',1.6]]);
+
+  // palette: a pastel body + 1-3 more pastels, occasionally one bold accent
+  const pal=[]; const pool=[...PASTELS];
+  const n = 3+Math.floor(rng()*2);
+  for(let i=0;i<n;i++){ pal.push(pool.splice(Math.floor(rng()*pool.length),1)[0]); }
+  if(rng()<0.34) pal[1+Math.floor(rng()*(pal.length-1))] = pick(rng,ACCENTS);
+
+  const glow = pattern==='glow' ? 0.45+rng()*0.5 : rng()*0.34;
+  const segments = 4+Math.floor(rng()*6);               // wing fan ribs
+  const limbs = symmetry==='radial' ? 3+Math.floor(rng()*6) : 2;
+
+  const genome = {
+    layers:[
+      { role:'form', k:40,
+        shape, limbs, segments, symmetry,
+        body_r: +(0.28+rng()*0.22).toFixed(3),
+        limb_len: +(0.40+rng()*0.20).toFixed(3),
+        // ── Foldwing extensions ──
+        fold_spread:  +(0.55+rng()*0.55).toFixed(3),    // fan half-angle (rad)
+        crease_sharp: +(0.45+rng()*0.55).toFixed(3),
+        tail_ribs:    3+Math.floor(rng()*4),
+        beak_len:     +(0.09+rng()*0.13).toFixed(3),
+        dihedral_rest:+(-0.10+rng()*0.28).toFixed(3)
+      },
+      { role:'surface', k:60,
+        palette: pal, pattern,
+        glow: +glow.toFixed(3),
+        opacity: +(0.82+rng()*0.18).toFixed(3),
+        // ── extensions ──
+        grain:     +(0.32+rng()*0.5).toFixed(3),
+        crease_ink:+(0.4+rng()*0.6).toFixed(3)
+      },
+      { role:'motion', k:50,
+        breathe:+(0.30+rng()*0.5).toFixed(3),
+        drift:  +(0.20+rng()*0.5).toFixed(3),
+        pulse:  +(0.42+rng()*0.48).toFixed(3),
+        reach:  +(0.22+rng()*0.5).toFixed(3),
+        // ── extensions ──
+        flap_rate:+(2.6+rng()*2.6).toFixed(3),
+        tip_lag:  +(0.30+rng()*0.6).toFixed(3),
+        flutter:  +(0.4+rng()*0.6).toFixed(3)
+      }
+    ],
+    compose:{ windows:[[0,1,2]], loop:true }
+  };
+  return genome;
+}
+
+function deriveRarity(g){
+  const [f,s]=g.layers;
+  let sc = s.glow*2 + (f.symmetry==='radial'?1.4:0) + (f.segments>7?0.9:0)
+         + (s.pattern==='glow'?1:0) + (s.palette.some(h=>ACCENTS.includes(h))?0.8:0)
+         + (f.limbs>6?0.7:0);
+  return sc<1?'common':sc<2?'uncommon':sc<3.1?'rare':sc<4.2?'epic':'mythic';
+}
+const RARITY_COLOR={common:'#9aa0ad',uncommon:'#7fc9a0',rare:'#6fa8ff',epic:'#c58af0',mythic:'#f0b24a'};
+
+/* ════════ build a renderable creature from genome + its id (deterministic) ════════ */
+function buildCreature(genome,id){
+  const [F,S,M]=genome.layers;
+  const rng=EGG.mkRng(id);                 // all *styling* randomness keys off the id → exact round-trip
+  const P=S.palette.map(hexRgb);
+  const pat=S.pattern;
+
+  const bodyCol = P[0];
+  const beakCol = P.length>1 ? P[P.length-1] : mixc(P[0],[230,150,80],0.5);
+  const wingA   = P[1%P.length] || P[0];
+  const wingB   = pat==='stripe' ? (P[2%P.length]||mixc(wingA,[255,255,255],0.35)) : wingA;
+  const tailCol = P[2%P.length] || wingA;
+  const eyeCol  = [24,20,26];
+
+  const L = 0.52 + F.body_r*0.36;          // fuselage half-length
+  const R = 0.46 + F.limb_len*0.86;        // wing radius (span)
+  const shapeMod = F.shape==='star' ? {w:0.78,ridge:1.18,belly:1.1}
+                 : F.shape==='ring' ? {w:1.08,ridge:0.82,belly:0.82}
+                 : {w:1.16,ridge:0.95,belly:1.0};      // blob
+
+  // fuselage stations (angular origami tent: top ridge crease + V belly)
+  const br=F.body_r;
+  const stations=[
+    {x:+L,        ry:br*0.02,  by:-br*0.02, w:br*0.02},
+    {x:+L*0.58,   ry:br*0.70*shapeMod.ridge, by:-br*0.24*shapeMod.belly, w:br*0.40*shapeMod.w},
+    {x:+L*0.08,   ry:br*0.56*shapeMod.ridge, by:-br*0.34*shapeMod.belly, w:br*0.46*shapeMod.w},
+    {x:-L*0.60,   ry:br*0.40*shapeMod.ridge, by:-br*0.16*shapeMod.belly, w:br*0.26*shapeMod.w},
+    {x:-L*0.98,   ry:br*0.52,  by: br*0.08, w:br*0.05}
+  ];
+
+  // grain tile (per-creature, from id) — used as an 'overlay' fill for paper texture
+  const gt=document.createElement('canvas'); gt.width=gt.height=140;
+  const gctx=gt.getContext('2d');
+  const gimg=gctx.createImageData(140,140);
+  for(let i=0;i<gimg.data.length;i+=4){
+    const v=150+(rng()*2-1)*46|0;
+    gimg.data[i]=gimg.data[i+1]=gimg.data[i+2]=v; gimg.data[i+3]=255;
+  }
+  gctx.putImageData(gimg,0,0);
+  // faint fibre streaks
+  gctx.globalAlpha=0.10; gctx.strokeStyle='#000';
+  for(let i=0;i<26;i++){gctx.beginPath();gctx.moveTo(rng()*140,rng()*140);gctx.lineTo(rng()*140,rng()*140);gctx.stroke();}
+
+  // dust motes
+  const motes=[];
+  for(let i=0;i<28;i++) motes.push({x:rng(),y:rng(),z:rng(),r:0.4+rng()*1.6,sp:0.02+rng()*0.06,sq:rng()<0.32,ph:rng()*TAU});
+
+  // radial wing roll angles
+  const rolls=[];
+  if(F.symmetry==='radial'){ for(let k=0;k<F.limbs;k++) rolls.push(k/F.limbs*TAU); }
+
+  return {genome,id,F,S,M,pat,bodyCol,beakCol,wingA,wingB,tailCol,eyeCol,
+          L,R,stations,br,grain:gt,motes,rolls,glow:S.glow,opacity:S.opacity};
+}
+
+/* ════════ per-frame geometry ════════ */
+// one folded FAN (used for both wings and the tail)
+function fanFacets(cr,opt){
+  // opt: hinge[3], radius, chord, ribs, spreadHalf, dih, roll(null|angle), mirror(bool),
+  //      creaseAmp, colFn(j)->rgb, alpha
+  const out=[];
+  const {hinge,radius,chord,ribs,spreadHalf,dih,roll,mirror,creaseAmp,colFn,alpha}=opt;
+  const pts=[];
+  for(let j=0;j<=ribs;j++){
+    const t=j/ribs;
+    const phi=-spreadHalf + 2*spreadHalf*t;
+    let x = chord*Math.sin(phi);          // chordwise (fore/aft)
+    let z = radius*Math.cos(phi);         // spanwise
+    let y = creaseAmp*(j%2?1:-1)*(0.35+0.65*t);   // accordion zig-zag crease
+    let p=[x,y,z];
+    if(roll==null){                       // bilateral: dihedral lift, then optional mirror
+      p=rotX(p,dih);
+      if(mirror) p=[p[0],p[1],-p[2]];
+    } else {                              // radial: roll around body axis + flutter dihedral
+      p=rotX(p,roll+dih);
+    }
+    pts.push([hinge[0]+p[0], hinge[1]+p[1], hinge[2]+p[2]]);
+  }
+  const apex=[hinge[0],hinge[1],hinge[2]];
+  for(let j=0;j<ribs;j++){
+    out.push({v:[apex,pts[j],pts[j+1]], rgb:colFn(j), alpha});
+  }
+  return out;
+}
+
+function frameFacets(cr,A){
+  const {F,S,M,pat}=cr;
+  const facets=[];
+
+  /* ---- fuselage ---- */
+  const breathe = M.breathe*0.045*Math.sin(A.t*0.9);
+  const st=cr.stations.map(s=>({
+    x:s.x, ry:s.ry*(1+breathe*1.6), by:s.by, w:s.w
+  }));
+  for(let i=0;i<st.length-1;i++){
+    const a=st[i], b=st[i+1];
+    const Ra=[a.x,a.ry,0], Rb=[b.x,b.ry,0];
+    const La=[a.x,a.by,-a.w], Lb=[b.x,b.by,-b.w];
+    const Da=[a.x,a.by, a.w], Db=[b.x,b.by, b.w];
+    const top   = paper(cr.bodyCol,1);       // base rgb; shading done in draw
+    const sideL = mixc(cr.bodyCol,[0,0,0],0.06);
+    const belly = mixc(cr.bodyCol,[0,0,0],0.18);
+    facets.push({v:[Ra,La,Lb], rgb:cr.bodyCol, part:'body'});
+    facets.push({v:[Ra,Lb,Rb], rgb:cr.bodyCol, part:'body'});
+    facets.push({v:[Ra,Db,Da], rgb:sideL,      part:'body'});
+    facets.push({v:[Ra,Rb,Db], rgb:sideL,      part:'body'});
+    facets.push({v:[La,Da,Db], rgb:belly,      part:'body'});
+    facets.push({v:[La,Db,Lb], rgb:belly,      part:'body'});
+  }
+
+  /* ---- beak (folded bill) ---- */
+  const nx=cr.L, tip=[cr.L+F.beak_len, F.body_r*0.02, 0];
+  facets.push({v:[[nx,F.body_r*0.10,0.02],[nx,F.body_r*0.10,-0.02],tip], rgb:cr.beakCol, part:'beak'});
+  facets.push({v:[[nx,-F.body_r*0.06,0.02],[nx,-F.body_r*0.06,-0.02],tip], rgb:mixc(cr.beakCol,[0,0,0],0.14), part:'beak'});
+
+  /* ---- flap dynamics ---- */
+  const fr=M.flap_rate, ph=A.t*fr;
+  const flap=Math.sin(ph);
+  const openness = 0.5+0.5*flap;                              // fan open/close
+  const dih = F.dihedral_rest + (0.30+M.pulse*0.55)*flap;     // dihedral lift
+  const creasePulse = 0.4 + 0.6*Math.abs(Math.cos(ph));       // crisp midstroke
+  const creaseAmp = cr.R*0.055*F.crease_sharp*creasePulse;
+  const spread = F.fold_spread*(0.74+0.34*openness);
+  const reach = 1 + M.reach*0.12*Math.sin(ph+0.5);
+  const radius=cr.R*reach, chord=cr.R*0.62;
+
+  const wingCol=(j)=>{
+    if(pat==='stripe') return j%2?cr.wingB:cr.wingA;
+    if(pat==='spot')   return j===Math.floor(F.segments*0.6)?cr.wingB:cr.wingA;
+    return cr.wingA;
+  };
+
+  const hingeX = cr.L*0.06, hingeY=F.body_r*0.50;
+  if(F.symmetry==='radial'){
+    for(const roll of cr.rolls){
+      facets.push(...fanFacets(cr,{hinge:[hingeX,0,0],radius,chord,ribs:F.segments,
+        spreadHalf:spread,dih:dih*0.6,roll,mirror:false,creaseAmp,colFn:wingCol,alpha:cr.opacity}).map(f=>(f.part='wing',f)));
+    }
+  } else {
+    // right (+Z) and left (mirrored) wings
+    facets.push(...fanFacets(cr,{hinge:[hingeX,hingeY,0],radius,chord,ribs:F.segments,
+      spreadHalf:spread,dih,roll:null,mirror:false,creaseAmp,colFn:wingCol,alpha:cr.opacity}).map(f=>(f.part='wing',f)));
+    facets.push(...fanFacets(cr,{hinge:[hingeX,hingeY,0],radius,chord,ribs:F.segments,
+      spreadHalf:spread,dih,roll:null,mirror:true,creaseAmp,colFn:wingCol,alpha:cr.opacity}).map(f=>(f.part='wing',f)));
+  }
+
+  /* ---- tail fan ---- */
+  const tailDih = -0.15 + M.flutter*0.16*Math.sin(ph*0.75+1.1);
+  facets.push(...fanFacets(cr,{hinge:[-cr.L*0.96,F.body_r*0.16,0],radius:cr.R*0.42,chord:cr.R*0.30,
+    ribs:F.tail_ribs, spreadHalf:0.85, dih:tailDih, roll:null, mirror:false,
+    creaseAmp:cr.R*0.03*creasePulse, colFn:()=>cr.tailCol, alpha:cr.opacity}).map(f=>(f.part='tail',f)));
+  // mirror tail lower half for a fuller wedge
+  facets.push(...fanFacets(cr,{hinge:[-cr.L*0.96,F.body_r*0.16,0],radius:cr.R*0.42,chord:cr.R*0.30,
+    ribs:F.tail_ribs, spreadHalf:0.85, dih:tailDih, roll:null, mirror:true,
+    creaseAmp:cr.R*0.03*creasePulse, colFn:()=>mixc(cr.tailCol,[0,0,0],0.08), alpha:cr.opacity}).map(f=>(f.part='tail',f)));
+
+  return {facets, flap, dih, hover:(0.5+0.5*Math.sin(ph*2+0.6))};
+}
+
+/* ════════ renderer ════════ */
+const cvs=document.getElementById('c'), ctx=cvs.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=cvs.clientWidth; H=cvs.clientHeight;
+  cvs.width=Math.round(W*DPR); cvs.height=Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);
+
+const LIGHT=norm([-0.32,0.78,0.55]);
+let grainPattern=null, grainForId=null;
+
+function drawBackground(t){
+  // deep cinematic gradient
+  const g=ctx.createRadialGradient(W*0.5,H*0.40,20, W*0.5,H*0.5,Math.hypot(W,H)*0.72);
+  g.addColorStop(0,'#171526'); g.addColorStop(0.5,'#0c0b16'); g.addColorStop(1,'#050409');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // slow drifting light bloom
+  const lx=W*(0.5+0.16*Math.sin(t*0.13)), ly=H*(0.34+0.06*Math.cos(t*0.17));
+  const bl=ctx.createRadialGradient(lx,ly,0,lx,ly,Math.min(W,H)*0.7);
+  bl.addColorStop(0,'rgba(120,110,180,.16)'); bl.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=bl; ctx.fillRect(0,0,W,H);
+}
+function drawMotes(cr,t){
+  ctx.save();
+  for(const m of cr.motes){
+    const y=(m.y - (t*m.sp)%1 +1)%1;
+    const px=(m.x*1.1-0.05)*W, py=y*H;
+    const a=0.05+0.10*(0.5+0.5*Math.sin(t*0.7+m.ph));
+    ctx.globalAlpha=a;
+    if(m.sq){ ctx.save(); ctx.translate(px,py); ctx.rotate(t*0.4+m.ph); ctx.fillStyle='#d9d2c0';
+      ctx.fillRect(-m.r,-m.r,m.r*2,m.r*2); ctx.restore(); }
+    else { ctx.fillStyle='#cfd8f0'; ctx.beginPath(); ctx.arc(px,py,m.r*0.7,0,TAU); ctx.fill(); }
+  }
+  ctx.restore();
+}
+function drawVignette(){
+  const g=ctx.createRadialGradient(W*0.5,H*0.5,Math.min(W,H)*0.3, W*0.5,H*0.5,Math.max(W,H)*0.72);
+  g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,.55)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+
+function renderCreature(cr,A){
+  if(grainForId!==cr.id){ grainPattern=ctx.createPattern(cr.grain,'repeat'); grainForId=cr.id; }
+  const {facets,hover}=frameFacets(cr,A);
+
+  // global animation offsets (hover bob + slight forward drift + gentle turn)
+  const bob = 0.06*Math.sin(A.t*cr.M.flap_rate*2+0.6);
+  const swayX = 0.05*Math.sin(A.t*(0.3+cr.M.drift*0.5)) + 0.03*Math.sin(A.t*0.11);
+  const world=[swayX, bob*(0.6+cr.M.pulse), 0];
+  const yaw = -0.52 + 0.16*Math.sin(A.t*0.24);
+  const pitch = -0.20 + 0.05*Math.sin(A.t*0.19);
+  const S = Math.min(W,H)*0.46;
+  const cx=W*0.5, cy=H*0.47;
+  const fov=3.1;
+
+  // project + shade
+  const tris=[];
+  for(const f of facets){
+    const vv=f.v, mv=[], pv=[];
+    let zsum=0, ok=true;
+    for(const p of vv){
+      const wm=[p[0]+world[0],p[1]+world[1],p[2]+world[2]];
+      const r=rotX(rotY(wm,yaw),pitch);
+      const denom=fov+r[2]; if(denom<0.25){ok=false;break;}
+      const ps=fov/denom;
+      mv.push(p); pv.push([cx+r[0]*S*ps, cy-r[1]*S*ps]); zsum+=r[2];
+    }
+    if(!ok) continue;
+    const n=norm(cross(sub(vv[1],vv[0]),sub(vv[2],vv[0])));
+    const d=dot(n,LIGHT);
+    let b=0.58 + 0.62*Math.max(0,d) + 0.22*Math.max(0,-d); // double-sided paper
+    if(f.part==='body') b*=1.02;
+    tris.push({pv, rgb:f.rgb, b, z:zsum/vv.length, part:f.part, alpha:f.alpha==null?1:f.alpha});
+  }
+  tris.sort((a,b)=>b.z-a.z);  // farthest first
+
+  // soft ground shadow (hover cue)
+  ctx.save();
+  const sc=0.9 - hover*0.22;
+  ctx.globalAlpha=0.30-hover*0.10;
+  const sg=ctx.createRadialGradient(cx,cy+S*0.62,2,cx,cy+S*0.62,S*0.5*sc);
+  sg.addColorStop(0,'rgba(0,0,0,.7)'); sg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=sg; ctx.beginPath();
+  ctx.ellipse(cx,cy+S*0.62,S*0.42*sc,S*0.10*sc,0,0,TAU); ctx.fill();
+  ctx.restore();
+
+  const ink=cr.S.crease_ink;
+  for(const tr of tris){
+    const col=paper(tr.rgb,tr.b);
+    ctx.globalAlpha=tr.alpha;
+    ctx.beginPath();
+    ctx.moveTo(tr.pv[0][0],tr.pv[0][1]);
+    for(let i=1;i<tr.pv.length;i++) ctx.lineTo(tr.pv[i][0],tr.pv[i][1]);
+    ctx.closePath();
+    ctx.fillStyle=css(col); ctx.fill();
+    // paper grain (overlay)
+    if(grainPattern){
+      ctx.save(); ctx.clip();
+      ctx.globalCompositeOperation='overlay'; ctx.globalAlpha=tr.alpha*cr.S.grain*0.5;
+      ctx.fillStyle=grainPattern; ctx.fill();
+      ctx.restore();
+    }
+    // crease line
+    ctx.globalAlpha=tr.alpha*0.16*ink;
+    ctx.lineWidth=0.8; ctx.strokeStyle='#1a1622'; ctx.stroke();
+    // luminous edge for glow genomes
+    if(cr.glow>0.2 && tr.part!=='body'){
+      ctx.globalAlpha=tr.alpha*cr.glow*0.22;
+      ctx.lineWidth=1.4; ctx.strokeStyle=css(mixc(tr.rgb,[255,255,255],0.5)); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+
+  // ── the uncanny glint eye (near side) ──
+  const eyeM=[cr.L*0.5, cr.br*0.55, cr.br*0.30];
+  const wm=[eyeM[0]+world[0],eyeM[1]+world[1],eyeM[2]+world[2]];
+  const r=rotX(rotY(wm,yaw),pitch);
+  if(fov+r[2]>0.25){
+    const ps=fov/(fov+r[2]);
+    const ex=cx+r[0]*S*ps, ey=cy-r[1]*S*ps, er=Math.max(2.2,S*0.017*ps);
+    ctx.beginPath(); ctx.fillStyle=css(cr.eyeCol); ctx.arc(ex,ey,er,0,TAU); ctx.fill();
+    ctx.beginPath(); ctx.fillStyle='rgba(255,250,235,.92)';
+    ctx.arc(ex-er*0.3,ey-er*0.34,er*0.36,0,TAU); ctx.fill();
+    if(cr.glow>0.3){ ctx.globalAlpha=cr.glow*0.4; ctx.fillStyle=css(cr.wingA);
+      ctx.beginPath(); ctx.arc(ex,ey,er*2.1,0,TAU); ctx.fill(); ctx.globalAlpha=1; }
+  }
+}
+
+/* ════════ state + UI ════════ */
+let CUR=null;                 // {genome,id,eggB64,rarity,build}
+const A={t:0};
+
+const el=id=>document.getElementById(id);
+const idtag=el('idtag'), rarityEl=el('rarity'), capEl=el('cap'), dnaJson=el('dna-json'), statusEl=el('status');
+
+function syntaxJSON(obj){
+  const s=JSON.stringify(obj,null,2);
+  const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return esc.replace(/("(\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+\.?\d*(e[+-]?\d+)?/gi,
+    (m,str,_c,colon,bool)=>{
+      if(str) return `<span class="${colon?'k':'s'}">${str}</span>${colon||''}`;
+      if(bool) return `<span class="b">${m}</span>`;
+      return `<span class="n">${m}</span>`;
+    });
+}
+
+function paintUI(){
+  idtag.textContent=CUR.id;
+  rarityEl.textContent=CUR.rarity;
+  rarityEl.style.color=RARITY_COLOR[CUR.rarity]||'#9aa0ad';
+  const F=CUR.genome.layers[0], S=CUR.genome.layers[1];
+  capEl.innerHTML='';   // cleared, then filled with safe generated fragments below
+  const parts=[
+    ['A ',''],['origami paper bird',''],[' — ',''],
+    [`${F.symmetry==='radial'?F.limbs+' radial':'two'} ${F.shape}`,''],
+    [' fan-wings folded from a ',''],[F.segments+'-crease',''],[' genome; ',''],
+    [S.pattern,''],[' pastels, ',''],['flap-creased live.','']
+  ];
+  // build caption with a couple of bold spans, all via textContent (no untrusted html)
+  const b1=document.createElement('b'); b1.textContent='origami paper bird';
+  const b2=document.createElement('b'); b2.textContent=`${F.segments}-crease fan-wings`;
+  capEl.append('An ',b1,' minted from a rappter genome — ',b2,
+    `, ${S.pattern} pastels, folded & re-creased every flap.`);
+  // dna
+  dnaJson.innerHTML=syntaxJSON(CUR.genome);
+}
+
+async function mint(genome){
+  const rarity=deriveRarity(genome);
+  const {egg,id}=await EGG.pack(genome,{title:'Foldwing',rarity,source:'learnwithkody-fauna'});
+  const build=buildCreature(genome,id);
+  CUR={genome,id,eggB64:egg,rarity,build};
+  paintUI();
+  if(window.FAUNA) window.FAUNA._sync();
+  return id;
+}
+
+async function newCreature(){
+  const seed='fold-'+Math.random().toString(36).slice(2)+'-'+Date.now().toString(36);
+  return mint(generateGenome(seed));
+}
+
+async function loadEgg(b64){
+  const payload=EGG.unpack(b64);
+  if(!payload||!payload.genome||!Array.isArray(payload.genome.layers)) throw new Error('not a rappter egg');
+  // re-pack to confirm the id and normalize meta
+  const rarity=payload.rarity||deriveRarity(payload.genome);
+  const {egg,id}=await EGG.pack(payload.genome,{title:payload.title,rarity,source:payload.source,born:payload.born});
+  const build=buildCreature(payload.genome,id);
+  CUR={genome:payload.genome,id,eggB64:egg,rarity,build};
+  paintUI();
+  if(window.FAUNA) window.FAUNA._sync();
+  return id;
+}
+
+/* ── animation loop ── */
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now; A.t+=dt;
+  resizeIfNeeded();
+  drawBackground(A.t);
+  if(CUR){ drawMotes(CUR.build,A.t); renderCreature(CUR.build,A); }
+  drawVignette();
+  if(window.FAUNA) window.FAUNA.frame++;
+  requestAnimationFrame(loop);
+}
+let lastW=-1,lastH=-1;
+function resizeIfNeeded(){
+  if(cvs.clientWidth!==lastW||cvs.clientHeight!==lastH){ lastW=cvs.clientWidth; lastH=cvs.clientHeight; resize(); }
+}
+
+/* ── wire controls ── */
+el('btn-new').addEventListener('click',()=>newCreature());
+el('btn-save').addEventListener('click',()=>{ if(CUR) EGG.download(CUR.eggB64,CUR.id); });
+el('btn-load').addEventListener('click',()=>el('load-panel').classList.toggle('open'));
+el('btn-hatch').addEventListener('click',async()=>{
+  const v=el('egg-in').value.trim();
+  if(!v){ setStatus('paste an egg first','err'); return; }
+  try{ const id=await loadEgg(v); setStatus('hatched '+id,'ok'); }
+  catch(e){ setStatus('could not hatch: '+e.message,'err'); }
+});
+el('egg-file').addEventListener('change',async ev=>{
+  const file=ev.target.files[0]; if(!file) return;
+  try{ const txt=await file.text(); el('egg-in').value=txt.trim();
+       const id=await loadEgg(txt); setStatus('hatched '+id,'ok'); }
+  catch(e){ setStatus('bad file: '+e.message,'err'); }
+  ev.target.value='';
+});
+function setStatus(msg,cls){ statusEl.textContent=msg; statusEl.className=cls||''; }
+
+/* ════════ boot ════════ */
+(async function boot(){
+  resize();
+  await newCreature();     // first creature ready before FAUNA is exposed
+  window.FAUNA={
+    title:'Foldwing',
+    frame:0,
+    get genome(){return CUR?CUR.genome:null;},
+    get id(){return CUR?CUR.id:null;},
+    get eggB64(){return CUR?CUR.eggB64:null;},
+    newCreature:async()=>await newCreature(),
+    loadEgg:async(b64)=>await loadEgg(b64),
+    _sync(){/* hook for external mirrors; no-op */}
+  };
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

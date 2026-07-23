@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Barrow Creek Live — Documentary Feed</title>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<style>
+:root{
+  --ink:#0b0d10;--paper:#e9ecef;--accent:#d94a3d;--gold:#e9b949;
+  --blue:#3b6ea8;--red:#a83b4a;--white:#dcdcdc;--gray:#6e7378;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#000;color:var(--paper);
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;overflow:hidden}
+#stage{position:fixed;inset:0}
+canvas{display:block;width:100%;height:100%}
+
+/* === Broadcast UI === */
+.ui{position:fixed;pointer-events:none;font-feature-settings:"tnum" 1}
+.logo{top:14px;left:18px;display:flex;align-items:center;gap:10px}
+.logo .badge{
+  background:linear-gradient(180deg,#1a1d22,#0d0f12);
+  border:1px solid #2a2e35;border-left:4px solid var(--accent);
+  padding:8px 14px;border-radius:2px;letter-spacing:.08em}
+.logo .title{font-weight:700;font-size:13px;color:#fff;line-height:1.1}
+.logo .sub{font-size:10px;color:#9ba2ab;letter-spacing:.18em}
+.live{display:inline-flex;align-items:center;gap:6px;
+  background:#d94a3d;color:#fff;font-weight:700;font-size:11px;
+  padding:4px 9px;border-radius:1px;letter-spacing:.12em}
+.live .dot{width:8px;height:8px;border-radius:50%;background:#fff;
+  animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Top right: clock + count timer */
+.tr{top:14px;right:18px;text-align:right}
+.clock{background:rgba(10,12,15,.78);border:1px solid #2a2e35;
+  padding:8px 12px;border-radius:2px;font-size:11px;color:#cfd4da}
+.clock b{color:#fff;display:block;font-size:14px;letter-spacing:.06em}
+.countdown{margin-top:6px;background:rgba(10,12,15,.78);
+  border:1px solid #2a2e35;border-left:3px solid var(--gold);
+  padding:6px 10px;font-size:10px;letter-spacing:.14em;color:#e9b949}
+
+/* Population panel left */
+.pop{top:90px;left:18px;width:230px;
+  background:rgba(10,12,15,.78);border:1px solid #2a2e35;
+  border-radius:2px;padding:10px 12px;font-size:11px}
+.pop .h{font-size:10px;letter-spacing:.16em;color:#9ba2ab;
+  border-bottom:1px solid #23262c;padding-bottom:5px;margin-bottom:7px}
+.pop .row{display:flex;justify-content:space-between;
+  align-items:center;margin:4px 0;font-size:11px}
+.pop .nm{color:#cfd4da}
+.pop .v{color:#fff;font-weight:600;font-variant-numeric:tabular-nums}
+.bar{position:relative;height:6px;background:#16191d;border-radius:1px;
+  overflow:hidden;margin:3px 0 6px 0}
+.bar > i{display:block;height:100%;transition:width .6s ease}
+.popcounter{font-size:22px;font-weight:700;color:#fff;letter-spacing:.04em}
+.popcounter small{font-size:11px;color:#9ba2ab;font-weight:400;margin-left:4px}
+
+/* Lower thirds */
+.lower{left:50%;transform:translateX(-50%);bottom:84px;
+  width:min(720px,82vw);background:linear-gradient(90deg,
+  rgba(217,74,61,.95),rgba(20,22,26,.95));
+  border-left:4px solid #fff;padding:10px 16px;border-radius:1px;
+  display:none}
+.lower.on{display:block}
+.lower .who{font-size:10px;letter-spacing:.18em;color:#ffd9d4}
+.lower .name{font-size:18px;font-weight:700;color:#fff;line-height:1.15}
+.lower .desc{font-size:11px;color:#f3e6e3;margin-top:2px}
+
+/* Ticker */
+.ticker{left:0;bottom:0;width:100%;height:32px;
+  background:rgba(10,12,15,.92);border-top:1px solid #2a2e35;
+  display:flex;align-items:center;overflow:hidden}
+.ticker .lbl{background:var(--accent);color:#fff;height:100%;
+  display:flex;align-items:center;padding:0 12px;font-weight:700;
+  font-size:11px;letter-spacing:.14em;flex-shrink:0}
+.ticker .scroll{flex:1;overflow:hidden;white-space:nowrap;font-size:12px;
+  color:#cfd4da}
+.ticker .scroll span{display:inline-block;padding-left:100%;
+  animation:tk 78s linear infinite}
+@keyframes tk{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+
+/* Quote subtitle */
+.subq{left:50%;transform:translateX(-50%);bottom:42px;
+  background:rgba(0,0,0,.8);border:1px solid #3a3e44;
+  padding:8px 16px;border-radius:1px;font-size:13px;color:#fff;
+  letter-spacing:.02em;font-style:italic;display:none;
+  max-width:560px;text-align:center}
+.subq.on{display:block}
+.subq:before{content:"❝ ";color:#9ba2ab}
+.subq:after{content:" ❞";color:#9ba2ab}
+
+/* Anchor PIP */
+.pip{right:18px;bottom:46px;width:200px;
+  background:rgba(10,12,15,.86);border:1px solid #2a2e35;
+  border-radius:2px;overflow:hidden}
+.pip .pcam{position:relative;height:120px;
+  background:linear-gradient(180deg,#1f242b,#0c0e11);
+  display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
+.pip .anchor{width:80px;height:96px;border-radius:50% 50% 12px 12px;
+  background:linear-gradient(180deg,#6b4435,#3a2820);position:relative;
+  margin-bottom:6px}
+.pip .anchor:before{content:"";position:absolute;left:8px;top:14px;
+  width:64px;height:48px;border-radius:50%;background:#9c6f57}
+.pip .anchor:after{content:"";position:absolute;left:6px;top:48px;
+  width:68px;height:48px;background:#3b4148;border-radius:6px}
+.pip .liveT{position:absolute;top:6px;left:6px;
+  background:#d94a3d;color:#fff;padding:2px 6px;font-size:9px;
+  letter-spacing:.14em;font-weight:700}
+.pip .label{padding:6px 8px;font-size:10px;color:#cfd4da;
+  border-top:1px solid #2a2e35;line-height:1.3}
+.pip .label b{color:#fff;display:block;font-size:11px}
+
+/* Director cam tag */
+.camtag{top:90px;right:18px;background:rgba(0,0,0,.7);
+  border:1px solid #3a3e44;padding:6px 11px;font-size:11px;
+  letter-spacing:.14em;color:#9ba2ab}
+.camtag b{color:#fff}
+
+/* Narrator quote */
+.narrate{top:160px;right:18px;width:280px;
+  background:rgba(10,12,15,.7);border-right:3px solid var(--gold);
+  padding:10px 12px;font-size:12px;color:#e6d8b3;font-style:italic;
+  line-height:1.4;letter-spacing:.01em}
+.narrate .src{display:block;margin-top:4px;font-style:normal;
+  font-size:9px;letter-spacing:.16em;color:#9ba2ab}
+
+/* Lockdown overlay */
+.lockdown{position:fixed;inset:0;background:rgba(60,8,8,.36);
+  pointer-events:none;display:none;animation:flash 1.4s infinite}
+.lockdown.on{display:block}
+@keyframes flash{0%,100%{opacity:.4}50%{opacity:.85}}
+.alert{position:fixed;top:50%;left:50%;
+  transform:translate(-50%,-50%);background:#3a0a0a;
+  border:2px solid #d94a3d;color:#fff;padding:20px 40px;
+  font-weight:700;font-size:24px;letter-spacing:.18em;
+  text-align:center;display:none;border-radius:2px;
+  box-shadow:0 0 60px rgba(217,74,61,.6)}
+.alert.on{display:block}
+.alert small{display:block;font-size:11px;font-weight:400;
+  letter-spacing:.16em;margin-top:6px;color:#ffd9d4}
+
+/* Day end overlay */
+.dayend{position:fixed;inset:0;background:rgba(0,0,0,.72);
+  display:none;align-items:center;justify-content:center;flex-direction:column}
+.dayend.on{display:flex}
+.dayend h1{font-size:42px;color:#fff;letter-spacing:.18em;font-weight:700}
+.dayend p{margin-top:12px;color:#cfd4da;font-size:13px;letter-spacing:.16em}
+</style>
+</head>
+<body>
+<!-- ROUND14_LIVING v1 -->
+<div id="stage"></div>
+
+<div class="ui logo">
+  <div class="badge">
+    <div class="title">BARROW CREEK <span class="live"><span class="dot"></span>LIVE</span></div>
+    <div class="sub">DOCUMENTARY FEED · MAX SECURITY</div>
+  </div>
+</div>
+
+<div class="ui tr">
+  <div class="clock"><span id="dateline">DAY 4 · 14:22</span><b id="yardstate">YARD OPEN</b></div>
+  <div class="countdown" id="countdown">NEXT COUNT IN 14:00</div>
+</div>
+
+<div class="ui pop">
+  <div class="h">YARD POPULATION</div>
+  <div class="popcounter"><span id="popnum">50</span><small>/50</small></div>
+  <div class="h" style="margin-top:8px">GANG AFFILIATION</div>
+  <div class="row"><span class="nm" style="color:#dcdcdc">WHITE TIGERS</span><span class="v" id="g0">12</span></div>
+  <div class="bar"><i id="b0" style="background:#dcdcdc;width:24%"></i></div>
+  <div class="row"><span class="nm" style="color:#d76b76">LA SOMBRA</span><span class="v" id="g1">11</span></div>
+  <div class="bar"><i id="b1" style="background:#a83b4a;width:22%"></i></div>
+  <div class="row"><span class="nm" style="color:#7aa3d4">THE FALCONS</span><span class="v" id="g2">10</span></div>
+  <div class="bar"><i id="b2" style="background:#3b6ea8;width:20%"></i></div>
+  <div class="row"><span class="nm" style="color:#a8acb0">NEUTRALS</span><span class="v" id="g3">17</span></div>
+  <div class="bar"><i id="b3" style="background:#6e7378;width:34%"></i></div>
+</div>
+
+<div class="ui camtag">CAM <b id="camname">YARD AERIAL</b></div>
+
+<div class="ui narrate" id="narrate">
+  ...and yet, in this concrete square, the men measure their days in laps.
+  <span class="src">— DOCUMENTARY NARRATION</span>
+</div>
+
+<div class="ui lower" id="lower">
+  <div class="who">WHO IS</div>
+  <div class="name" id="whoname">PADRE — #A-3104</div>
+  <div class="desc" id="whodesc">12 years served, calling daughter</div>
+</div>
+
+<div class="ui subq" id="subq">A man learns the weight of his own silence in here.</div>
+
+<div class="ui pip">
+  <div class="pcam"><div class="liveT">LIVE</div><div class="anchor"></div></div>
+  <div class="label"><b>HILDA MENSAH</b>FIELD CORRESPONDENT</div>
+</div>
+
+<div class="ui ticker">
+  <div class="lbl">ROSTER</div>
+  <div class="scroll"><span id="rosterscroll">— roster loading —</span></div>
+</div>
+
+<div class="lockdown" id="lockdown"></div>
+<div class="alert" id="alert">FACILITY LOCKDOWN<small id="alertsub">UNAUTHORIZED ALTERCATION — YARD SECURED</small></div>
+<div class="dayend" id="dayend"><h1>DAY ENDS</h1><p>INMATES RACK UP · YARD CLEARED</p></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ===== RNG + helpers ===== */
+var rseed=1;
+function R(){rseed=(rseed*1664525+1013904223)|0;return ((rseed>>>0)/4294967296);}
+function rr(a,b){return a+R()*(b-a);}
+function ri(a,b){return Math.floor(rr(a,b+1));}
+function pick(a){return a[ri(0,a.length-1)];}
+function clamp(v,a,b){return v<a?a:v>b?b:v;}
+
+/* ===== Three.js scene ===== */
+var THREE = window.THREE;
+var stage=document.getElementById("stage");
+var renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.0;
+stage.appendChild(renderer.domElement);
+
+var scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0xb6bcc3,40,170);
+
+var camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.5,400);
+camera.position.set(0,42,46);camera.lookAt(0,0,0);
+
+addEventListener("resize",function(){
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+/* track disposables for reseed */
+var disposables=[];
+function track(o){disposables.push(o);return o;}
+function disposeAll(){
+  for(var i=0;i<disposables.length;i++){
+    var o=disposables[i];
+    if(!o)continue;
+    if(o.geometry)o.geometry.dispose();
+    if(o.material){
+      if(Array.isArray(o.material)){
+        o.material.forEach(function(m){m.dispose();});
+      } else o.material.dispose();
+    }
+    if(o.parent)o.parent.remove(o);
+  }
+  disposables.length=0;
+}
+
+/* ===== Lights & Sky ===== */
+var sky=new THREE.HemisphereLight(0xb6bcc3,0x4d4f52,0.85);
+scene.add(sky);
+var sun=new THREE.DirectionalLight(0xffeeda,0.9);
+sun.position.set(38,55,28);sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+sun.shadow.camera.left=-40;sun.shadow.camera.right=40;
+sun.shadow.camera.top=40;sun.shadow.camera.bottom=-40;
+sun.shadow.camera.near=1;sun.shadow.camera.far=130;
+scene.add(sun);
+scene.background=new THREE.Color(0xb6bcc3);
+
+/* ===== Static facility build (persistent across reseeds) ===== */
+var permGroup=new THREE.Group();
+scene.add(permGroup);
+
+/* concrete yard */
+var yardGeo=new THREE.PlaneGeometry(60,60,1,1);
+var yardMat=new THREE.MeshStandardMaterial({
+  color:0x9a9c9e,roughness:0.95,metalness:0.0});
+var yard=new THREE.Mesh(yardGeo,yardMat);
+yard.rotation.x=-Math.PI/2;yard.receiveShadow=true;
+permGroup.add(yard);
+
+/* yard line markings (procedural) */
+function addLine(x,z,w,h,c){
+  var g=new THREE.PlaneGeometry(w,h);
+  var m=new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:0.7});
+  var p=new THREE.Mesh(g,m);
+  p.rotation.x=-Math.PI/2;p.position.set(x,0.02,z);
+  permGroup.add(p);
+}
+/* perimeter walk track outline */
+addLine(0,-23,46,0.3,0xe8d68a);addLine(0,23,46,0.3,0xe8d68a);
+addLine(-23,0,0.3,46,0xe8d68a);addLine(23,0,0.3,46,0xe8d68a);
+
+/* basketball court (right side) */
+addLine(15,-12,16,12,0xc97a3a);
+addLine(15,-12,0.18,12,0xfff0d8);
+addLine(15,-6,16,0.18,0xfff0d8);
+/* free throw arc approx via thin disks */
+
+/* Cell block wall (north) */
+function makeWall(w,h,d,c){
+  var g=new THREE.BoxGeometry(w,h,d);
+  var m=new THREE.MeshStandardMaterial({color:c,roughness:0.95});
+  var b=new THREE.Mesh(g,m);b.castShadow=true;b.receiveShadow=true;
+  return b;
+}
+var cellWall=makeWall(60,9,2,0x6e7176);
+cellWall.position.set(0,4.5,-30);
+permGroup.add(cellWall);
+
+/* Barred windows */
+var winGeo=new THREE.PlaneGeometry(2,1.4);
+var winMat=new THREE.MeshBasicMaterial({color:0x141618});
+var barMat=new THREE.MeshBasicMaterial({color:0x2a2c2f});
+for(var i=-26;i<=26;i+=4){
+  var w=new THREE.Mesh(winGeo,winMat);
+  w.position.set(i,5.2,-28.95);
+  permGroup.add(w);
+  for(var k=0;k<3;k++){
+    var b=new THREE.Mesh(new THREE.PlaneGeometry(0.08,1.4),barMat);
+    b.position.set(i-0.6+k*0.6,5.2,-28.93);
+    permGroup.add(b);
+  }
+}
+
+/* Cell block door (gated) */
+var doorMat=new THREE.MeshStandardMaterial({color:0x2a2c2f,metalness:0.4,roughness:0.6});
+var doorFrame=new THREE.Mesh(new THREE.BoxGeometry(4,5,0.4),doorMat);
+doorFrame.position.set(0,2.5,-29);permGroup.add(doorFrame);
+
+/* visit door (east) */
+var visitDoor=new THREE.Mesh(new THREE.BoxGeometry(0.4,4,3),doorMat);
+visitDoor.position.set(29.8,2,-15);permGroup.add(visitDoor);
+
+/* South wall (LA SOMBRA territory wall) */
+var southWall=makeWall(60,3.5,1.4,0x7a7e83);
+southWall.position.set(0,1.75,29.5);
+permGroup.add(southWall);
+
+/* East / West walls */
+var wWall=makeWall(1.4,3.5,60,0x7a7e83);wWall.position.set(-29.5,1.75,0);permGroup.add(wWall);
+var eWall=makeWall(1.4,3.5,60,0x7a7e83);eWall.position.set(29.5,1.75,0);permGroup.add(eWall);
+
+/* chain-link fence above walls (simple cross-grid mesh) */
+function chainSegment(w,y,z,axis){
+  var g=new THREE.PlaneGeometry(w,3,Math.floor(w),3);
+  var m=new THREE.MeshBasicMaterial({color:0xcfd4da,wireframe:true,transparent:true,opacity:0.45});
+  var p=new THREE.Mesh(g,m);
+  if(axis==="z"){p.rotation.y=Math.PI/2;p.position.set(z,y,0);}
+  else {p.position.set(0,y,z);}
+  permGroup.add(p);
+}
+chainSegment(60,5,29.5,"x");chainSegment(60,5,-29.5,"x");
+chainSegment(60,5,-29.5,"z");chainSegment(60,5,29.5,"z");
+
+/* razor wire helix on top of walls — represented by torus rings */
+var wireMat=new THREE.MeshBasicMaterial({color:0xcfd4da});
+for(var rw=-28;rw<=28;rw+=3){
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(0.55,0.05,4,10),wireMat);
+  ring.position.set(rw,6.6,29.5);ring.rotation.y=Math.PI/2;
+  permGroup.add(ring);
+  var ring2=ring.clone();ring2.position.set(rw,6.6,-29.5);permGroup.add(ring2);
+}
+
+/* Watchtowers (4 corners) */
+function makeTower(x,z){
+  var g=new THREE.Group();
+  var leg=new THREE.MeshStandardMaterial({color:0x55585c,roughness:0.7});
+  for(var lx=-1;lx<=1;lx+=2)for(var lz=-1;lz<=1;lz+=2){
+    var m=new THREE.Mesh(new THREE.BoxGeometry(0.3,11,0.3),leg);
+    m.position.set(lx*1.2,5.5,lz*1.2);g.add(m);
+  }
+  var deck=new THREE.Mesh(new THREE.BoxGeometry(3.6,0.3,3.6),
+    new THREE.MeshStandardMaterial({color:0x3a3e44}));
+  deck.position.y=10.6;g.add(deck);
+  var hut=new THREE.Mesh(new THREE.BoxGeometry(2.6,2.2,2.6),
+    new THREE.MeshStandardMaterial({color:0x6e7176,roughness:0.7}));
+  hut.position.y=11.9;g.add(hut);
+  var roof=new THREE.Mesh(new THREE.ConeGeometry(2.2,0.9,4),
+    new THREE.MeshStandardMaterial({color:0x40444a}));
+  roof.rotation.y=Math.PI/4;roof.position.y=13.4;g.add(roof);
+  /* guard silhouette */
+  var guard=new THREE.Mesh(new THREE.CapsuleGeometry(0.28,0.7,3,6),
+    new THREE.MeshStandardMaterial({color:0x2c3138}));
+  guard.position.set(0.7,12.0,0.7);g.add(guard);
+  /* spotlight ring */
+  var sp=new THREE.Mesh(new THREE.SphereGeometry(0.14,6,6),
+    new THREE.MeshBasicMaterial({color:0xffe4a8}));
+  sp.position.set(0,11.0,0);g.add(sp);
+  g.position.set(x,0,z);
+  permGroup.add(g);
+  return g;
+}
+var towers=[
+  makeTower(-28,-28),makeTower(28,-28),
+  makeTower(-28,28),makeTower(28,28)
+];
+
+/* Basketball hoop (right side) */
+function makeHoop(){
+  var g=new THREE.Group();
+  var pole=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,4),
+    new THREE.MeshStandardMaterial({color:0x2a2c2f}));
+  pole.position.y=2;g.add(pole);
+  var board=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.4,0.08),
+    new THREE.MeshStandardMaterial({color:0xefefef}));
+  board.position.set(0,3.6,0.2);g.add(board);
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.05,8,16),
+    new THREE.MeshStandardMaterial({color:0xc94c2c}));
+  ring.rotation.x=Math.PI/2;ring.position.set(0,3.1,0.6);g.add(ring);
+  return g;
+}
+var hoop=makeHoop();hoop.position.set(20,0,-12.4);permGroup.add(hoop);
+
+/* Weight pile (rusted barbells) */
+function makeWeightPile(){
+  var g=new THREE.Group();
+  /* benches */
+  for(var b=0;b<3;b++){
+    var bench=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.3,0.6),
+      new THREE.MeshStandardMaterial({color:0x4a3128}));
+    bench.position.set(0,0.5,-2+b*1.6);g.add(bench);
+    /* legs */
+    var lg=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.5,0.2),
+      new THREE.MeshStandardMaterial({color:0x2c2c2f}));
+    lg.position.set(-0.9,0.25,-2+b*1.6);g.add(lg);
+    var lg2=lg.clone();lg2.position.x=0.9;g.add(lg2);
+    /* barbell */
+    var bar=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,2.6,6),
+      new THREE.MeshStandardMaterial({color:0x6c5642,roughness:0.9}));
+    bar.rotation.z=Math.PI/2;bar.position.set(0,0.95,-2+b*1.6);g.add(bar);
+    /* plates */
+    for(var s=-1;s<=1;s+=2){
+      var pl=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,0.12,12),
+        new THREE.MeshStandardMaterial({color:0x2c2c2f}));
+      pl.rotation.z=Math.PI/2;pl.position.set(s*1.05,0.95,-2+b*1.6);g.add(pl);
+    }
+  }
+  /* loose weights */
+  for(var lw=0;lw<6;lw++){
+    var loose=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,0.1,10),
+      new THREE.MeshStandardMaterial({color:0x3a3a3e,roughness:0.95}));
+    loose.position.set(rr(-3,3),0.05,rr(2.5,4.5));g.add(loose);
+  }
+  return g;
+}
+var weightPile=makeWeightPile();
+weightPile.position.set(-20,0,-12);
+permGroup.add(weightPile);
+
+/* Phones along east wall */
+var phoneGroup=new THREE.Group();
+for(var ph=0;ph<3;ph++){
+  var box=new THREE.Mesh(new THREE.BoxGeometry(0.6,1.4,0.5),
+    new THREE.MeshStandardMaterial({color:0x303338}));
+  box.position.set(28.5,1.6,-2+ph*2);
+  phoneGroup.add(box);
+  var rec=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.5,0.16),
+    new THREE.MeshStandardMaterial({color:0x14181c}));
+  rec.position.set(27.95,1.7,-2+ph*2);phoneGroup.add(rec);
+}
+permGroup.add(phoneGroup);
+
+/* Picnic tables (4) */
+function makeTable(x,z){
+  var g=new THREE.Group();
+  var top=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.12,1.0),
+    new THREE.MeshStandardMaterial({color:0x4a4138,roughness:0.9}));
+  top.position.y=0.8;g.add(top);
+  var b1=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.1,0.4),
+    new THREE.MeshStandardMaterial({color:0x4a4138}));
+  b1.position.set(0,0.4,0.8);g.add(b1);
+  var b2=b1.clone();b2.position.z=-0.8;g.add(b2);
+  /* legs */
+  var legM=new THREE.MeshStandardMaterial({color:0x2a2a2c});
+  for(var sx=-1;sx<=1;sx+=2)for(var sz=-1;sz<=1;sz+=2){
+    var leg=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.8,0.1),legM);
+    leg.position.set(sx*1.0,0.4,sz*0.4);g.add(leg);
+  }
+  g.position.set(x,0,z);return g;
+}
+var tables=[
+  makeTable(-12,8),makeTable(-4,12),
+  makeTable(8,8),makeTable(16,12)
+];
+tables.forEach(function(t){permGroup.add(t);});
+
+/* Door light (visit) */
+var visitLight=new THREE.PointLight(0xffe9a8,0.5,8);
+visitLight.position.set(28,3,-15);permGroup.add(visitLight);
+
+/* ===== Dynamic per-round group (cleared on reseed) ===== */
+var liveGroup=new THREE.Group();
+scene.add(liveGroup);
+
+/* ===== Inmate model ===== */
+function makeInmate(color,bandColor){
+  var g=new THREE.Group();
+  var bodyMat=new THREE.MeshStandardMaterial({color:color,roughness:0.85});
+  var torso=new THREE.Mesh(new THREE.BoxGeometry(0.7,1.0,0.4),bodyMat);
+  torso.position.y=0.85;torso.castShadow=true;g.add(torso);
+  var pants=new THREE.Mesh(new THREE.BoxGeometry(0.65,0.9,0.42),
+    new THREE.MeshStandardMaterial({color:0x4a5e7a,roughness:0.95}));
+  pants.position.y=0.0;pants.castShadow=true;g.add(pants);
+  var head=new THREE.Mesh(new THREE.SphereGeometry(0.27,10,8),
+    new THREE.MeshStandardMaterial({color:0x9c7458,roughness:0.8}));
+  head.position.y=1.55;head.castShadow=true;g.add(head);
+  /* headband (gang color) */
+  var band=new THREE.Mesh(new THREE.TorusGeometry(0.27,0.045,4,12),
+    new THREE.MeshBasicMaterial({color:bandColor}));
+  band.rotation.x=Math.PI/2;band.position.y=1.62;g.add(band);
+  /* arms */
+  var armMat=new THREE.MeshStandardMaterial({color:color,roughness:0.85});
+  var lArm=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.95,0.22),armMat);
+  lArm.position.set(-0.46,0.85,0);g.add(lArm);
+  var rArm=lArm.clone();rArm.position.x=0.46;g.add(rArm);
+  g.userData={lArm:lArm,rArm:rArm,torso:torso,head:head};
+  track(torso);track(pants);track(head);track(band);track(lArm);track(rArm);
+  return g;
+}
+
+function makeGuard(){
+  var g=new THREE.Group();
+  var uni=new THREE.MeshStandardMaterial({color:0x2c3138,roughness:0.7});
+  var torso=new THREE.Mesh(new THREE.BoxGeometry(0.78,1.05,0.42),uni);
+  torso.position.y=0.9;torso.castShadow=true;g.add(torso);
+  var pants=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.9,0.44),uni);
+  pants.position.y=0.0;pants.castShadow=true;g.add(pants);
+  var head=new THREE.Mesh(new THREE.SphereGeometry(0.28,10,8),
+    new THREE.MeshStandardMaterial({color:0xb88f72,roughness:0.85}));
+  head.position.y=1.6;head.castShadow=true;g.add(head);
+  var cap=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,0.16,12),
+    new THREE.MeshStandardMaterial({color:0x14181c}));
+  cap.position.y=1.78;g.add(cap);
+  var brim=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.36,0.04,12),
+    new THREE.MeshStandardMaterial({color:0x14181c}));
+  brim.position.y=1.7;g.add(brim);
+  /* badge */
+  var badge=new THREE.Mesh(new THREE.PlaneGeometry(0.14,0.18),
+    new THREE.MeshBasicMaterial({color:0xe9b949}));
+  badge.position.set(0.22,1.05,0.22);g.add(badge);
+  track(torso);track(pants);track(head);track(cap);track(brim);track(badge);
+  return g;
+}
+
+/* ===== Names + characters ===== */
+var FIRST=["Marcus","Devon","Hector","Ezekiel","Leon","Aaron","Cyrus","Eli","Tomas","Boone",
+  "Rufus","Jamal","Theo","Rene","Ivan","Roy","Saul","Demetrius","Otis","Curtis",
+  "Felix","Reggie","Cole","Pablo","Manuel","Zane","Donovan","Jameson","Wade","Kirby",
+  "Solomon","Marshall","Bishop","Travis","Jericho","Vincent","Reuben","Garrett","Quincy","Booker"];
+var LAST=["Hollis","Reyes","Cruz","Mata","Whitfield","Burke","Aguilar","Vega","Pratt","Ortega",
+  "Caldwell","Rojas","McKinney","Beasley","Sutton","Quintero","Salazar","Holloway","Russo","Marsh",
+  "Tatum","Goodwin","Pena","Espinoza","Briggs","Carmichael","Mendoza","Lott","Houston","Doyle"];
+var NICK=["ROCK","TINMAN","PADRE","DUKE","SHOTGUN","BOOKS","SLIM","BIG E","COWBOY","TALL TIM",
+  "PROFESSOR","KING","DEACON","RAZOR","SAINT","ROACH","DOC","STRINGS","MOOSE","PEACE",
+  "SLEEPY","HUSH","BANKS","CHIEF","ANGEL","COIN","SPARK","CARGO","BLINK","NORTH"];
+
+var FACT=[
+  {name:"WHITE TIGERS",color:0xdcdcdc,band:0xf0f0f0,jacket:0xb8b3a8,shortcode:"A",zone:[-22,-12,-22,-2]},
+  {name:"LA SOMBRA",   color:0xa83b4a,band:0xd94a3d,jacket:0xb8b3a8,shortcode:"B",zone:[6,22,16,24]},
+  {name:"THE FALCONS", color:0x3b6ea8,band:0x5b8dcf,jacket:0xb8b3a8,shortcode:"C",zone:[10,22,-18,-8]},
+  {name:"NEUTRALS",    color:0x6e7378,band:0x8a8e92,jacket:0xb8b3a8,shortcode:"D",zone:[-22,22,0,18]}
+];
+
+var inmates=[];
+var guards=[];
+var ROUND=0;
+
+/* Featured 3 characters per round */
+var featured=[];
+
+/* Events queue */
+var nowEvent=null;     /* {kind, time, ...} */
+var eventTimer=0;
+var roundStart=0;
+
+/* ===== Build inmates ===== */
+function buildRoster(){
+  inmates.forEach(function(inm){
+    if(inm.mesh && inm.mesh.parent) inm.mesh.parent.remove(inm.mesh);
+  });
+  inmates.length=0;
+  guards.forEach(function(gd){
+    if(gd.mesh && gd.mesh.parent) gd.mesh.parent.remove(gd.mesh);
+  });
+  guards.length=0;
+
+  var counts=[12,11,10,17];
+  /* small variation */
+  counts[0]=ri(10,13);counts[1]=ri(9,12);counts[2]=ri(9,12);
+  counts[3]=50-counts[0]-counts[1]-counts[2];
+  if(counts[3]<10){counts[3]=10;counts[0]=Math.max(8,counts[0]-1);}
+
+  var jackets=["A","B","A","C"]; /* prefix codes */
+  var idx=0;
+  for(var f=0;f<4;f++){
+    var fac=FACT[f];
+    for(var i=0;i<counts[f];i++){
+      var x=rr(fac.zone[0],fac.zone[1]);
+      var z=rr(fac.zone[2],fac.zone[3]);
+      var inm={};
+      inm.name=pick(FIRST)+" "+pick(LAST);
+      inm.nick=pick(NICK);
+      inm.jnum=fac.shortcode+"-"+ri(1000,3999);
+      inm.fac=f;
+      inm.mesh=makeInmate(fac.jacket,fac.band);
+      inm.mesh.position.set(x,0.0,z);
+      inm.home=new THREE.Vector3(x,0,z);
+      inm.target=new THREE.Vector3(x+rr(-1,1),0,z+rr(-1,1));
+      inm.state="idle";
+      inm.statet=rr(2,8);
+      inm.speed=rr(0.6,1.0);
+      inm.years=ri(2,28);
+      inm.layFlat=false;
+      inm.spotted=false;
+      liveGroup.add(inm.mesh);
+      inmates.push(inm);
+      idx++;
+    }
+  }
+  /* 3 named featured override last positions */
+  featured=[];
+  /* Rock — White Tiger leader */
+  var rock=inmates.find(function(x){return x.fac===0;});
+  if(rock){rock.nick="ROCK";rock.years=18;rock.featuredRole="leader";featured.push(rock);}
+  /* Padre — Neutral */
+  var padre=inmates.find(function(x){return x.fac===3;});
+  if(padre){padre.nick="PADRE";padre.years=12;padre.featuredRole="phone";featured.push(padre);}
+  /* Tinman — La Sombra middle */
+  var tin=inmates.find(function(x){return x.fac===1;});
+  if(tin){tin.nick="TINMAN";tin.years=6;tin.featuredRole="contraband";featured.push(tin);}
+
+  /* 4 guards */
+  for(var gi=0;gi<4;gi++){
+    var gm=makeGuard();
+    var gx=rr(-22,22),gz=rr(-26,24);
+    gm.position.set(gx,0,gz);
+    var grd={mesh:gm,target:new THREE.Vector3(gx,0,gz),
+      home:new THREE.Vector3(gx,0,gz),speed:0.7,statet:rr(3,7)};
+    liveGroup.add(gm);
+    guards.push(grd);
+  }
+
+  /* Update UI population bars */
+  var total=counts[0]+counts[1]+counts[2]+counts[3];
+  document.getElementById("popnum").textContent=total;
+  for(var ub=0;ub<4;ub++){
+    document.getElementById("g"+ub).textContent=counts[ub];
+    document.getElementById("b"+ub).style.width=(counts[ub]/total*100).toFixed(0)+"%";
+  }
+
+  buildRoster.lastCounts=counts;
+}
+
+/* ===== Camera director ===== */
+var CAMS=[
+  {n:"YARD AERIAL",  pos:[0,46,46],  look:[0,0,0]},
+  {n:"WEIGHT PILE",  pos:[-14,4,-6], look:[-20,1,-12]},
+  {n:"BASKETBALL",   pos:[8,5,-6],   look:[20,1,-12]},
+  {n:"PHONE BANK",   pos:[20,4,4],   look:[28,1,0]},
+  {n:"WATCHTOWER NE",pos:[26,12,-26],look:[0,0,0]},
+  {n:"GUARD POV",    pos:[0,2.0,18], look:[0,1.5,-10]},
+  {n:"WALK TRACK",   pos:[-22,3,18], look:[22,1,-18]},
+  {n:"EAST GATE",    pos:[24,3.5,-15],look:[29,1,-15]}
+];
+var camIdx=0,camHold=0,camLerp=0;
+var camFromPos=new THREE.Vector3(0,46,46);
+var camToPos=new THREE.Vector3(0,46,46);
+var camFromLook=new THREE.Vector3();
+var camToLook=new THREE.Vector3();
+var curLook=new THREE.Vector3();
+function setCam(i){
+  camIdx=i;
+  camFromPos.copy(camera.position);
+  camFromLook.copy(curLook);
+  var c=CAMS[i];
+  camToPos.set(c.pos[0],c.pos[1],c.pos[2]);
+  camToLook.set(c.look[0],c.look[1],c.look[2]);
+  camHold=rr(7,11);camLerp=0;
+  document.getElementById("camname").textContent=c.n;
+}
+setCam(0);curLook.copy(camToLook);
+
+/* ===== UI helpers ===== */
+function showLower(name,desc){
+  document.getElementById("whoname").textContent=name;
+  document.getElementById("whodesc").textContent=desc;
+  var el=document.getElementById("lower");el.classList.add("on");
+  clearTimeout(showLower.t);
+  showLower.t=setTimeout(function(){el.classList.remove("on");},9000);
+}
+function showSubq(text){
+  var el=document.getElementById("subq");
+  el.textContent=text;el.classList.add("on");
+  clearTimeout(showSubq.t);
+  showSubq.t=setTimeout(function(){el.classList.remove("on");},6500);
+}
+function setNarrate(text){
+  var el=document.getElementById("narrate");
+  el.innerHTML=text+" <span class='src'>— DOCUMENTARY NARRATION</span>";
+}
+function setYardState(s){document.getElementById("yardstate").textContent=s;}
+
+/* Narrator quotes (Werner Herzog tone, empathetic) */
+var QUOTES=[
+  "...and yet, in this concrete square, the men measure their days in laps.",
+  "There is a particular silence under fluorescent light. It is not peace.",
+  "Each of them carries a small folded photograph somewhere on his person.",
+  "The barbells are rusted. They have been lifted by men no longer here.",
+  "Time, in this place, does not move forward — it accumulates.",
+  "A phone call home is a fragile thing, and yet the line forms every morning.",
+  "Even the wind seems to negotiate its way through the razor wire.",
+  "He told me, once, that he could see the field where his daughter played.",
+  "Concrete remembers nothing — and so the men do the remembering.",
+  "The yard is small. The interior, much larger.",
+  "There are codes here, older than the walls themselves.",
+  "What we call rehabilitation is, in fact, the patience of waiting.",
+  "Outside, his daughter is graduating. The light here is the same light.",
+  "A man is more than his worst day. The yard insists otherwise.",
+  "I have come to understand that the loneliest hour is exercise hour."
+];
+
+/* Subtitle quotes (inmate speech) */
+var SUBQUOTES_PHONE=[
+  "I'm okay. Tell your mother I'm okay.",
+  "Did you get the letter? The one with the drawing?",
+  "Twelve years. I count them in your birthdays.",
+  "Don't come visit. Just send a picture.",
+  "I love you. I'll always love you.",
+  "How was the recital? Tell me everything."
+];
+var SUBQUOTES_GENERAL=[
+  "I been on the inside longer than I been a man.",
+  "You do the time, you don't let the time do you.",
+  "Yard's the only place I see sky.",
+  "Everybody in here got a story. Mine ain't done.",
+  "I lift heavy so I don't think heavy.",
+  "My word is all I got left in the world."
+];
+
+/* ===== Main loop & events ===== */
+var clock=new THREE.Clock();
+var simTime=0;          /* sim minutes */
+var roundDuration=9*60; /* 9 minutes IRL = one cycle */
+var roundElapsed=0;
+var nextCount=14*60;    /* sim seconds until count */
+var ticker=document.getElementById("rosterscroll");
+
+function buildTickerText(){
+  var s="BARROW CREEK DAILY ROSTER · ";
+  for(var i=0;i<inmates.length;i+=2){
+    var inm=inmates[i];
+    s+="#"+inm.jnum+" '"+inm.nick+"' ("+FACT[inm.fac].name+") "+inm.years+"y · ";
+  }
+  s+="ALL INMATES ACCOUNTED FOR · COUNT IN PROGRESS · ";
+  return s+s; /* duplicate for smooth scroll */
+}
+
+/* ===== Lockdown logic ===== */
+var lockdownActive=false;
+function startLockdown(reason){
+  lockdownActive=true;
+  document.getElementById("lockdown").classList.add("on");
+  document.getElementById("alert").classList.add("on");
+  document.getElementById("alertsub").textContent=reason||"UNAUTHORIZED ALTERCATION — YARD SECURED";
+  setYardState("LOCKDOWN");
+  /* every inmate goes flat */
+  for(var i=0;i<inmates.length;i++){
+    var inm=inmates[i];
+    inm.state="flat";inm.statet=rr(20,30);inm.layFlat=true;
+    inm.mesh.rotation.x=-Math.PI/2;
+    inm.mesh.position.y=0.2;
+  }
+  /* guards converge */
+  for(var g=0;g<guards.length;g++){
+    var grd=guards[g];
+    grd.target.set(rr(-8,8),0,rr(-8,8));
+    grd.speed=1.6;
+  }
+  setNarrate("The whistle. Then the silence that follows the whistle. The men know what to do.");
+  showSubq("Get down! Everybody down! Hands flat!");
+}
+function endLockdown(){
+  lockdownActive=false;
+  document.getElementById("lockdown").classList.remove("on");
+  document.getElementById("alert").classList.remove("on");
+  setYardState("YARD OPEN");
+  for(var i=0;i<inmates.length;i++){
+    var inm=inmates[i];
+    inm.state="idle";inm.statet=rr(2,5);inm.layFlat=false;
+    inm.mesh.rotation.x=0;inm.mesh.position.y=0;
+  }
+  for(var g=0;g<guards.length;g++){
+    var grd=guards[g];grd.speed=0.7;
+    grd.target.copy(grd.home);
+  }
+  setNarrate("After the lockdown, the day resumes — the way a river resumes after a stone.");
+}
+
+/* Day end: all inmates rack up (move to cell block door) */
+var dayEnding=false;
+function dayEnd(){
+  dayEnding=true;
+  document.getElementById("dayend").classList.add("on");
+  setYardState("DAY END · INMATES RACK UP");
+  setNarrate("And the day folds itself closed. The yard, briefly, becomes a memory.");
+  for(var i=0;i<inmates.length;i++){
+    var inm=inmates[i];
+    inm.state="rackup";
+    inm.target.set(rr(-3,3),0,-26);
+    inm.layFlat=false;
+    inm.mesh.rotation.x=0;
+    inm.mesh.position.y=0;
+  }
+}
+function reseed(){
+  document.getElementById("dayend").classList.remove("on");
+  ROUND++;
+  rseed=(Date.now()*7919+ROUND*131)|0;
+  /* clear dynamic */
+  inmates.forEach(function(inm){
+    if(inm.mesh){
+      inm.mesh.traverse(function(o){
+        if(o.geometry)o.geometry.dispose();
+        if(o.material){
+          if(Array.isArray(o.material))o.material.forEach(function(m){m.dispose();});
+          else o.material.dispose();
+        }
+      });
+      if(inm.mesh.parent)inm.mesh.parent.remove(inm.mesh);
+    }
+  });
+  guards.forEach(function(grd){
+    if(grd.mesh){
+      grd.mesh.traverse(function(o){
+        if(o.geometry)o.geometry.dispose();
+        if(o.material){
+          if(Array.isArray(o.material))o.material.forEach(function(m){m.dispose();});
+          else o.material.dispose();
+        }
+      });
+      if(grd.mesh.parent)grd.mesh.parent.remove(grd.mesh);
+    }
+  });
+  inmates.length=0;guards.length=0;disposables.length=0;
+  buildRoster();
+  ticker.textContent=buildTickerText();
+  roundStart=performance.now();
+  roundElapsed=0;
+  dayEnding=false;lockdownActive=false;
+  document.getElementById("lockdown").classList.remove("on");
+  document.getElementById("alert").classList.remove("on");
+  setYardState("YARD OPEN");
+  nextCount=rr(8,14)*60;
+  setNarrate("A new shift. New names. The same gray sky over Barrow Creek.");
+  /* Schedule first event */
+  scheduleNextEvent(8);
+}
+
+/* Event scheduler */
+var eventCooldown=0;
+function scheduleNextEvent(secs){eventCooldown=secs;}
+
+function pickEvent(){
+  if(lockdownActive||dayEnding)return;
+  var kinds=["phone","weight","ball","gangmeet","contra","intake","release","fight","visit"];
+  /* lower probability of fight */
+  var roll=R();
+  var k;
+  if(roll<0.18) k="fight";
+  else if(roll<0.32) k="phone";
+  else if(roll<0.45) k="contra";
+  else if(roll<0.58) k="ball";
+  else if(roll<0.7) k="weight";
+  else if(roll<0.78) k="visit";
+  else if(roll<0.86) k="intake";
+  else if(roll<0.92) k="release";
+  else k="gangmeet";
+  triggerEvent(k);
+}
+
+function triggerEvent(k){
+  if(k==="phone"){
+    var p=featured.find(function(x){return x.featuredRole==="phone";})||pick(inmates);
+    p.state="phone";p.statet=12;p.target.set(28.0,0,-2+ri(0,2)*2);
+    setCam(3);
+    showLower(p.nick+" — #"+p.jnum, p.years+" years served, calling daughter");
+    showSubq(pick(SUBQUOTES_PHONE));
+    setNarrate("He calls home on Wednesdays. The daughter answers, sometimes.");
+  }
+  else if(k==="weight"){
+    var tigers=inmates.filter(function(x){return x.fac===0;}).slice(0,6);
+    tigers.forEach(function(t,i){
+      t.state="lift";t.statet=rr(8,14);
+      t.target.set(-20+(i%3-1)*1.6,0,-12+Math.floor(i/3)*1.6-0.5);
+    });
+    setCam(1);
+    setNarrate("The barbell does not lie. It either lifts or it does not.");
+    showLower("WHITE TIGERS — WEIGHT PILE","Six men. Forty-five-pound plates. No words.");
+  }
+  else if(k==="ball"){
+    var falcons=inmates.filter(function(x){return x.fac===2;}).slice(0,5);
+    var neutrals=inmates.filter(function(x){return x.fac===3;}).slice(0,5);
+    falcons.concat(neutrals).forEach(function(b,i){
+      b.state="ball";b.statet=rr(10,16);
+      b.target.set(14+rr(-6,6),0,-12+rr(-4,4));
+    });
+    setCam(2);
+    setNarrate("They play hard. There are no fouls called, only memories.");
+    showLower("FALCONS vs NEUTRALS","Half-court. Best-of-three. No referee.");
+  }
+  else if(k==="gangmeet"){
+    var leader=featured.find(function(x){return x.featuredRole==="leader";})||pick(inmates);
+    var fac=FACT[leader.fac];
+    leader.state="meet";leader.statet=12;
+    leader.target.set(-12,0,8);
+    /* gather 3 lieutenants */
+    var ls=inmates.filter(function(x){return x.fac===leader.fac;}).slice(1,4);
+    ls.forEach(function(li,i){
+      li.state="meet";li.statet=12;
+      li.target.set(-12+(i-1)*0.9,0,8.4+(i%2)*0.6);
+    });
+    setCam(7);
+    showLower(leader.nick+" — #"+leader.jnum,fac.name+" leadership · table convenes");
+    showSubq("Word travels. Make sure it travels right.");
+    setNarrate("The meeting at the picnic table is the oldest form of governance here.");
+  }
+  else if(k==="contra"){
+    var t=featured.find(function(x){return x.featuredRole==="contraband";})||pick(inmates);
+    var partner=pick(inmates.filter(function(x){return x!==t&&x.fac===3;}));
+    if(partner){
+      t.state="walk";t.statet=10;
+      t.target.set(rr(-18,18),0,17);
+      partner.state="walk";partner.statet=10;
+      partner.target.copy(t.target).addScalar(rr(-0.8,0.8));
+    }
+    setCam(6);
+    showLower("OBSERVED — HANDOFF SUSPECTED","Walk track · two figures · close pass · 14:23");
+    setNarrate("A small folded thing changes hands. A name. A pill. A note. Nobody is certain.");
+  }
+  else if(k==="intake"){
+    /* spawn a new inmate (replace one offline) */
+    var slot=inmates.length<50;
+    if(slot){
+      var fac=FACT[3]; /* always neutral on intake */
+      var x=rr(-2,2),z=22;
+      var inm={};
+      inm.name=pick(FIRST)+" "+pick(LAST);
+      inm.nick=pick(NICK);
+      inm.jnum="N-"+ri(4000,4999);
+      inm.fac=3;
+      inm.mesh=makeInmate(fac.jacket,fac.band);
+      inm.mesh.position.set(x,0,z);
+      inm.home=new THREE.Vector3(0,0,0);
+      inm.target=new THREE.Vector3(0,0,0);
+      inm.state="walk";inm.statet=12;inm.speed=0.6;inm.years=ri(2,15);
+      liveGroup.add(inm.mesh);
+      inmates.push(inm);
+    }
+    setCam(7);
+    showLower("INTAKE — NEW INMATE","Prison-blues issued · jacket assigned · gen-pop integration");
+    setNarrate("A new face arrives. The yard adjusts. It always does.");
+    document.getElementById("popnum").textContent=inmates.length;
+  }
+  else if(k==="release"){
+    var p=featured.find(function(x){return x.featuredRole==="phone";})||pick(inmates);
+    p.state="release";p.statet=20;p.target.set(29,0,-15);
+    setCam(7);
+    var d=ri(20,300),m=ri(0,11),y=p.years;
+    showLower("RELEASED — "+p.nick+" — TIME SERVED","" +y+" years, "+m+" months, "+(d%30)+" days");
+    setNarrate("He walks out the way he came in: with very little. The light, however, is different.");
+    showSubq("First thing I'm doing is sitting on grass.");
+  }
+  else if(k==="fight"){
+    /* two inmates square up — short, then lockdown */
+    var a=pick(inmates.filter(function(x){return x.fac===0;}));
+    var b=pick(inmates.filter(function(x){return x.fac===1;}));
+    if(a&&b){
+      a.state="square";a.statet=4;a.target.set(0,0,2);
+      b.state="square";b.statet=4;b.target.set(0,0,3);
+      /* others form circle */
+      inmates.forEach(function(x){
+        if(x===a||x===b||lockdownActive)return;
+        if(R()<0.45){
+          x.state="circle";x.statet=4;
+          var ang=rr(0,Math.PI*2);
+          x.target.set(Math.cos(ang)*4,0,2.5+Math.sin(ang)*4);
+        }
+      });
+      setCam(7);
+      showLower("YARD ALTERCATION","Two inmates squared up — circle forming");
+      setNarrate("There is a moment — a half-step — before any of it happens. That is the moment.");
+      /* schedule lockdown 4s later */
+      setTimeout(function(){
+        if(!lockdownActive&&!dayEnding) startLockdown("UNAUTHORIZED ALTERCATION — YARD SECURED");
+      },4000);
+      /* end lockdown after 18s */
+      setTimeout(function(){
+        if(lockdownActive&&!dayEnding) endLockdown();
+      },22000);
+    }
+  }
+  else if(k==="visit"){
+    var p=pick(inmates);
+    p.state="visit";p.statet=20;p.target.set(28,0,-15);
+    setCam(7);
+    showLower("VISITATION — "+p.nick+" — #"+p.jnum,"Escorted to visiting room · 30 min · pleexiglas booth");
+    setNarrate("Through plexiglas, voices warm slightly. The hour is brief.");
+  }
+}
+
+/* ===== Animate inmates ===== */
+function animInmate(inm,dt){
+  if(inm.layFlat){
+    inm.mesh.position.y=0.18;
+    return;
+  }
+  var p=inm.mesh.position;
+  var t=inm.target;
+  var dx=t.x-p.x,dz=t.z-p.z;
+  var d=Math.hypot(dx,dz);
+  if(d>0.15){
+    var sp=inm.speed*dt;
+    p.x+=dx/d*sp;p.z+=dz/d*sp;
+    inm.mesh.rotation.y=Math.atan2(dx,dz);
+    /* arm swing */
+    var phase=performance.now()*0.005+inm.statet;
+    var sw=Math.sin(phase)*0.5;
+    if(inm.mesh.userData.lArm) inm.mesh.userData.lArm.rotation.x=sw;
+    if(inm.mesh.userData.rArm) inm.mesh.userData.rArm.rotation.x=-sw;
+  } else {
+    if(inm.mesh.userData.lArm) inm.mesh.userData.lArm.rotation.x*=0.9;
+    if(inm.mesh.userData.rArm) inm.mesh.userData.rArm.rotation.x*=0.9;
+  }
+
+  /* state-specific */
+  if(inm.state==="lift"){
+    var phase=performance.now()*0.003;
+    if(inm.mesh.userData.lArm){
+      inm.mesh.userData.lArm.rotation.x=-Math.PI/2+Math.sin(phase)*0.4;
+    }
+    if(inm.mesh.userData.rArm){
+      inm.mesh.userData.rArm.rotation.x=-Math.PI/2+Math.sin(phase)*0.4;
+    }
+  }
+  else if(inm.state==="phone"){
+    if(inm.mesh.userData.rArm) inm.mesh.userData.rArm.rotation.x=-Math.PI/2.5;
+  }
+  else if(inm.state==="ball"){
+    var ph=performance.now()*0.006+inm.statet;
+    p.y=Math.abs(Math.sin(ph))*0.08;
+  }
+  else if(inm.state==="square"){
+    var ph=performance.now()*0.012;
+    if(inm.mesh.userData.rArm) inm.mesh.userData.rArm.rotation.x=Math.sin(ph)*0.6;
+  }
+  else if(inm.state==="rackup"){
+    /* fade through door */
+    if(p.z<-26){p.y=Math.max(0,p.y-dt*0.6);}
+  }
+
+  inm.statet-=dt;
+  if(inm.statet<=0){
+    /* return to gang zone */
+    var fac=FACT[inm.fac];
+    inm.target.set(rr(fac.zone[0],fac.zone[1]),0,rr(fac.zone[2],fac.zone[3]));
+    inm.state="walk";inm.statet=rr(4,10);
+  }
+}
+function animGuard(grd,dt){
+  var p=grd.mesh.position;
+  var t=grd.target;
+  var dx=t.x-p.x,dz=t.z-p.z;
+  var d=Math.hypot(dx,dz);
+  if(d>0.2){
+    var sp=grd.speed*dt;
+    p.x+=dx/d*sp;p.z+=dz/d*sp;
+    grd.mesh.rotation.y=Math.atan2(dx,dz);
+  }
+  grd.statet-=dt;
+  if(grd.statet<=0){
+    grd.target.set(rr(-22,22),0,rr(-22,22));
+    grd.statet=rr(6,12);
+  }
+}
+
+/* ===== Main loop ===== */
+var lastNarrate=0;
+function updateUI(dt){
+  /* clock */
+  simTime+=dt*60; /* 1 IRL second = 60 sim seconds */
+  var simMin=Math.floor(simTime/60)%(24*60);
+  var hh=Math.floor(simMin/60),mm=simMin%60;
+  var dayN=4+Math.floor(simTime/(60*24*60));
+  document.getElementById("dateline").textContent=
+    "DAY "+dayN+" · "+(hh<10?"0":"")+hh+":"+(mm<10?"0":"")+mm;
+  /* count timer */
+  nextCount-=dt*60;
+  if(nextCount<=0){
+    /* count time event */
+    nextCount=rr(8,14)*60;
+    setYardState("COUNT TIME");
+    setNarrate("The count. Every man stands at his number. The arithmetic of an institution.");
+    showLower("COUNT TIME","All inmates · cell block formation · 4 min");
+    /* gather inmates */
+    inmates.forEach(function(inm,i){
+      if(inm.state==="rackup"||inm.state==="release"||inm.state==="visit")return;
+      inm.state="walk";inm.statet=8;
+      inm.target.set(-20+(i%20)*2,0,-25);
+    });
+    setTimeout(function(){if(!lockdownActive&&!dayEnding)setYardState("YARD OPEN");},6000);
+  }
+  var cm=Math.max(0,Math.floor(nextCount/60));
+  var cs=Math.max(0,Math.floor(nextCount%60));
+  document.getElementById("countdown").textContent=
+    "NEXT COUNT IN "+(cm<10?"0":"")+cm+":"+(cs<10?"0":"")+cs;
+}
+
+function loop(){
+  var dt=Math.min(0.05,clock.getDelta());
+  roundElapsed+=dt;
+  updateUI(dt);
+
+  /* random narrator quote rotation */
+  lastNarrate+=dt;
+  if(lastNarrate>14){
+    lastNarrate=0;
+    if(R()<0.6) setNarrate(pick(QUOTES));
+  }
+
+  /* event trigger */
+  eventCooldown-=dt;
+  if(eventCooldown<=0&&!lockdownActive&&!dayEnding){
+    pickEvent();
+    eventCooldown=rr(11,18);
+  }
+
+  /* lay flat sway */
+  inmates.forEach(function(inm){animInmate(inm,dt);});
+  guards.forEach(function(grd){animGuard(grd,dt);});
+
+  /* camera director switching */
+  camHold-=dt;
+  camLerp=Math.min(1,camLerp+dt/1.2);
+  camera.position.lerpVectors(camFromPos,camToPos,camLerp);
+  curLook.lerpVectors(camFromLook,camToLook,camLerp);
+  camera.lookAt(curLook);
+  if(camHold<=0){
+    /* prefer fight cam if active fight */
+    var nextI=ri(0,CAMS.length-1);
+    setCam(nextI);
+  }
+
+  /* sun sweep + sky tone shift */
+  var t=performance.now()*0.00005;
+  sun.position.set(Math.cos(t)*40,55+Math.sin(t)*5,Math.sin(t)*32);
+  /* weather: occasional overcast */
+  var ovc=(Math.sin(performance.now()*0.0001)+1)*0.5;
+  scene.background.setRGB(0.55+ovc*0.18,0.6+ovc*0.16,0.65+ovc*0.14);
+  scene.fog.color.copy(scene.background);
+
+  /* round end */
+  if(roundElapsed>roundDuration-12&&!dayEnding){
+    dayEnd();
+  }
+  if(roundElapsed>roundDuration){
+    reseed();
+  }
+
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+
+/* === Boot === */
+buildRoster();
+ticker.textContent=buildTickerText();
+roundStart=performance.now();
+scheduleNextEvent(4);
+setNarrate(pick(QUOTES));
+loop();
+
+})();
+</script>
+</body>
+</html>

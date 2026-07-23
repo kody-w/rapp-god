@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RPS Empire — Cyclic Cellular Automaton</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background:
+      radial-gradient(ellipse at 50% 30%, #0d1320 0%, #050609 60%, #020203 100%);
+    color: #d8e0ee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+  }
+  h1 {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: #c8d3e8;
+    text-shadow:
+      0 0 18px rgba(70, 232, 145, 0.25),
+      0 0 36px rgba(75, 176, 255, 0.18);
+  }
+  h1 .gen {
+    color: #5d6677;
+    font-weight: 400;
+    letter-spacing: 0.16em;
+    margin-left: 14px;
+  }
+  .graph {
+    width: 640px;
+    height: 84px;
+    background: rgba(8, 10, 16, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    display: block;
+    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.4);
+  }
+  .stage {
+    position: relative;
+    width: 640px;
+    height: 640px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    box-shadow:
+      0 0 60px rgba(70, 232, 145, 0.10),
+      0 0 90px rgba(75, 176, 255, 0.08),
+      0 0 120px rgba(255, 68, 88, 0.06),
+      0 30px 80px rgba(0, 0, 0, 0.7),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+  .stage canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  .stage canvas.bloom {
+    mix-blend-mode: lighter;
+    filter: blur(7px) brightness(1.25) saturate(1.1);
+    opacity: 0.55;
+    image-rendering: auto;
+  }
+  .stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.45) 100%);
+    mix-blend-mode: multiply;
+  }
+  .legend {
+    display: flex;
+    gap: 22px;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: #95a0b6;
+    text-transform: uppercase;
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .legend i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 10px currentColor;
+  }
+  .controls {
+    display: flex;
+    gap: 26px;
+    font-size: 10px;
+    color: #6b7488;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .controls label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+  }
+  .controls .val {
+    color: #aab4c8;
+    font-variant-numeric: tabular-nums;
+  }
+  .controls input[type="range"] {
+    width: 140px;
+    accent-color: #46e891;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>RPS Empire — Cyclic Cellular Automaton<span class="gen" id="genLabel">gen 0</span></h1>
+    <canvas class="graph" id="graph" width="640" height="84"></canvas>
+    <div class="stage">
+      <canvas id="cells" width="256" height="256"></canvas>
+      <canvas id="bloom" class="bloom" width="256" height="256"></canvas>
+    </div>
+    <div class="legend">
+      <span style="color:#ff4458"><i></i>Red&nbsp;→&nbsp;eats&nbsp;Green</span>
+      <span style="color:#46e891"><i></i>Green&nbsp;→&nbsp;eats&nbsp;Blue</span>
+      <span style="color:#4bb0ff"><i></i>Blue&nbsp;→&nbsp;eats&nbsp;Red</span>
+    </div>
+    <div class="controls">
+      <label>Grid <span class="val" id="sizeVal">256</span>
+        <input type="range" id="sizeSlider" min="128" max="512" step="64" value="256">
+      </label>
+      <label>Attack&nbsp;p <span class="val" id="probVal">0.50</span>
+        <input type="range" id="probSlider" min="0.1" max="1.0" step="0.05" value="0.5">
+      </label>
+      <label>Radius <span class="val" id="radiusVal">1</span>
+        <input type="range" id="radiusSlider" min="1" max="2" step="1" value="1">
+      </label>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const cellsCanvas = document.getElementById("cells");
+  const bloomCanvas = document.getElementById("bloom");
+  const graphCanvas = document.getElementById("graph");
+  const ctx  = cellsCanvas.getContext("2d");
+  const bctx = bloomCanvas.getContext("2d");
+  const gctx = graphCanvas.getContext("2d");
+
+  const sizeSlider   = document.getElementById("sizeSlider");
+  const probSlider   = document.getElementById("probSlider");
+  const radiusSlider = document.getElementById("radiusSlider");
+  const sizeVal   = document.getElementById("sizeVal");
+  const probVal   = document.getElementById("probVal");
+  const radiusVal = document.getElementById("radiusVal");
+  const genLabel  = document.getElementById("genLabel");
+
+  // Cycle: red(0) -> green(1) -> blue(2) -> red(0)
+  // Rule: the state that BEATS me is (myState + 1) % 3.
+  //   red(0):   beaten by green(1)
+  //   green(1): beaten by blue(2)
+  //   blue(2):  beaten by red(0)
+  // So if a Moore neighbor holds (myState+1)%3, I get converted (with prob p).
+
+  const COLORS = [
+    [0xff, 0x44, 0x58], // 0: red
+    [0x46, 0xe8, 0x91], // 1: green
+    [0x4b, 0xb0, 0xff], // 2: blue
+  ];
+
+  // Pack as Uint32 (little-endian: 0xAABBGGRR for ImageData)
+  const COLORS32 = new Uint32Array(3);
+  for (let i = 0; i < 3; i++) {
+    const c = COLORS[i];
+    COLORS32[i] = (0xff << 24) | (c[2] << 16) | (c[1] << 8) | c[0];
+  }
+
+  let N = 256;
+  let prob   = 0.5;
+  let radius = 1;
+
+  let grid, next;
+  let imageData, data32;
+
+  // Population history
+  const HIST_LEN = 360;
+  let popHistory = [];
+  let generation = 0;
+
+  // Auto-reset every ~5 minutes
+  const RESET_INTERVAL_MS = 5 * 60 * 1000;
+  let lastReset = performance.now();
+
+  // Fast PRNG (xorshift32) so we don't pay Math.random's price 65k+ times/frame.
+  let rngState = (Math.random() * 0xffffffff) >>> 0;
+  function rng32() {
+    let x = rngState | 0;
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    rngState = x >>> 0;
+    return rngState;
+  }
+
+  function init(size) {
+    N = size | 0;
+    cellsCanvas.width  = N;
+    cellsCanvas.height = N;
+    bloomCanvas.width  = N;
+    bloomCanvas.height = N;
+
+    grid = new Uint8Array(N * N);
+    next = new Uint8Array(N * N);
+    for (let i = 0; i < grid.length; i++) {
+      // Uniform random across {0,1,2}
+      grid[i] = (rng32() % 3) | 0;
+    }
+
+    imageData = ctx.createImageData(N, N);
+    data32    = new Uint32Array(imageData.data.buffer);
+
+    popHistory = [];
+    generation = 0;
+    lastReset  = performance.now();
+  }
+
+  function step() {
+    const r    = radius;
+    const p32  = (prob * 0xffffffff) >>> 0; // integer threshold for rng32
+    const n    = N;
+    const g    = grid;
+    const nx   = next;
+
+    if (r === 1) {
+      // Hand-unrolled Moore-1 with toroidal wrap for max throughput.
+      for (let y = 0; y < n; y++) {
+        const ym = (y === 0 ? n - 1 : y - 1) * n;
+        const yp = (y === n - 1 ? 0 : y + 1) * n;
+        const y0 = y * n;
+        for (let x = 0; x < n; x++) {
+          const xm = (x === 0 ? n - 1 : x - 1);
+          const xp = (x === n - 1 ? 0 : x + 1);
+          const me     = g[y0 + x];
+          const beater = (me + 1) % 3;
+
+          // Check 8 neighbors; stop on first hit.
+          let hit = false;
+          if (g[ym + xm] === beater) hit = true;
+          else if (g[ym + x ] === beater) hit = true;
+          else if (g[ym + xp] === beater) hit = true;
+          else if (g[y0 + xm] === beater) hit = true;
+          else if (g[y0 + xp] === beater) hit = true;
+          else if (g[yp + xm] === beater) hit = true;
+          else if (g[yp + x ] === beater) hit = true;
+          else if (g[yp + xp] === beater) hit = true;
+
+          nx[y0 + x] = (hit && rng32() < p32) ? beater : me;
+        }
+      }
+    } else {
+      // General radius (Moore-r). r=2 -> 5x5 minus center (24 neighbors).
+      for (let y = 0; y < n; y++) {
+        const y0 = y * n;
+        for (let x = 0; x < n; x++) {
+          const me     = g[y0 + x];
+          const beater = (me + 1) % 3;
+          let hit = false;
+          for (let dy = -r; dy <= r && !hit; dy++) {
+            const yy = (y + dy + n) % n;
+            const row = yy * n;
+            for (let dx = -r; dx <= r; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const xx = (x + dx + n) % n;
+              if (g[row + xx] === beater) { hit = true; break; }
+            }
+          }
+          nx[y0 + x] = (hit && rng32() < p32) ? beater : me;
+        }
+      }
+    }
+
+    // Swap buffers
+    const tmp = grid; grid = next; next = tmp;
+    generation++;
+  }
+
+  function render() {
+    const len = grid.length;
+    const c0 = COLORS32[0], c1 = COLORS32[1], c2 = COLORS32[2];
+    let n0 = 0, n1 = 0, n2 = 0;
+    for (let i = 0; i < len; i++) {
+      const s = grid[i];
+      if (s === 0)      { data32[i] = c0; n0++; }
+      else if (s === 1) { data32[i] = c1; n1++; }
+      else              { data32[i] = c2; n2++; }
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    // Bloom layer — copy the current cells to the bloom canvas.
+    // CSS handles the blur + lighter blend.
+    bctx.clearRect(0, 0, N, N);
+    bctx.drawImage(cellsCanvas, 0, 0);
+
+    return [n0, n1, n2];
+  }
+
+  function drawGraph(counts) {
+    popHistory.push(counts);
+    if (popHistory.length > HIST_LEN) popHistory.shift();
+
+    const W = graphCanvas.width;
+    const H = graphCanvas.height;
+
+    // Trail / fade background
+    gctx.fillStyle = "rgba(8, 10, 16, 1)";
+    gctx.fillRect(0, 0, W, H);
+
+    // Subtle horizontal guide at 1/3 (equilibrium for 3 species)
+    gctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+    gctx.lineWidth = 1;
+    gctx.beginPath();
+    const eqY = H - (H * 0.95) / 3 - 2;
+    gctx.moveTo(0, eqY);
+    gctx.lineTo(W, eqY);
+    gctx.stroke();
+
+    if (popHistory.length < 2) return;
+
+    const total = N * N;
+    const stroke = ["#ff4458", "#46e891", "#4bb0ff"];
+    const glow   = ["rgba(255,68,88,0.7)", "rgba(70,232,145,0.7)", "rgba(75,176,255,0.7)"];
+
+    for (let s = 0; s < 3; s++) {
+      gctx.strokeStyle = stroke[s];
+      gctx.shadowColor = glow[s];
+      gctx.shadowBlur  = 10;
+      gctx.lineWidth   = 1.6;
+      gctx.beginPath();
+      for (let i = 0; i < popHistory.length; i++) {
+        const x = (i / (HIST_LEN - 1)) * W;
+        const v = popHistory[i][s] / total;
+        const y = H - v * H * 0.95 - 2;
+        if (i === 0) gctx.moveTo(x, y);
+        else         gctx.lineTo(x, y);
+      }
+      gctx.stroke();
+    }
+    gctx.shadowBlur = 0;
+  }
+
+  let acc = 0;
+  let last = performance.now();
+
+  function loop(now) {
+    const dt = now - last;
+    last = now;
+    acc += dt;
+
+    // Step at up to ~60 Hz; never accumulate more than 3 steps per frame.
+    let steps = 0;
+    while (acc >= 16.0 && steps < 3) {
+      step();
+      acc -= 16.0;
+      steps++;
+    }
+
+    const counts = render();
+    drawGraph(counts);
+    genLabel.textContent = "gen " + generation;
+
+    if (now - lastReset > RESET_INTERVAL_MS) {
+      init(N);
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  // Sliders — optional, autoplay is the headline feature.
+  sizeSlider.addEventListener("input", (e) => {
+    const v = parseInt(e.target.value, 10);
+    sizeVal.textContent = String(v);
+  });
+  sizeSlider.addEventListener("change", (e) => {
+    init(parseInt(e.target.value, 10));
+  });
+  probSlider.addEventListener("input", (e) => {
+    prob = parseFloat(e.target.value);
+    probVal.textContent = prob.toFixed(2);
+  });
+  radiusSlider.addEventListener("input", (e) => {
+    radius = parseInt(e.target.value, 10);
+    radiusVal.textContent = String(radius);
+  });
+
+  // Boot — visible / playable within ~1 frame.
+  init(N);
+  requestAnimationFrame((t) => { last = t; loop(t); });
+})();
+</script>
+</body>
+</html>

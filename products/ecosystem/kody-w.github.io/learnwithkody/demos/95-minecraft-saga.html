@@ -1,0 +1,1497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>95 — Minecraft Saga (3D Voxel)</title>
+<style>
+  :root{
+    --ink:#e8eef7; --dim:#9aa5b8; --hi:#ffd76a; --bad:#ff5e6c; --good:#61d488;
+    --hud:rgba(8,12,20,.78); --line:rgba(255,255,255,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#0a0d14;color:var(--ink);
+    font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    overflow:hidden;height:100%}
+  #c{position:fixed;inset:0;display:block}
+  /* HUD ---------------------------------------------------------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+  .panel{
+    background:var(--hud);border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;backdrop-filter:blur(6px);
+  }
+  #title{position:absolute;top:10px;left:10px;font-weight:700;letter-spacing:.04em}
+  #title small{display:block;color:var(--dim);font-weight:400;margin-top:2px}
+  #stats{position:absolute;top:10px;right:10px;min-width:240px;text-align:right}
+  #stats .row{display:flex;justify-content:space-between;gap:14px;margin:2px 0}
+  #stats .lab{color:var(--dim)}
+  #stats .v{color:var(--ink)}
+  #vitals{position:absolute;bottom:80px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:6px;min-width:380px}
+  .bar{width:100%;height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,#7ad,#3cf);transition:width .25s}
+  .icons{display:flex;gap:3px}
+  .heart{width:16px;height:16px;display:inline-block;
+    background: radial-gradient(circle at 35% 30%, #ff6b7a 0 35%, #c83040 36% 100%);
+    clip-path:path('M8,14 C8,14 1,9 1,5 C1,2 4,1 5.5,2.5 C6.5,3.5 8,5 8,5 C8,5 9.5,3.5 10.5,2.5 C12,1 15,2 15,5 C15,9 8,14 8,14 Z');
+  }
+  .heart.empty{background:rgba(255,255,255,.12)}
+  .hung{width:16px;height:16px;background:#c08555;border-radius:50% 50% 30% 30%}
+  .hung.empty{background:rgba(255,255,255,.10)}
+  #hotbar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+    display:flex;gap:6px;background:var(--hud);padding:8px;border-radius:10px;
+    border:1px solid var(--line)}
+  .slot{width:48px;height:48px;border-radius:6px;border:1px solid rgba(255,255,255,.10);
+    background:rgba(0,0,0,.35);position:relative;display:grid;place-items:center;font-size:11px;color:var(--dim)}
+  .slot.sel{border-color:var(--hi);box-shadow:0 0 0 2px rgba(255,215,106,.25) inset}
+  .slot .ico{font-size:22px}
+  .slot .ct{position:absolute;right:4px;bottom:2px;color:var(--ink);font-weight:700;text-shadow:0 1px 0 #000}
+  #chronicle{position:absolute;top:64px;right:10px;width:320px;max-height:54vh;
+    overflow:hidden;font-size:12px}
+  #chronicle h3{margin:0 0 6px;font-size:12px;color:var(--hi);letter-spacing:.04em;text-transform:uppercase}
+  #chronicle .e{margin:0 0 4px;color:var(--ink);opacity:.92}
+  #chronicle .e.dim{color:var(--dim)}
+  #chronicle .e b{color:var(--hi)}
+  #goal{position:absolute;top:10px;left:50%;transform:translateX(-50%);text-align:center;min-width:380px}
+  #goal .g{color:var(--hi);font-weight:700;letter-spacing:.04em}
+  #goal small{display:block;color:var(--dim);margin-top:2px}
+  #flash{position:absolute;left:50%;top:36%;transform:translate(-50%,-50%);
+    font-size:34px;font-weight:800;letter-spacing:.06em;color:var(--hi);
+    text-shadow:0 0 30px rgba(255,215,106,.4); opacity:0; transition:opacity .4s}
+  #flash.show{opacity:1}
+  #endcard{position:absolute;inset:0;display:none;background:rgba(0,0,0,.78);
+    place-items:center;text-align:center;pointer-events:none;flex-direction:column}
+  #endcard.show{display:flex}
+  #endcard h1{font-size:48px;margin:0;color:var(--hi);letter-spacing:.08em}
+  #endcard p{color:var(--ink);margin:8px 0;max-width:560px}
+  #endcard .stats{margin-top:10px;color:var(--dim);font-size:13px}
+  #fps{position:absolute;bottom:10px;right:12px;color:var(--dim);font-size:11px}
+  .crack{position:absolute;font-size:11px;color:var(--bad);right:10px;top:50%}
+  /* keyframes for flash */
+  @keyframes pop { from { transform: translate(-50%,-50%) scale(.85); opacity:0 } to {opacity:1} }
+</style>
+</head>
+<body>
+<!-- ROUND11_3D_EPIC v1 -->
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="title" class="panel">⛏ Minecraft Saga <small>3D voxel — autonomous hero</small></div>
+  <div id="goal" class="panel"><div class="g" id="goalT">Survive Day 1</div><small id="goalS">Gather wood, build a shelter before nightfall.</small></div>
+  <div id="stats" class="panel">
+    <div class="row"><span class="lab">Hero</span><span class="v" id="sHero">Steve</span></div>
+    <div class="row"><span class="lab">Day</span><span class="v" id="sDay">1 ☀</span></div>
+    <div class="row"><span class="lab">Tier</span><span class="v" id="sTier">Wooden</span></div>
+    <div class="row"><span class="lab">XP</span><span class="v" id="sXP">0</span></div>
+    <div class="row"><span class="lab">Pearls</span><span class="v" id="sPe">0/12</span></div>
+    <div class="row"><span class="lab">Rods</span><span class="v" id="sRo">0/12</span></div>
+  </div>
+  <div id="vitals" class="panel">
+    <div class="icons" id="hearts"></div>
+    <div class="icons" id="hungs"></div>
+    <div class="bar"><i id="xpbar" style="width:0%"></i></div>
+  </div>
+  <div id="hotbar"></div>
+  <div id="chronicle" class="panel"><h3>Chronicle</h3><div id="logs"></div></div>
+  <div id="flash"></div>
+  <div id="endcard">
+    <h1 id="endTitle">STEVE'S LEGEND</h1>
+    <p id="endSub">The Ender Dragon falls.</p>
+    <div class="stats" id="endStats"></div>
+  </div>
+  <div id="fps">…</div>
+</div>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+"use strict";
+/* =========================================================================
+   95 — Minecraft Saga (3D voxel native)
+   ========================================================================= */
+
+const THREE = window.THREE;
+
+// ---------- Constants ---------------------------------------------------
+const CHUNK = 16;            // chunk side
+const WORLD_R = 2;           // chunks radius (covers 64x64 if 4 chunks: -2..1)
+const W_SIZE = CHUNK * 2 * WORLD_R; // 64
+const W_HEIGHT = 32;
+const SEA_LEVEL = 12;
+
+const B = {
+  AIR:0, GRASS:1, DIRT:2, STONE:3, COBBLE:4, COAL:5, IRON:6, GOLD:7,
+  DIAMOND:8, WOOD:9, LEAVES:10, WATER:11, LAVA:12, SAND:13, OBSIDIAN:14, ENDSTONE:15
+};
+
+// per-block-type properties
+const BPROP = {
+  [B.GRASS]:    { col:[0x6fba3a,0x8b5a2b,0x8b5a2b,0x8b5a2b,0x8b5a2b,0x8b5a2b], hard:1, drop:'dirt'   },
+  [B.DIRT]:     { col:0x8b5a2b, hard:1, drop:'dirt' },
+  [B.STONE]:    { col:0x8a8d92, hard:3, drop:'cobble' },
+  [B.COBBLE]:   { col:0x6f7378, hard:3, drop:'cobble' },
+  [B.COAL]:     { col:0x2b2d31, hard:3, drop:'coal' },
+  [B.IRON]:     { col:0xc6a784, hard:4, drop:'iron' },
+  [B.GOLD]:     { col:0xf2c948, hard:5, drop:'gold' },
+  [B.DIAMOND]:  { col:0x6ee5d0, hard:6, drop:'diamond' },
+  [B.WOOD]:     { col:[0x9b6b3a,0x4d2f15,0x4d2f15,0x4d2f15,0x4d2f15,0x9b6b3a], hard:2, drop:'wood' },
+  [B.LEAVES]:   { col:0x4ea043, hard:1, drop:null },
+  [B.WATER]:    { col:0x356dc7, hard:0, drop:null, transparent:true, opacity:.55 },
+  [B.LAVA]:     { col:0xff7a2a, hard:99, drop:null, emissive:0xff5500 },
+  [B.SAND]:     { col:0xefdca6, hard:1, drop:'sand' },
+  [B.OBSIDIAN]: { col:0x140a23, hard:8, drop:'obsidian' },
+  [B.ENDSTONE]: { col:0xefe5b1, hard:3, drop:'endstone' },
+};
+
+// ---------- DOM helpers ------------------------------------------------
+const $ = (s)=>document.querySelector(s);
+const logsEl = $('#logs');
+const flashEl = $('#flash');
+function logEvent(line, dim){
+  const d = document.createElement('div');
+  d.className = 'e' + (dim?' dim':'');
+  d.innerHTML = line;
+  logsEl.prepend(d);
+  while(logsEl.children.length > 24) logsEl.removeChild(logsEl.lastChild);
+}
+function flash(t){
+  flashEl.textContent=t; flashEl.classList.add('show');
+  clearTimeout(flash._t); flash._t=setTimeout(()=>flashEl.classList.remove('show'),1600);
+}
+
+// ---------- RNG / Noise ------------------------------------------------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+const rseed = (Math.random()*1e9)|0;
+const rng = mulberry32(rseed);
+
+// hash-based value noise (cheap, no deps)
+function hash2(x,y){let h=x*374761393+y*668265263;h=(h^(h>>>13))*1274126177;return((h^(h>>>16))>>>0)/4294967295;}
+function hash3(x,y,z){let h=x*374761393+y*668265263+z*2147483647;h=(h^(h>>>13))*1274126177;return((h^(h>>>16))>>>0)/4294967295;}
+function smoothstep(t){return t*t*(3-2*t);}
+function noise2(x,y){
+  const xi=Math.floor(x), yi=Math.floor(y);
+  const xf=x-xi, yf=y-yi;
+  const a=hash2(xi,yi), b=hash2(xi+1,yi), c=hash2(xi,yi+1), d=hash2(xi+1,yi+1);
+  const u=smoothstep(xf), v=smoothstep(yf);
+  return a*(1-u)*(1-v) + b*u*(1-v) + c*(1-u)*v + d*u*v;
+}
+function noise3(x,y,z){
+  const xi=Math.floor(x), yi=Math.floor(y), zi=Math.floor(z);
+  const xf=x-xi, yf=y-yi, zf=z-zi;
+  const u=smoothstep(xf), v=smoothstep(yf), w=smoothstep(zf);
+  function H(a,b,c){return hash3(a,b,c);}
+  const c000=H(xi,yi,zi),c100=H(xi+1,yi,zi),c010=H(xi,yi+1,zi),c110=H(xi+1,yi+1,zi);
+  const c001=H(xi,yi,zi+1),c101=H(xi+1,yi,zi+1),c011=H(xi,yi+1,zi+1),c111=H(xi+1,yi+1,zi+1);
+  const x00=c000*(1-u)+c100*u, x10=c010*(1-u)+c110*u, x01=c001*(1-u)+c101*u, x11=c011*(1-u)+c111*u;
+  const y0=x00*(1-v)+x10*v, y1=x01*(1-v)+x11*v;
+  return y0*(1-w)+y1*w;
+}
+function fbm2(x,y){return noise2(x,y)*0.6 + noise2(x*2.1,y*2.1)*0.3 + noise2(x*4.3,y*4.3)*0.1;}
+
+// ---------- World ------------------------------------------------------
+// World blocks stored in a flat Int8Array with origin at (-W_SIZE/2, 0, -W_SIZE/2)
+const WX = W_SIZE, WY = W_HEIGHT, WZ = W_SIZE;
+const wOX = -WX/2, wOZ = -WZ/2;
+const world = new Int8Array(WX*WY*WZ);
+function idx(x,y,z){return (y*WZ + (z-wOZ))*WX + (x-wOX);}
+function inB(x,y,z){return x>=wOX && x<wOX+WX && z>=wOZ && z<wOZ+WZ && y>=0 && y<WY;}
+function getB(x,y,z){if(!inB(x,y,z))return B.AIR; return world[idx(x,y,z)];}
+function setB(x,y,z,v){if(!inB(x,y,z))return; world[idx(x,y,z)]=v; dirty=true; markChunk(x,z); }
+
+const heightMap = new Int8Array(WX*WZ);
+
+function genWorld(){
+  for(let x=wOX;x<wOX+WX;x++){
+    for(let z=wOZ;z<wOZ+WZ;z++){
+      // height ~ 12..22
+      const n = fbm2(x*0.07,z*0.07);
+      const h = (SEA_LEVEL + 2 + Math.floor(n*9))|0;
+      heightMap[(z-wOZ)*WX + (x-wOX)] = h;
+      for(let y=0;y<=h;y++){
+        let b = B.STONE;
+        if(y===h){
+          if(h<=SEA_LEVEL) b=B.SAND;
+          else b=B.GRASS;
+        } else if(y>=h-3) b=B.DIRT;
+        // water surface ponds
+        if(h<SEA_LEVEL && y<=SEA_LEVEL && y>h) b=B.WATER;
+        setBnoMark(x,y,z,b);
+      }
+      // shallow water in low spots
+      if(h<SEA_LEVEL){
+        for(let y=h+1;y<=SEA_LEVEL;y++) setBnoMark(x,y,z,B.WATER);
+      }
+    }
+  }
+  // ores
+  for(let x=wOX;x<wOX+WX;x++) for(let z=wOZ;z<wOZ+WZ;z++){
+    const h = heightMap[(z-wOZ)*WX + (x-wOX)];
+    for(let y=1;y<h-1;y++){
+      if(getB(x,y,z)!==B.STONE) continue;
+      const n = noise3(x*0.18, y*0.22, z*0.18);
+      // deeper => richer ores
+      const depth = (h-y)/h;
+      if(n>0.86 && y<8)               setBnoMark(x,y,z,B.DIAMOND);
+      else if(n>0.82 && y<14)         setBnoMark(x,y,z,B.GOLD);
+      else if(n>0.76 && y<20)         setBnoMark(x,y,z,B.IRON);
+      else if(n>0.70)                 setBnoMark(x,y,z,B.COAL);
+    }
+  }
+  // caves (3D noise carve)
+  for(let x=wOX+1;x<wOX+WX-1;x++) for(let z=wOZ+1;z<wOZ+WZ-1;z++){
+    const h = heightMap[(z-wOZ)*WX + (x-wOX)];
+    for(let y=2;y<h-1;y++){
+      const n = noise3(x*0.13, y*0.18, z*0.13) + 0.6*noise3(x*0.31,y*0.25,z*0.31);
+      if(n>1.05) setBnoMark(x,y,z,B.AIR);
+      // small lava pockets near bottom
+      if(y<5 && n>1.18) setBnoMark(x,y,z,B.LAVA);
+    }
+  }
+  // trees
+  for(let i=0;i<26;i++){
+    const x = wOX + 2 + ((rng()*(WX-4))|0);
+    const z = wOZ + 2 + ((rng()*(WZ-4))|0);
+    const h = heightMap[(z-wOZ)*WX + (x-wOX)];
+    if(h<SEA_LEVEL+1) continue;
+    if(getB(x,h,z)!==B.GRASS) continue;
+    const trunk = 3 + ((rng()*3)|0);
+    for(let y=h+1;y<=h+trunk;y++) setBnoMark(x,y,z,B.WOOD);
+    const top = h+trunk;
+    for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++) for(let dy=-1;dy<=1;dy++){
+      if(Math.abs(dx)+Math.abs(dz)+Math.abs(dy)>3) continue;
+      const yy = top + dy;
+      if(getB(x+dx,yy,z+dz)===B.AIR && rng()>0.15) setBnoMark(x+dx,yy,z+dz,B.LEAVES);
+    }
+    for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++) setBnoMark(x+dx,top+1,z+dz,B.LEAVES);
+    setBnoMark(x,top+2,z,B.LEAVES);
+    trees.push({x,z,h:top});
+  }
+  // ancient ruin (a small obsidian/stone box with a chest noted)
+  buildRuin();
+}
+const trees = [];
+let ruinPos = null;
+
+function setBnoMark(x,y,z,v){
+  if(!inB(x,y,z))return;
+  world[idx(x,y,z)] = v;
+}
+const dirtyChunks = new Set();
+let dirty = false;
+function markChunk(x,z){
+  const cx = Math.floor((x-wOX)/CHUNK);
+  const cz = Math.floor((z-wOZ)/CHUNK);
+  dirtyChunks.add(cx + ',' + cz);
+}
+
+function buildRuin(){
+  const cx = wOX + (WX*0.7)|0, cz = wOZ + (WZ*0.3)|0;
+  const h = heightMap[(cz-wOZ)*WX + (cx-wOX)];
+  ruinPos = {x:cx,z:cz,y:h+1};
+  for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++){
+    for(let dy=0;dy<3;dy++){
+      const isWall = Math.abs(dx)===2 || Math.abs(dz)===2;
+      if(isWall) setBnoMark(cx+dx,h+1+dy,cz+dz,B.OBSIDIAN);
+    }
+  }
+  // chest hint
+  setBnoMark(cx,h+1,cz,B.GOLD);
+}
+
+// ---------- Three setup ------------------------------------------------
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:false, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.BasicShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.1, 400);
+
+// sky hemisphere
+const skyGeo = new THREE.SphereGeometry(180, 24, 14, 0, Math.PI*2, 0, Math.PI*0.6);
+const skyMat = new THREE.ShaderMaterial({
+  uniforms:{uTop:{value:new THREE.Color(0x6fbcff)}, uMid:{value:new THREE.Color(0xc9deff)}, uHor:{value:new THREE.Color(0xffd9a1)}, uT:{value:0}},
+  vertexShader:`varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader:`varying vec3 vP; uniform vec3 uTop,uMid,uHor; uniform float uT;
+    void main(){
+      float t = clamp(vP.y/180.0,0.0,1.0);
+      vec3 c = mix(uHor, uMid, smoothstep(0.0,0.4,t));
+      c = mix(c, uTop, smoothstep(0.4,1.0,t));
+      // night blue tint
+      c = mix(c, vec3(0.04,0.06,0.13), uT);
+      gl_FragColor = vec4(c,1.0);
+    }`,
+  side:THREE.BackSide, depthWrite:false
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+// fog
+scene.fog = new THREE.Fog(0xb8d6ff, 60, 180);
+
+// lights
+const sun = new THREE.DirectionalLight(0xfff2cc, 1.05);
+sun.position.set(40,80,30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024,1024);
+const sd = sun.shadow.camera; sd.left=-30; sd.right=30; sd.top=30; sd.bottom=-30; sd.near=10; sd.far=180;
+scene.add(sun);
+scene.add(sun.target);
+
+const moon = new THREE.DirectionalLight(0x9bb6ff, 0.0);
+moon.position.set(-40,80,-30);
+scene.add(moon);
+
+const hemi = new THREE.HemisphereLight(0xb9d8ff, 0x382010, 0.45);
+scene.add(hemi);
+const amb = new THREE.AmbientLight(0xffffff, 0.18);
+scene.add(amb);
+
+// ---------- Block instanced meshes ------------------------------------
+const cubeGeo = new THREE.BoxGeometry(1,1,1);
+// per-block-type material
+function makeMatForType(t){
+  const p = BPROP[t];
+  let mat;
+  if(Array.isArray(p.col)){
+    // grass / wood — multi-face
+    const mats = p.col.map(c => new THREE.MeshLambertMaterial({color:c}));
+    return mats;
+  } else {
+    mat = new THREE.MeshLambertMaterial({
+      color:p.col,
+      transparent: !!p.transparent,
+      opacity: p.opacity ?? 1,
+      emissive: p.emissive||0,
+      emissiveIntensity: p.emissive?0.7:0
+    });
+    return mat;
+  }
+}
+
+// We use one InstancedMesh per block-type with single material,
+// but for grass/wood we create a multi-material BoxGeometry with groups.
+// Simpler: for those, we still use solid color (top color) to keep code compact.
+// Use the *first* color for these as the dominant one.
+function flatColor(t){const p=BPROP[t]; return Array.isArray(p.col)?p.col[0]:p.col;}
+
+// special: build a small per-instance color trick by using two InstancedMeshes for grass (top+sides)?
+// To keep it simple, use a single material per type with the dominant color.
+const blockTypes = [B.GRASS,B.DIRT,B.STONE,B.COBBLE,B.COAL,B.IRON,B.GOLD,B.DIAMOND,
+  B.WOOD,B.LEAVES,B.WATER,B.LAVA,B.SAND,B.OBSIDIAN,B.ENDSTONE];
+const MAX_INSTANCES = 7000;
+const blockMeshes = {};
+for(const t of blockTypes){
+  const p = BPROP[t];
+  const mat = new THREE.MeshLambertMaterial({
+    color: flatColor(t),
+    transparent: !!p.transparent,
+    opacity: p.opacity ?? 1,
+    emissive: p.emissive||0,
+    emissiveIntensity: p.emissive?0.7:0,
+  });
+  const im = new THREE.InstancedMesh(cubeGeo, mat, MAX_INSTANCES);
+  im.castShadow = (t!==B.WATER && t!==B.LEAVES);
+  im.receiveShadow = (t!==B.WATER);
+  im.count = 0;
+  scene.add(im);
+  blockMeshes[t] = im;
+}
+// grass top decorator: a thin green plane on top of grass cubes — render via tiny separate InstancedMesh
+const grassTopGeo = new THREE.BoxGeometry(1.001,0.06,1.001);
+const grassTopMat = new THREE.MeshLambertMaterial({color:0x6fba3a});
+const grassTopMesh = new THREE.InstancedMesh(grassTopGeo, grassTopMat, MAX_INSTANCES);
+grassTopMesh.count = 0;
+grassTopMesh.receiveShadow = true;
+scene.add(grassTopMesh);
+
+// ---------- Build visible voxel set -----------------------------------
+function isOpaque(t){return t!==B.AIR && t!==B.WATER && t!==B.LEAVES;}
+function exposed(x,y,z){
+  if(getB(x+1,y,z)===B.AIR) return true;
+  if(getB(x-1,y,z)===B.AIR) return true;
+  if(getB(x,y+1,z)===B.AIR) return true;
+  if(getB(x,y-1,z)===B.AIR) return true;
+  if(getB(x,y,z+1)===B.AIR) return true;
+  if(getB(x,y,z-1)===B.AIR) return true;
+  return false;
+}
+
+const _m = new THREE.Matrix4();
+let visibleCount = 0;
+function rebuildBlockMeshes(){
+  // count per type
+  const counts = {};
+  for(const t of blockTypes) counts[t]=0;
+  let topCount = 0;
+
+  // determine center of activity = hero pos
+  const cx = hero ? hero.pos.x : 0;
+  const cz = hero ? hero.pos.z : 0;
+  const RADIUS = 30;
+
+  for(const t of blockTypes) blockMeshes[t].count = 0;
+  grassTopMesh.count = 0;
+
+  for(let x=wOX;x<wOX+WX;x++){
+    if(Math.abs(x-cx)>RADIUS) continue;
+    for(let z=wOZ;z<wOZ+WZ;z++){
+      if(Math.abs(z-cz)>RADIUS) continue;
+      for(let y=0;y<WY;y++){
+        const t = getB(x,y,z);
+        if(t===B.AIR) continue;
+        if(!exposed(x,y,z)) continue;
+        if(counts[t]===undefined) continue;
+        if(counts[t] >= MAX_INSTANCES) continue;
+        _m.makeTranslation(x+0.5, y+0.5, z+0.5);
+        blockMeshes[t].setMatrixAt(counts[t]++, _m);
+        if(t===B.GRASS && topCount<MAX_INSTANCES){
+          _m.makeTranslation(x+0.5, y+1-0.03, z+0.5);
+          grassTopMesh.setMatrixAt(topCount++, _m);
+        }
+      }
+    }
+  }
+  visibleCount = 0;
+  for(const t of blockTypes){
+    blockMeshes[t].count = counts[t];
+    blockMeshes[t].instanceMatrix.needsUpdate = true;
+    visibleCount += counts[t];
+  }
+  grassTopMesh.count = topCount;
+  grassTopMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ---------- Humanoid factory ------------------------------------------
+function box(w,h,d,c){
+  const g = new THREE.BoxGeometry(w,h,d);
+  const m = new THREE.MeshLambertMaterial({color:c});
+  const me = new THREE.Mesh(g,m);
+  me.castShadow = true; me.receiveShadow = false;
+  return me;
+}
+function humanoid(opt){
+  // proportions in voxel units (~1.8 tall total)
+  const skin = opt.skin||0xf3c79b, hair=opt.hair||0x2f1d10;
+  const shirt = opt.shirt||0x2c8aff, pants=opt.pants||0x303248;
+  const root = new THREE.Group();
+  // legs
+  const legL = box(0.28,0.7,0.28,pants); legL.position.set(-0.16,0.35,0); root.add(legL);
+  const legR = box(0.28,0.7,0.28,pants); legR.position.set( 0.16,0.35,0); root.add(legR);
+  // torso
+  const torso = box(0.6,0.7,0.32,shirt); torso.position.set(0,1.05,0); root.add(torso);
+  // arms (pivot at shoulder)
+  const armLP = new THREE.Group(); armLP.position.set(-0.4,1.36,0);
+  const armL = box(0.22,0.7,0.22,shirt); armL.position.set(0,-0.32,0); armLP.add(armL); root.add(armLP);
+  const armRP = new THREE.Group(); armRP.position.set( 0.4,1.36,0);
+  const armR = box(0.22,0.7,0.22,shirt); armR.position.set(0,-0.32,0); armRP.add(armR); root.add(armRP);
+  // head
+  const head = box(0.5,0.5,0.5,skin); head.position.set(0,1.7,0);
+  // hair
+  const hairMesh = box(0.52,0.18,0.52,hair); hairMesh.position.set(0,1.92,0); root.add(hairMesh);
+  // eyes (tiny black squares as front face decorators)
+  const eyeMat = new THREE.MeshBasicMaterial({color:0x111111});
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.07,0.02),eyeMat); eyeL.position.set(-0.1,1.74,0.255); head.add(eyeL);
+  const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.07,0.02),eyeMat); eyeR.position.set(0.1,1.74,0.255); head.add(eyeR);
+  root.add(head);
+  // tool in right hand
+  const tool = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.5,0.12), new THREE.MeshLambertMaterial({color:0x8b5a2b}));
+  tool.position.set(0,-0.6,0.0); armRP.add(tool);
+
+  return {root, head, torso, armLP, armRP, legL, legR, tool, hairMesh};
+}
+function setToolColor(h, col){ h.tool.material.color.setHex(col); }
+
+// ---------- Hero -------------------------------------------------------
+const HEROES = [
+  {name:'Steve', skin:0xf3c79b, hair:0x2f1d10, shirt:0x2a8aff, pants:0x303248},
+  {name:'Alex',  skin:0xf2c79e, hair:0xd06038, shirt:0x4ea043, pants:0x6a4a2a},
+  {name:'Charlie', skin:0xe5b78e, hair:0x111111, shirt:0xb33a3a, pants:0x222e3a},
+  {name:'Mira',  skin:0xd99a78, hair:0x542e1c, shirt:0xb064d0, pants:0x222e3a},
+];
+let heroIdx = (rng()*HEROES.length)|0;
+const heroBody = humanoid(HEROES[heroIdx]);
+scene.add(heroBody.root);
+
+const hero = {
+  name: HEROES[heroIdx].name,
+  pos: new THREE.Vector3(0, 18, 0),
+  vel: new THREE.Vector3(),
+  yaw: 0,
+  body: heroBody,
+  hp: 20, hpMax:20,
+  hunger: 20, hungerMax:20,
+  xp: 0,
+  tier: 0, // 0 wood,1 stone,2 iron,3 diamond
+  state: 'WANDER',
+  target: null,
+  swing: 0,
+  walk: 0,
+  miningTime: 0,
+  miningTarget: null,
+  miningProgress: 0,
+  inv: { wood:0, dirt:0, sand:0, cobble:0, coal:0, iron:0, gold:0, diamond:0, obsidian:0, endstone:0,
+         pearl:0, rod:0, food:5, woodPick:1, stonePick:0, ironPick:0, diamondPick:0, sword:0 },
+  shelter: null,
+  lastEat: 0,
+  totalMined: 0, totalKilled: 0,
+};
+
+// ---------- Mobs -------------------------------------------------------
+function makeZombie(){
+  const h = humanoid({skin:0x6fa86d, hair:0x223322, shirt:0x2a4a3c, pants:0x2a3a55});
+  h.tool.visible = false;
+  return h;
+}
+function makeSkeleton(){
+  const h = humanoid({skin:0xeeeeee, hair:0xcccccc, shirt:0xdddddd, pants:0xbbbbbb});
+  // bow on right hand
+  h.tool.material.color.setHex(0x6b3e1a);
+  h.tool.scale.set(1, 1.3, .3);
+  return h;
+}
+function makeCreeper(){
+  const root = new THREE.Group();
+  const body = box(0.55,1.0,0.55,0x4ea043); body.position.set(0,0.5,0); root.add(body);
+  const head = box(0.55,0.55,0.55,0x4ea043); head.position.set(0,1.25,0); root.add(head);
+  // creeper face
+  const fmat = new THREE.MeshBasicMaterial({color:0x000000});
+  const e1 = new THREE.Mesh(new THREE.BoxGeometry(0.10,0.10,0.02),fmat); e1.position.set(-0.10,1.30,0.28); root.add(e1);
+  const e2 = new THREE.Mesh(new THREE.BoxGeometry(0.10,0.10,0.02),fmat); e2.position.set( 0.10,1.30,0.28); root.add(e2);
+  const m  = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.16,0.02),fmat); m.position.set(0,1.16,0.28); root.add(m);
+  // 4 stubby legs
+  const legG=[];
+  const lc = 0x3e7e34;
+  for(const [dx,dz] of [[-0.15,-0.12],[0.15,-0.12],[-0.15,0.12],[0.15,0.12]]){
+    const l = box(0.18,0.30,0.18,lc); l.position.set(dx,0.15,dz); root.add(l); legG.push(l);
+  }
+  return {root, body, head, legG, isCreeper:true};
+}
+function makeDragon(){
+  // Ender dragon — segmented body
+  const root = new THREE.Group();
+  const black = 0x1a1024;
+  const purple = 0x5a2c8e;
+  const segs=[];
+  const seg = (w,h,d)=>{ const m = box(w,h,d,black); root.add(m); return m; };
+  const head = seg(2.4,1.6,2.6); head.position.set(0,0,3.0); segs.push(head);
+  // jaw
+  const jaw = box(2.0,0.5,2.0,0x2a1538); jaw.position.set(0,-0.7,3.4); root.add(jaw);
+  // horns
+  const horn = (x)=>{ const h=box(0.25,0.9,0.25,0xd0c4e8); h.position.set(x,1.0,2.6); h.rotation.x=-0.2; root.add(h); }
+  horn(-0.7); horn(0.7);
+  // eyes — purple emissive
+  const eyeMat = new THREE.MeshLambertMaterial({color:0xff66ff, emissive:0xa040ff, emissiveIntensity:1});
+  const eL = new THREE.Mesh(new THREE.BoxGeometry(0.18,0.10,0.05), eyeMat); eL.position.set(-0.6,0.3,4.2); root.add(eL);
+  const eR = new THREE.Mesh(new THREE.BoxGeometry(0.18,0.10,0.05), eyeMat); eR.position.set( 0.6,0.3,4.2); root.add(eR);
+  // body segments
+  let segPos=1.5;
+  for(let i=0;i<5;i++){
+    const s = seg(1.6 - i*0.18, 1.4 - i*0.12, 1.4); s.position.set(0,0,1.5 - i*1.4);
+    segs.push(s); segPos -= 1.4;
+  }
+  // tail
+  for(let i=0;i<5;i++){
+    const s = seg(0.7 - i*0.10, 0.6 - i*0.08, 1.0); s.position.set(0,0,-3.5 - i*0.9);
+    segs.push(s);
+  }
+  // wings (planes)
+  const wingMat = new THREE.MeshLambertMaterial({color:0x32184a, side:THREE.DoubleSide, transparent:true, opacity:.9});
+  const wL = new THREE.Mesh(new THREE.PlaneGeometry(4,2.4), wingMat); wL.position.set(-3.0,0.5,0); wL.rotation.y=Math.PI/2; wL.rotation.z=-0.3;
+  const wR = new THREE.Mesh(new THREE.PlaneGeometry(4,2.4), wingMat); wR.position.set( 3.0,0.5,0); wR.rotation.y=-Math.PI/2; wR.rotation.z=0.3;
+  root.add(wL); root.add(wR);
+  return {root, head, segs, wL, wR, hp:48, hpMax:48, mode:'ORBIT', fireBreath:null};
+}
+
+const mobs = []; // {kind, body, hp, pos, vel, yaw, ...}
+function spawnMob(kind, x, z){
+  let body, hp = 8, dmg=2;
+  if(kind==='zombie'){ body = makeZombie(); hp=10; dmg=2; }
+  else if(kind==='skeleton'){ body = makeSkeleton(); hp=8; dmg=2; }
+  else if(kind==='creeper'){ body = makeCreeper(); hp=6; dmg=8; }
+  scene.add(body.root);
+  const groundY = surfaceAt(x,z) + 1;
+  const m = {kind, body, hp, hpMax:hp, dmg, pos:new THREE.Vector3(x, groundY, z), vel:new THREE.Vector3(), yaw:0, walk:0, fuse:0};
+  mobs.push(m);
+  return m;
+}
+
+function surfaceAt(x,z){
+  // Find topmost solid block at integer column
+  const xi=Math.round(x-0.5), zi=Math.round(z-0.5);
+  for(let y=WY-1;y>=0;y--){
+    const t = getB(xi,y,zi);
+    if(t!==B.AIR && t!==B.WATER && t!==B.LEAVES) return y+1;
+  }
+  return 1;
+}
+
+// ---------- Particles -------------------------------------------------
+const particles = [];
+function spawnParticles(x,y,z,col,n=10,life=0.7,scale=0.12){
+  for(let i=0;i<n;i++){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(scale,scale,scale),
+      new THREE.MeshBasicMaterial({color:col}));
+    m.position.set(x,y,z);
+    m.userData = {
+      vel: new THREE.Vector3((rng()-0.5)*4,(rng())*4,(rng()-0.5)*4),
+      life, age:0
+    };
+    scene.add(m); particles.push(m);
+  }
+}
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i], u=p.userData;
+    u.age += dt;
+    if(u.age>u.life){ scene.remove(p); p.material.dispose(); p.geometry.dispose(); particles.splice(i,1); continue; }
+    u.vel.y -= 9*dt;
+    p.position.addScaledVector(u.vel, dt);
+    p.material.opacity = Math.max(0,1 - u.age/u.life);
+    p.material.transparent = true;
+  }
+}
+
+// ---------- Day/Night & weather --------------------------------------
+let timeOfDay = 0.25; // 0..1, 0=midnight, .25=dawn,.5=noon,.75=dusk
+const DAY_LEN = 60; // seconds for full day
+let dayCount = 1;
+let lastDayTick = 0;
+
+function updateSun(t){
+  // angle around X axis tied to time of day
+  const a = (t - 0.5)*Math.PI*2;
+  const sx = Math.cos(a)*60, sy = Math.sin(a)*70 + 5, sz = Math.sin(a*0.3)*20;
+  sun.position.set(sx, Math.max(2,sy), sz);
+  const lit = Math.max(0, Math.sin(a)); // 0..1
+  sun.intensity = 0.3 + lit*0.95;
+  hemi.intensity = 0.18 + lit*0.4;
+  amb.intensity = 0.10 + lit*0.10;
+  moon.intensity = (1-lit)*0.5;
+  // sky color shift
+  skyMat.uniforms.uT.value = (1-lit);
+  // fog color
+  const fogC = new THREE.Color().setRGB(0.72*lit + 0.05*(1-lit), 0.84*lit + 0.07*(1-lit), 1.0*lit + 0.18*(1-lit));
+  scene.fog.color.copy(fogC);
+  renderer.setClearColor(fogC);
+  // sunset orange tint
+  const dusk = Math.max(0, 1 - Math.abs(t-0.78)/0.12) + Math.max(0, 1 - Math.abs(t-0.22)/0.12);
+  if(dusk>0){
+    skyMat.uniforms.uHor.value.setHex(0xffb070);
+  } else {
+    skyMat.uniforms.uHor.value.setHex(0xc9deff);
+  }
+}
+
+// ---------- HUD wiring ------------------------------------------------
+function buildHotbar(){
+  const hb = $('#hotbar'); hb.innerHTML='';
+  const items = [
+    {key:'pick', icon:'⛏', label:'Pick'},
+    {key:'sword', icon:'⚔', label:'Sword'},
+    {key:'wood', icon:'🪵', label:'Wood'},
+    {key:'cobble', icon:'🪨', label:'Stone'},
+    {key:'coal', icon:'◼', label:'Coal'},
+    {key:'iron', icon:'◫', label:'Iron'},
+    {key:'gold', icon:'◆', label:'Gold'},
+    {key:'diamond', icon:'◇', label:'Dia'},
+    {key:'food', icon:'🍞', label:'Food'},
+  ];
+  for(const it of items){
+    const d = document.createElement('div');
+    d.className='slot'; d.id='sl_'+it.key;
+    d.innerHTML = `<div class="ico">${it.icon}</div><div class="ct">0</div>`;
+    hb.appendChild(d);
+  }
+}
+function refreshHUD(){
+  // hearts
+  const hh = $('#hearts'); hh.innerHTML='';
+  const total = 10; const filled = Math.round(hero.hp/2);
+  for(let i=0;i<total;i++){
+    const e = document.createElement('div'); e.className='heart'+(i<filled?'':' empty'); hh.appendChild(e);
+  }
+  const hu = $('#hungs'); hu.innerHTML='';
+  const hf = Math.round(hero.hunger/2);
+  for(let i=0;i<10;i++){
+    const e = document.createElement('div'); e.className='hung'+(i<hf?'':' empty'); hu.appendChild(e);
+  }
+  $('#xpbar').style.width = ((hero.xp%50)/50*100).toFixed(0)+'%';
+  $('#sHero').textContent = hero.name;
+  $('#sDay').textContent = dayCount + ' ' + (timeOfDay>0.25 && timeOfDay<0.75 ? '☀' : '☾');
+  const tiers = ['Wooden','Stone','Iron','Diamond'];
+  $('#sTier').textContent = tiers[hero.tier] + (hero.inv.sword? ' +Sword':'');
+  $('#sXP').textContent = hero.xp|0;
+  $('#sPe').textContent = (hero.inv.pearl|0)+'/12';
+  $('#sRo').textContent = (hero.inv.rod|0)+'/12';
+  // hotbar
+  const sel = hero.state==='COMBAT' ? 'sword' : 'pick';
+  for(const k of ['pick','sword','wood','cobble','coal','iron','gold','diamond','food']){
+    const el = document.getElementById('sl_'+k); if(!el) continue;
+    el.classList.toggle('sel', k===sel);
+    let ct = 0;
+    if(k==='pick') ct = (hero.inv.diamondPick||hero.inv.ironPick||hero.inv.stonePick||hero.inv.woodPick)|0;
+    else if(k==='sword') ct = hero.inv.sword|0;
+    else if(k==='food') ct = hero.inv.food|0;
+    else ct = hero.inv[k]|0;
+    el.querySelector('.ct').textContent = ct;
+  }
+}
+buildHotbar();
+
+// ---------- Goals & Chronicle ----------------------------------------
+function setGoal(t,s){ $('#goalT').textContent=t; $('#goalS').textContent=s; }
+
+// ---------- Hero AI ---------------------------------------------------
+function nearestOf(predicate, maxDist){
+  let best=null, bd=Infinity;
+  const r = maxDist|0;
+  const cx = Math.round(hero.pos.x-0.5), cz = Math.round(hero.pos.z-0.5);
+  for(let dx=-r;dx<=r;dx++) for(let dz=-r;dz<=r;dz++){
+    for(let y=0;y<WY;y++){
+      const x = cx+dx, z=cz+dz;
+      const t = getB(x,y,z); if(t===B.AIR) continue;
+      if(!predicate(t,x,y,z)) continue;
+      const d2 = dx*dx + dz*dz + (y-hero.pos.y)*(y-hero.pos.y);
+      if(d2<bd){ bd=d2; best={x,y,z,t}; }
+    }
+  }
+  return best;
+}
+
+function pickHeroGoal(){
+  // Story-driven goal selection
+  if(hero.hp <= 4) return setGoal('Retreat & Heal','Hero is wounded — find safety');
+  if(hero.hunger < 10 && hero.inv.food>0) return setGoal('Eat','Hero is hungry — eats food');
+  if(timeOfDay>0.78 || timeOfDay<0.22){
+    return setGoal('Survive the Night','Build shelter or fight mobs');
+  }
+  if(hero.tier===0){
+    if(hero.inv.wood < 6) return setGoal('Chop wood','Need 6 logs for crafting');
+    return setGoal('Craft Stone Tier','Mine cobble to advance');
+  }
+  if(hero.tier===1) return setGoal('Mine Iron','Find iron ore deeper underground');
+  if(hero.tier===2 && hero.inv.diamond<2) return setGoal('Find Diamond','Dig deep — diamonds gleam below');
+  if(hero.inv.pearl<12 || hero.inv.rod<12) return setGoal('Hunt the End',`Pearls ${hero.inv.pearl}/12, Rods ${hero.inv.rod}/12`);
+  return setGoal('Open the End Portal','Activate the dragon\'s arena');
+}
+
+function findTarget(){
+  // Decision tree based on state
+  const day = timeOfDay>0.22 && timeOfDay<0.78;
+  // night and no shelter: build
+  if(!day && !hero.shelter){
+    hero.state='BUILD'; return;
+  }
+  if(!day && hero.shelter){
+    // sleep / wait
+    hero.state='SHELTER'; return;
+  }
+  // hunger
+  if(hero.hunger < 10 && hero.inv.food>0){
+    hero.state='EAT'; return;
+  }
+  // hp low retreat
+  if(hero.hp<=4 && hero.shelter){ hero.state='SHELTER'; return; }
+  // combat — closest hostile mob within range
+  let mb=null,md=Infinity;
+  for(const m of mobs){
+    const d = m.pos.distanceTo(hero.pos);
+    if(d<10 && d<md){ md=d; mb=m; }
+  }
+  if(mb){ hero.state='COMBAT'; hero.target=mb; return; }
+  // need wood?
+  if(hero.inv.wood<6){
+    const wood = nearestOf((t,x,y,z)=>t===B.WOOD && exposed(x,y,z), 30);
+    if(wood){ hero.state='CHOP'; hero.target=wood; return; }
+  }
+  // need cobble? prefer exposed stone (caves, surface)
+  if(hero.tier===0 && hero.inv.cobble<5){
+    const stone = nearestOf((t,x,y,z)=>t===B.STONE && exposed(x,y,z), 22);
+    if(stone){ hero.state='MINE'; hero.target=stone; return; }
+  }
+  // tier-up: iron
+  if(hero.tier===1){
+    const ore = nearestOf((t,x,y,z)=>t===B.IRON && exposed(x,y,z), 28);
+    if(ore){ hero.state='MINE'; hero.target=ore; return; }
+    const stone = nearestOf((t,x,y,z)=>t===B.STONE && exposed(x,y,z), 22);
+    if(stone){ hero.state='MINE'; hero.target=stone; return; }
+  }
+  if(hero.tier===2){
+    const ore = nearestOf((t,x,y,z)=>(t===B.DIAMOND || t===B.GOLD) && exposed(x,y,z), 28);
+    if(ore){ hero.state='MINE'; hero.target=ore; return; }
+    const stone = nearestOf((t,x,y,z)=>t===B.STONE && exposed(x,y,z), 22);
+    if(stone){ hero.state='MINE'; hero.target=stone; return; }
+  }
+  // collect ender pearls/rods (fake "drops" from killing mobs at night, but during day we hunt rare)
+  // wandering search
+  hero.state='WANDER';
+  // pick a random target
+  const ang = rng()*Math.PI*2;
+  const dist = 8+rng()*12;
+  hero.target = {x: hero.pos.x + Math.cos(ang)*dist, y: 0, z: hero.pos.z + Math.sin(ang)*dist};
+}
+
+function moveHeroToward(tx,tz, dt){
+  const dx = tx-hero.pos.x, dz = tz-hero.pos.z;
+  const d = Math.hypot(dx,dz);
+  if(d<0.05) return 0;
+  const speed = 4.0;
+  const step = Math.min(d, speed*dt);
+  const nx = hero.pos.x + dx/d*step;
+  const nz = hero.pos.z + dz/d*step;
+  // Free walk: voxel terrain is uneven; AI hero auto-climbs anything
+  // by simply settling to the local surface. Visual is "climbing the hill".
+  hero.pos.x = nx; hero.pos.z = nz;
+  const sy = surfaceAt(nx,nz);
+  hero.pos.y += (sy - hero.pos.y)*Math.min(1, dt*10);
+  hero.yaw = Math.atan2(dx,dz);
+  return d;
+}
+
+function craft(){
+  const inv = hero.inv;
+  if(hero.tier===0 && inv.wood>=2 && !inv.sword){ inv.wood-=2; inv.sword=1; logEvent(`<b>${hero.name}</b> crafted a Wooden Sword.`); flash('+ Wooden Sword'); return; }
+  if(inv.cobble>=3 && hero.tier===0){
+    inv.cobble-=3; inv.stonePick=1; hero.tier=1; setToolColor(hero.body, 0x8a8d92);
+    logEvent(`<b>${hero.name}</b> crafted a <b>Stone Pickaxe</b>. (Tier ↑)`); flash('+ Stone Tier'); return;
+  }
+  if(inv.iron>=3 && hero.tier===1){
+    inv.iron-=3; inv.ironPick=1; hero.tier=2; setToolColor(hero.body, 0xddccaa);
+    logEvent(`<b>${hero.name}</b> smelted iron and crafted an <b>Iron Pickaxe</b>. (Tier ↑)`); flash('+ Iron Tier'); return;
+  }
+  if(inv.diamond>=3 && hero.tier===2){
+    inv.diamond-=3; inv.diamondPick=1; hero.tier=3; setToolColor(hero.body, 0x6ee5d0);
+    logEvent(`<b>${hero.name}</b> forged a <b>Diamond Pickaxe</b>! (Tier MAX)`); flash('+ Diamond Tier');
+    return;
+  }
+  if(inv.iron>=2 && (!inv.sword || inv.sword<2)){
+    inv.iron-=2; inv.sword = 2; logEvent(`<b>${hero.name}</b> crafted an Iron Sword.`); flash('+ Iron Sword');
+  }
+}
+
+function tryMineBlock(b, dt){
+  // require correct tier?
+  const need = (b.t===B.IRON||b.t===B.GOLD) ? 1 : (b.t===B.DIAMOND?2:0);
+  if(hero.tier < need){
+    // can't mine yet
+    hero.state='WANDER'; hero.target=null; return false;
+  }
+  hero.miningTarget = b;
+  hero.miningProgress += dt * (1 + hero.tier*0.6);
+  hero.swing = (hero.swing + dt*8) % (Math.PI*2);
+  const hard = BPROP[b.t]?.hard || 1;
+  if(hero.miningProgress >= hard*0.7){
+    // mined!
+    const drop = BPROP[b.t]?.drop;
+    if(drop){
+      hero.inv[drop] = (hero.inv[drop]||0)+1;
+    }
+    setB(b.x,b.y,b.z,B.AIR);
+    spawnParticles(b.x+0.5,b.y+0.5,b.z+0.5, flatColor(b.t), 8, 0.6);
+    hero.miningProgress = 0;
+    hero.miningTarget = null;
+    hero.totalMined++;
+    hero.xp += (need+1)*2;
+    if(b.t===B.COAL) logEvent(`Mined <b>coal</b>.`,true);
+    if(b.t===B.IRON) { logEvent(`<b>${hero.name}</b> struck iron ore.`); }
+    if(b.t===B.GOLD) { logEvent(`<b>${hero.name}</b> uncovered <b>gold</b>!`); }
+    if(b.t===B.DIAMOND) { logEvent(`<b>${hero.name}</b> mined a <b>DIAMOND</b>!`); flash('+ Diamond'); }
+    return true;
+  }
+  return false;
+}
+
+function placeBlock(x,y,z,t){
+  if(getB(x,y,z)!==B.AIR) return false;
+  setB(x,y,z,t);
+  spawnParticles(x+0.5,y+0.5,z+0.5, flatColor(t), 4, 0.4);
+  return true;
+}
+
+function buildShelter(){
+  // 5x5 box around hero
+  const cx = Math.round(hero.pos.x-0.5), cz = Math.round(hero.pos.z-0.5);
+  const cy = surfaceAt(hero.pos.x, hero.pos.z);
+  const blocks = [];
+  for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++){
+    const isWall = Math.abs(dx)===2 || Math.abs(dz)===2;
+    if(isWall){
+      for(let dy=0;dy<3;dy++) blocks.push([cx+dx,cy+dy,cz+dz, hero.inv.cobble>0?B.COBBLE:B.DIRT]);
+    }
+  }
+  // roof
+  for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++) blocks.push([cx+dx, cy+3, cz+dz, B.WOOD]);
+  hero.shelter = {x:cx, y:cy, z:cz, queue:blocks, idx:0};
+  logEvent(`<b>${hero.name}</b> begins building shelter (Day ${dayCount}).`);
+  setGoal('Build Shelter','Place blocks before mobs reach you');
+}
+
+// ---------- Combat ---------------------------------------------------
+function damageMob(m, amt){
+  m.hp -= amt;
+  spawnParticles(m.pos.x, m.pos.y+1, m.pos.z, 0xff5555, 6, 0.5, 0.08);
+  if(m.hp<=0){
+    // kill mob
+    scene.remove(m.body.root);
+    const i = mobs.indexOf(m); if(i>=0) mobs.splice(i,1);
+    hero.totalKilled++; hero.xp += 8;
+    // mob drops
+    if(m.kind==='zombie' && rng()<0.55){ hero.inv.food = (hero.inv.food||0)+1; logEvent(`Zombie defeated — dropped rotten flesh.`,true); }
+    if(m.kind==='skeleton' && rng()<0.4){ hero.inv.rod = (hero.inv.rod||0)+1; logEvent(`<b>Bone collected.</b> Used as a stand-in for a Blaze Rod (${hero.inv.rod}/12).`); }
+    if(rng()<0.55){ hero.inv.pearl = (hero.inv.pearl||0)+1; logEvent(`Mob dropped an <b>Ender Pearl</b> (${hero.inv.pearl}/12).`); }
+    return true;
+  }
+  return false;
+}
+function damageHero(amt, src){
+  hero.hp = Math.max(0, hero.hp - amt);
+  spawnParticles(hero.pos.x, hero.pos.y+1, hero.pos.z, 0xff3333, 5, 0.4, 0.07);
+  if(hero.hp<=0){
+    logEvent(`<b>${hero.name}</b> has fallen. Respawning…`);
+    flash('YOU DIED');
+    hero.hp = hero.hpMax;
+    hero.hunger = hero.hungerMax;
+    // drop near spawn
+    hero.pos.set(0, surfaceAt(0,0)+1, 0);
+  }
+}
+
+// ---------- AI tick ---------------------------------------------------
+function aiTickHero(dt){
+  pickHeroGoal();
+
+  // animate
+  const moving = hero.vel.lengthSq()>0.01 || (hero.target && hero.state!=='SHELTER' && hero.state!=='COMBAT' && hero.state!=='MINE');
+  if(moving) hero.walk += dt*8; else hero.walk *= 0.92;
+
+  switch(hero.state){
+    case 'CHOP':
+    case 'MINE': {
+      const b = hero.target;
+      if(!b || getB(b.x,b.y,b.z)===B.AIR){
+        hero.target=null; findTarget(); break;
+      }
+      // walk to a column adjacent to the target block (so we don't try to step up onto the trunk/wall)
+      const dxh = hero.pos.x - (b.x+0.5);
+      const dzh = hero.pos.z - (b.z+0.5);
+      const useX = Math.abs(dxh) >= Math.abs(dzh);
+      let tx, tz;
+      if(useX){
+        tx = b.x + (dxh>0 ? 1.5 : -0.5);
+        tz = b.z + 0.5;
+      } else {
+        tx = b.x + 0.5;
+        tz = b.z + (dzh>0 ? 1.5 : -0.5);
+      }
+      const d = moveHeroToward(tx,tz,dt);
+      // distance from hero to actual block center (2D)
+      const blockDx = (b.x+0.5)-hero.pos.x, blockDz = (b.z+0.5)-hero.pos.z;
+      const blockD = Math.hypot(blockDx,blockDz);
+      if(blockD < 1.8 && Math.abs(b.y - hero.pos.y) < 3.5){
+        tryMineBlock(b,dt);
+        if((tickN%30)===0) craft();
+      }
+      // re-evaluate occasionally to react to mob spawns
+      if(rng()<0.005) findTarget();
+      break;
+    }
+    case 'WANDER': {
+      const t = hero.target;
+      if(!t){ findTarget(); break; }
+      const d = moveHeroToward(t.x, t.z, dt);
+      if(d<0.6) findTarget();
+      if(rng()<0.01) findTarget();
+      break;
+    }
+    case 'COMBAT': {
+      const m = hero.target;
+      if(!m || m.hp<=0 || mobs.indexOf(m)<0){ findTarget(); break; }
+      const d = moveHeroToward(m.pos.x, m.pos.z, dt);
+      hero.swing = (hero.swing + dt*10) % (Math.PI*2);
+      if(d<1.6){
+        // hit
+        if((tickN%18)===0){
+          const hit = damageMob(m, 4 + hero.tier*2 + (hero.inv.sword?2:0));
+          spawnParticles(m.pos.x, m.pos.y+1, m.pos.z, 0xffcc66, 6, 0.4, 0.08);
+          if(hit){ logEvent(`<b>${hero.name}</b> defeated a <b>${m.kind}</b>.`); }
+        }
+      }
+      break;
+    }
+    case 'BUILD': {
+      if(!hero.shelter) buildShelter();
+      const sh = hero.shelter;
+      if(sh.idx < sh.queue.length){
+        const [x,y,z,t] = sh.queue[sh.idx++];
+        placeBlock(x,y,z,t);
+      } else {
+        logEvent(`<b>${hero.name}</b>'s shelter is built. Day ${dayCount}.`,true);
+        hero.state='SHELTER';
+        setGoal('Wait Out the Night','Hero rests in shelter');
+      }
+      break;
+    }
+    case 'SHELTER': {
+      // stand near shelter, slowly heal
+      if(hero.shelter){
+        moveHeroToward(hero.shelter.x+0.5, hero.shelter.z+0.5, dt);
+      }
+      if((tickN%30)===0 && hero.hp<hero.hpMax) hero.hp = Math.min(hero.hpMax, hero.hp+1);
+      // fast forward time
+      if(timeOfDay>0.78 || timeOfDay<0.22){
+        timeOfDay += dt/DAY_LEN * 4; // 4x at night in shelter
+      }
+      break;
+    }
+    case 'EAT': {
+      if(hero.inv.food>0 && hero.hunger<hero.hungerMax){
+        hero.inv.food--;
+        hero.hunger = Math.min(hero.hungerMax, hero.hunger+5);
+        hero.hp = Math.min(hero.hpMax, hero.hp+2);
+        logEvent(`<b>${hero.name}</b> eats. Hunger restored.`,true);
+        spawnParticles(hero.pos.x, hero.pos.y+1.5, hero.pos.z, 0xffffff, 5, 0.4, 0.06);
+      }
+      hero.state='WANDER';
+      break;
+    }
+  }
+
+  // hunger drain
+  hero.hunger -= dt*0.05;
+  if(hero.hunger<0){ damageHero(0.05); hero.hunger=0; }
+
+  // craft if possible periodically
+  if((tickN%60)===0) craft();
+}
+
+// ---------- Mob AI ----------------------------------------------------
+function aiTickMobs(dt){
+  for(let i=mobs.length-1;i>=0;i--){
+    const m = mobs[i];
+    // approach hero
+    const dx = hero.pos.x - m.pos.x, dz = hero.pos.z - m.pos.z;
+    const d = Math.hypot(dx,dz);
+    const speed = m.kind==='creeper'?1.6:1.2;
+    if(d>0.6){
+      m.pos.x += dx/d*speed*dt;
+      m.pos.z += dz/d*speed*dt;
+      m.yaw = Math.atan2(dx,dz);
+    }
+    const sy = surfaceAt(m.pos.x, m.pos.z);
+    m.pos.y += (sy - m.pos.y)*Math.min(1, dt*8);
+    m.walk += dt*6;
+
+    // place body
+    m.body.root.position.copy(m.pos);
+    m.body.root.rotation.y = m.yaw;
+    if(m.body.legL){
+      const s = Math.sin(m.walk)*0.5;
+      m.body.legL.rotation.x =  s; m.body.legR.rotation.x = -s;
+      m.body.armLP.rotation.x = -s; m.body.armRP.rotation.x = s;
+      // zombie arms forward
+      if(m.kind==='zombie'){ m.body.armLP.rotation.x -= 1.0; m.body.armRP.rotation.x -= 1.0; }
+    }
+
+    if(m.kind==='creeper' && d<2.2){
+      m.fuse += dt;
+      // pulse
+      const sc = 1 + Math.sin(m.fuse*16)*0.1;
+      m.body.root.scale.setScalar(sc);
+      if(m.fuse>1.6){
+        // explode
+        for(let j=0;j<24;j++) spawnParticles(m.pos.x, m.pos.y+0.5, m.pos.z, 0x554422, 1, 0.9, 0.18);
+        // damage hero / blocks
+        damageHero(d<1.5?8:4, 'creeper');
+        // remove blocks in 2-radius
+        const cx = Math.round(m.pos.x-0.5), cy = Math.round(m.pos.y-0.5), cz=Math.round(m.pos.z-0.5);
+        for(let dx2=-2;dx2<=2;dx2++) for(let dy2=-2;dy2<=2;dy2++) for(let dz2=-2;dz2<=2;dz2++){
+          if(dx2*dx2+dy2*dy2+dz2*dz2>5) continue;
+          if(getB(cx+dx2,cy+dy2,cz+dz2)!==B.AIR) setB(cx+dx2,cy+dy2,cz+dz2,B.AIR);
+        }
+        scene.remove(m.body.root);
+        mobs.splice(i,1);
+        logEvent(`<b>Creeper exploded</b> near ${hero.name}!`);
+        flash('💥 BOOM');
+        continue;
+      }
+    } else if(d<1.6){
+      // melee
+      if((tickN%40)===0) damageHero(m.dmg);
+    }
+  }
+}
+
+// ---------- Apply hero pose ------------------------------------------
+function poseHero(){
+  hero.body.root.position.copy(hero.pos);
+  hero.body.root.rotation.y = hero.yaw;
+  const w = hero.walk;
+  const sw = Math.sin(w);
+  const cw = Math.cos(w);
+  hero.body.legL.rotation.x =  sw*0.8;
+  hero.body.legR.rotation.x = -sw*0.8;
+  // arms swing opposite to legs (basic walk)
+  let armSwingL = -sw*0.6, armSwingR = sw*0.6;
+  // mining/combat overrides right arm
+  if(hero.state==='MINE' || hero.state==='CHOP'){
+    armSwingR = -1.2 + Math.sin(hero.swing)*0.7;
+  }
+  if(hero.state==='COMBAT'){
+    armSwingR = -1.5 + Math.sin(hero.swing*2)*1.0;
+  }
+  hero.body.armLP.rotation.x = armSwingL;
+  hero.body.armRP.rotation.x = armSwingR;
+  // tiny head bob
+  hero.body.head.position.y = 1.7 + Math.abs(sw)*0.04;
+}
+
+// ---------- Camera follow --------------------------------------------
+const cam = {pos: new THREE.Vector3(0, 25, 10), look: new THREE.Vector3()};
+function updateCamera(dt){
+  const targetY = hero.pos.y + 1.5;
+  const back = 6;
+  let camMode = 'FOLLOW';
+  if(dragonScene && dragonScene.dragon && hero.state==='DRAGON') camMode='DRAGON';
+  if(hero.state==='COMBAT') camMode='ARENA';
+
+  let desired;
+  if(camMode==='ARENA'){
+    desired = new THREE.Vector3(
+      hero.pos.x + Math.sin(hero.yaw)*back*1.6 + Math.cos(timeNow*0.6)*2,
+      hero.pos.y + 7,
+      hero.pos.z + Math.cos(hero.yaw)*back*1.6
+    );
+  } else if(camMode==='DRAGON'){
+    const drag = dragonScene.dragon;
+    desired = new THREE.Vector3(
+      drag.root.position.x + Math.sin(timeNow*0.3)*30,
+      drag.root.position.y + 12,
+      drag.root.position.z + Math.cos(timeNow*0.3)*30
+    );
+    cam.look.copy(drag.root.position);
+    camera.position.lerp(desired, Math.min(1, dt*1.5));
+    camera.lookAt(cam.look);
+    return;
+  } else {
+    desired = new THREE.Vector3(
+      hero.pos.x - Math.sin(hero.yaw)*back,
+      hero.pos.y + 4.5,
+      hero.pos.z - Math.cos(hero.yaw)*back
+    );
+  }
+  camera.position.lerp(desired, Math.min(1, dt*2.5));
+  cam.look.set(hero.pos.x, targetY, hero.pos.z);
+  camera.lookAt(cam.look);
+}
+
+// ---------- Spawn schedule ------------------------------------------
+let nextSpawn = 0;
+function maybeSpawn(){
+  const isNight = timeOfDay>0.78 || timeOfDay<0.22;
+  if(timeNow < nextSpawn) return;
+  if(isNight && mobs.length<8){
+    // pick spawn location around hero
+    const ang = rng()*Math.PI*2;
+    const r = 8+rng()*10;
+    const x = hero.pos.x + Math.cos(ang)*r;
+    const z = hero.pos.z + Math.sin(ang)*r;
+    const r2 = rng();
+    let kind='zombie';
+    if(r2<0.15) kind='creeper'; else if(r2<0.45) kind='skeleton';
+    spawnMob(kind, x, z);
+    nextSpawn = timeNow + 4 + rng()*4;
+    if(rng()<0.2) logEvent(`A <b>${kind}</b> approaches…`,true);
+  } else {
+    nextSpawn = timeNow + 2;
+  }
+  // village discovery one-off
+  if(!villageFound && timeNow>30 && rng()<0.002){
+    villageFound = true;
+    logEvent(`Discovered a small village. The villagers wave.`);
+    flash('🏘 Village');
+    hero.inv.food = (hero.inv.food||0)+5;
+    hero.inv.wood = (hero.inv.wood||0)+4;
+  }
+  // ruin discovery
+  if(!ruinFound && ruinPos && Math.hypot(hero.pos.x-ruinPos.x, hero.pos.z-ruinPos.z)<6){
+    ruinFound = true;
+    logEvent(`<b>Ancient ruin found</b> — chest contains treasure!`);
+    flash('🏛 Ruin');
+    hero.inv.gold = (hero.inv.gold||0)+3;
+    hero.inv.pearl = (hero.inv.pearl||0)+3;
+    hero.inv.rod = (hero.inv.rod||0)+2;
+  }
+}
+let villageFound=false, ruinFound=false;
+
+// ---------- Ender Dragon arena ---------------------------------------
+let dragonScene = null;
+let endPortalActive = false;
+let endVortexParticles = null;
+
+function checkEndUnlock(){
+  if(endPortalActive) return;
+  if(hero.inv.pearl>=12 && hero.inv.rod>=12){
+    endPortalActive = true;
+    flash('END PORTAL ACTIVATED');
+    logEvent(`<b>END PORTAL ACTIVATED</b> — pearls + rods unlock the gateway.`);
+    setGoal('Enter the End','Step into the purple vortex');
+    activatePortalVortex();
+    setTimeout(enterEndDimension, 6000);
+  }
+}
+function activatePortalVortex(){
+  // a vortex of purple particles at hero
+  const x=hero.pos.x, y=hero.pos.y+1, z=hero.pos.z;
+  for(let i=0;i<40;i++){
+    spawnParticles(x,y,z, 0xa040ff, 1, 1.4, 0.16);
+  }
+}
+function enterEndDimension(){
+  // Hide world, build End arena
+  for(const t of blockTypes){ blockMeshes[t].visible = false; }
+  grassTopMesh.visible = false;
+
+  // build platform
+  const plat = new THREE.Group();
+  for(let dx=-12;dx<=12;dx++) for(let dz=-12;dz<=12;dz++){
+    if(dx*dx+dz*dz>140) continue;
+    const m = box(1,1,1, 0xefe5b1);
+    m.position.set(dx,0,dz);
+    plat.add(m);
+  }
+  // pillars
+  for(let i=0;i<8;i++){
+    const a = i/8*Math.PI*2;
+    const px = Math.cos(a)*9, pz=Math.sin(a)*9;
+    for(let y=1;y<7;y++){
+      const m = box(1,1,1, 0x140a23);
+      m.position.set(px,y,pz);
+      plat.add(m);
+    }
+    // crystal on top
+    const cMat = new THREE.MeshLambertMaterial({color:0xff66ff, emissive:0xa040ff, emissiveIntensity:1});
+    const cr = new THREE.Mesh(new THREE.BoxGeometry(0.8,1.2,0.8), cMat);
+    cr.position.set(px,7.6,pz);
+    plat.add(cr);
+  }
+  scene.add(plat);
+
+  // sky purple
+  skyMat.uniforms.uTop.value.setHex(0x150528);
+  skyMat.uniforms.uMid.value.setHex(0x230b3c);
+  skyMat.uniforms.uHor.value.setHex(0x110010);
+  scene.fog = new THREE.Fog(0x150528, 30, 120);
+
+  // hero center
+  hero.pos.set(0,1, 0);
+  hero.shelter = null;
+  hero.state = 'DRAGON';
+
+  // dragon
+  const dragon = makeDragon();
+  dragon.root.position.set(0, 18, -20);
+  scene.add(dragon.root);
+  dragonScene = {dragon, plat, t:0, arrows:[]};
+  flash('THE END');
+  logEvent(`<b>${hero.name}</b> enters <b>THE END</b>. The dragon awakens.`);
+  setGoal('Defeat the Ender Dragon','Loose arrows from below');
+}
+
+function aiDragon(dt){
+  if(!dragonScene) return;
+  const d = dragonScene.dragon;
+  if(!d) return; // dragon defeated; awaiting endcard
+  dragonScene.t += dt;
+  const t = dragonScene.t;
+  // movement modes
+  if(d.hp > d.hpMax*0.66){
+    // orbit
+    d.root.position.x = Math.cos(t*0.6)*22;
+    d.root.position.z = Math.sin(t*0.6)*22 - 4;
+    d.root.position.y = 18 + Math.sin(t*1.2)*2;
+    d.root.lookAt(0,1,0);
+  } else if(d.hp > d.hpMax*0.33){
+    // dive attacks
+    const cycle = Math.sin(t*0.6);
+    d.root.position.x = Math.cos(t*0.4)*18;
+    d.root.position.z = Math.sin(t*0.4)*18;
+    d.root.position.y = 16 + cycle*8;
+    d.root.lookAt(0,1,0);
+    if(cycle<-0.85 && (tickN%6)===0){
+      // fire breath
+      const fx = d.root.position.x, fy=d.root.position.y, fz=d.root.position.z;
+      for(let i=0;i<3;i++) spawnParticles(fx,fy,fz, 0xff7733, 2, 0.8, 0.18);
+      if(d.root.position.distanceTo(hero.pos)<7) damageHero(0.6,'dragon');
+    }
+  } else {
+    // perch & rage
+    d.root.position.x = Math.cos(t*0.2)*9;
+    d.root.position.z = Math.sin(t*0.2)*9;
+    d.root.position.y = 7 + Math.sin(t*4)*0.5;
+    d.root.lookAt(0,1,0);
+  }
+  // wings flap
+  const flap = Math.sin(t*5);
+  d.wL.rotation.z = -0.3 - flap*0.4;
+  d.wR.rotation.z = 0.3 + flap*0.4;
+
+  // hero shoots
+  if((tickN%9)===0){
+    // spawn arrow
+    const arrow = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.7), new THREE.MeshBasicMaterial({color:0xeeeeaa}));
+    arrow.position.set(hero.pos.x, hero.pos.y+1.6, hero.pos.z);
+    // lead target slightly based on dragon velocity (current vs prev)
+    const lead = d.root.position.clone();
+    if(d._prev) lead.add(d.root.position.clone().sub(d._prev).multiplyScalar(0.4));
+    const dir = new THREE.Vector3().subVectors(lead, arrow.position).normalize();
+    arrow.userData = {dir, life:3, homing:0.9};
+    arrow.lookAt(d.root.position);
+    scene.add(arrow);
+    dragonScene.arrows.push(arrow);
+  }
+  if(d) d._prev = d.root.position.clone();
+  // update arrows
+  for(let i=dragonScene.arrows.length-1;i>=0;i--){
+    const a = dragonScene.arrows[i];
+    a.userData.life -= dt;
+    // gentle homing
+    if(a.userData.homing>0 && d){
+      const want = new THREE.Vector3().subVectors(d.root.position, a.position).normalize();
+      a.userData.dir.lerp(want, 0.18).normalize();
+    }
+    a.position.addScaledVector(a.userData.dir, 42*dt);
+    a.lookAt(a.position.clone().add(a.userData.dir));
+    if(d && a.position.distanceTo(d.root.position) < 6.5){
+      // hit
+      d.hp -= 3.0;
+      spawnParticles(a.position.x, a.position.y, a.position.z, 0xff66ff, 6, 0.5, 0.10);
+      scene.remove(a); dragonScene.arrows.splice(i,1);
+      if((tickN%48)===0) logEvent(`Arrow strikes the dragon (${Math.max(0,d.hp).toFixed(0)}/${d.hpMax}).`,true);
+      if(d.hp<=0){ defeatDragon(); }
+      continue;
+    }
+    if(a.userData.life<=0){ scene.remove(a); dragonScene.arrows.splice(i,1); }
+  }
+  // hero pose & camera
+  hero.yaw = Math.atan2(d.root.position.x-hero.pos.x, d.root.position.z-hero.pos.z);
+  hero.swing = (hero.swing + dt*6) % (Math.PI*2);
+  poseHero();
+}
+
+function defeatDragon(){
+  flash('⚔ DRAGON SLAIN');
+  logEvent(`<b>${hero.name}</b> SLAYS THE ENDER DRAGON.`);
+  // explosion
+  for(let i=0;i<60;i++) spawnParticles(dragonScene.dragon.root.position.x, dragonScene.dragon.root.position.y, dragonScene.dragon.root.position.z,
+    [0xa040ff,0xff66ff,0xeeeeaa][i%3], 1, 1.6, 0.20);
+  scene.remove(dragonScene.dragon.root);
+  dragonScene.dragon = null;
+  hero.state = 'VICTORY';
+  battleOutcome = 'VICTORY';
+  setTimeout(()=>{
+    $('#endTitle').textContent = `${hero.name.toUpperCase()}'S LEGEND`;
+    $('#endSub').textContent = `The Ender Dragon has fallen.`;
+    $('#endStats').innerHTML =
+      `Days survived: ${dayCount}<br/>`+
+      `Blocks mined: ${hero.totalMined}<br/>`+
+      `Mobs defeated: ${hero.totalKilled}<br/>`+
+      `XP earned: ${hero.xp|0}<br/>`+
+      `Tier reached: ${['Wood','Stone','Iron','Diamond'][hero.tier]}`;
+    $('#endcard').classList.add('show');
+    setTimeout(()=>location.reload(), 12000);
+  }, 1500);
+}
+let battleOutcome = 'PENDING';
+
+// ---------- Main loop ------------------------------------------------
+let last = performance.now()/1000, timeNow=0, tickN=0;
+let fps = 0, fpsAcc=0, fpsT=0;
+
+genWorld();
+hero.pos.set(0, surfaceAt(0,0)+1, 0);
+rebuildBlockMeshes();
+logEvent(`<b>${hero.name}</b> awakes in a forested biome. Day 1.`);
+setGoal('Survive Day 1','Gather wood, build a shelter before nightfall.');
+
+function step(dt){
+  timeNow += dt; tickN++;
+  // FPS
+  fpsAcc++; fpsT+=dt;
+  if(fpsT>=0.5){ fps = Math.round(fpsAcc/fpsT); fpsAcc=0; fpsT=0;
+    $('#fps').textContent = `${fps} fps · ${visibleCount} voxels · mobs ${mobs.length}`;
+  }
+  // time of day
+  timeOfDay = (timeOfDay + dt/DAY_LEN) % 1;
+  if(timeOfDay < 0.001 && lastDayTick>0.5){
+    dayCount++;
+    logEvent(`☀ <b>Day ${dayCount}</b> dawns. Hero stats: ${(hero.hp).toFixed(0)}HP, T${hero.tier}`,true);
+    hero.shelter = null;
+  }
+  lastDayTick = timeOfDay;
+  updateSun(timeOfDay);
+  // hero/mob ai
+  if(hero.state==='DRAGON' && dragonScene){
+    aiDragon(dt);
+  } else if(hero.state==='VICTORY'){
+    // post-defeat: just keep particles + camera animating
+  } else {
+    aiTickHero(dt);
+    poseHero();
+    aiTickMobs(dt);
+    maybeSpawn();
+  }
+  updateParticles(dt);
+  checkEndUnlock();
+  if(dirty || (tickN%20)===0){
+    if(hero.state!=='DRAGON' && hero.state!=='VICTORY') rebuildBlockMeshes();
+    dirty=false;
+  }
+  sky.position.copy(camera.position);
+  updateCamera(dt);
+  refreshHUD();
+}
+
+function loop(){
+  const now = performance.now()/1000;
+  let dt = Math.min(0.05, now-last);
+  last = now;
+  step(dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize',()=>{
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// Cycle hero on click
+window.addEventListener('keydown', (e)=>{
+  if(e.key.toLowerCase()==='h'){
+    heroIdx = (heroIdx+1)%HEROES.length;
+    const def = HEROES[heroIdx];
+    hero.name = def.name;
+    // recolor
+    hero.body.armLP.children[0].material.color.setHex(def.shirt);
+    hero.body.armRP.children[0].material.color.setHex(def.shirt);
+    hero.body.torso.material.color.setHex(def.shirt);
+    hero.body.legL.material.color.setHex(def.pants);
+    hero.body.legR.material.color.setHex(def.pants);
+    hero.body.head.material.color.setHex(def.skin);
+    hero.body.hairMesh.material.color.setHex(def.hair);
+    logEvent(`Hero swapped → <b>${hero.name}</b>.`);
+  }
+});
+
+loop();
+
+// expose for testing
+window.__SAGA = {hero, mobs, scene, dragonScene:()=>dragonScene, battleOutcome:()=>battleOutcome, step, enterEndDimension, checkEndUnlock};
+</script>
+</body>
+</html>

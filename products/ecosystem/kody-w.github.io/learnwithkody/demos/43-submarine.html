@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Silent Hunter — Submarine Command</title>
+<style>
+  html,body{margin:0;padding:0;background:#000;color:#9ab;font-family:'Courier New',monospace;overflow:hidden;height:100%;width:100%;cursor:crosshair;user-select:none}
+  #app{position:fixed;inset:0;}
+  canvas{display:block;width:100%;height:100%}
+  #ui{position:fixed;inset:0;pointer-events:none;z-index:5}
+  .station-tabs{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:4px;pointer-events:auto}
+  .tab{background:rgba(20,30,30,.85);border:1px solid #2a4040;color:#7aa;padding:6px 14px;font:bold 11px 'Courier New',monospace;letter-spacing:2px;cursor:pointer}
+  .tab.active{background:#1a3030;color:#9ff;border-color:#5cf;box-shadow:0 0 8px #2af}
+  #hud{position:absolute;top:48px;left:8px;font-size:11px;line-height:1.5;background:rgba(0,0,0,.55);padding:6px 10px;border:1px solid #2a4040;color:#8ca}
+  #status{position:absolute;top:48px;right:8px;font-size:11px;line-height:1.5;background:rgba(0,0,0,.55);padding:6px 10px;border:1px solid #2a4040;color:#8ca;text-align:right}
+  #help{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#688;background:rgba(0,0,0,.5);padding:4px 12px;letter-spacing:1px;border:1px solid #234}
+  #alert{position:absolute;inset:0;background:rgba(255,0,0,.0);pointer-events:none;mix-blend-mode:screen;transition:none}
+  #message{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font:bold 28px 'Courier New',monospace;color:#fc0;text-shadow:0 0 12px #f80;background:rgba(0,0,0,.7);padding:20px 36px;border:2px solid #f80;letter-spacing:3px;display:none;text-align:center}
+  #intro{position:absolute;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;cursor:pointer;color:#5af}
+  #intro h1{font-size:42px;letter-spacing:8px;text-shadow:0 0 20px #08c;margin:0 0 10px}
+  #intro p{font-size:13px;color:#7aa;letter-spacing:2px;margin:4px 0;text-align:center;max-width:600px}
+  #intro .blink{animation:blink 1s infinite;margin-top:20px;color:#fc0;font-size:14px;letter-spacing:4px}
+  @keyframes blink{50%{opacity:.3}}
+  .vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,.85) 100%)}
+  .scanline{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg, rgba(0,0,0,.0) 0px, rgba(0,0,0,.0) 2px, rgba(0,20,10,.15) 3px, rgba(0,0,0,.0) 4px)}
+  #fired{position:absolute;left:50%;top:30%;transform:translateX(-50%);color:#f80;font:bold 18px 'Courier New';letter-spacing:4px;display:none;text-shadow:0 0 8px #f00}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="cv"></canvas>
+  <div id="ui">
+    <div class="station-tabs">
+      <div class="tab active" data-s="1">[1] HELM</div>
+      <div class="tab" data-s="2">[2] SONAR</div>
+      <div class="tab" data-s="3">[3] PERISCOPE</div>
+    </div>
+    <div id="hud"></div>
+    <div id="status"></div>
+    <div id="fired">TORPEDO AWAY</div>
+    <div id="help">W/S throttle • A/D rudder • Q/E pitch • SPACE noisemaker • P sonar ping • CLICK fire torpedo (periscope) • 1/2/3 stations</div>
+    <div id="message"></div>
+    <div id="alert"></div>
+  </div>
+  <div id="intro">
+    <h1>SILENT HUNTER</h1>
+    <p>U.S.S. STINGRAY — ATTACK SUBMARINE</p>
+    <p style="margin-top:24px">Mission: Locate and destroy the enemy destroyer.</p>
+    <p>It will be hunting you. Run silent. Run deep.</p>
+    <p style="margin-top:24px;color:#688">Periscope depth = 18m or shallower</p>
+    <p style="color:#688">Torpedo range ~2000m. Lead your target.</p>
+    <div class="blink">CLICK TO DIVE</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+// AUDIO
+// ============================================================
+let audioCtx = null;
+let masterGain;
+let engineHumOsc, engineHumGain;
+let creakTimer = 0;
+function initAudio(){
+  if(audioCtx) return;
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  masterGain = audioCtx.createGain(); masterGain.gain.value=0.45; masterGain.connect(audioCtx.destination);
+  // engine hum (constant)
+  engineHumOsc = audioCtx.createOscillator(); engineHumOsc.type='sawtooth'; engineHumOsc.frequency.value=55;
+  const ho2 = audioCtx.createOscillator(); ho2.type='sine'; ho2.frequency.value=110;
+  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=180; lp.Q.value=2;
+  engineHumGain = audioCtx.createGain(); engineHumGain.gain.value=0.07;
+  engineHumOsc.connect(lp); ho2.connect(lp); lp.connect(engineHumGain); engineHumGain.connect(masterGain);
+  engineHumOsc.start(); ho2.start();
+}
+function setEngineLevel(throttle, depth){
+  if(!engineHumGain) return;
+  const t = Math.abs(throttle)/100;
+  engineHumGain.gain.value = 0.03 + 0.10*t + 0.005*Math.min(depth,200);
+  if(engineHumOsc) engineHumOsc.frequency.value = 50 + 25*t;
+}
+function ping(freq=900, dur=0.6, vol=0.5, type='sine'){
+  if(!audioCtx) return;
+  const o = audioCtx.createOscillator(); o.type=type; o.frequency.value=freq;
+  const g = audioCtx.createGain(); g.gain.value=0;
+  o.connect(g); g.connect(masterGain);
+  const t = audioCtx.currentTime;
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol, t+0.02); g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+  o.start(t); o.stop(t+dur+0.05);
+}
+function boom(delay=0, vol=0.7){
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime + delay;
+  const len = 1.2;
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*len, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++){
+    const k = i/d.length;
+    d[i] = (Math.random()*2-1) * Math.pow(1-k, 1.6) * (1+Math.sin(k*30)*0.4);
+  }
+  const src = audioCtx.createBufferSource(); src.buffer=buf;
+  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=200;
+  const g = audioCtx.createGain(); g.gain.value=vol;
+  src.connect(lp); lp.connect(g); g.connect(masterGain);
+  src.start(t);
+}
+function torpedoHiss(){
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*1.5, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++){
+    const k=i/d.length; d[i]=(Math.random()*2-1)*Math.pow(1-k,0.8)*0.6;
+  }
+  const src = audioCtx.createBufferSource(); src.buffer=buf;
+  const hp = audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=2000;
+  const g = audioCtx.createGain(); g.gain.value=0.5;
+  src.connect(hp); hp.connect(g); g.connect(masterGain);
+  src.start(t);
+}
+function klaxon(){
+  if(!audioCtx) return;
+  for(let i=0;i<3;i++){ ping(420,0.25,0.5,'square'); ping(620,0.25,0.5,'square'); }
+  // chained
+  const t = audioCtx.currentTime;
+  for(let i=0;i<6;i++){
+    const o = audioCtx.createOscillator(); o.type='square';
+    o.frequency.setValueAtTime(i%2?620:420, t+i*0.2);
+    const g = audioCtx.createGain(); g.gain.value=0;
+    g.gain.setValueAtTime(0, t+i*0.2);
+    g.gain.linearRampToValueAtTime(0.4, t+i*0.2+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+i*0.2+0.18);
+    o.connect(g); g.connect(masterGain); o.start(t+i*0.2); o.stop(t+i*0.2+0.2);
+  }
+}
+function creak(){
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(); o.type='sawtooth';
+  o.frequency.setValueAtTime(80+Math.random()*40, t);
+  o.frequency.linearRampToValueAtTime(40+Math.random()*30, t+0.8);
+  const g = audioCtx.createGain(); g.gain.value=0;
+  g.gain.linearRampToValueAtTime(0.18,t+0.1); g.gain.exponentialRampToValueAtTime(0.0001,t+0.9);
+  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=300;
+  o.connect(lp); lp.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t+1.0);
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const sub = {
+  pos: new THREE.Vector3(0, -30, 0),  // y is depth (negative = down)
+  heading: 0,            // radians, 0 = +Z (north)
+  pitch: 0,              // radians, positive = climbing
+  throttle: 0,           // -100 .. +100
+  rudderInput: 0,        // -1..1
+  pitchInput: 0,         // -1..1
+  speed: 0,              // m/s
+  hp: 100,
+  noiseLevel: 0,         // computed: how detectable
+  alive: true,
+  noisemaker: 0,         // remaining decoys
+};
+sub.noisemakers = 4;
+
+const enemy = {
+  pos: new THREE.Vector3(900, 0, 600),
+  heading: -Math.PI*0.35,
+  speed: 9,             // m/s ~ 17 knots
+  alive: true,
+  hp: 100,
+  awareness: 0,         // 0..1 — how sure they are of your position
+  lastKnownPos: null,
+  chargeCooldown: 4,
+  patrolTarget: null,
+};
+
+const torpedoes = [];
+const charges = [];   // depth charges
+const decoys = [];
+
+let station = 1;
+let activePingTime = -10;
+let enemyPingTime = -100;
+const pingTravel = []; // visual ripples
+let combatAlert = false;
+let gameOver = false;
+let gameWon = false;
+let timeNow = 0;
+
+// ============================================================
+// THREE.JS SETUP
+// ============================================================
+const canvas = document.getElementById('cv');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.05, 5000);
+camera.position.set(0, 0, 0);
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ============================================================
+// SUBMARINE INTERIOR (for HELM view)
+// ============================================================
+const interiorGroup = new THREE.Group();
+scene.add(interiorGroup);
+
+// Cabin walls (dark, cramped)
+{
+  // Cylindrical hull interior
+  const hullGeom = new THREE.CylinderGeometry(2.2, 2.2, 5, 24, 1, true);
+  const hullMat = new THREE.MeshStandardMaterial({color:0x222826, side:THREE.BackSide, roughness:0.9, metalness:0.4});
+  const hull = new THREE.Mesh(hullGeom, hullMat);
+  hull.rotation.z = Math.PI/2;
+  interiorGroup.add(hull);
+
+  // back wall (with periscope housing)
+  const back = new THREE.Mesh(new THREE.CircleGeometry(2.2, 24), new THREE.MeshStandardMaterial({color:0x1a201e, roughness:0.95}));
+  back.position.set(-2.5,0,0); back.rotation.y = Math.PI/2; interiorGroup.add(back);
+  // front wall (control panel side)
+  const front = new THREE.Mesh(new THREE.CircleGeometry(2.2, 24), new THREE.MeshStandardMaterial({color:0x171c1a, roughness:0.95}));
+  front.position.set(2.5,0,0); front.rotation.y = -Math.PI/2; interiorGroup.add(front);
+}
+
+// Pipes along walls
+function addPipe(x1,y1,z1, x2,y2,z2, color=0x554422){
+  const dir = new THREE.Vector3(x2-x1,y2-y1,z2-z1);
+  const len = dir.length();
+  const geom = new THREE.CylinderGeometry(0.06,0.06,len,8);
+  const mat = new THREE.MeshStandardMaterial({color, roughness:0.4, metalness:0.7});
+  const m = new THREE.Mesh(geom, mat);
+  m.position.set((x1+x2)/2,(y1+y2)/2,(z1+z2)/2);
+  m.lookAt(x2,y2,z2);
+  m.rotateX(Math.PI/2);
+  interiorGroup.add(m);
+}
+for(let i=0;i<6;i++){
+  const a = (i/6)*Math.PI*2;
+  const r = 2.0;
+  const c = (i%2)?0x554422:0x3a3a3a;
+  addPipe(-2.4, Math.sin(a)*r, Math.cos(a)*r, 2.4, Math.sin(a)*r, Math.cos(a)*r, c);
+}
+// vertical valves
+for(let i=0;i<3;i++){
+  const x = -1.5 + i*1.5;
+  const valveGeom = new THREE.TorusGeometry(0.2,0.04,6,16);
+  const v = new THREE.Mesh(valveGeom, new THREE.MeshStandardMaterial({color:0xaa4422,roughness:0.5,metalness:0.6}));
+  v.position.set(x, -1.7, 1.7); interiorGroup.add(v);
+}
+
+// Lights
+const ambient = new THREE.AmbientLight(0x445566, 0.5);
+scene.add(ambient);
+const lampNormal = new THREE.PointLight(0xffeecc, 0.9, 8);
+lampNormal.position.set(0, 1.5, 0);
+scene.add(lampNormal);
+const lampRed = new THREE.PointLight(0xff2010, 0.0, 10);
+lampRed.position.set(0, 1.5, 0);
+scene.add(lampRed);
+
+// Helm console (visible at bottom of view)
+const console1 = new THREE.Group();
+{
+  const panelGeom = new THREE.BoxGeometry(3.5, 0.6, 1.2);
+  const panelMat = new THREE.MeshStandardMaterial({color:0x14201c, roughness:0.7, metalness:0.5});
+  const panel = new THREE.Mesh(panelGeom, panelMat);
+  panel.position.set(0, -1.2, 1.4);
+  panel.rotation.x = -0.4;
+  console1.add(panel);
+  // gauges base (we'll draw on a canvas texture)
+  const gaugeCanvas = document.createElement('canvas'); gaugeCanvas.width=1024; gaugeCanvas.height=256;
+  const gaugeTex = new THREE.CanvasTexture(gaugeCanvas);
+  const gaugeMat = new THREE.MeshBasicMaterial({map:gaugeTex});
+  const gaugeMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.85), gaugeMat);
+  gaugeMesh.position.set(0, -1.0, 1.10);
+  gaugeMesh.rotation.x = -0.4 - Math.PI/2 + 0.4;
+  // Easier: place flat plane on top of panel, slightly tilted
+  gaugeMesh.position.set(0, -1.07, 1.0);
+  gaugeMesh.rotation.x = -0.4;
+  console1.add(gaugeMesh);
+  console1.userData.gaugeCanvas = gaugeCanvas;
+  console1.userData.gaugeTex = gaugeTex;
+  // window in front (looking forward into "captain's view")
+  const winGeom = new THREE.PlaneGeometry(2, 1.0);
+  const winCanvas = document.createElement('canvas'); winCanvas.width=512; winCanvas.height=256;
+  const winTex = new THREE.CanvasTexture(winCanvas);
+  const winMat = new THREE.MeshBasicMaterial({map:winTex});
+  const winMesh = new THREE.Mesh(winGeom, winMat);
+  winMesh.position.set(0, 0.4, 2.45);
+  console1.add(winMesh);
+  console1.userData.winCanvas = winCanvas;
+  console1.userData.winTex = winTex;
+}
+interiorGroup.add(console1);
+
+// Sonar console (Station 2) — large round display
+const console2 = new THREE.Group();
+{
+  const sonarCanvas = document.createElement('canvas'); sonarCanvas.width=1024; sonarCanvas.height=1024;
+  const sonarTex = new THREE.CanvasTexture(sonarCanvas);
+  const sonarMat = new THREE.MeshBasicMaterial({map:sonarTex, transparent:true});
+  const sonarMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), sonarMat);
+  sonarMesh.position.set(0, 0, 2.0);
+  console2.add(sonarMesh);
+  // bezel
+  const bezel = new THREE.Mesh(new THREE.RingGeometry(1.18, 1.35, 48), new THREE.MeshStandardMaterial({color:0x442222, roughness:0.4, metalness:0.7, side:THREE.DoubleSide}));
+  bezel.position.set(0,0,2.01); console2.add(bezel);
+  console2.userData.sonarCanvas = sonarCanvas;
+  console2.userData.sonarTex = sonarTex;
+  console2.visible = false;
+}
+interiorGroup.add(console2);
+
+// Periscope console (Station 3) — viewport
+const console3 = new THREE.Group();
+{
+  // Periscope eyepiece overlay handled in canvas drawn over scene
+  // For 3D world view, we render the actual scene from the periscope.
+  // We'll show a "frame" mesh around the view.
+  // Frame: dark circle ring with crosshair drawn via 2D canvas overlay
+  console3.visible = false;
+}
+interiorGroup.add(console3);
+
+// ============================================================
+// EXTERNAL OCEAN SCENE (for periscope view)
+// ============================================================
+const oceanScene = new THREE.Scene();
+const oceanCamera = new THREE.PerspectiveCamera(35, window.innerWidth/window.innerHeight, 0.1, 4000);
+oceanScene.background = new THREE.Color(0x0a1418);
+const oceanFog = new THREE.Fog(0x0a1418, 50, 1200);
+oceanScene.fog = oceanFog;
+
+// Sky/horizon gradient
+{
+  const skyGeom = new THREE.SphereGeometry(2000, 24, 16);
+  const skyMat = new THREE.ShaderMaterial({
+    side:THREE.BackSide,
+    uniforms:{},
+    vertexShader:`varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader:`varying vec3 vP; void main(){ float h=normalize(vP).y*0.5+0.5; vec3 c=mix(vec3(0.02,0.04,0.07), vec3(0.10,0.13,0.16), h); gl_FragColor=vec4(c,1.0);} `
+  });
+  const sky = new THREE.Mesh(skyGeom, skyMat);
+  oceanScene.add(sky);
+}
+
+// Ocean surface (animated)
+const oceanGeom = new THREE.PlaneGeometry(3000, 3000, 80, 80);
+oceanGeom.rotateX(-Math.PI/2);
+const oceanMat = new THREE.ShaderMaterial({
+  uniforms:{ uTime:{value:0} },
+  vertexShader:`uniform float uTime; varying float vH; varying vec2 vUv;
+    void main(){
+      vec3 p=position;
+      float h = sin(p.x*0.02 + uTime*0.6)*0.6 + cos(p.z*0.025 + uTime*0.8)*0.5 + sin((p.x+p.z)*0.01+uTime*0.3)*0.7;
+      p.y += h;
+      vH=h; vUv=uv;
+      gl_Position = projectionMatrix*modelViewMatrix*vec4(p,1.0);
+    }`,
+  fragmentShader:`varying float vH; varying vec2 vUv;
+    void main(){
+      float k = vH*0.15+0.45;
+      vec3 c = mix(vec3(0.02,0.04,0.06), vec3(0.10,0.18,0.20), k);
+      gl_FragColor=vec4(c,1.0);
+    }`
+});
+const ocean = new THREE.Mesh(oceanGeom, oceanMat);
+ocean.position.y = 0;
+oceanScene.add(ocean);
+
+// Moon
+const moon = new THREE.Mesh(new THREE.SphereGeometry(40, 16, 16), new THREE.MeshBasicMaterial({color:0xeeeeff}));
+moon.position.set(800, 200, -1200);
+oceanScene.add(moon);
+const moonLight = new THREE.DirectionalLight(0xccddff, 0.6);
+moonLight.position.set(800, 400, -1200);
+oceanScene.add(moonLight);
+oceanScene.add(new THREE.AmbientLight(0x445566, 0.3));
+
+// Enemy destroyer mesh
+const destroyerGroup = new THREE.Group();
+{
+  const hullGeom = new THREE.BoxGeometry(60, 8, 14);
+  const hullMat = new THREE.MeshStandardMaterial({color:0x303838, roughness:0.8, metalness:0.4});
+  const hull = new THREE.Mesh(hullGeom, hullMat);
+  hull.position.y = 4; destroyerGroup.add(hull);
+  // bow taper
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(7, 16, 4), new THREE.MeshStandardMaterial({color:0x2a3030, roughness:0.8}));
+  bow.rotation.z = Math.PI/2; bow.rotation.y = Math.PI/2; bow.position.set(38, 4, 0); destroyerGroup.add(bow);
+  // superstructure
+  const sup = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 10), new THREE.MeshStandardMaterial({color:0x404848, roughness:0.7}));
+  sup.position.set(-4, 13, 0); destroyerGroup.add(sup);
+  // mast
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 16), new THREE.MeshStandardMaterial({color:0x222}));
+  mast.position.set(-2, 26, 0); destroyerGroup.add(mast);
+  // funnel
+  const funnel = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.5, 7), new THREE.MeshStandardMaterial({color:0x1a1e1e}));
+  funnel.position.set(-12, 17, 0); destroyerGroup.add(funnel);
+  // gun turret
+  const turret = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 2), new THREE.MeshStandardMaterial({color:0x2a3030}));
+  turret.position.set(20, 9.5, 0); destroyerGroup.add(turret);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 6), new THREE.MeshStandardMaterial({color:0x111}));
+  barrel.rotation.z = Math.PI/2; barrel.position.set(24, 10, 0); destroyerGroup.add(barrel);
+}
+oceanScene.add(destroyerGroup);
+
+// Splashes / charge water columns
+const splashes = [];
+function addSplash(x,z){
+  const g = new THREE.Group();
+  const colMat = new THREE.MeshBasicMaterial({color:0xddeeff, transparent:true, opacity:0.85});
+  for(let i=0;i<5;i++){
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(2-i*0.3, 1.5-i*0.3, 4+Math.random()*2), colMat.clone());
+    c.position.set(x + (Math.random()-0.5)*4, 2+i*3, z + (Math.random()-0.5)*4);
+    g.add(c);
+  }
+  oceanScene.add(g);
+  splashes.push({mesh:g, life:2.5});
+}
+
+// Foam wake behind destroyer (simple sprite trail)
+const wakeTrail = [];
+
+// ============================================================
+// CONTROLS
+// ============================================================
+const keys = {};
+window.addEventListener('keydown', e=>{
+  keys[e.code]=true;
+  if(e.code==='Digit1') setStation(1);
+  if(e.code==='Digit2') setStation(2);
+  if(e.code==='Digit3') setStation(3);
+  if(e.code==='KeyP') doActivePing(true);
+  if(e.code==='Space'){ deployNoisemaker(); e.preventDefault(); }
+});
+window.addEventListener('keyup', e=>{ keys[e.code]=false; });
+canvas.addEventListener('click', (e)=>{
+  if(station===3 && !gameOver){
+    fireTorpedo();
+  }
+});
+
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click', ()=> setStation(parseInt(t.dataset.s)));
+});
+
+function setStation(n){
+  station = n;
+  document.querySelectorAll('.tab').forEach(t=> t.classList.toggle('active', parseInt(t.dataset.s)===n));
+  console1.visible = (n===1);
+  console2.visible = (n===2);
+  // Periscope (n===3) renders ocean scene directly to canvas — interior hidden
+}
+
+// ============================================================
+// SONAR
+// ============================================================
+let sonarSweep = 0; // radians
+const sonarHistory = []; // [{x,y,bright,life,kind}]
+function doActivePing(byPlayer=true){
+  if(byPlayer){
+    activePingTime = timeNow;
+    ping(900, 0.5, 0.55, 'sine');
+    // increase enemy awareness drastically
+    enemy.awareness = Math.min(1, enemy.awareness + 0.7);
+    // record their last known pos = our pos
+    enemy.lastKnownPos = sub.pos.clone();
+  }
+  // visual ring
+  pingTravel.push({t: timeNow, fromPlayer:byPlayer});
+}
+
+function deployNoisemaker(){
+  if(sub.noisemakers <= 0) return;
+  sub.noisemakers--;
+  decoys.push({pos: sub.pos.clone(), life:25, noise: 1.2});
+  ping(300, 0.5, 0.3, 'square');
+}
+
+function fireTorpedo(){
+  if(sub.pos.y > -8) return; // must be submerged a bit
+  // spawn torpedo in direction of view
+  const dir = new THREE.Vector3(Math.sin(sub.heading), 0, Math.cos(sub.heading));
+  const t = {
+    pos: sub.pos.clone().add(dir.clone().multiplyScalar(8)),
+    vel: dir.clone().multiplyScalar(26), // ~50 knots
+    life: 80,
+    armed: true,
+  };
+  t.pos.y = Math.max(sub.pos.y, -25);
+  torpedoes.push(t);
+  torpedoHiss();
+  showFired();
+}
+
+function showFired(){
+  const el = document.getElementById('fired');
+  el.style.display='block';
+  setTimeout(()=> el.style.display='none', 1500);
+}
+
+// ============================================================
+// GAUGE DRAWING (HELM)
+// ============================================================
+function drawGauges(){
+  const c = console1.userData.gaugeCanvas;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle='#0d1614'; ctx.fillRect(0,0,c.width,c.height);
+  // 4 gauges
+  const labels=['DEPTH','HEADING','THROTTLE','PITCH'];
+  for(let i=0;i<4;i++){
+    const cx = 128 + i*256;
+    const cy = 130;
+    const r = 90;
+    // ring
+    ctx.strokeStyle='#2a3a36'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='#445'; ctx.lineWidth=1;
+    for(let a=0;a<360;a+=15){
+      const ang = a*Math.PI/180;
+      const x1 = cx+Math.cos(ang)*(r-6), y1 = cy+Math.sin(ang)*(r-6);
+      const x2 = cx+Math.cos(ang)*r, y2 = cy+Math.sin(ang)*r;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    }
+    let val = 0, ang = 0;
+    if(i===0){ // depth 0..300 sweep -135 to +135
+      val = -sub.pos.y;
+      ang = (-135 + (val/300)*270) * Math.PI/180;
+      ctx.fillStyle='#5af'; ctx.font='bold 24px Courier New'; ctx.textAlign='center';
+      ctx.fillText(val.toFixed(0)+'m', cx, cy+50);
+    } else if(i===1){ // heading 0-360
+      val = ((sub.heading*180/Math.PI)%360+360)%360;
+      ang = (val-90) * Math.PI/180;
+      ctx.fillStyle='#5af'; ctx.font='bold 22px Courier New'; ctx.textAlign='center';
+      ctx.fillText(val.toFixed(0).padStart(3,'0')+'°', cx, cy+50);
+      // N/E/S/W markers
+      ctx.fillStyle='#7aa'; ctx.font='bold 14px Courier New';
+      ['N','E','S','W'].forEach((d,k)=>{
+        const a = (k*90 - 90)*Math.PI/180;
+        ctx.fillText(d, cx+Math.cos(a)*(r-22), cy+Math.sin(a)*(r-18));
+      });
+    } else if(i===2){ // throttle -100..100, sweep -135..135
+      val = sub.throttle;
+      ang = (val/100*135 - 90) * Math.PI/180;
+      ctx.fillStyle = val>=0?'#5fa':'#fa5'; ctx.font='bold 24px Courier New'; ctx.textAlign='center';
+      ctx.fillText(val.toFixed(0)+'%', cx, cy+50);
+    } else { // pitch -45..45 deg
+      const pitchDeg = sub.pitch*180/Math.PI;
+      val = pitchDeg;
+      ang = (pitchDeg/45*90 - 90) * Math.PI/180;
+      ctx.fillStyle = pitchDeg>=0?'#5fa':'#fa5'; ctx.font='bold 22px Courier New'; ctx.textAlign='center';
+      ctx.fillText((pitchDeg>=0?'+':'')+pitchDeg.toFixed(0)+'°', cx, cy+50);
+    }
+    // needle
+    ctx.strokeStyle='#fc4'; ctx.lineWidth=4;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(ang)*(r-12), cy+Math.sin(ang)*(r-12)); ctx.stroke();
+    ctx.fillStyle='#fc4'; ctx.beginPath(); ctx.arc(cx,cy,5,0,Math.PI*2); ctx.fill();
+    // label
+    ctx.fillStyle='#7aa'; ctx.font='bold 14px Courier New'; ctx.textAlign='center';
+    ctx.fillText(labels[i], cx, 30);
+  }
+  console1.userData.gaugeTex.needsUpdate = true;
+}
+
+// HELM forward window (small "captain's tactical" display)
+function drawHelmWindow(){
+  const c = console1.userData.winCanvas;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle='#020806'; ctx.fillRect(0,0,c.width,c.height);
+  // status text
+  ctx.fillStyle='#5af'; ctx.font='bold 14px Courier New';
+  ctx.fillText('U.S.S. STINGRAY — TACTICAL', 10, 22);
+  ctx.fillStyle='#9ca'; ctx.font='12px Courier New';
+  ctx.fillText('SPEED  : '+(sub.speed*1.94).toFixed(1)+' kn', 10, 50);
+  ctx.fillText('DEPTH  : '+(-sub.pos.y).toFixed(1)+' m', 10, 70);
+  ctx.fillText('NOISE  : '+(sub.noiseLevel*100).toFixed(0)+'%', 10, 90);
+  ctx.fillText('HULL   : '+sub.hp.toFixed(0)+'/100', 10, 110);
+  ctx.fillStyle='#fa5';
+  ctx.fillText('DECOYS : '+sub.noisemakers, 10, 130);
+  // tiny mini-map
+  const mx=380, my=128, mr=110;
+  ctx.strokeStyle='#0a4'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(mx,my,mr,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle='#0c6'; ctx.beginPath(); ctx.arc(mx,my,3,0,Math.PI*2); ctx.fill();
+  if(enemy.lastKnownPos){
+    const dx = enemy.lastKnownPos.x - sub.pos.x;
+    const dz = enemy.lastKnownPos.z - sub.pos.z;
+    // rotate by -heading
+    const cs = Math.cos(-sub.heading), sn = Math.sin(-sub.heading);
+    const rx = dx*cs - dz*sn;
+    const rz = dx*sn + dz*cs;
+    const scale = mr/2200;
+    const px = mx + rx*scale, py = my - rz*scale;
+    if(Math.hypot(rx*scale, rz*scale) < mr){
+      const age = timeNow - (enemy.lastSeenTime||0);
+      ctx.fillStyle = age<3?'#f44':'#f88';
+      ctx.fillRect(px-3,py-3,6,6);
+      ctx.fillStyle='#f88'; ctx.font='10px Courier New';
+      ctx.fillText('LAST KNOWN', px+6, py+3);
+    }
+  }
+  // crosshair on minimap (heading line)
+  ctx.strokeStyle='#0a4'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(mx, my-mr+4); ctx.stroke();
+  console1.userData.winTex.needsUpdate = true;
+}
+
+// ============================================================
+// SONAR DRAW
+// ============================================================
+function drawSonar(){
+  const c = console2.userData.sonarCanvas;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  // fade trails
+  ctx.fillStyle='rgba(0, 12, 6, 0.10)';
+  ctx.fillRect(0,0,W,H);
+  // draw circle frame
+  const cx=W/2, cy=H/2, R = W*0.46;
+  ctx.strokeStyle='#0a4'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+  // range rings
+  ctx.strokeStyle='#063'; ctx.lineWidth=1;
+  for(let i=1;i<=4;i++){
+    ctx.beginPath(); ctx.arc(cx,cy,R*i/4,0,Math.PI*2); ctx.stroke();
+  }
+  // crosshair
+  ctx.beginPath(); ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy);
+  ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R); ctx.stroke();
+  // labels
+  ctx.fillStyle='#0a8'; ctx.font='bold 22px Courier New'; ctx.textAlign='center';
+  ctx.fillText('SONAR — PASSIVE', cx, 38);
+  ctx.font='14px Courier New';
+  ctx.fillText('RANGE 2.0 km', cx, H-22);
+  // draw sweep beam
+  sonarSweep += 0.105; // ~6rpm-ish; tweaked for nice feel
+  const beamA = sonarSweep;
+  const grad = ctx.createRadialGradient(cx,cy,0,cx,cy,R);
+  // sweep wedge
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate(beamA);
+  const g = ctx.createLinearGradient(0,0,R,0);
+  g.addColorStop(0,'rgba(80,255,140,0.0)');
+  g.addColorStop(1,'rgba(80,255,140,0.4)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(0,0);
+  ctx.arc(0,0,R, -0.05, 0.18);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // show entities
+  const range = 2200; // m
+  function plot(worldX, worldZ, kind){
+    const dx = worldX - sub.pos.x;
+    const dz = worldZ - sub.pos.z;
+    // rotate by -heading so up = forward
+    const cs = Math.cos(-sub.heading), sn = Math.sin(-sub.heading);
+    const rx = dx*cs - dz*sn;
+    const rz = dx*sn + dz*cs;
+    const dist = Math.hypot(rx, rz);
+    if(dist > range) return null;
+    const sx = cx + (rx/range)*R;
+    const sy = cy - (rz/range)*R;
+    return {sx,sy,dist};
+  }
+  // enemy detection: passive based on enemy noise (proportional to speed) + active boost
+  const enemyNoise = enemy.speed/12;
+  let detect = enemyNoise * (1 - 0.6*Math.min(1, (enemy.pos.distanceTo(sub.pos))/2200));
+  if(timeNow - activePingTime < 4) detect = 1.5;
+  if(detect > 0.18){
+    const p = plot(enemy.pos.x, enemy.pos.z, 'destroyer');
+    if(p){
+      // bright blip near sweep beam
+      const angTo = Math.atan2(p.sx-cx, -(p.sy-cy));
+      const da = ((angTo - beamA)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+      const fresh = Math.max(0, 1 - da/0.4);
+      const a = Math.min(1, detect) * (0.4 + fresh*0.6);
+      ctx.fillStyle = `rgba(160,255,180,${a})`;
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, 9, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = `rgba(80,255,140,${a*0.7})`;
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, 14, 0, Math.PI*2); ctx.stroke();
+      if(fresh > 0.6){
+        enemy.lastKnownPos = enemy.pos.clone();
+        enemy.lastSeenTime = timeNow;
+      }
+    }
+  }
+  // torpedoes (if active ping or close)
+  for(const t of torpedoes){
+    const p = plot(t.pos.x, t.pos.z);
+    if(p){
+      ctx.fillStyle='rgba(255,200,100,0.8)';
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, 4, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  // depth charges
+  for(const ch of charges){
+    const p = plot(ch.pos.x, ch.pos.z);
+    if(p){
+      ctx.fillStyle='rgba(255,100,80,0.7)';
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, 3, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  // fish schools (random faint dots, not stored — generate from seeded positions)
+  if(!drawSonar._fish){
+    drawSonar._fish = [];
+    for(let i=0;i<50;i++){
+      drawSonar._fish.push({x: (Math.random()-0.5)*4000, z:(Math.random()-0.5)*4000});
+    }
+  }
+  for(const f of drawSonar._fish){
+    const p = plot(f.x, f.z);
+    if(p){
+      ctx.fillStyle='rgba(80,255,140,0.18)';
+      ctx.fillRect(p.sx,p.sy,1,1);
+    }
+  }
+  // own sub at center
+  ctx.fillStyle='#fc4';
+  ctx.beginPath(); ctx.arc(cx,cy,5,0,Math.PI*2); ctx.fill();
+  // active ping ripple
+  for(const r of pingTravel){
+    const dt = timeNow - r.t;
+    if(dt > 4){ continue; }
+    const rad = (dt/4)*R;
+    ctx.strokeStyle = `rgba(255,255,150,${1-dt/4})`;
+    ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.stroke();
+  }
+  // cleanup
+  for(let i=pingTravel.length-1;i>=0;i--) if(timeNow-pingTravel[i].t>4) pingTravel.splice(i,1);
+
+  console2.userData.sonarTex.needsUpdate = true;
+}
+
+// ============================================================
+// GAME LOGIC
+// ============================================================
+let lastT = performance.now()/1000;
+function update(dt){
+  if(gameOver) return;
+  timeNow += dt;
+
+  // INPUT — apply only on station 1 (helm) but allow throttle/rudder anytime for tension
+  const helm = (station===1);
+  // Allow control from any station for playability:
+  if(keys['KeyW']) sub.throttle = Math.min(100, sub.throttle + 40*dt);
+  if(keys['KeyS']) sub.throttle = Math.max(-100, sub.throttle - 40*dt);
+  if(keys['KeyA']) sub.rudderInput = Math.max(-1, sub.rudderInput - 2*dt);
+  else if(keys['KeyD']) sub.rudderInput = Math.min(1, sub.rudderInput + 2*dt);
+  else sub.rudderInput *= Math.pow(0.05, dt);
+  if(keys['KeyQ']) sub.pitchInput = Math.max(-1, sub.pitchInput - 1.5*dt);
+  else if(keys['KeyE']) sub.pitchInput = Math.min(1, sub.pitchInput + 1.5*dt);
+  else sub.pitchInput *= Math.pow(0.05, dt);
+
+  // PHYSICS
+  const targetSpeed = (sub.throttle/100) * 12; // 12 m/s max
+  sub.speed += (targetSpeed - sub.speed) * Math.min(1, dt*0.5);
+  sub.heading += sub.rudderInput * 0.4 * dt * (0.5 + Math.abs(sub.speed)/12);
+  sub.pitch += sub.pitchInput * 0.5 * dt;
+  sub.pitch = Math.max(-Math.PI/4, Math.min(Math.PI/4, sub.pitch));
+  // pitch returns to neutral slowly
+  sub.pitch *= Math.pow(0.6, dt);
+
+  // move sub: forward direction in heading on horizontal, plus pitch for vertical
+  const fwd = new THREE.Vector3(Math.sin(sub.heading), Math.sin(sub.pitch), Math.cos(sub.heading));
+  fwd.normalize();
+  sub.pos.addScaledVector(fwd, sub.speed * dt);
+  // depth limit
+  if(sub.pos.y > -1){ sub.pos.y = -1; if(sub.pitch > 0) sub.pitch = 0; }
+  if(sub.pos.y < -300){ sub.pos.y = -300; if(sub.pitch < 0) sub.pitch = 0; }
+
+  // Noise level
+  sub.noiseLevel = Math.min(1, Math.abs(sub.throttle)/100 * 0.7 + (sub.pos.y > -25 ? 0.2 : 0));
+  if(timeNow - activePingTime < 5) sub.noiseLevel = 1.0;
+
+  // Engine sound update
+  setEngineLevel(sub.throttle, -sub.pos.y);
+  // Creak at depth
+  creakTimer -= dt;
+  if(creakTimer <= 0 && -sub.pos.y > 100){
+    creak();
+    creakTimer = 4 + Math.random()*4 - Math.min(2, (-sub.pos.y-100)/100);
+  }
+
+  // ENEMY AI
+  if(enemy.alive){
+    // detection: based on sub noise + distance
+    const dist = enemy.pos.distanceTo(sub.pos);
+    let detection = sub.noiseLevel * Math.max(0, 1 - dist/1800);
+    // closer surface = more detectable
+    if(sub.pos.y > -25) detection *= 1.4;
+    enemy.awareness += (detection - 0.05) * dt * 0.3;
+    enemy.awareness = Math.max(0, Math.min(1, enemy.awareness));
+    // Update last known with some drift if aware
+    if(enemy.awareness > 0.5){
+      if(!enemy.lastKnownPos) enemy.lastKnownPos = sub.pos.clone();
+      else enemy.lastKnownPos.lerp(sub.pos, 0.3 * dt * enemy.awareness);
+    }
+    // Decoys distract
+    let pursueTarget = enemy.lastKnownPos ? enemy.lastKnownPos.clone() : null;
+    let bestDecoyPull = 0;
+    for(const d of decoys){
+      const ddist = enemy.pos.distanceTo(d.pos);
+      const pull = d.noise * Math.max(0, 1 - ddist/1500);
+      if(pull > bestDecoyPull && d.life > 0){
+        bestDecoyPull = pull;
+        pursueTarget = d.pos.clone();
+      }
+    }
+    if(pursueTarget && enemy.awareness > 0.3){
+      // steer toward
+      const dirVec = new THREE.Vector3(pursueTarget.x - enemy.pos.x, 0, pursueTarget.z - enemy.pos.z);
+      const targetH = Math.atan2(dirVec.x, dirVec.z);
+      // shortest angle
+      let dh = targetH - enemy.heading;
+      while(dh > Math.PI) dh -= Math.PI*2;
+      while(dh < -Math.PI) dh += Math.PI*2;
+      enemy.heading += Math.sign(dh) * Math.min(Math.abs(dh), 0.25*dt);
+      // speed up when chasing
+      enemy.speed = 8 + 4*enemy.awareness;
+    } else {
+      enemy.speed = 6;
+      // simple patrol — wander
+      enemy.heading += Math.sin(timeNow*0.07)*0.15*dt;
+    }
+    // move enemy
+    const ed = new THREE.Vector3(Math.sin(enemy.heading), 0, Math.cos(enemy.heading));
+    enemy.pos.addScaledVector(ed, enemy.speed * dt);
+    // keep destroyer in area
+    const limit = 1800;
+    if(Math.abs(enemy.pos.x) > limit) enemy.pos.x = Math.sign(enemy.pos.x)*limit, enemy.heading += Math.PI*0.1;
+    if(Math.abs(enemy.pos.z) > limit) enemy.pos.z = Math.sign(enemy.pos.z)*limit, enemy.heading += Math.PI*0.1;
+    // Drop depth charges if near last known and aware
+    enemy.chargeCooldown -= dt;
+    if(enemy.awareness > 0.5 && enemy.chargeCooldown <= 0 && pursueTarget && enemy.pos.distanceTo(pursueTarget) < 250){
+      // drop a few charges around
+      for(let i=0;i<3;i++){
+        const off = new THREE.Vector3((Math.random()-0.5)*120, 0, (Math.random()-0.5)*120);
+        const cpos = enemy.pos.clone().add(off);
+        cpos.y = -2;
+        const targetDepth = -(50 + Math.random()*150);
+        charges.push({pos:cpos, vy:-3.5, targetDepth, fuse: 4 + Math.random()*4, exploded:false, splash:true});
+      }
+      addSplash(enemy.pos.x, enemy.pos.z);
+      // sonar ping from enemy occasionally
+      enemy.chargeCooldown = 7 + Math.random()*4;
+    }
+  }
+
+  // Combat alert: show red lighting when awareness high or HP low
+  combatAlert = (enemy.awareness > 0.55) || (sub.hp < 60);
+  if(combatAlert){
+    lampNormal.intensity = 0.05;
+    lampRed.intensity = 1.6 + Math.sin(timeNow*4)*0.3;
+    document.getElementById('alert').style.background = `rgba(180,20,10,${0.10 + 0.04*Math.sin(timeNow*4)})`;
+  } else {
+    lampNormal.intensity = 0.85;
+    lampRed.intensity = 0.0;
+    document.getElementById('alert').style.background = 'rgba(0,0,0,0)';
+  }
+
+  // TORPEDOES
+  for(const t of torpedoes){
+    t.pos.addScaledVector(t.vel, dt);
+    t.life -= dt;
+    // homing mild — adjust toward enemy if within 250m and aware
+    const toEnemy = enemy.pos.clone().sub(t.pos);
+    const dHor = Math.hypot(toEnemy.x, toEnemy.z);
+    if(enemy.alive && dHor < 350){
+      const desired = new THREE.Vector3(toEnemy.x, 0, toEnemy.z).normalize().multiplyScalar(t.vel.length());
+      t.vel.x += (desired.x - t.vel.x) * Math.min(1, dt*0.8);
+      t.vel.z += (desired.z - t.vel.z) * Math.min(1, dt*0.8);
+    }
+    // hit?
+    if(enemy.alive && dHor < 14 && t.armed){
+      enemy.alive = false;
+      gameWon = true;
+      gameOver = true;
+      boom(0, 1.0); boom(0.4, 0.8);
+      showMessage('TARGET DESTROYED — VICTORY', '#5fc');
+    }
+  }
+  for(let i=torpedoes.length-1;i>=0;i--) if(torpedoes[i].life<=0) torpedoes.splice(i,1);
+
+  // DEPTH CHARGES
+  for(const ch of charges){
+    if(ch.splash){ ch.splash=false; }
+    ch.pos.y += ch.vy * dt;
+    if(ch.pos.y < ch.targetDepth || (ch.fuse-=dt) <= 0){
+      if(!ch.exploded){
+        ch.exploded = true;
+        // damage based on distance to sub
+        const d = ch.pos.distanceTo(sub.pos);
+        if(d < 60){
+          const dmg = (1 - d/60) * 35;
+          sub.hp -= dmg;
+          klaxon();
+          if(sub.hp <= 0){
+            sub.hp = 0; sub.alive=false; gameOver=true;
+            showMessage('HULL BREACH — SUB LOST', '#f44');
+            boom(0, 1.0);
+          }
+        }
+        // delayed boom audio (sound travels)
+        const delay = Math.min(2.5, ch.pos.distanceTo(sub.pos)/350);
+        boom(delay, Math.max(0.2, 1 - ch.pos.distanceTo(sub.pos)/600));
+      }
+      ch.dead = true;
+    }
+  }
+  for(let i=charges.length-1;i>=0;i--) if(charges[i].dead) charges.splice(i,1);
+
+  // DECOYS
+  for(const d of decoys){ d.life -= dt; }
+  for(let i=decoys.length-1;i>=0;i--) if(decoys[i].life<=0) decoys.splice(i,1);
+
+  // SPLASHES
+  for(const s of splashes){ s.life -= dt; s.mesh.position.y -= dt*1.5; s.mesh.children.forEach(c=>{ if(c.material) c.material.opacity = Math.max(0, c.material.opacity - dt*0.4);}); }
+  for(let i=splashes.length-1;i>=0;i--) if(splashes[i].life<=0){ oceanScene.remove(splashes[i].mesh); splashes.splice(i,1); }
+
+  // Periscope camera position update (in ocean world)
+  // Map sub world pos to ocean scene; periscope mast is just above water if depth <= 18m
+  destroyerGroup.position.set(enemy.pos.x - sub.pos.x, 0, enemy.pos.z - sub.pos.z);
+  destroyerGroup.rotation.y = -enemy.heading + Math.PI/2;
+
+  // Update camera for HELM — first person inside sub looking forward (slight bobbing)
+  if(station===1){
+    camera.position.set(0, 0.2 + Math.sin(timeNow*0.8)*0.02, -1.5);
+    camera.rotation.set(0,0,0);
+    camera.fov = 75; camera.updateProjectionMatrix();
+  } else if(station===2){
+    camera.position.set(0, 0.2, 0);
+    camera.lookAt(0,0,2);
+    camera.fov = 60; camera.updateProjectionMatrix();
+  }
+
+  // Ocean shader time
+  oceanMat.uniforms.uTime.value = timeNow;
+}
+
+// ============================================================
+// PERISCOPE OVERLAY (drawn on top of rendered ocean view)
+// ============================================================
+const overlay = document.createElement('canvas');
+overlay.style.position='absolute';
+overlay.style.inset='0';
+overlay.style.pointerEvents='none';
+overlay.style.zIndex='4';
+document.getElementById('app').appendChild(overlay);
+function resizeOverlay(){ overlay.width = window.innerWidth; overlay.height = window.innerHeight; }
+resizeOverlay();
+window.addEventListener('resize', resizeOverlay);
+
+function drawPeriscopeOverlay(){
+  const ctx = overlay.getContext('2d');
+  ctx.clearRect(0,0,overlay.width, overlay.height);
+  if(station !== 3) return;
+  const w = overlay.width, h = overlay.height;
+  // black corners — circular viewport
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.rect(0,0,w,h);
+  ctx.arc(w/2, h/2, Math.min(w,h)*0.42, 0, Math.PI*2, true);
+  ctx.fill('evenodd');
+  // outer ring
+  ctx.strokeStyle = '#0a0';
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(w/2, h/2, Math.min(w,h)*0.42, 0, Math.PI*2); ctx.stroke();
+  // inner ring
+  ctx.strokeStyle = '#063';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(w/2, h/2, Math.min(w,h)*0.40, 0, Math.PI*2); ctx.stroke();
+  // crosshair
+  const r = Math.min(w,h)*0.40;
+  ctx.beginPath(); ctx.moveTo(w/2 - r, h/2); ctx.lineTo(w/2+r, h/2);
+  ctx.moveTo(w/2, h/2-r); ctx.lineTo(w/2, h/2+r); ctx.stroke();
+  // range marks
+  ctx.strokeStyle = '#085';
+  for(let i=-5;i<=5;i++){
+    if(i===0) continue;
+    const y = h/2 + i*(r/6);
+    ctx.beginPath(); ctx.moveTo(w/2-15, y); ctx.lineTo(w/2+15, y); ctx.stroke();
+  }
+  for(let i=-5;i<=5;i++){
+    if(i===0) continue;
+    const x = w/2 + i*(r/6);
+    ctx.beginPath(); ctx.moveTo(x, h/2-15); ctx.lineTo(x, h/2+15); ctx.stroke();
+  }
+  // center dot
+  ctx.fillStyle = '#0f6';
+  ctx.beginPath(); ctx.arc(w/2, h/2, 3, 0, Math.PI*2); ctx.fill();
+  // text
+  ctx.fillStyle = '#0c8';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign='left';
+  const depthOK = -sub.pos.y <= 18;
+  ctx.fillText('PERISCOPE — '+ (depthOK?'UP':'DOWN (depth too great)'), 24, 26);
+  ctx.textAlign='right';
+  ctx.fillText('BRG '+(((sub.heading*180/Math.PI)%360+360)%360).toFixed(0).padStart(3,'0')+'°', w-24, 26);
+  // distance to enemy if visible
+  if(depthOK){
+    const dist = enemy.pos.distanceTo(sub.pos);
+    if(dist < 1800){
+      const angTo = Math.atan2(enemy.pos.x-sub.pos.x, enemy.pos.z-sub.pos.z);
+      let dh = angTo - sub.heading;
+      while(dh > Math.PI) dh -= Math.PI*2;
+      while(dh < -Math.PI) dh += Math.PI*2;
+      if(Math.abs(dh) < 0.3){ // within periscope FOV
+        ctx.fillStyle='#ff8';
+        ctx.font='bold 14px Courier New';
+        ctx.textAlign='center';
+        ctx.fillText('CONTACT: DESTROYER', w/2, h/2 - r - 18);
+        ctx.fillText('RANGE '+(dist).toFixed(0)+'m  BRG '+((angTo*180/Math.PI+360)%360).toFixed(0).padStart(3,'0')+'°', w/2, h/2 + r + 28);
+      }
+    }
+    ctx.fillStyle='#0f6';
+    ctx.textAlign='center';
+    ctx.font='bold 12px Courier New';
+    ctx.fillText('CLICK TO FIRE TORPEDO', w/2, h - 24);
+  } else {
+    ctx.fillStyle='#f55';
+    ctx.textAlign='center';
+    ctx.font='bold 14px Courier New';
+    ctx.fillText('GO TO PERISCOPE DEPTH (18m or less)', w/2, h/2 + r + 28);
+  }
+}
+
+// ============================================================
+// HUD
+// ============================================================
+const hudEl = document.getElementById('hud');
+const statusEl = document.getElementById('status');
+function updateHud(){
+  const stationName = ['','HELM','SONAR','PERISCOPE'][station];
+  hudEl.innerHTML = `<b style="color:#5cf">STATION ${station} — ${stationName}</b><br>
+    DEPTH: <span style="color:#${(-sub.pos.y>200?'f55':'9ca')}">${(-sub.pos.y).toFixed(1)}m</span><br>
+    SPEED: ${(sub.speed*1.94).toFixed(1)} kn<br>
+    HEADING: ${(((sub.heading*180/Math.PI)%360+360)%360).toFixed(0).padStart(3,'0')}°<br>
+    THROTTLE: ${sub.throttle.toFixed(0)}%<br>
+    PITCH: ${(sub.pitch*180/Math.PI).toFixed(0)}°`;
+  statusEl.innerHTML = `<b style="color:#${combatAlert?'f44':'5cf'}">${combatAlert?'COMBAT ALERT':'SILENT RUNNING'}</b><br>
+    HULL: <span style="color:#${sub.hp<40?'f55':sub.hp<70?'fc4':'5fa'}">${sub.hp.toFixed(0)}/100</span><br>
+    NOISE: ${(sub.noiseLevel*100).toFixed(0)}%<br>
+    DECOYS: ${sub.noisemakers}<br>
+    TORPEDOES: ${torpedoes.length} active<br>
+    ENEMY AWARE: ${(enemy.awareness*100).toFixed(0)}%`;
+}
+
+function showMessage(t, color){
+  const m = document.getElementById('message');
+  m.style.color = color || '#fc0';
+  m.style.borderColor = color || '#fc0';
+  m.style.textShadow = '0 0 12px '+color;
+  m.textContent = t;
+  m.style.display = 'block';
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+function loop(){
+  const now = performance.now()/1000;
+  const dt = Math.min(0.05, now - lastT);
+  lastT = now;
+  update(dt);
+  drawGauges();
+  drawHelmWindow();
+  drawSonar();
+
+  if(station === 3){
+    // Render ocean from periscope perspective
+    // periscope camera position above sub, just at surface
+    const periY = -sub.pos.y <= 18 ? 1.5 : -3; // submerged if too deep
+    oceanCamera.position.set(0, periY, 0);
+    oceanCamera.rotation.set(0, sub.heading, 0);
+    // tilt slightly
+    oceanCamera.lookAt(Math.sin(sub.heading)*100, periY, Math.cos(sub.heading)*100);
+    // render with grayscale-ish via low saturation already in shader
+    renderer.render(oceanScene, oceanCamera);
+  } else {
+    renderer.render(scene, camera);
+  }
+  drawPeriscopeOverlay();
+  updateHud();
+  requestAnimationFrame(loop);
+}
+
+// ============================================================
+// INTRO -> START
+// ============================================================
+const intro = document.getElementById('intro');
+intro.addEventListener('click', ()=>{
+  initAudio();
+  intro.style.display='none';
+  // slight enemy ping at start
+  setTimeout(()=> ping(700, 0.3, 0.25), 1200);
+  loop();
+});
+
+// also start renderer immediately so we see interior even pre-click (engine off)
+function preStart(){
+  renderer.render(scene, camera);
+}
+preStart();
+
+</script>
+</body>
+</html>

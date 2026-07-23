@@ -1,0 +1,1438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Chronicle Live — A Dynasty Saga</title>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<style>
+  :root{
+    --gold:#e8c66a; --gold2:#b88a2c; --parch:#f3e6c4; --ink:#2a1d10;
+    --blood:#7a1d1d; --shade:#0c0a08;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#000;color:#eee;font-family:Georgia,'Times New Roman',serif;overflow:hidden;height:100%;}
+  #stage{position:fixed;inset:0;}
+  canvas{display:block}
+  /* Vignette + paper grain overlay */
+  #vignette{position:fixed;inset:0;pointer-events:none;
+    background:
+      radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(0,0,0,0.65) 100%),
+      repeating-linear-gradient(13deg, rgba(80,60,30,0.05) 0 2px, rgba(0,0,0,0) 2px 6px);
+    mix-blend-mode:multiply;z-index:5;}
+  #paper{position:fixed;inset:0;pointer-events:none;z-index:6;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(244,224,170,0.05), transparent 60%),
+      radial-gradient(ellipse at 80% 90%, rgba(120,80,30,0.08), transparent 60%);
+    mix-blend-mode:overlay;}
+  /* Network logo */
+  #logo{position:fixed;top:14px;left:18px;z-index:30;display:flex;align-items:center;gap:10px;
+    font-family:'Trajan Pro','Cinzel',serif;letter-spacing:.18em;}
+  #logo .crest{width:34px;height:34px;border:2px solid var(--gold);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:18px;
+    background:radial-gradient(circle,#3a2a14,#120a04);box-shadow:0 0 12px rgba(232,198,106,.6);}
+  #logo .name{color:var(--gold);font-weight:700;font-size:18px;text-shadow:0 0 8px #000;}
+  #logo .live{display:flex;align-items:center;gap:6px;color:#fff;font-size:12px;
+    background:rgba(122,29,29,.85);padding:3px 9px;border-radius:3px;letter-spacing:.2em;}
+  #logo .dot{width:8px;height:8px;border-radius:50%;background:#ff3030;animation:pulse 1.1s infinite;}
+  @keyframes pulse{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}
+
+  /* Generation counter / Year */
+  #genbar{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:30;
+    text-align:center;color:#f3e6c4;text-shadow:0 0 8px #000;}
+  #genbar .gen{font-size:13px;letter-spacing:.32em;color:var(--gold);}
+  #genbar .yr{font-size:18px;letter-spacing:.12em;margin-top:2px;font-style:italic;}
+
+  /* Family tree panel */
+  #tree{position:fixed;top:64px;left:14px;z-index:25;
+    width:260px;max-height:55vh;overflow:hidden;
+    background:linear-gradient(180deg,rgba(36,24,12,.88),rgba(20,12,6,.88));
+    border:1px solid var(--gold2);padding:10px 12px;color:var(--parch);
+    font-size:12.5px;border-radius:4px;
+    box-shadow:0 6px 24px rgba(0,0,0,.5), inset 0 0 12px rgba(0,0,0,.6);}
+  #tree h4{margin:0 0 6px;font-size:12px;letter-spacing:.25em;color:var(--gold);
+    border-bottom:1px solid var(--gold2);padding-bottom:4px;text-align:center;}
+  #tree .gen-row{margin:4px 0;line-height:1.3;}
+  #tree .gen-label{color:var(--gold);font-style:italic;font-size:11px;letter-spacing:.15em;}
+  #tree .person{display:inline-block;padding:0 4px;}
+  #tree .lord{color:#ffe58a;font-weight:700;}
+  #tree .lady{color:#fff;}
+  #tree .heir{color:#bcd9ff;}
+  #tree .dead{text-decoration:line-through;opacity:.55;}
+  #tree .crown::before{content:"♛ ";color:var(--gold);}
+
+  /* Realm state HUD */
+  #hud{position:fixed;top:64px;right:14px;z-index:25;width:240px;
+    background:linear-gradient(180deg,rgba(36,24,12,.88),rgba(20,12,6,.88));
+    border:1px solid var(--gold2);padding:10px 12px;color:var(--parch);font-size:12px;border-radius:4px;
+    box-shadow:0 6px 24px rgba(0,0,0,.5), inset 0 0 12px rgba(0,0,0,.6);}
+  #hud h4{margin:0 0 8px;font-size:12px;letter-spacing:.25em;color:var(--gold);
+    border-bottom:1px solid var(--gold2);padding-bottom:4px;text-align:center;}
+  .stat{margin:6px 0;}
+  .stat .lbl{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.15em;}
+  .stat .lbl span:last-child{color:var(--gold);}
+  .bar{height:8px;background:rgba(0,0,0,.5);border:1px solid #2a1c0c;border-radius:2px;overflow:hidden;margin-top:2px;}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--gold2),var(--gold));transition:width .8s ease;}
+  .stat.troops .bar > i{background:linear-gradient(90deg,#592020,#c54a4a);}
+  .stat.gold .bar > i{background:linear-gradient(90deg,#7a5210,#ffd966);}
+  .stat.piety .bar > i{background:linear-gradient(90deg,#3b5a8a,#a9c8ff);}
+  .stat.prestige .bar > i{background:linear-gradient(90deg,#56340e,#e8c66a);}
+
+  /* Banner / chyron */
+  #banner{position:fixed;top:38%;left:50%;transform:translate(-50%,-50%) scale(.96);z-index:40;
+    text-align:center;opacity:0;transition:opacity .4s, transform .6s;
+    pointer-events:none;}
+  #banner.show{opacity:1;transform:translate(-50%,-50%) scale(1);}
+  #banner .b{display:inline-block;padding:14px 38px;
+    background:linear-gradient(180deg,rgba(40,26,10,.95),rgba(16,10,4,.95));
+    border-top:2px solid var(--gold);border-bottom:2px solid var(--gold);
+    color:var(--parch);font-size:24px;letter-spacing:.18em;
+    text-shadow:0 0 8px #000, 0 2px 0 #000;
+    box-shadow:0 12px 40px rgba(0,0,0,.6), inset 0 0 30px rgba(232,198,106,.15);}
+  #banner .sub{margin-top:8px;color:var(--gold);font-size:13px;letter-spacing:.3em;font-style:italic;}
+
+  /* Lower-third */
+  #lt{position:fixed;left:50%;bottom:88px;transform:translate(-50%,40px);z-index:28;
+    width:min(720px,80vw);opacity:0;transition:opacity .5s, transform .5s;}
+  #lt.show{opacity:1;transform:translate(-50%,0);}
+  #lt .row{display:flex;align-items:stretch;
+    background:linear-gradient(90deg,rgba(40,26,10,.96),rgba(16,10,4,.96));
+    border-left:4px solid var(--gold);border-right:1px solid var(--gold2);
+    box-shadow:0 6px 28px rgba(0,0,0,.6);}
+  #lt .tag{padding:10px 14px;background:rgba(122,29,29,.85);color:#fff;
+    font-size:11px;letter-spacing:.3em;display:flex;align-items:center;}
+  #lt .body{flex:1;padding:10px 16px;color:var(--parch);}
+  #lt .ttl{color:var(--gold);font-size:18px;letter-spacing:.1em;}
+  #lt .desc{font-size:13px;font-style:italic;color:#e8d8b0;margin-top:2px;}
+
+  /* Chyron - 2 narrators */
+  #chy{position:fixed;left:0;right:0;bottom:42px;z-index:27;display:flex;justify-content:center;
+    pointer-events:none;}
+  #chy .ch{max-width:780px;padding:8px 18px;
+    background:linear-gradient(90deg,rgba(20,12,4,.92),rgba(40,26,10,.92));
+    color:var(--parch);font-size:15px;letter-spacing:.04em;border-left:3px solid var(--gold);
+    border-right:3px solid var(--gold);box-shadow:0 4px 18px rgba(0,0,0,.5);
+    transition:opacity .3s;opacity:0;}
+  #chy .ch.show{opacity:1;}
+  #chy .ch .who{color:var(--gold);font-weight:700;letter-spacing:.18em;font-size:12px;margin-right:10px;}
+  #chy .ch.brigida .who{color:#fff;}
+
+  /* Ticker */
+  #tk{position:fixed;left:0;right:0;bottom:0;z-index:26;height:34px;
+    background:linear-gradient(180deg,rgba(20,12,4,.97),rgba(8,4,0,.99));
+    border-top:1px solid var(--gold2);overflow:hidden;display:flex;align-items:center;}
+  #tk .lbl{padding:0 14px;color:#fff;background:var(--blood);height:100%;
+    display:flex;align-items:center;letter-spacing:.3em;font-size:11px;}
+  #tk .tape{flex:1;overflow:hidden;position:relative;height:100%;}
+  #tk .tape .roll{position:absolute;white-space:nowrap;color:var(--parch);font-size:13px;
+    line-height:34px;animation:roll 90s linear infinite;}
+  #tk .tape .roll span{margin-right:60px;}
+  #tk .tape .roll span::before{content:"✠ ";color:var(--gold);}
+  @keyframes roll{from{transform:translateX(100%)}to{transform:translateX(-100%)}}
+
+  /* Chronicler PIP */
+  #pip{position:fixed;right:14px;bottom:48px;z-index:29;width:240px;height:160px;
+    border:2px solid var(--gold2);background:#1a1108;
+    box-shadow:0 6px 24px rgba(0,0,0,.6), inset 0 0 24px rgba(0,0,0,.7);}
+  #pip canvas{width:100%;height:100%;display:block;}
+  #pip .cap{position:absolute;left:0;right:0;top:-22px;text-align:center;
+    color:var(--gold);font-size:11px;letter-spacing:.3em;text-shadow:0 0 6px #000;}
+
+  /* Camera label */
+  #cam{position:fixed;bottom:84px;left:14px;z-index:28;color:var(--gold);
+    font-size:11px;letter-spacing:.32em;text-shadow:0 0 6px #000;
+    border-left:2px solid var(--gold);padding-left:8px;}
+
+  /* Mourning / vision overlays */
+  #mourn{position:fixed;inset:0;background:rgba(0,0,0,0);z-index:8;pointer-events:none;
+    transition:background 1.5s;}
+  #mourn.on{background:rgba(0,0,0,.55);}
+  #vision{position:fixed;inset:0;background:radial-gradient(circle at 50% 30%,rgba(255,230,150,0.5),rgba(255,200,80,0));
+    z-index:9;opacity:0;transition:opacity 1.2s;pointer-events:none;}
+  #vision.on{opacity:1;}
+</style>
+</head>
+<body>
+<!-- ROUND13_SAGA v1 -->
+<div id="stage"></div>
+<div id="vignette"></div>
+<div id="paper"></div>
+<div id="mourn"></div>
+<div id="vision"></div>
+
+<div id="logo">
+  <div class="crest">⚜</div>
+  <div class="name">CHRONICLE&nbsp;LIVE</div>
+  <div class="live"><div class="dot"></div>LIVE</div>
+</div>
+
+<div id="genbar">
+  <div class="gen" id="genTxt">GENERATION I OF V</div>
+  <div class="yr" id="yrTxt">Year 1100 — Reign of Lord Aelric</div>
+</div>
+
+<div id="tree">
+  <h4>HOUSE LINEAGE</h4>
+  <div id="treeBody"></div>
+</div>
+
+<div id="hud">
+  <h4>STATE OF THE REALM</h4>
+  <div class="stat prestige"><div class="lbl"><span>PRESTIGE</span><span id="vPrestige">50</span></div><div class="bar"><i id="bPrestige" style="width:50%"></i></div></div>
+  <div class="stat gold"><div class="lbl"><span>GOLD</span><span id="vGold">50</span></div><div class="bar"><i id="bGold" style="width:50%"></i></div></div>
+  <div class="stat troops"><div class="lbl"><span>TROOPS</span><span id="vTroops">50</span></div><div class="bar"><i id="bTroops" style="width:50%"></i></div></div>
+  <div class="stat piety"><div class="lbl"><span>PIETY</span><span id="vPiety">50</span></div><div class="bar"><i id="bPiety" style="width:50%"></i></div></div>
+  <div style="margin-top:10px;font-size:11px;letter-spacing:.18em;color:var(--gold);text-align:center;">GRAVES&nbsp;<span id="vGraves" style="color:#fff">0</span></div>
+</div>
+
+<div id="banner"><div class="b" id="bannerTxt">A NEW DYNASTY</div><div class="sub" id="bannerSub"></div></div>
+
+<div id="lt"><div class="row"><div class="tag" id="ltTag">PROFILE</div><div class="body"><div class="ttl" id="ltTtl">Lord Aelric</div><div class="desc" id="ltDesc">Founder of the line.</div></div></div></div>
+
+<div id="chy"><div class="ch" id="chyTxt"><span class="who" id="chyWho">CHRONICLER ALDWIN</span><span id="chyLine"></span></div></div>
+
+<div id="cam">CAM · KEEP WIDE</div>
+
+<div id="pip"><div class="cap">CHRONICLER'S MANUSCRIPT</div><canvas id="pipC" width="480" height="320"></canvas></div>
+
+<div id="tk"><div class="lbl">CHRONICLE</div><div class="tape"><div class="roll" id="tkRoll"><span>The chronicler takes up his quill…</span></div></div></div>
+
+<script>
+"use strict";
+/* ====================================================================
+   CHRONICLE LIVE — A 5-Generation Crusader Dynasty Saga (Round 13)
+   Single-file 3D autonomous broadcast.
+   ==================================================================== */
+(function(){
+  const THREE = window.THREE;
+  if(!THREE){document.body.innerHTML='<div style="color:#fff;padding:40px;font-family:serif">three.js failed to load.</div>';return;}
+
+  /* -------------------- Names + Houses -------------------- */
+  const LORD_NAMES = ["Aelric","Cedric","Edmund","Godfrey","Lothair","Reginald","Theobald","Walter","Aldwin","Berengar","Conrad","Daegon","Erric","Roland","Tristan"];
+  const LADY_NAMES = ["Mathilde","Gisela","Rowena","Brigida","Adela","Constance","Eleanor","Helewise","Isolde","Joanna","Edith","Aveline"];
+  const HOUSES = ["Ravensford","Blackwell","Goldcrest","Ironwood","Stormhold","Larkspire","Greymoor","Highmere","Wolfsbane","Thorncrown","Fairhaven"];
+  const ROMAN = ["I","II","III","IV","V","VI","VII","VIII"];
+
+  /* -------------------- Saga state -------------------- */
+  const State = {
+    house:null, color:null, year:1100,
+    generations:[], genIdx:0, genStartT:0, eventIdx:0, eventTimes:[],
+    eventsPlanned:[], graves:0,
+    realm:{prestige:50,gold:50,troops:50,piety:50},
+    chronicle:[], finished:false, ending:null,
+    fallen:false
+  };
+
+  function rand(a){return a[Math.floor(Math.random()*a.length)];}
+  function rint(a,b){return Math.floor(a+Math.random()*(b-a+1));}
+  function rrange(a,b){return a+Math.random()*(b-a);}
+  function pickN(arr,n){const c=arr.slice();const out=[];for(let i=0;i<n&&c.length;i++){out.push(c.splice(Math.floor(Math.random()*c.length),1)[0]);}return out;}
+
+  function uniqueName(used,pool){
+    for(let i=0;i<32;i++){const n=rand(pool);if(!used.has(n)){used.add(n);return n;}}
+    return rand(pool)+" the "+rand(["Bold","Wise","Just","Cruel","Pious"]);
+  }
+
+  /* -------------------- DOM helpers -------------------- */
+  const $=id=>document.getElementById(id);
+  const elBanner=$('banner'),elBT=$('bannerTxt'),elBS=$('bannerSub');
+  const elLT=$('lt'),elLTtag=$('ltTag'),elLTttl=$('ltTtl'),elLTdsc=$('ltDesc');
+  const elChy=$('chyTxt'),elChWho=$('chyWho'),elChLine=$('chyLine');
+  const elGen=$('genTxt'),elYr=$('yrTxt'),elTreeBody=$('treeBody');
+  const elTkRoll=$('tkRoll'),elCam=$('cam'),elGraves=$('vGraves');
+  const elMourn=$('mourn'),elVision=$('vision');
+
+  /* -------------------- Three.js setup -------------------- */
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x9bb6c8);
+  scene.fog=new THREE.Fog(0x9bb6c8,80,360);
+
+  const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.7));
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.0;
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  $('stage').appendChild(renderer.domElement);
+
+  const camera=new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,800);
+  camera.position.set(0,40,90);
+  camera.lookAt(0,5,0);
+
+  // 4 directional lights for cinematic feel
+  const sun=new THREE.DirectionalLight(0xfff1c8,1.4);
+  sun.position.set(40,80,30);sun.castShadow=true;
+  sun.shadow.mapSize.set(1024,1024);
+  sun.shadow.camera.left=-90;sun.shadow.camera.right=90;
+  sun.shadow.camera.top=90;sun.shadow.camera.bottom=-90;
+  sun.shadow.camera.near=1;sun.shadow.camera.far=240;
+  scene.add(sun);
+
+  const fill=new THREE.DirectionalLight(0x8db2d8,0.45);fill.position.set(-50,40,-30);scene.add(fill);
+  const rim=new THREE.DirectionalLight(0xff9b5e,0.35);rim.position.set(-30,20,60);scene.add(rim);
+  const moon=new THREE.DirectionalLight(0x6080b0,0.25);moon.position.set(20,60,-50);scene.add(moon);
+
+  const amb=new THREE.HemisphereLight(0xc8d8ee,0x3a2a18,0.45);scene.add(amb);
+
+  /* -------------------- Materials -------------------- */
+  const M={
+    grass:new THREE.MeshStandardMaterial({color:0x6b8a3a,roughness:0.95,metalness:0}),
+    dirt :new THREE.MeshStandardMaterial({color:0x6a4a2c,roughness:1}),
+    stone:new THREE.MeshStandardMaterial({color:0x8b8378,roughness:0.85}),
+    stone2:new THREE.MeshStandardMaterial({color:0x6e6760,roughness:0.9}),
+    wood :new THREE.MeshStandardMaterial({color:0x5a3a1c,roughness:1}),
+    thatch:new THREE.MeshStandardMaterial({color:0x9a7a3a,roughness:1}),
+    flag :new THREE.MeshStandardMaterial({color:0xb22222,roughness:0.8,side:THREE.DoubleSide}),
+    water:new THREE.MeshStandardMaterial({color:0x3a6a9a,roughness:0.3,metalness:0.4}),
+    tree :new THREE.MeshStandardMaterial({color:0x2c5a2c,roughness:1}),
+    trunk:new THREE.MeshStandardMaterial({color:0x3a2a14,roughness:1}),
+    mountain:new THREE.MeshStandardMaterial({color:0x6a6e74,roughness:1}),
+    chapel:new THREE.MeshStandardMaterial({color:0xa89a7c,roughness:0.9}),
+    cross:new THREE.MeshStandardMaterial({color:0xd8c684,roughness:0.5,metalness:0.4}),
+    grave:new THREE.MeshStandardMaterial({color:0x807870,roughness:1}),
+    skin :new THREE.MeshStandardMaterial({color:0xd8b08a,roughness:1}),
+    cloth:new THREE.MeshStandardMaterial({color:0x4a3a2a,roughness:1}),
+    noble:new THREE.MeshStandardMaterial({color:0x802020,roughness:0.7}),
+    crown:new THREE.MeshStandardMaterial({color:0xe8c66a,roughness:0.3,metalness:0.7,emissive:0x553300,emissiveIntensity:0.2}),
+    knight:new THREE.MeshStandardMaterial({color:0xb8b8c0,roughness:0.4,metalness:0.7}),
+    cloak:new THREE.MeshStandardMaterial({color:0x101010,roughness:1}),
+    market:new THREE.MeshStandardMaterial({color:0x7a5028,roughness:1}),
+  };
+
+  /* -------------------- World root -------------------- */
+  const world=new THREE.Group();scene.add(world);
+
+  // Ground (terrain)
+  const groundGeo=new THREE.PlaneGeometry(360,360,40,40);
+  // gentle hill in center
+  const gp=groundGeo.attributes.position;
+  for(let i=0;i<gp.count;i++){
+    const x=gp.getX(i),y=gp.getY(i);
+    const r=Math.sqrt(x*x+y*y);
+    const h=Math.max(0,18-r*0.32);
+    gp.setZ(i, h*Math.exp(-r*0.005) + Math.sin(x*0.07)*Math.cos(y*0.07)*0.8);
+  }
+  groundGeo.computeVertexNormals();
+  const ground=new THREE.Mesh(groundGeo,M.grass);
+  ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;world.add(ground);
+
+  // River
+  const riverGeo=new THREE.PlaneGeometry(280,12,1,1);
+  const river=new THREE.Mesh(riverGeo,M.water);
+  river.rotation.x=-Math.PI/2;river.position.set(60,0.2,40);
+  river.rotation.z=0.3;world.add(river);
+
+  // Road
+  const roadGeo=new THREE.PlaneGeometry(220,4);
+  const road=new THREE.Mesh(roadGeo,M.dirt);
+  road.rotation.x=-Math.PI/2;road.position.set(-30,0.18,15);road.rotation.z=-0.4;world.add(road);
+
+  // Mountains (background)
+  function mountain(x,z,h,c){
+    const g=new THREE.ConeGeometry(20+Math.random()*8,h,8);
+    const mat=M.mountain.clone();mat.color=new THREE.Color(c||0x6a6e74);
+    const m=new THREE.Mesh(g,mat);m.position.set(x,h/2,z);m.castShadow=true;
+    world.add(m);return m;
+  }
+  for(let i=0;i<8;i++){
+    mountain(-160+Math.random()*40,-130-Math.random()*30, 30+Math.random()*30, 0x5a606a);
+  }
+  for(let i=0;i<8;i++){
+    mountain(120+Math.random()*40,-120-Math.random()*40, 26+Math.random()*22, 0x676e7a);
+  }
+
+  // Forest
+  function tree(x,z){
+    const t=new THREE.Group();
+    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.7,4,6),M.trunk);
+    trunk.position.y=2;trunk.castShadow=true;t.add(trunk);
+    const can=new THREE.Mesh(new THREE.ConeGeometry(2.4,6,7),M.tree);
+    can.position.y=6;can.castShadow=true;t.add(can);
+    t.position.set(x,0,z);world.add(t);return t;
+  }
+  for(let i=0;i<60;i++){
+    const a=Math.random()*Math.PI*2;
+    const r=70+Math.random()*60;
+    const x=Math.cos(a)*r, z=Math.sin(a)*r;
+    if(Math.abs(x)<25 && Math.abs(z)<25)continue;
+    tree(x,z);
+  }
+
+  /* -------------------- Castle Keep -------------------- */
+  const keep=new THREE.Group();keep.position.set(0,8,0);world.add(keep);
+
+  function tower(x,z,r,h){
+    const t=new THREE.Group();
+    const base=new THREE.Mesh(new THREE.CylinderGeometry(r,r*1.1,h,12),M.stone);
+    base.position.y=h/2;base.castShadow=true;base.receiveShadow=true;t.add(base);
+    const top=new THREE.Mesh(new THREE.CylinderGeometry(r+0.5,r+0.5,1.2,12),M.stone2);
+    top.position.y=h+0.6;t.add(top);
+    // crenellations - 8 small blocks around top
+    for(let i=0;i<10;i++){
+      const ang=i/10*Math.PI*2;
+      const c=new THREE.Mesh(new THREE.BoxGeometry(0.7,1,0.7),M.stone2);
+      c.position.set(Math.cos(ang)*(r+0.4),h+1.6,Math.sin(ang)*(r+0.4));
+      t.add(c);
+    }
+    // conical roof
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(r+0.2,3.5,12),M.flag);
+    roof.position.y=h+3.5;t.add(roof);
+    // banner
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,3),M.wood);
+    pole.position.y=h+5.5;t.add(pole);
+    const flag=new THREE.Mesh(new THREE.PlaneGeometry(2,1.2),M.flag);
+    flag.position.set(1,h+5.8,0);t.add(flag);
+    flag.userData.flag=true;
+    t.position.set(x,0,z);
+    keep.add(t);
+    return t;
+  }
+
+  // 4 corner towers
+  const towers=[
+    tower(-12,-12,2.4,18), tower(12,-12,2.4,18),
+    tower(-12,12,2.4,18), tower(12,12,2.4,18),
+  ];
+
+  // Walls
+  function wall(x,z,w,d,h){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),M.stone);
+    m.position.set(x,h/2,z);m.castShadow=true;m.receiveShadow=true;keep.add(m);
+    // crenellations
+    const num=Math.floor(w/1.2);
+    for(let i=0;i<num;i++){
+      if(i%2)continue;
+      const c=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,d*1.05),M.stone2);
+      c.position.set(x-w/2+0.6+i*1.2,h+0.45,z);keep.add(c);
+    }
+    return m;
+  }
+  // North wall (with gatehouse gap)
+  wall(-7,-12,10,1.5,8);
+  wall( 7,-12,10,1.5,8);
+  wall(-12,0,1.5,24,8); // west
+  wall( 12,0,1.5,24,8); // east
+  wall(0, 12,24,1.5,8); // south
+
+  // Gatehouse
+  const gate=new THREE.Group();gate.position.set(0,0,-12);keep.add(gate);
+  const gateBlock=new THREE.Mesh(new THREE.BoxGeometry(6,10,3),M.stone2);
+  gateBlock.position.y=5;gateBlock.castShadow=true;gate.add(gateBlock);
+  const gateHole=new THREE.Mesh(new THREE.BoxGeometry(2.6,4,3.2),M.wood);
+  gateHole.position.y=2;gate.add(gateHole);
+  const portcullis=new THREE.Mesh(new THREE.PlaneGeometry(2.4,4),M.cloth);
+  portcullis.position.set(0,2,1.55);gate.add(portcullis);
+
+  // Inner keep building
+  const inner=new THREE.Mesh(new THREE.BoxGeometry(10,12,8),M.stone);
+  inner.position.set(0,6,4);inner.castShadow=true;keep.add(inner);
+  const innerRoof=new THREE.Mesh(new THREE.ConeGeometry(8,4,4),M.flag);
+  innerRoof.rotation.y=Math.PI/4;
+  innerRoof.position.set(0,14,4);keep.add(innerRoof);
+
+  // Throne room marker (interior point)
+  const thronePt=new THREE.Vector3(0,9.5,4);
+
+  // Courtyard ground inside
+  const court=new THREE.Mesh(new THREE.PlaneGeometry(20,20),M.dirt);
+  court.rotation.x=-Math.PI/2;court.position.set(0,0.3,-2);keep.add(court);
+
+  /* -------------------- Village -------------------- */
+  const village=new THREE.Group();world.add(village);
+
+  function house(x,z,rot){
+    const g=new THREE.Group();
+    const base=new THREE.Mesh(new THREE.BoxGeometry(4,3,3),M.cloth);
+    base.material=new THREE.MeshStandardMaterial({color:0xb8a07a,roughness:1});
+    base.position.y=1.5;base.castShadow=true;g.add(base);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(3.2,2.4,4),M.thatch);
+    roof.rotation.y=Math.PI/4;roof.position.y=4.2;roof.castShadow=true;g.add(roof);
+    g.position.set(x,0,z);g.rotation.y=rot||0;
+    village.add(g);return g;
+  }
+  // 10 houses around village square
+  const houses=[];
+  for(let i=0;i<10;i++){
+    const a=i/10*Math.PI*2;
+    const r=28+Math.random()*8;
+    const cx=Math.cos(a)*r+22, cz=Math.sin(a)*r+22;
+    houses.push(house(cx,cz, a));
+  }
+
+  // Well
+  const wellG=new THREE.Group();wellG.position.set(22,0,22);village.add(wellG);
+  const wellRing=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,1.4,12),M.stone);
+  wellRing.position.y=0.7;wellG.add(wellRing);
+  const wellRoof=new THREE.Mesh(new THREE.ConeGeometry(2,1.6,4),M.thatch);
+  wellRoof.position.y=3;wellG.add(wellRoof);
+  const wellPostA=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,2),M.wood);
+  wellPostA.position.set(0.9,1.7,0);wellG.add(wellPostA);
+  const wellPostB=wellPostA.clone();wellPostB.position.x=-0.9;wellG.add(wellPostB);
+
+  // Market square (a few stalls)
+  for(let i=0;i<4;i++){
+    const stall=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.6,1.4),M.market);
+    stall.position.set(28+i*3,0.8, 18);stall.castShadow=true;village.add(stall);
+    const cloth=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.1,1.6), M.flag);
+    cloth.position.set(28+i*3,1.7,18);village.add(cloth);
+  }
+
+  /* -------------------- Chapel + Graveyard -------------------- */
+  const chapelG=new THREE.Group();chapelG.position.set(-32,0,16);world.add(chapelG);
+  const chBody=new THREE.Mesh(new THREE.BoxGeometry(8,6,12),M.chapel);
+  chBody.position.y=3;chBody.castShadow=true;chapelG.add(chBody);
+  const chRoof=new THREE.Mesh(new THREE.ConeGeometry(7,4,4),M.flag);
+  chRoof.rotation.y=Math.PI/4;chRoof.position.y=8;chapelG.add(chRoof);
+  const chTower=new THREE.Mesh(new THREE.BoxGeometry(2.5,9,2.5),M.chapel);
+  chTower.position.set(0,4.5,-7);chapelG.add(chTower);
+  const chTip=new THREE.Mesh(new THREE.ConeGeometry(2,3,4),M.flag);
+  chTip.rotation.y=Math.PI/4;chTip.position.set(0,10.5,-7);chapelG.add(chTip);
+  const chCross=new THREE.Mesh(new THREE.BoxGeometry(0.2,1.6,0.2),M.cross);
+  chCross.position.set(0,12.5,-7);chapelG.add(chCross);
+  const chCross2=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.2,0.2),M.cross);
+  chCross2.position.set(0,12.4,-7);chapelG.add(chCross2);
+
+  // Graves (added per death)
+  const gravesG=new THREE.Group();gravesG.position.set(-20,0,22);world.add(gravesG);
+
+  function addGrave(name){
+    const i=gravesG.children.length;
+    const r=Math.floor(i/4), c=i%4;
+    const g=new THREE.Group();
+    const stone=new THREE.Mesh(new THREE.BoxGeometry(0.8,1.6,0.25),M.grave);
+    stone.position.y=0.8;stone.castShadow=true;g.add(stone);
+    const top=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,0.25,16,1,false,0,Math.PI),M.grave);
+    top.rotation.x=Math.PI/2;top.position.y=1.55;g.add(top);
+    g.position.set(c*1.4, 0, r*1.4);
+    g.userData.name=name;
+    gravesG.add(g);
+    State.graves++;
+    elGraves.textContent=State.graves;
+  }
+
+  /* -------------------- Humanoid factory -------------------- */
+  function humanoid(opts){
+    opts=opts||{};
+    const g=new THREE.Group();
+    const skin=M.skin.clone();
+    const cloth=opts.cloth?opts.cloth.clone():M.cloth.clone();
+    if(opts.color)cloth.color=new THREE.Color(opts.color);
+    // body
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.55,1.4,8),cloth);
+    body.position.y=1.3;body.castShadow=true;g.add(body);
+    // head
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.32,12,10),skin);
+    head.position.y=2.25;head.castShadow=true;g.add(head);
+    // arms
+    const armL=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,1.0,6),cloth);
+    armL.position.set(0.55,1.45,0);armL.rotation.z=0.15;g.add(armL);
+    const armR=armL.clone();armR.position.x=-0.55;armR.rotation.z=-0.15;g.add(armR);
+    // legs
+    const legL=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1.1,6),M.cloth);
+    legL.material=cloth;legL.position.set(0.18,0.55,0);g.add(legL);
+    const legR=legL.clone();legR.position.x=-0.18;g.add(legR);
+    // crown
+    if(opts.crown){
+      const c=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.36,0.25,8),M.crown);
+      c.position.y=2.55;g.add(c);
+      // points
+      for(let i=0;i<5;i++){
+        const p=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.2,4),M.crown);
+        const a=i/5*Math.PI*2;
+        p.position.set(Math.cos(a)*0.35,2.75,Math.sin(a)*0.35);
+        g.add(p);
+      }
+    }
+    if(opts.hood){
+      const h=new THREE.Mesh(new THREE.ConeGeometry(0.4,0.6,8),M.cloak);
+      h.position.y=2.45;g.add(h);
+    }
+    g.userData={baseY:0, walk:Math.random()*Math.PI*2, speed:rrange(0.6,1.2), armL, armR, legL, legR};
+    return g;
+  }
+
+  /* -------------------- Retainers / peasants -------------------- */
+  const peasants=[];
+  for(let i=0;i<10;i++){
+    const p=humanoid({color:rand([0x4a3a2a,0x6a5a40,0x8a7a50,0x603a20])});
+    const a=Math.random()*Math.PI*2,r=10+Math.random()*30;
+    p.position.set(Math.cos(a)*r+5,0,Math.sin(a)*r+8);
+    p.userData.target=p.position.clone();
+    p.userData.next=()=>{
+      const a=Math.random()*Math.PI*2,r=8+Math.random()*30;
+      p.userData.target.set(Math.cos(a)*r+5,0,Math.sin(a)*r+8);
+    };
+    p.userData.next();
+    world.add(p);peasants.push(p);
+  }
+
+  /* -------------------- The Lord (dynamic) -------------------- */
+  let lord=null, lady=null, brideArrival=null, assassin=null;
+  function spawnLord(color){
+    if(lord){world.remove(lord);disposeObj(lord);lord=null;}
+    lord=humanoid({color:color||0x802020,crown:true,cloth:M.noble});
+    lord.position.set(0,8,2);
+    world.add(lord);
+  }
+  function spawnLady(color){
+    if(lady){world.remove(lady);disposeObj(lady);lady=null;}
+    lady=humanoid({color:color||0xa040a0});
+    lady.position.set(2,8,2);
+    world.add(lady);
+  }
+  function disposeObj(o){
+    o.traverse(c=>{
+      if(c.geometry)c.geometry.dispose();
+      if(c.material){
+        if(Array.isArray(c.material))c.material.forEach(m=>m.dispose());
+        else c.material.dispose();
+      }
+    });
+  }
+
+  /* -------------------- Knights / Crusaders -------------------- */
+  const knights=[];
+  function spawnKnights(n){
+    for(let i=0;i<n;i++){
+      const k=humanoid({color:0x556677,cloth:M.knight});
+      k.position.set(0,0,-12);
+      k.userData.knight=true;
+      k.userData.t=Math.random()*0.3;
+      knights.push(k);world.add(k);
+    }
+  }
+  function clearKnights(){
+    for(const k of knights){world.remove(k);disposeObj(k);}
+    knights.length=0;
+  }
+
+  /* -------------------- Battle particles -------------------- */
+  const battleField=new THREE.Group();battleField.position.set(80,0,-40);world.add(battleField);
+  const battleSpotlight=new THREE.Mesh(new THREE.PlaneGeometry(36,36),new THREE.MeshStandardMaterial({color:0x6a3a2a,roughness:1}));
+  battleSpotlight.rotation.x=-Math.PI/2;battleSpotlight.position.y=0.2;battleField.add(battleSpotlight);
+
+  let battleP=null;
+  function startBattle(){
+    if(battleP)return;
+    const N=600;
+    const geom=new THREE.BufferGeometry();
+    const pos=new Float32Array(N*3);
+    const col=new Float32Array(N*3);
+    const vel=new Float32Array(N*3);
+    for(let i=0;i<N;i++){
+      pos[i*3]=(Math.random()-0.5)*20;
+      pos[i*3+1]=Math.random()*4;
+      pos[i*3+2]=(Math.random()-0.5)*20;
+      vel[i*3]=(Math.random()-0.5)*0.6;
+      vel[i*3+1]=Math.random()*0.6;
+      vel[i*3+2]=(Math.random()-0.5)*0.6;
+      const c=Math.random()<0.5?[1,0.6,0.2]:[1,0.2,0.1];
+      col[i*3]=c[0];col[i*3+1]=c[1];col[i*3+2]=c[2];
+    }
+    geom.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    geom.setAttribute('color',new THREE.BufferAttribute(col,3));
+    const mat=new THREE.PointsMaterial({size:0.4,vertexColors:true,transparent:true,opacity:0.9});
+    battleP=new THREE.Points(geom,mat);battleP.position.set(0,0,0);
+    battleP.userData.vel=vel;
+    battleField.add(battleP);
+  }
+  function stopBattle(){
+    if(!battleP)return;
+    battleField.remove(battleP);battleP.geometry.dispose();battleP.material.dispose();battleP=null;
+  }
+
+  /* -------------------- Plague fog -------------------- */
+  let plagueFog=null,plagueT=0;
+  function startPlague(){
+    if(plagueFog)return;
+    const g=new THREE.PlaneGeometry(160,160);
+    const m=new THREE.MeshBasicMaterial({color:0x6aaa55,transparent:true,opacity:0,depthWrite:false});
+    plagueFog=new THREE.Mesh(g,m);plagueFog.rotation.x=-Math.PI/2;plagueFog.position.y=2;
+    world.add(plagueFog);plagueT=0;
+  }
+  function stopPlague(){
+    if(!plagueFog)return;
+    world.remove(plagueFog);plagueFog.geometry.dispose();plagueFog.material.dispose();plagueFog=null;
+  }
+
+  /* -------------------- Treasury particles -------------------- */
+  let goldP=null;
+  function startGold(){
+    if(goldP)return;
+    const N=120;
+    const g=new THREE.BufferGeometry();
+    const pos=new Float32Array(N*3);
+    const vel=new Float32Array(N*3);
+    for(let i=0;i<N;i++){
+      pos[i*3]=(Math.random()-0.5)*8;
+      pos[i*3+1]=Math.random()*8+8;
+      pos[i*3+2]=(Math.random()-0.5)*8+2;
+      vel[i*3]=(Math.random()-0.5)*0.3;
+      vel[i*3+1]=-0.3-Math.random()*0.4;
+      vel[i*3+2]=(Math.random()-0.5)*0.3;
+    }
+    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    const m=new THREE.PointsMaterial({color:0xffd66a,size:0.35,transparent:true,opacity:0.95});
+    goldP=new THREE.Points(g,m);goldP.userData.vel=vel;
+    world.add(goldP);
+  }
+  function stopGold(){
+    if(!goldP)return;
+    world.remove(goldP);goldP.geometry.dispose();goldP.material.dispose();goldP=null;
+  }
+
+  /* -------------------- Castle expansion (extra tower) -------------------- */
+  let extraTower=null,extraT=0,extraTarget=0;
+  function expandCastle(){
+    if(extraTower)return;
+    const t=tower(0,12,2,0); // start zero height
+    extraTower=t;extraT=0;extraTarget=14;
+  }
+
+  /* -------------------- Holy vision beam -------------------- */
+  let visionBeam=null;
+  function startVision(){
+    if(visionBeam)return;
+    const g=new THREE.CylinderGeometry(2,8,40,12,1,true);
+    const m=new THREE.MeshBasicMaterial({color:0xfff2a0,transparent:true,opacity:0.45,side:THREE.DoubleSide,depthWrite:false});
+    visionBeam=new THREE.Mesh(g,m);visionBeam.position.set(0,20,4);
+    world.add(visionBeam);
+    elVision.classList.add('on');
+  }
+  function stopVision(){
+    elVision.classList.remove('on');
+    if(!visionBeam)return;
+    world.remove(visionBeam);visionBeam.geometry.dispose();visionBeam.material.dispose();visionBeam=null;
+  }
+
+  /* -------------------- Assassin (cloaked figure) -------------------- */
+  function spawnAssassin(){
+    if(assassin)return;
+    assassin=humanoid({color:0x101010,hood:true,cloth:M.cloak});
+    assassin.position.set(8,8,4);
+    assassin.scale.setScalar(0.01);
+    world.add(assassin);
+  }
+  function despawnAssassin(){
+    if(!assassin)return;
+    world.remove(assassin);disposeObj(assassin);assassin=null;
+  }
+
+  /* -------------------- Bride -------------------- */
+  function spawnBride(){
+    brideArrival={t:0,duration:8};
+    if(lady)return;
+    spawnLady(0xeeeedd);
+    lady.position.set(0,0,-40);
+  }
+
+  /* -------------------- Time of day -------------------- */
+  function setTimeOfDay(t){
+    // t in [0,1]: 0 dawn, 0.33 noon, 0.66 dusk, 1 night
+    const sky=new THREE.Color();
+    if(t<0.25){
+      // dawn: rose to blue
+      const k=t/0.25;sky.lerpColors(new THREE.Color(0xffb070),new THREE.Color(0x9bb6c8),k);
+      sun.intensity=0.7+k*0.7; sun.color.set(0xfff1c8);
+      sun.position.set(40,40+k*40,30);
+      moon.intensity=0.05;
+    } else if(t<0.5){
+      const k=(t-0.25)/0.25;sky.copy(new THREE.Color(0x9bb6c8));
+      sun.intensity=1.4; sun.color.set(0xfff8d8);
+      sun.position.set(40,80,30);
+      moon.intensity=0.05;
+    } else if(t<0.75){
+      const k=(t-0.5)/0.25;sky.lerpColors(new THREE.Color(0x9bb6c8),new THREE.Color(0xd56a3a),k);
+      sun.intensity=1.4-k*0.6; sun.color.set(0xff9b5e);
+      sun.position.set(40,80-k*50,30);
+      moon.intensity=0.1+k*0.2;
+    } else {
+      const k=(t-0.75)/0.25;sky.lerpColors(new THREE.Color(0xd56a3a),new THREE.Color(0x0a1430),k);
+      sun.intensity=Math.max(0.05,0.8-k*0.8); sun.color.set(0x6080b0);
+      sun.position.set(40,30-k*20,30);
+      moon.intensity=0.3+k*0.3;
+    }
+    scene.background.copy(sky);
+    scene.fog.color.copy(sky);
+  }
+
+  /* -------------------- Cameras -------------------- */
+  const CAMS=[
+    {n:"KEEP WIDE", get:(t)=>({pos:new THREE.Vector3(Math.cos(t*0.05)*70,42,Math.sin(t*0.05)*70+20), look:new THREE.Vector3(0,8,0)})},
+    {n:"COURTYARD", get:(t)=>({pos:new THREE.Vector3(Math.sin(t*0.2)*8,3.5,8+Math.cos(t*0.2)*5), look:new THREE.Vector3(0,4,0)})},
+    {n:"THRONE ROOM", get:(t)=>({pos:new THREE.Vector3(Math.sin(t*0.3)*4,11,12), look:new THREE.Vector3(0,9.5,4)})},
+    {n:"CHAPEL", get:(t)=>({pos:new THREE.Vector3(-26+Math.cos(t*0.2)*8,4,28), look:new THREE.Vector3(-30,5,18)})},
+    {n:"GATEHOUSE", get:(t)=>({pos:new THREE.Vector3(Math.sin(t*0.25)*4,5,-22), look:new THREE.Vector3(0,5,-12)})},
+    {n:"VILLAGE", get:(t)=>({pos:new THREE.Vector3(22+Math.cos(t*0.2)*10,4,22+Math.sin(t*0.2)*10), look:new THREE.Vector3(22,2,22)})},
+    {n:"BATTLEFIELD", get:(t)=>({pos:new THREE.Vector3(80+Math.cos(t*0.3)*22,8,-40+Math.sin(t*0.3)*22), look:new THREE.Vector3(80,2,-40)})},
+  ];
+  let camIdx=0,camLast=0,camDur=6;
+  function setCam(i){camIdx=i%CAMS.length;elCam.textContent="CAM · "+CAMS[camIdx].n;}
+
+  /* -------------------- Banner / chyron -------------------- */
+  let bannerTimer=null;
+  function showBanner(txt,sub,ms){
+    elBT.textContent=txt; elBS.textContent=sub||"";
+    elBanner.classList.add('show');
+    if(bannerTimer)clearTimeout(bannerTimer);
+    bannerTimer=setTimeout(()=>elBanner.classList.remove('show'), ms||3800);
+  }
+
+  let chyTimer=null,chyAlt=0;
+  function showChy(line){
+    chyAlt^=1;
+    if(chyAlt){elChy.classList.remove('brigida'); elChWho.textContent="MASTER CHRONICLER ALDWIN";}
+    else      {elChy.classList.add('brigida');    elChWho.textContent="LADY BRIGIDA";}
+    elChLine.textContent=line;
+    elChy.classList.add('show');
+    if(chyTimer)clearTimeout(chyTimer);
+    chyTimer=setTimeout(()=>elChy.classList.remove('show'), 5500);
+  }
+
+  let ltTimer=null;
+  function showLT(tag,ttl,desc,ms){
+    elLTtag.textContent=tag; elLTttl.textContent=ttl; elLTdsc.textContent=desc;
+    elLT.classList.add('show');
+    if(ltTimer)clearTimeout(ltTimer);
+    ltTimer=setTimeout(()=>elLT.classList.remove('show'),ms||5000);
+  }
+
+  /* -------------------- Ticker -------------------- */
+  function pushTicker(line){
+    State.chronicle.push(line);
+    if(State.chronicle.length>30)State.chronicle.shift();
+    // Build ticker tape with all lines
+    const html=State.chronicle.map(l=>"<span>"+escapeHtml(l)+"</span>").join("");
+    elTkRoll.innerHTML=html||"<span>The chronicler takes up his quill…</span>";
+  }
+  function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+
+  /* -------------------- Family tree -------------------- */
+  function renderTree(){
+    const lines=[];
+    lines.push('<div style="text-align:center;color:#ffe58a;font-size:13px;letter-spacing:.18em;margin-bottom:6px;">'+
+      'HOUSE '+(State.house||"—").toUpperCase()+'</div>');
+    State.generations.forEach((g,i)=>{
+      const gl='<span class="gen-label">Gen '+ROMAN[i]+' · '+(g.year||"")+'</span>';
+      const pieces=[];
+      const lordCls='person lord '+(g.lord && g.lord.dead?'dead ':'')+(i===State.genIdx&&!State.fallen?'crown':'');
+      pieces.push('<span class="'+lordCls+'">'+(g.lord?g.lord.name+(g.lord.suffix?(' '+g.lord.suffix):''):'—')+'</span>');
+      if(g.lady)pieces.push('<span class="person lady '+(g.lady.dead?'dead':'')+'">⚭ '+g.lady.name+'</span>');
+      if(g.heir)pieces.push('<span class="person heir '+(g.heir.dead?'dead':'')+'">→ '+g.heir.name+'</span>');
+      lines.push('<div class="gen-row">'+gl+'<br>'+pieces.join(' ')+'</div>');
+    });
+    elTreeBody.innerHTML=lines.join("");
+  }
+
+  /* -------------------- Realm bars -------------------- */
+  function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+  function applyRealm(d){
+    for(const k in d){State.realm[k]=clamp(State.realm[k]+d[k],0,100);}
+    renderRealm();
+  }
+  function renderRealm(){
+    for(const k of ["prestige","gold","troops","piety"]){
+      const v=Math.round(State.realm[k]);
+      $('v'+cap(k)).textContent=v;
+      $('b'+cap(k)).style.width=v+"%";
+    }
+  }
+  function cap(s){return s[0].toUpperCase()+s.slice(1);}
+
+  /* -------------------- Chronicler PIP (canvas) -------------------- */
+  const pipC=$('pipC'), pipCtx=pipC.getContext('2d');
+  let pipLines=[];
+  function pipDraw(){
+    const w=pipC.width,h=pipC.height;
+    // parchment bg
+    const grd=pipCtx.createLinearGradient(0,0,0,h);
+    grd.addColorStop(0,'#f1e1ad');grd.addColorStop(1,'#d6bf86');
+    pipCtx.fillStyle=grd;pipCtx.fillRect(0,0,w,h);
+    // border
+    pipCtx.strokeStyle='#7a5210';pipCtx.lineWidth=4;pipCtx.strokeRect(8,8,w-16,h-16);
+    pipCtx.strokeStyle='#b88a2c';pipCtx.lineWidth=1;pipCtx.strokeRect(14,14,w-28,h-28);
+    // illuminated initial
+    pipCtx.fillStyle='#7a1d1d';
+    pipCtx.fillRect(22,22,46,46);
+    pipCtx.strokeStyle='#e8c66a';pipCtx.lineWidth=2;pipCtx.strokeRect(22,22,46,46);
+    pipCtx.fillStyle='#e8c66a';pipCtx.font='bold 36px serif';pipCtx.textBaseline='middle';
+    pipCtx.fillText('A',32,46);
+    // text
+    pipCtx.fillStyle='#2a1d10';pipCtx.font='14px serif';pipCtx.textBaseline='top';
+    let y=24;
+    for(let i=0;i<pipLines.length;i++){
+      const line=pipLines[i];
+      const indent=i===0?78:22;
+      let x=indent;
+      // simple wrap
+      const words=line.split(' ');
+      let cur='';
+      for(const wd of words){
+        const test=cur?cur+' '+wd:wd;
+        if(pipCtx.measureText(test).width>w-x-20){
+          pipCtx.fillText(cur,x,y);y+=18;x=22;cur=wd;
+          if(y>h-30)return;
+        }else cur=test;
+      }
+      if(cur){pipCtx.fillText(cur,x,y);y+=18;}
+      if(y>h-30)return;
+    }
+    // quill tip
+    pipCtx.fillStyle='#3a2a14';
+    pipCtx.fillRect(w-30,y+2,2,8);
+  }
+  function pipAdd(line){
+    pipLines.push(line);
+    if(pipLines.length>8)pipLines.shift();
+    pipDraw();
+  }
+  pipDraw();
+
+  /* -------------------- Quote pools -------------------- */
+  const Q={
+    wedding:["A union of houses, blessed by the bishop and the gods alike.",
+            "Today two banners weave into one; the heralds rejoice.",
+            "Vows are spoken in the chapel — a kingdom is shaped by such bonds."],
+    heir:["The cradle is filled, the line endures, the realm exhales.",
+          "A new heir, swaddled in silks and the prayers of the household.",
+          "The midwives smile; the steward rushes to amend the rolls."],
+    war:["War-horns sound from the keep. The peasants hide their grain.",
+         "A proclamation of war — the longest road in any age.",
+         "Banners are unfurled; ploughshares become spears tonight."],
+    battle:["Steel meets steel beneath a bruised sky.",
+            "Arrows darken the noon — chronicle, scribe, chronicle!",
+            "On this field the realm's fate is hammered into history."],
+    betrayal:["The cup was poisoned. The court whispers behind its hands.",
+              "Treachery wears the steward's livery this night.",
+              "A serpent at the high table — the chronicler weeps to write it."],
+    assassination:["A blade in the dark, a lord upon the floor.",
+                   "The candle gutters. A figure flees the chamber.",
+                   "By dagger or by draught, the line is cut short."],
+    plague:["A green mist creeps along the river. The bells toll thrice.",
+            "Plague spares neither serf nor seneschal.",
+            "The chapel doors swing wide for the dying."],
+    death:["The lord is gathered to his fathers, and so the realm mourns.",
+           "An old man sleeps beneath an old crown.",
+           "The bells toll for the lord who walked many years upon this hill."],
+    succession:["Two heirs, one throne — the council debates by torchlight.",
+                "Disputed succession; both claimants ride for the keep.",
+                "The crown wavers between two brows."],
+    crusade:["Knights take the cross. The chapel rings with vows.",
+             "Riders armored in faith depart the gatehouse.",
+             "The pious lord answers the Pontiff's call."],
+    vision:["A pillar of light falls upon the keep. The faithful kneel.",
+            "Heaven is opened a moment, and the lord is changed by it.",
+            "A holy vision — the bishop weeps for joy."],
+    treasury:["The vaults overflow! Coins ring upon the marble.",
+              "A trader's caravan, a tax-day blessed; the steward grins.",
+              "Gold enough to drown a viscount."],
+    expansion:["A new tower rises. The masons sing as they work.",
+               "Stone upon stone — the keep grows mightier this season.",
+               "The architect bows; the realm has another spire."],
+    duke:["The King names the lord Duke — a glorious elevation!",
+          "By royal decree the house is raised to ducal rank.",
+          "The Crown's favor falls upon this house at last."],
+    fall:["The house has fallen. Its halls echo without an heir.",
+          "The banner is taken down; the chronicler closes the book.",
+          "A great line ends in silence."],
+    eternal:["The house stands eternal — five generations, unbroken.",
+             "Five lords, five tales — and the chronicle endures.",
+             "House stands tall; the chronicle presses to its final page."]
+  };
+
+  const LATIN_LINES=["Anno Domini venit dux novus.","Sanguis nobilis manet in saecula.","Sub corona, sub gladio, sub Deo.","Pax incerta, gloria aeterna.","Castellum stat — domus floret.","Tempora mutantur et nos in illis.","Memento mori, memento gloriae.","Bellum gerit, pacem optat.","Filius patris coronam accipit.","Mors pia, vita brevis, fama longa.","Ecclesia laudat, terra plorat.","Sub umbra crucis, sub vexillo regis.","Domus aeterna, gens aeterna.","Vox populi tacet; vox sceptri loquitur.","Manus Dei super castellum."];
+
+  /* -------------------- Director: events -------------------- */
+  const ALL_EVENTS=["wedding","heir","war","battle","betrayal","assassination","plague","death","succession","crusade","vision","treasury","expansion","duke"];
+
+  function planGenerationEvents(genIndex){
+    const events=[];
+    if(genIndex===0){events.push("heir");}      // founder always has heir
+    const pool=ALL_EVENTS.slice();
+    // remove some that should not happen too often
+    const n=4+Math.floor(Math.random()*3); // 4-6 events
+    while(events.length<n && pool.length){
+      const e=pool.splice(Math.floor(Math.random()*pool.length),1)[0];
+      // assassination/plague rare — keep but allow
+      events.push(e);
+    }
+    // gen 5 with low prestige -> include "fall"
+    if(genIndex===4 && State.realm.prestige<35){events.push("fall");}
+    // ensure death at end if not forced (so transition is clean)
+    return events;
+  }
+
+  /* -------------------- Camera mode for events -------------------- */
+  const EVENT_CAM={
+    wedding:3, heir:2, war:0, battle:6, betrayal:2, assassination:2,
+    plague:5, death:3, succession:2, crusade:4, vision:0, treasury:1, expansion:0, duke:2,
+    fall:3
+  };
+
+  /* -------------------- Trigger event -------------------- */
+  let crusadeTimer=0, plagueTimer=0, battleTimer=0, goldTimer=0, visionTimer=0, assassinTimer=0;
+
+  function curGen(){return State.generations[State.genIdx];}
+  function curLordName(){const g=curGen();if(!g||!g.lord)return "—";return g.lord.name+(g.lord.suffix?" "+g.lord.suffix:"");}
+
+  function fire(eventName){
+    const g=curGen();if(!g)return;
+    setCam(EVENT_CAM[eventName]||0);
+    State.year+=rint(2,9);
+    elYr.textContent="Year "+State.year+" — Reign of Lord "+curLordName();
+
+    if(eventName==="wedding"){
+      const ladyName=uniqueName(State.usedNames,LADY_NAMES);
+      const otherHouse=rand(HOUSES.filter(h=>h!==State.house));
+      g.lady={name:ladyName,house:otherHouse,dead:false};
+      spawnBride();
+      showBanner("HOUSE "+State.house.toUpperCase()+" AND HOUSE "+otherHouse.toUpperCase()+" UNITED IN MARRIAGE","A holy union","MARRIAGE PROCLAMATION");
+      showLT("MARRIAGE PROCLAMATION","Lady "+ladyName+" of "+otherHouse,"Bride to "+curLordName()+", forging an alliance of arms and altar.");
+      showChy(rand(Q.wedding));
+      pushTicker("Year "+State.year+": Lord "+curLordName()+" weds Lady "+ladyName+" of "+otherHouse+".");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({prestige:+8,piety:+4,gold:+3});
+    }
+    else if(eventName==="heir"){
+      const h=uniqueName(State.usedNames,Math.random()<0.7?LORD_NAMES:LADY_NAMES);
+      g.heir={name:h,dead:false};
+      showBanner("AN HEIR IS BORN — "+h.toUpperCase(),"Long may they live");
+      showLT("HEIR BORN",h,"Born to "+curLordName()+" — the line continues.");
+      showChy(rand(Q.heir));
+      pushTicker("Year "+State.year+": An heir is born — "+h+".");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({prestige:+5,piety:+2});
+    }
+    else if(eventName==="war"){
+      const enemy=rand(HOUSES.filter(h=>h!==State.house));
+      g.atWar=enemy;
+      showBanner("WAR! HOUSE "+State.house.toUpperCase()+" DECLARES WAR ON HOUSE "+enemy.toUpperCase(),"To arms!","WAR DECLARATION");
+      showLT("WAR DECLARATION","Against House "+enemy,"The lord raises the banner; the levies muster at the gatehouse.");
+      showChy(rand(Q.war));
+      pushTicker("Year "+State.year+": War declared on House "+enemy+".");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({troops:-5,gold:-8,prestige:+4});
+    }
+    else if(eventName==="battle"){
+      startBattle();battleTimer=8;
+      showBanner("THE FIELD IS JOINED","Steel and prayer");
+      showChy(rand(Q.battle));
+      pushTicker("Year "+State.year+": A great battle is fought; the chroniclers count the dead.");
+      pipAdd(rand(LATIN_LINES));
+      const win=Math.random()<0.6;
+      applyRealm({troops:-15,prestige:win?+12:-6,gold:win?+6:-4});
+    }
+    else if(eventName==="betrayal"){
+      showBanner("THE STEWARD HAS POISONED THE LORD!","Treason in the keep");
+      showLT("BETRAYAL","The Steward","An old retainer reaches for the cup that should never have been poured.");
+      showChy(rand(Q.betrayal));
+      pushTicker("Year "+State.year+": Treachery unmasked at the high table.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({prestige:-10,piety:-4,troops:-3});
+    }
+    else if(eventName==="assassination"){
+      spawnAssassin();assassinTimer=6;
+      showBanner("AN ASSASSIN IN THE NIGHT","A blade unseen");
+      showChy(rand(Q.assassination));
+      pushTicker("Year "+State.year+": An assassin is loosed upon the lord.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({prestige:-6,gold:-4});
+    }
+    else if(eventName==="plague"){
+      startPlague();plagueTimer=10;
+      showBanner("PLAGUE STALKS THE LAND","The bells toll thrice");
+      showChy(rand(Q.plague));
+      pushTicker("Year "+State.year+": A grievous plague sweeps the village.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({troops:-8,gold:-6,piety:+3});
+    }
+    else if(eventName==="death"){
+      // peaceful — handled mostly at gen end; here just announce
+      showBanner("THE LORD HAS PASSED PEACEFULLY","Mourning begins","DEATH OF THE LORD");
+      showLT("DEATH OF THE LORD",curLordName(),"After many seasons, the lord is gathered to his fathers.");
+      showChy(rand(Q.death));
+      pushTicker("Year "+State.year+": Lord "+curLordName()+" passes peacefully.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({prestige:+3,piety:+4});
+    }
+    else if(eventName==="succession"){
+      showBanner("DISPUTED SUCCESSION — TWO HEIRS CONTEST","Council convenes","SUCCESSION");
+      showChy(rand(Q.succession));
+      pushTicker("Year "+State.year+": A succession crisis; lords gather and whisper.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({prestige:-4,gold:-3});
+    }
+    else if(eventName==="crusade"){
+      spawnKnights(8);crusadeTimer=8;
+      showBanner("THE LORD TAKES THE CROSS","Crusade!");
+      showChy(rand(Q.crusade));
+      pushTicker("Year "+State.year+": The lord rides for the Holy Land at the head of his knights.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({piety:+12,gold:-6,prestige:+6});
+    }
+    else if(eventName==="vision"){
+      startVision();visionTimer=6;
+      showBanner("A HOLY VISION DESCENDS","The chapel glows");
+      showChy(rand(Q.vision));
+      pushTicker("Year "+State.year+": Pilgrims report a column of light upon the keep.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({piety:+15,prestige:+4});
+    }
+    else if(eventName==="treasury"){
+      startGold();goldTimer=6;
+      showBanner("THE TREASURY OVERFLOWS","Coffers brim");
+      showChy(rand(Q.treasury));
+      pushTicker("Year "+State.year+": The vaults are weighed down with new coin.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({gold:+18});
+    }
+    else if(eventName==="expansion"){
+      expandCastle();
+      showBanner("A NEW TOWER RISES","The keep is enlarged");
+      showChy(rand(Q.expansion));
+      pushTicker("Year "+State.year+": Masons begin a new tower upon the southern wall.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({prestige:+8,gold:-10});
+    }
+    else if(eventName==="duke"){
+      showBanner("THE KING NAMES HOUSE "+State.house.toUpperCase()+" DUKE","By royal decree");
+      showChy(rand(Q.duke));
+      pushTicker("Year "+State.year+": The Crown elevates House "+State.house+" to ducal rank.");
+      pipAdd(rand(LATIN_LINES));
+      applyRealm({prestige:+18,gold:+5});
+    }
+    else if(eventName==="fall"){
+      State.fallen=true;
+      showBanner("THE HOUSE OF "+State.house.toUpperCase()+" HAS FALLEN","Its holdings divided");
+      showChy(rand(Q.fall));
+      pushTicker("Year "+State.year+": House "+State.house+" extinguished — its lands carved up.");
+      pipAdd(rand(LATIN_LINES));
+    }
+    renderTree();
+  }
+
+  /* -------------------- Generation transitions -------------------- */
+  function makeGen(idx,prevHeirName){
+    const g={year:State.year,events:[]};
+    // lord = prev gen heir if any, else fresh
+    let lordName=prevHeirName||uniqueName(State.usedNames,LORD_NAMES);
+    // Roman numeral suffix if name reused
+    let suffix="";
+    const used=State.generations.filter(x=>x.lord && x.lord.name===lordName).length;
+    if(used>0)suffix=ROMAN[used];
+    g.lord={name:lordName,suffix:suffix,dead:false};
+    g.lady=null;g.heir=null;
+    return g;
+  }
+
+  function startGeneration(idx){
+    State.genIdx=idx;
+    State.eventsPlanned=planGenerationEvents(idx);
+    // schedule events at fractions of generation duration
+    State.eventTimes=[];
+    const n=State.eventsPlanned.length;
+    for(let i=0;i<n;i++){
+      const t=(i+1)/(n+1)*GEN_SECONDS - 4 + Math.random()*8;
+      State.eventTimes.push(Math.max(2,Math.min(GEN_SECONDS-3,t)));
+    }
+    State.eventIdx=0;
+    State.genStartT=clock.getElapsedTime();
+    elGen.textContent="GENERATION "+ROMAN[idx]+" OF V";
+    elYr.textContent="Year "+State.year+" — Reign of Lord "+curLordName();
+
+    spawnLord(State.color);
+    if(idx>0 && State.generations[idx-1].lady){
+      // possibly mother of new lord still alive briefly — skip
+    }
+    showLT("WHO IS","Lord "+curLordName(),
+      "Generation "+ROMAN[idx]+" of House "+State.house+", "+
+      ["a cautious ruler","a bold warlord","a pious lord","a cunning steward","a beloved sovereign"][rint(0,4)]+".");
+    showBanner("LORD "+curLordName().toUpperCase()+" ACCLAIMED","Generation "+ROMAN[idx]);
+    showChy(rand(["A new lord stands upon the keep — long may he reign.","Hail the lord! Hail the house! Hail the chronicle!","The crown passes; the chronicle does not."]));
+    pushTicker("Year "+State.year+": Lord "+curLordName()+" is acclaimed (Generation "+ROMAN[idx]+").");
+    pipAdd("Anno Domini "+State.year+" — "+curLordName()+" coronatur.");
+    renderTree();
+  }
+
+  function endGeneration(){
+    const g=curGen();
+    if(g.lord && !g.lord.dead){
+      g.lord.dead=true;
+      addGrave(g.lord.name);
+    }
+    if(State.genIdx<4){
+      // mourning
+      elMourn.classList.add('on');setCam(3);
+      setTimeout(()=>elMourn.classList.remove('on'),3500);
+      showBanner("THE LORD IS LAID TO REST","A new lord shall rise");
+      pushTicker("Year "+State.year+": "+(g.lord?g.lord.name:"The lord")+" is interred in the family chapel.");
+      pipAdd("Requiescat in pace — "+rand(LATIN_LINES));
+      // create next gen
+      const heirName=g.heir?g.heir.name:uniqueName(State.usedNames,LORD_NAMES);
+      const next=makeGen(State.genIdx+1,heirName);
+      State.generations.push(next);
+      setTimeout(()=>startGeneration(State.genIdx+1),4000);
+    } else {
+      // gen 5 finished
+      finalCeremony();
+    }
+  }
+
+  function finalCeremony(){
+    State.finished=true;
+    setCam(3);
+    const p=State.realm.prestige;
+    let msg;
+    if(p>=70 || State.fallen===false && p>=55){
+      msg="HOUSE "+State.house.toUpperCase()+" STANDS ETERNAL — A DYNASTY OF FIVE GENERATIONS COMPLETE";
+      State.ending="eternal";
+      showChy(rand(Q.eternal));
+    } else if(p>=35){
+      msg="THE CROWN PASSES TO ANOTHER LINE";
+      State.ending="mid";
+      showChy("The chronicle pauses. A different hand will write the next page.");
+    } else {
+      msg="HOUSE "+State.house.toUpperCase()+" HAS FALLEN — ITS HOLDINGS DIVIDED";
+      State.ending="fall";
+      showChy(rand(Q.fall));
+    }
+    showBanner(msg,"The chronicle is sealed",12000);
+    pushTicker("Year "+State.year+": "+msg+".");
+    pipAdd("Finis chronici. "+rand(LATIN_LINES));
+    elMourn.classList.add('on');
+    // After ceremony, reseed
+    setTimeout(()=>{elMourn.classList.remove('on'); reseedDynasty();},12500);
+  }
+
+  /* -------------------- Reseed -------------------- */
+  const GEN_SECONDS=90;
+  const clock=new THREE.Clock();
+
+  function reseedDynasty(){
+    // clear graves from world
+    while(gravesG.children.length){const c=gravesG.children.pop();gravesG.remove(c);disposeObj(c);}
+    State.graves=0;elGraves.textContent="0";
+    // clear extras
+    if(extraTower){keep.remove(extraTower);disposeObj(extraTower);extraTower=null;extraT=0;}
+    stopBattle();stopPlague();stopGold();stopVision();despawnAssassin();clearKnights();
+    if(lord){world.remove(lord);disposeObj(lord);lord=null;}
+    if(lady){world.remove(lady);disposeObj(lady);lady=null;}
+    State.usedNames=new Set();
+    State.house=rand(HOUSES);
+    State.color=rand([0x802020,0x1f4d8a,0x205a35,0x6a2a8a,0x8a5a1a,0x2a2a2a,0x8a1a4a]);
+    State.year=1050+rint(0,150);
+    State.generations=[];
+    State.realm={prestige:35+rint(0,30),gold:35+rint(0,30),troops:35+rint(0,30),piety:35+rint(0,30)};
+    State.chronicle=[];State.finished=false;State.ending=null;State.fallen=false;
+    elTkRoll.innerHTML='<span>A new chronicle begins for House '+State.house+'…</span>';
+    // tint banners on towers
+    M.flag.color=new THREE.Color(State.color);
+    renderRealm();
+    // build first generation
+    State.generations.push(makeGen(0,null));
+    showBanner("CHRONICLE OF HOUSE "+State.house.toUpperCase(),"A new dynasty begins",4500);
+    showLT("DYNASTY","House "+State.house,"A noble line begins anew. The chronicler dips his quill.");
+    pushTicker("Year "+State.year+": A new chronicle is opened — House "+State.house+".");
+    pipAdd("Initium chronici — Domus "+State.house+".");
+    startGeneration(0);
+  }
+
+  /* -------------------- Resize -------------------- */
+  window.addEventListener('resize',()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  });
+
+  /* -------------------- Cleanup -------------------- */
+  window.addEventListener('beforeunload',()=>{
+    try{
+      stopBattle();stopPlague();stopGold();stopVision();
+      renderer.dispose();
+      scene.traverse(o=>{
+        if(o.geometry)o.geometry.dispose();
+        if(o.material){
+          if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());
+          else o.material.dispose();
+        }
+      });
+    }catch(e){}
+  });
+
+  /* -------------------- Animation loop -------------------- */
+  let lastTime=0,camCycle=0;
+  function tick(){
+    const t=clock.getElapsedTime();
+    const dt=Math.min(0.05,t-lastTime);lastTime=t;
+
+    // Generation progress
+    if(!State.finished && State.generations[State.genIdx]){
+      const elapsed=t-State.genStartT;
+      // fire next event
+      while(State.eventIdx<State.eventTimes.length && elapsed>=State.eventTimes[State.eventIdx]){
+        fire(State.eventsPlanned[State.eventIdx]);
+        State.eventIdx++;
+      }
+      if(elapsed>=GEN_SECONDS){
+        endGeneration();
+        // disable further fires for this gen
+        State.eventIdx=State.eventTimes.length;
+        State.genStartT=t+1e9; // park
+      }
+    }
+
+    // Time of day across whole saga (gen 0..4 → t 0..1)
+    const sagaPhase=Math.min(1,(State.genIdx+ Math.min(1,(t-(State.genStartT||t))/GEN_SECONDS))/5);
+    setTimeOfDay(sagaPhase);
+
+    // Camera cycle (auto every 5-9s, unless an event just fired changed it)
+    camCycle+=dt;
+    if(camCycle>camDur){camCycle=0;camDur=5+Math.random()*4;
+      // If a battle is active, prefer battlefield camera occasionally
+      if(battleP && Math.random()<0.6) setCam(6);
+      else if(plagueFog && Math.random()<0.5) setCam(5);
+      else setCam((camIdx+1+Math.floor(Math.random()*2))%CAMS.length);
+    }
+    const cm=CAMS[camIdx].get(t);
+    camera.position.lerp(cm.pos,0.06);
+    const lookT=new THREE.Vector3().copy(cm.look);
+    camera.lookAt(lookT);
+
+    // Peasants milling
+    for(const p of peasants){
+      const tg=p.userData.target;
+      const d=tg.clone().sub(p.position);
+      if(d.length()<0.5){p.userData.next();}
+      else{
+        const v=d.normalize().multiplyScalar(p.userData.speed*dt*1.4);
+        p.position.add(v);
+        p.rotation.y=Math.atan2(v.x,v.z);
+      }
+      // walk anim
+      p.userData.walk+=dt*6;
+      const sw=Math.sin(p.userData.walk)*0.5;
+      if(p.userData.legL){p.userData.legL.rotation.x=sw;p.userData.legR.rotation.x=-sw;}
+      if(p.userData.armL){p.userData.armL.rotation.x=-sw;p.userData.armR.rotation.x=sw;}
+    }
+
+    // Lord idle anim
+    if(lord){
+      lord.userData.walk+=dt*2;
+      if(lord.userData.armL){
+        lord.userData.armL.rotation.x=Math.sin(lord.userData.walk)*0.05;
+        lord.userData.armR.rotation.x=-Math.sin(lord.userData.walk)*0.05;
+      }
+      lord.position.y=8+Math.sin(t*1.5)*0.02;
+    }
+    if(lady){
+      lady.userData.walk+=dt*2;
+      if(brideArrival){
+        brideArrival.t+=dt;
+        const k=Math.min(1,brideArrival.t/brideArrival.duration);
+        const start=new THREE.Vector3(0,0,-40);
+        const mid=new THREE.Vector3(0,0,-12);
+        const end=new THREE.Vector3(2,8,4);
+        // 0..0.5: outside to gate; 0.5..1: into keep
+        if(k<0.5){
+          lady.position.lerpVectors(start,mid,k*2);lady.rotation.y=0;
+        } else {
+          lady.position.lerpVectors(mid,end,(k-0.5)*2);
+        }
+        if(k>=1)brideArrival=null;
+      }
+    }
+
+    // knights ride out
+    if(knights.length){
+      crusadeTimer-=dt;
+      for(const k of knights){
+        k.userData.t=(k.userData.t||0)+dt*0.4;
+        const tt=k.userData.t;
+        // ride from gate (0,0,-12) outward along road
+        const from=new THREE.Vector3(0,0,-12);
+        const to=new THREE.Vector3(-60,0,40);
+        k.position.lerpVectors(from,to,Math.min(1,tt));
+        k.rotation.y=Math.atan2(to.x-from.x,to.z-from.z);
+        // wave arms
+        if(k.userData.armL){k.userData.armL.rotation.x=Math.sin(t*6)*0.3;k.userData.armR.rotation.x=-Math.sin(t*6)*0.3;}
+      }
+      if(crusadeTimer<=0)clearKnights();
+    }
+
+    // assassin
+    if(assassin){
+      assassinTimer-=dt;
+      // fade in: scale up from 0
+      const sc=Math.min(1,assassin.scale.x+dt*0.4);
+      assassin.scale.setScalar(sc);
+      // slowly approach lord
+      if(lord){
+        const dir=new THREE.Vector3().subVectors(lord.position,assassin.position);
+        if(dir.length()>1.2){assassin.position.add(dir.normalize().multiplyScalar(dt*0.8));}
+      }
+      if(assassinTimer<=0){despawnAssassin();}
+    }
+
+    // battle particles
+    if(battleP){
+      battleTimer-=dt;
+      const pos=battleP.geometry.attributes.position.array;
+      const vel=battleP.userData.vel;
+      for(let i=0;i<pos.length;i+=3){
+        pos[i]+=vel[i]*dt*8; pos[i+1]+=vel[i+1]*dt*8; pos[i+2]+=vel[i+2]*dt*8;
+        if(pos[i+1]<0.2){pos[i+1]=0.2;vel[i+1]=Math.random()*0.8;}
+        if(pos[i+1]>10){vel[i+1]=-Math.abs(vel[i+1]);}
+      }
+      battleP.geometry.attributes.position.needsUpdate=true;
+      if(battleTimer<=0)stopBattle();
+    }
+
+    // plague fog
+    if(plagueFog){
+      plagueT+=dt;plagueTimer-=dt;
+      const op=Math.min(0.45, plagueT*0.15);
+      plagueFog.material.opacity=plagueTimer<2?Math.max(0,plagueFog.material.opacity-dt*0.3):op;
+      plagueFog.position.x=Math.sin(t*0.3)*4;plagueFog.position.z=20+Math.cos(t*0.3)*4;
+      if(plagueTimer<=0)stopPlague();
+    }
+
+    // gold
+    if(goldP){
+      goldTimer-=dt;
+      const pos=goldP.geometry.attributes.position.array;
+      const vel=goldP.userData.vel;
+      for(let i=0;i<pos.length;i+=3){
+        pos[i]+=vel[i]*dt*6; pos[i+1]+=vel[i+1]*dt*6; pos[i+2]+=vel[i+2]*dt*6;
+        if(pos[i+1]<0.2){pos[i+1]=8+Math.random()*4;vel[i+1]=-0.3-Math.random()*0.4;}
+      }
+      goldP.geometry.attributes.position.needsUpdate=true;
+      if(goldTimer<=0)stopGold();
+    }
+
+    // vision beam
+    if(visionBeam){
+      visionTimer-=dt;
+      visionBeam.rotation.y+=dt*0.5;
+      visionBeam.material.opacity=visionTimer<1.5?Math.max(0,visionBeam.material.opacity-dt*0.4):0.45;
+      if(visionTimer<=0)stopVision();
+    }
+
+    // expansion tower growth
+    if(extraTower){
+      extraT=Math.min(1,extraT+dt*0.18);
+      const target=14*extraT;
+      extraTower.scale.y=Math.max(0.05,extraT);
+    }
+
+    renderer.render(scene,camera);
+    requestAnimationFrame(tick);
+  }
+
+  /* -------------------- Boot -------------------- */
+  reseedDynasty();
+  requestAnimationFrame(tick);
+
+})();
+</script></body></html>

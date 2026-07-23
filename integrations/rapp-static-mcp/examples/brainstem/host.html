@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Brainstem Host — a browser-tab MCP (Pyodide + verify-before-exec)</title>
+<meta name="description" content="An MCP server that runs inside a browser tab: boots Pyodide, pulls a static brainstem (agents/memory/twin) from GitHub raw, runs Python agents with verify-before-exec, and connects clients over WebRTC via a QR code. As long as the tab is open, the MCP is open.">
+<style>
+ :root{--bg:#0a0b12;--panel:#12131f;--line:#242741;--txt:#e7ecff;--dim:#8b93b8;--neon:#7CFFB2;--cy:#5fd0ff;--gold:#ffcf3f;--bad:#ff6ad5}
+ *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.55 system-ui,sans-serif}
+ a{color:var(--cy)} header{padding:22px 24px 8px} .tag{letter-spacing:2px;font-size:11px;color:var(--neon);font-weight:700}
+ h1{margin:6px 0 2px;font-size:24px} h1 .g{background:linear-gradient(90deg,var(--gold),var(--cy));-webkit-background-clip:text;background-clip:text;color:transparent}
+ .sub{color:var(--dim);max-width:820px;font-size:13.5px}
+ main{display:grid;grid-template-columns:1fr 340px;gap:16px;padding:14px 24px 50px;max-width:1120px}
+ @media(max-width:820px){main{grid-template-columns:1fr}}
+ .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+ .panel h2{margin:0 0 10px;font-size:15px} .muted{color:var(--dim)}
+ .status{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+ .pill{font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid var(--line);background:#0e0f1a}
+ .pill.on{border-color:var(--neon);color:var(--neon)} .pill.wait{border-color:var(--gold);color:var(--gold)} .pill.err{border-color:var(--bad);color:var(--bad)}
+ .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+ button{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:8px 13px;font:inherit;font-weight:600;cursor:pointer}
+ button.p{background:linear-gradient(90deg,var(--neon),var(--cy));color:#04120a;font-weight:800;border:0}
+ input,textarea{background:#0e0f1a;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 10px;font:inherit}
+ pre{background:#080910;border:1px solid var(--line);border-radius:10px;padding:11px 13px;overflow:auto;font-size:12.5px;color:#bfe;white-space:pre-wrap;max-height:280px}
+ .agents .a{display:flex;gap:8px;align-items:baseline;padding:6px 0;border-bottom:1px solid #1a1c2c;font-size:13px}
+ .agents .a code{color:var(--gold)} #qr{background:#fff;padding:12px;border-radius:12px;display:inline-block;min-height:180px}
+ .ok{color:var(--neon)} .bad{color:var(--bad)} code{font-family:ui-monospace,monospace}
+ footer{padding:16px 24px 40px;color:var(--dim);font-size:12px;border-top:1px solid var(--line)}
+</style>
+</head><body>
+<header>
+ <div class="tag">◆ RAPP · STATIC BRAINSTEM</div>
+ <h1>Brainstem <span class="g">Host</span> — a browser-tab MCP</h1>
+ <div class="sub">This tab boots <b>Pyodide</b>, pulls a static brainstem (agents · memory · twin) from
+ <b>GitHub raw</b>, runs the <b>Python</b> agents in-tab with <b>verify-before-exec</b> (SHA-256 the pinned
+ agent before it runs), and speaks MCP JSON-RPC. Connect a client over <b>WebRTC</b> by scanning the QR.
+ <b>While this tab stays open, the MCP stays open.</b></div>
+ <div class="status" id="status"></div>
+</header>
+<main>
+ <section class="panel">
+  <h2>🧪 In-tab MCP console <span class="muted">(what a connected client calls)</span></h2>
+  <div class="row">
+   <button id="bList">tools/list</button>
+   <button id="bChat" class="p">chat</button>
+   <input id="msg" value="meeting cost for 6 people, 45 min at $120/h" style="flex:1;min-width:200px">
+  </div>
+  <div class="row muted">run one agent (verify-before-exec):
+   <select id="agentSel"></select><button id="bRun">run_agent</button></div>
+  <pre id="out">booting…</pre>
+  <h2 style="margin-top:14px">🧠 Registry (RAR) <span class="muted" id="regmeta"></span></h2>
+  <div class="agents" id="agents"></div>
+ </section>
+ <aside class="panel">
+  <h2>📱 Connect a client</h2>
+  <div class="muted" style="font-size:12.5px">Scan to open a P2P (WebRTC) MCP client. The QR carries a
+   one-time token; only a scanner can connect. The data channel is DTLS-encrypted — no server sees it.</div>
+  <div style="text-align:center;margin:12px 0"><div id="qr"></div></div>
+  <div class="muted" style="font-size:12px">peer: <code id="peerid">…</code></div>
+  <div class="muted" style="font-size:12px">token: <code id="token">…</code></div>
+  <div id="peers" class="muted" style="font-size:12px;margin-top:8px"></div>
+ </aside>
+</main>
+<footer>
+ rapp-static-mcp/1.0 · verify-before-exec · zero backend (WebRTC signaling via public Nostr relays;
+ data is P2P) · <a href="https://github.com/kody-w/rapp-static-mcp">source</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script type="module">
+import { createBrainstem, newRoomId, lendBrainstem } from './brainstem.mjs';
+const $=s=>document.querySelector(s);
+const BASE = new URL('.', location.href).href;                 // brainstem is served next to this page
+const TOKEN = Math.random().toString(36).slice(2,10);
+let brain=null, mcp=null;
+const S={}; // status flags
+function status(){ $('#status').innerHTML =
+  [['pyodide',S.py],['brainstem',S.brain],['mcp',S.mcp],['webrtc',S.rtc]]
+  .map(([k,v])=>`<span class="pill ${v||'wait'}">${k}: ${v==='on'?'ready':v==='err'?'error':'…'}</span>`).join(''); }
+
+function paintBrain(){
+  const REG = brain.registry;
+  $('#regmeta').textContent = `· ${REG.count} agents · runtime ${REG.runtime}`;
+  $('#agents').innerHTML = REG.agents.map(a=>`<div class="a"><code>${a.id}</code><span class="muted">${a.when_to_use}</span><span class="muted" style="margin-left:auto">sha8 ${a.sha8}</span></div>`).join('');
+  $('#agentSel').innerHTML = REG.agents.map(a=>`<option value="${a.id}">${a.id}</option>`).join('');
+}
+
+// ── Lend this tab's brainstem over a secure QR channel (serverless P2P) ─────
+async function startPeer(){
+  const roomId = newRoomId();
+  const connectUrl = BASE+'connect.html#room='+roomId+'&token='+TOKEN;
+  $('#peerid').textContent = roomId; $('#token').textContent = TOKEN;
+  $('#qr').innerHTML=''; try{ new QRCode($('#qr'), { text:connectUrl, width:180, height:180 }); }catch(e){ $('#qr').textContent=connectUrl; }
+  S.rtc='wait'; status(); $('#peers').innerHTML = '<a href="'+connectUrl+'" target="_blank" style="color:#5fd0ff">open client link ↗</a>';
+  try{
+    const room = await lendBrainstem({ roomId, mcp, token:TOKEN, on:{
+      join:  id => { $('#peers').innerHTML = '🟢 borrower connected: <code>'+id.slice(0,8)+'</code>'; },
+      leave: () => { $('#peers').textContent = 'borrower left'; },
+    }});
+    S.rtc='on'; status(); window.__room = room;
+  }catch(e){ S.rtc='err'; status(); $('#peers').innerHTML += ' <span class="muted">(signaling import failed; QR link still works once reachable)</span>'; }
+}
+
+// ── console buttons ──
+$('#bList').onclick=async()=>{ $('#out').textContent=JSON.stringify(await mcp({jsonrpc:'2.0',id:1,method:'tools/list'}),null,2); };
+$('#bRun').onclick=async()=>{ const r=await mcp({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'run_agent',arguments:{agent:$('#agentSel').value,input:{message:$('#msg').value}}}}); $('#out').textContent=r.result.content[0].text+'\n\n_meta: '+JSON.stringify(r.result._meta); };
+$('#bChat').onclick=async()=>{ const r=await mcp({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'chat',arguments:{message:$('#msg').value}}}); $('#out').textContent=r.result.content[0].text; };
+
+// ── boot ──
+(async ()=>{
+  status();
+  let pyodide;
+  try{ pyodide = await loadPyodide(); S.py='on'; status(); }
+  catch(e){ S.py='err'; status(); $('#out').textContent='Pyodide failed: '+e; return; }
+  try{ brain = await createBrainstem({ base:BASE, pyodide }); mcp = brain.mcp; window.__mcp = mcp; S.brain='on'; status(); paintBrain(); }
+  catch(e){ S.brain='err'; status(); $('#out').textContent='brain load failed: '+e; return; }
+  S.mcp='on'; status();
+  try{
+    const t = await mcp({jsonrpc:'2.0',id:99,method:'tools/call',params:{name:'run_agent',arguments:{agent:'greeter',input:{name:'world'}}}});
+    window.__selftest = { ok: !t.result.isError && t.result._meta.verified_sha8===brain.registry.agents.find(a=>a.id==='greeter').sha8, meta:t.result._meta, text:t.result.content[0].text };
+    $('#out').textContent = 'MCP live in this tab ✓\n\nself-test run_agent(greeter):\n'+t.result.content[0].text+'\nverified_sha8: '+t.result._meta.verified_sha8;
+  }catch(e){ window.__selftest={ok:false,err:String(e)}; }
+  startPeer();
+})();
+</script>
+</body></html>

@@ -1,0 +1,38 @@
+# reduce — the anti-conflict keystone. Writers only add cards/ and claims/;
+# this job is the SOLE writer of the derived indexes (INDEX.md, graph.json,
+# llms.txt), so parallel writers never collide on a hot file. Also runs the
+# public-hemisphere leak test.
+name: reduce
+on:
+  push:
+    branches: [main]
+    paths: ["brain/cards/**", "tools/rebuild.sh"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: reduce            # serialize reducer runs; never cancel a rebuild
+  cancel-in-progress: false
+jobs:
+  reduce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Rebuild derived indexes from cards
+        run: bash tools/rebuild.sh
+      - name: Leak test (public hemisphere must contain no private markers)
+        run: |
+          # A public card must never carry a secret pattern or a private-only marker.
+          if grep -rIEl 'AZURE_OPENAI_API_KEY|client_secret|BEGIN [A-Z ]*PRIVATE KEY|xox[baprs]-|ghp_[A-Za-z0-9]{30,}' brain/ ; then
+            echo "::error::secret-shaped content in the public brain — blocked"; exit 1
+          fi
+      - name: Commit derived artifacts
+        run: |
+          git config user.name "rapp-brain-reducer"
+          git config user.email "noreply@anthropic.com"
+          git add brain/INDEX.md brain/graph.json brain/llms.txt
+          git commit -m "reduce: rebuild derived indexes [skip ci]" || echo "no change"
+          git push || (git pull --rebase && git push)

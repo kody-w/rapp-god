@@ -3,8 +3,8 @@
 build_god.py — the ONLY build step for rapp-god (à la RAR's build_registry.py).
 
 rapp-god is the registry of the whole RAPP "god" and every part it is made of. For each part it
-collects every distinct VERSION that exists across the repos carrying it (the grail + its mirrors,
-plus optional git history), stores each unique version as a content-addressed frame under
+collects distinct versions observed across the repos carrying it (the grail + its mirrors,
+plus an optional capped file-history query), stores each unique version as a content-addressed frame under
   versions/<part>/<sha8><ext>
 append-only — nothing is ever deleted — and regenerates:
 
@@ -25,7 +25,8 @@ import json, os, sys, re, hashlib, base64, subprocess, datetime, urllib.request,
 ROOT = os.path.dirname(os.path.abspath(__file__))
 RAW_SELF = "https://raw.githubusercontent.com/kody-w/rapp-god/main"
 NOW = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-NO_NET = "--no-net" in sys.argv
+CHECK_ONLY = "--check" in sys.argv
+NO_NET = "--no-net" in sys.argv or CHECK_ONLY
 HIST_CAP = int(os.environ.get("RAPP_GOD_HISTORY_CAP", "60"))
 
 def sha256(b): return hashlib.sha256(b).hexdigest()
@@ -95,7 +96,104 @@ def load_prev():
         except Exception: return None
     return None
 
+def source_record(raw, role):
+    """Keep source-policy extensions additive to the legacy registry schema."""
+    out = {"label": raw["label"], "role": role, "url": raw["url"]}
+    for key in ("local", "expected_sha256", "observe_only", "pinned"):
+        if key in raw:
+            out[key] = raw[key]
+    return out
+
+def local_source(path):
+    """Read an explicitly mapped monorepo source without allowing path escape."""
+    if not path:
+        return None
+    target = os.path.realpath(os.path.join(ROOT, path))
+    if os.path.commonpath((ROOT, target)) != ROOT or not os.path.isfile(target):
+        return None
+    try:
+        return open(target, "rb").read()
+    except OSError:
+        return None
+
+def load_version_tombstones():
+    path = os.path.join(ROOT, "provenance", "version-tombstones.json")
+    if not os.path.exists(path):
+        return []
+    try:
+        value = json.load(open(path))
+        return value.get("tombstones", [])
+    except Exception:
+        return []
+
+def discover_physical_frames(indexed_paths):
+    frames = []
+    versions_root = os.path.join(ROOT, "versions")
+    for directory, _, filenames in os.walk(versions_root):
+        for filename in filenames:
+            path = os.path.join(directory, filename)
+            content = open(path, "rb").read()
+            digest = sha256(content)
+            part_directory = os.path.relpath(directory, versions_root)
+            expected_name = digest[:12] + os.path.splitext(part_directory)[1]
+            if filename != expected_name:
+                continue
+            relative = os.path.relpath(path, ROOT)
+            frames.append({
+                "path": relative,
+                "sha": digest,
+                "sha8": digest[:12],
+                "bytes": len(content),
+                "part": indexed_paths.get(relative),
+                "disposition": (
+                    "part-version-frame"
+                    if relative in indexed_paths
+                    else "standalone-content-addressed-frame"
+                ),
+            })
+    return sorted(frames, key=lambda row: row["path"])
+
 def main():
+    check_paths = (
+        "registry.json",
+        "api/v1/status.json",
+        "api/v1/badge.json",
+    )
+    check_snapshot = {
+        path: open(os.path.join(ROOT, path), "rb").read()
+        for path in check_paths
+        if os.path.exists(os.path.join(ROOT, path))
+    }
+    versions_before = {
+        os.path.relpath(os.path.join(directory, filename), ROOT)
+        for directory, _, filenames in os.walk(os.path.join(ROOT, "versions"))
+        for filename in filenames
+    } if CHECK_ONLY else set()
+
+    def finish_check():
+        if not CHECK_ONLY:
+            return
+        changed = []
+        for path in check_paths:
+            target = os.path.join(ROOT, path)
+            current = open(target, "rb").read() if os.path.exists(target) else None
+            if current != check_snapshot.get(path):
+                changed.append(path)
+        versions_after = {
+            os.path.relpath(os.path.join(directory, filename), ROOT)
+            for directory, _, filenames in os.walk(os.path.join(ROOT, "versions"))
+            for filename in filenames
+        }
+        added = versions_after - versions_before
+        for path, data in check_snapshot.items():
+            open(os.path.join(ROOT, path), "wb").write(data)
+        for path in added:
+            os.remove(os.path.join(ROOT, path))
+        if changed or added:
+            print("\n❌ generated observatory differs: " + ", ".join(changed + sorted(added)))
+            sys.exit(1)
+        print("\n✅ generated observatory is current.")
+
     manifest = json.load(open(os.path.join(ROOT, "manifest.json")))
     prev = load_prev() or {}
     prev_parts = {p["name"]: p for p in prev.get("parts", [])}
@@ -104,9 +202,9 @@ def main():
     parts_in = []
     seen = set()
     for p in manifest.get("parts", []):
-        sources = [{"label": p["grail"]["label"], "role": "grail", "url": p["grail"]["url"]}]
+        sources = [source_record(p["grail"], "grail")]
         for m in p.get("mirrors", []):
-            sources.append({"label": m["label"], "role": "mirror", "url": m["url"]})
+            sources.append(source_record(m, "mirror"))
         parts_in.append({"name": p["name"], "group": p.get("group", ""), "kind": p.get("kind", "observe"),
                          "note": p.get("note", ""), "history": bool(p.get("history")), "sources": sources})
         seen.add(p["name"])
@@ -164,27 +262,65 @@ def main():
 
         # live current version of each source
         src_out, grail_sha = [], None
+        prev_sources = {s.get("label"): s for s in prevp.get("sources", [])}
         for s in part["sources"]:
-            content = None if NO_NET else fetch(s["url"])
+            content = local_source(s.get("local")) if NO_NET else fetch(s["url"])
             cur = capture(content, s["label"]) if content is not None else None
+            reachable = content is not None
+            # Offline regeneration must retain prior assignments for sources without a
+            # local exact mapping. The old behavior replaced every assignment with null.
+            if NO_NET and cur is None and not s.get("expected_sha256"):
+                previous = prev_sources.get(s["label"], {})
+                prefix = previous.get("sha8")
+                cur = next((sha for sha in versions if prefix and sha.startswith(prefix)), None)
+                if cur:
+                    if s["label"] not in versions[cur]["carried_by"]:
+                        versions[cur]["carried_by"].append(s["label"])
+                    reachable = bool(previous.get("reachable", False))
+            expected = s.get("expected_sha256")
+            source_valid = expected is None or cur == expected
             if s["role"] in ("grail", "canonical") and cur:
                 grail_sha = cur
             src_out.append({**s, "current_sha": cur, "current_sha8": (cur[:12] if cur else None),
-                            "reachable": content is not None})
+                            "reachable": reachable, "source_valid": source_valid})
 
-        # optional git history of the grail/canonical source -> every past version
+        # optional capped file-touching history of the grail/canonical source
         if part["history"] and not NO_NET:
             gsrc = next((s for s in part["sources"] if s["role"] in ("grail", "canonical")), None)
             if gsrc:
                 for csha, utc, b in history_versions(gsrc["url"]):
                     capture(b, commit=csha, utc=utc)
 
+        # Recover valid content-addressed frames already present on disk even if a
+        # prior generated registry omitted them.
+        if os.path.isdir(vdir):
+            for filename in sorted(os.listdir(vdir)):
+                path = os.path.join(vdir, filename)
+                if not os.path.isfile(path):
+                    continue
+                content = open(path, "rb").read()
+                digest = sha256(content)
+                if filename == digest[:12] + ext:
+                    capture(content)
+
         live = {s["current_sha"] for s in src_out if s.get("current_sha")}
         drift = len(live) > 1
         update_available = grail_sha is not None and any(
-            s.get("current_sha") and s["current_sha"] != grail_sha for s in src_out)
+            s.get("current_sha")
+            and s["current_sha"] != grail_sha
+            and not s.get("observe_only", False)
+            for s in src_out
+        )
 
-        if drift and part["kind"] == "enforce":
+        enforced_live = {
+            s["current_sha"] for s in src_out
+            if s.get("current_sha") and not s.get("observe_only", False)
+        }
+        authority_invalid = any(
+            not s.get("source_valid", True) for s in src_out
+            if not s.get("observe_only", False)
+        )
+        if part["kind"] == "enforce" and (len(enforced_live) > 1 or authority_invalid):
             enforce_fail += 1
 
         summary["parts"] += 1
@@ -202,9 +338,22 @@ def main():
             "version_count": len(versions),
             "sources": [{"label": s["label"], "role": s["role"], "url": s["url"],
                          "sha8": s.get("current_sha8"), "on_grail": (s.get("current_sha") == grail_sha),
-                         "reachable": s.get("reachable", False)} for s in src_out],
+                         "reachable": s.get("reachable", False),
+                         "observe_only": s.get("observe_only", False),
+                         "pinned": s.get("pinned", False),
+                         "source_valid": s.get("source_valid", True)} for s in src_out],
             "versions": vlist,
         })
+
+    indexed_paths = {
+        version["path"]: part["name"]
+        for part in out_parts
+        for version in part["versions"]
+    }
+    physical_frames = discover_physical_frames(indexed_paths)
+    tombstones = load_version_tombstones()
+    summary["physical_frames"] = len(physical_frames)
+    summary["tombstones"] = len(tombstones)
 
     registry = {
         "schema": "rapp-god-registry/1.0",
@@ -215,8 +364,11 @@ def main():
         "self": RAW_SELF,
         "dashboard": "https://kody-w.github.io/rapp-god/",
         "policy": manifest.get("policy", {}),
+        "authority": manifest.get("authority", {}),
         "summary": summary,
         "parts": out_parts,
+        "physical_frames": physical_frames,
+        "version_tombstones": tombstones,
         "map": manifest.get("map", []),
     }
     write_json_stable(os.path.join(ROOT, "registry.json"), registry)
@@ -226,10 +378,20 @@ def main():
     status = {
         "schema": "rapp-god-status/1.0", "generated": NOW,
         "dashboard": "https://kody-w.github.io/rapp-god/", "summary": summary,
+        "authority": manifest.get("authority", {}),
+        "physical_frames": {
+            "count": len(physical_frames),
+            "standalone": sum(row["part"] is None for row in physical_frames),
+        },
+        "version_tombstones": tombstones,
         "parts": [{"name": p["name"], "group": p["group"], "kind": p["kind"],
                    "drift": p["drift"], "update_available": p["update_available"],
                    "grail_sha8": p["grail_sha8"], "versions": p["version_count"],
-                   "sources": [{"label": s["label"], "role": s["role"], "sha8": s["sha8"], "on_grail": s["on_grail"]}
+                   "sources": [{"label": s["label"], "role": s["role"], "sha8": s["sha8"],
+                               "on_grail": s["on_grail"],
+                               "observe_only": s.get("observe_only", False),
+                               "pinned": s.get("pinned", False),
+                               "source_valid": s.get("source_valid", True)}
                                for s in p["sources"]]} for p in out_parts],
     }
     write_json_stable(os.path.join(ROOT, "api", "v1", "status.json"), status)
@@ -259,9 +421,15 @@ def main():
                         f"{p['version_count']} | `{p['grail_sha8']}` | {p['group']} |\n")
 
     if enforce_fail:
+        finish_check()
         print(f"\n⚠️  {enforce_fail} enforced part(s) drifted — failing.")
         sys.exit(1)
-    print("\n✅ observe-only: drift recorded, nothing enforced.")
+    enforced = sum(1 for p in out_parts if p["kind"] == "enforce")
+    if enforced:
+        print(f"\n✅ {enforced} enforced authority pin(s) verified; observed drift remains informational.")
+    else:
+        print("\n✅ observe-only: drift recorded, nothing enforced.")
+    finish_check()
 
 if __name__ == "__main__":
     main()

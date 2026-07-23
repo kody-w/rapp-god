@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Obsidian Binder — Summon</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    max-width: 760px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #888; margin-bottom: 24px; }
+  textarea, input { width: 100%; box-sizing: border-box; font: inherit; padding: 10px;
+    border: 1px solid #ccc; border-radius: 6px; }
+  textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-height: 90px;
+    text-transform: uppercase; }
+  button { font: inherit; padding: 10px 18px; border: 0; border-radius: 6px;
+    background: #2b6cb0; color: #fff; cursor: pointer; margin-top: 8px; }
+  button:hover { background: #2c5282; }
+  pre { background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto;
+    font-size: 13px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1a1a1a; color: #e6e6e6; }
+    textarea, input { background: #2a2a2a; color: #e6e6e6; border-color: #444; }
+    pre { background: #2a2a2a; }
+    .sub { color: #aaa; }
+  }
+  .row { margin-bottom: 18px; }
+  details { margin-top: 18px; }
+  .note { background: #fff3cd; border-left: 3px solid #f0ad4e; padding: 10px;
+    margin: 16px 0; border-radius: 4px; font-size: 14px; }
+  @media (prefers-color-scheme: dark) {
+    .note { background: #3a2f1a; color: #f0d99c; }
+  }
+</style>
+</head>
+<body>
+<h1>Summon a card into your vault</h1>
+<p class="sub">Paste a 7-word incantation. The federation walker resolves it via <code>peers.json</code>, fetches the card payload, and renders the markdown note you should save into <code>vault/cards/</code>.</p>
+
+<div class="row">
+  <label>Incantation (7 words):</label>
+  <textarea id="inc" placeholder="BRAND CUTLASS BREACH ANVIL COIL MUSK BESTOW"></textarea>
+  <button onclick="summon()">⚡ Summon</button>
+</div>
+
+<div class="note">
+  Browser security note: this page can fetch the federation files (they're on raw.githubusercontent.com) and show you the markdown to copy. It cannot write directly into your vault — copy the output into a new file under <code>vault/cards/</code> and commit. This keeps the vault as the source of truth.
+</div>
+
+<div id="trace"></div>
+<div id="output"></div>
+
+<details>
+  <summary>How this works</summary>
+  <p>1. Fetch <code>peers.json</code> at the repo root.</p>
+  <p>2. For each peer, fetch their <code>seed_index</code>.</p>
+  <p>3. Compute the seed from the incantation (locally, via the canonical 1024-word mnemonic).</p>
+  <p>4. Walk the indexes for the matching seed → fetch the card JSON.</p>
+  <p>5. Render the JSON as a vault-ready markdown note. You paste it into a new file.</p>
+  <p>The seed → words conversion uses the same wordlist as every other binder; see <a href="https://github.com/kody-w/RAPPcards/blob/main/SPEC.md">SPEC §4</a>.</p>
+</details>
+
+<script>
+const PEERS_URL = "../peers.json";
+const trace = document.getElementById("trace");
+const output = document.getElementById("output");
+
+function log(msg) { trace.innerHTML += "<pre>" + msg + "</pre>"; }
+
+async function summon() {
+  trace.innerHTML = ""; output.innerHTML = "";
+  const incRaw = document.getElementById("inc").value.trim().toUpperCase();
+  const words = incRaw.split(/\s+/);
+  if (words.length !== 7) { log("ERROR: need exactly 7 words, got " + words.length); return; }
+  log("Incantation: " + words.join(" "));
+
+  let peers;
+  try {
+    log("Fetching peers.json...");
+    peers = await (await fetch(PEERS_URL)).json();
+  } catch (e) { log("ERROR fetching peers.json: " + e); return; }
+
+  for (const peer of peers.peers) {
+    log("→ checking peer: " + peer.id);
+    let idx;
+    try { idx = await (await fetch(peer.seed_index)).json(); }
+    catch (e) { log("  (skip — index unreachable)"); continue; }
+
+    const seeds = idx.seeds || {};
+    for (const [seed, cardPath] of Object.entries(seeds)) {
+      const indexBase = peer.seed_index.replace(/seed-index\.json$/, "");
+      const cardUrl = indexBase + cardPath;
+      let card;
+      try { card = await (await fetch(cardUrl)).json(); } catch (e) { continue; }
+      if ((card.incantation || "").toUpperCase() === words.join(" ")) {
+        log("✓ FOUND on " + peer.id + " — seed " + seed);
+        renderCard(card, peer.id);
+        return;
+      }
+    }
+  }
+  log("✗ Not found in any peer's index.");
+}
+
+function renderCard(card, sourcePeer) {
+  const tags = (card.tags || []).map(t => JSON.stringify(t)).join(", ");
+  const slug = (card.name || "card").replace(/[^A-Za-z0-9 ]/g, "").trim();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const md =
+`---
+seed: "${card.seed}"
+incantation: "${card.incantation}"
+name: "${card.name}"
+agent_id: "${card.agent_id}"
+source: "${sourcePeer}"
+created: ${today}
+tags: [card, agent]
+---
+
+# ${card.name}
+
+${card.notes_excerpt || "Add your notes about this card here."}
+
+## Why I summoned it
+
+(your notes)
+
+## Connections
+
+(link to related cards using [[double brackets]])
+`;
+
+  output.innerHTML =
+    "<h2>Save as <code>vault/cards/" + slug + ".md</code></h2>" +
+    "<p>Copy this into a new file in your vault, then commit:</p>" +
+    "<pre>" + md.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>";
+}
+</script>
+</body>
+</html>

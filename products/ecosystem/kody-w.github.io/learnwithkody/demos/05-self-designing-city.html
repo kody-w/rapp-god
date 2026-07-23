@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Self-Designing City — learnwithkody</title>
+<style>
+  :root{
+    --bg:#070a10;
+    --ink:#e7eef7;
+    --dim:#7d8aa1;
+    --accent:#ffd166;
+    --downtown:#ff4757;
+    --commercial:#ff9f43;
+    --residential:#4a90e2;
+    --industrial:#9aa3b2;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    overflow:hidden;user-select:none;-webkit-user-select:none}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  .panel{
+    position:fixed; backdrop-filter:blur(8px);
+    background:rgba(10,14,22,.55);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:10px; padding:12px 14px;
+    box-shadow:0 6px 24px rgba(0,0,0,.4);
+  }
+  #hud{top:14px;left:14px;min-width:260px}
+  #legend{top:14px;right:14px;min-width:170px}
+  #footer{bottom:14px;left:50%;transform:translateX(-50%);
+    text-align:center;color:var(--dim);font-size:11px;padding:8px 14px}
+  h1{margin:0 0 6px;font-size:13px;color:var(--accent);letter-spacing:.5px}
+  .row{display:flex;justify-content:space-between;gap:10px;margin:3px 0}
+  .row span:first-child{color:var(--dim)}
+  .stages{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+  .stage{display:flex;align-items:center;gap:8px;font-size:11px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#3a4458;flex:none}
+  .stage.active .dot{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .stage.done .dot{background:#41d18f}
+  .stage.done .label{color:#7d8aa1;text-decoration:line-through}
+  .bar{position:relative;height:4px;width:100%;background:#1a2030;
+    border-radius:2px;overflow:hidden;margin-top:8px}
+  .bar > i{position:absolute;left:0;top:0;bottom:0;width:0%;
+    background:linear-gradient(90deg,var(--accent),#ff7e5f);transition:width .15s}
+  button{
+    appearance:none;border:1px solid rgba(255,255,255,.15);
+    background:rgba(255,255,255,.04); color:var(--ink);
+    padding:6px 10px;border-radius:6px;font:inherit;cursor:pointer;
+    transition:.15s;
+  }
+  button:hover{background:rgba(255,209,102,.15);border-color:var(--accent)}
+  .legrow{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px}
+  .swatch{width:10px;height:10px;border-radius:2px;flex:none}
+  kbd{font:11px ui-monospace,monospace;background:#1a2030;padding:1px 5px;
+    border-radius:3px;border:1px solid #2a3346}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud" class="panel">
+  <h1>SELF-DESIGNING CITY</h1>
+  <div class="row"><span>seed</span><span id="seed">—</span></div>
+  <div class="row"><span>roads</span><span id="cnt-roads">0</span></div>
+  <div class="row"><span>buildings</span><span id="cnt-bld">0</span></div>
+  <div class="row"><span>agents</span><span id="cnt-ag">0</span></div>
+  <div class="row"><span>fps</span><span id="fps">—</span></div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="stages" id="stages">
+    <div class="stage" data-i="0"><span class="dot"></span><span class="label">1 · terrain</span></div>
+    <div class="stage" data-i="1"><span class="dot"></span><span class="label">2 · roads (WFC)</span></div>
+    <div class="stage" data-i="2"><span class="dot"></span><span class="label">3 · districts</span></div>
+    <div class="stage" data-i="3"><span class="dot"></span><span class="label">4 · buildings</span></div>
+    <div class="stage" data-i="4"><span class="dot"></span><span class="label">5 · traffic</span></div>
+  </div>
+  <div style="margin-top:10px;display:flex;gap:8px">
+    <button id="regen">Regenerate</button>
+    <button id="cam">Camera</button>
+  </div>
+</div>
+
+<div id="legend" class="panel">
+  <div style="color:var(--dim);font-size:11px;margin-bottom:6px">DISTRICTS</div>
+  <div class="legrow"><span class="swatch" style="background:var(--downtown)"></span>downtown core</div>
+  <div class="legrow"><span class="swatch" style="background:var(--commercial)"></span>commercial</div>
+  <div class="legrow"><span class="swatch" style="background:var(--residential)"></span>residential</div>
+  <div class="legrow"><span class="swatch" style="background:var(--industrial)"></span>industrial</div>
+  <div style="color:var(--dim);font-size:11px;margin:10px 0 6px">TRAFFIC</div>
+  <div class="legrow"><span class="swatch" style="background:#fff8c6;box-shadow:0 0 6px #ffd166"></span>high flow</div>
+  <div class="legrow"><span class="swatch" style="background:#43d9ad"></span>commuter</div>
+</div>
+
+<div id="footer" class="panel">
+  press <kbd>R</kbd> to regenerate · <kbd>C</kbd> to toggle camera · drag to look
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   UTILITIES — seeded RNG + value/Perlin-ish noise
+   ============================================================ */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = a;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// Smooth value-noise (cheap & deterministic). Two octaves blended.
+function makeNoise(rng){
+  const G = 64;                       // permutation table size
+  const perm = new Float32Array(G*G);
+  for (let i=0;i<G*G;i++) perm[i] = rng();
+  function fade(t){ return t*t*t*(t*(t*6-15)+10); }
+  function sample(x,y){
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const u = fade(xf), v = fade(yf);
+    function P(i,j){ i = ((i%G)+G)%G; j = ((j%G)+G)%G; return perm[i+j*G]; }
+    const aa = P(xi  ,yi  ), ab = P(xi  ,yi+1);
+    const ba = P(xi+1,yi  ), bb = P(xi+1,yi+1);
+    const x1 = aa + u*(ba-aa);
+    const x2 = ab + u*(bb-ab);
+    return x1 + v*(x2-x1);
+  }
+  return function(x,y){
+    let amp = 1, freq = 1, sum = 0, norm = 0;
+    for (let o=0;o<4;o++){
+      sum  += sample(x*freq, y*freq) * amp;
+      norm += amp;
+      amp *= 0.5; freq *= 2;
+    }
+    return sum/norm;
+  };
+}
+
+/* ============================================================
+   CITY MODEL
+   ============================================================ */
+const N = 64;                       // grid resolution for roads/districts (city tiles)
+const TERRAIN_RES = 256;            // terrain mesh resolution
+const WORLD = 200;                  // world half-extent
+const TILE = (WORLD*2)/N;           // tile size in world units
+
+const DISTRICT = {
+  NONE:0, DOWNTOWN:1, COMMERCIAL:2, RESIDENTIAL:3, INDUSTRIAL:4
+};
+const districtColor = {
+  1:new THREE.Color(0xff4757),
+  2:new THREE.Color(0xff9f43),
+  3:new THREE.Color(0x4a90e2),
+  4:new THREE.Color(0x9aa3b2),
+};
+
+let world = null;     // active world object
+
+function seedFromUrl(){
+  const u = new URL(location.href);
+  const s = u.searchParams.get('seed');
+  return s ? (parseInt(s,36)>>>0) : (Math.random()*2**31)>>>0;
+}
+
+/* ============================================================
+   THREE.JS SETUP
+   ============================================================ */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.setClearColor(0x070a10,1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x070a10, 250, 580);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 1, 2000);
+const camTarget = new THREE.Vector3(0,0,0);
+let camAuto = true;
+let camAngle = 0;
+let camDist = 320;
+let camHeight = 180;
+
+// lights
+scene.add(new THREE.HemisphereLight(0xa9c6ff, 0x141a26, 0.65));
+const sun = new THREE.DirectionalLight(0xfff1c8, 1.0);
+sun.position.set(180,260,140);
+scene.add(sun);
+
+// starfield-ish backdrop dome
+{
+  const geo = new THREE.SphereGeometry(900, 24, 16);
+  const mat = new THREE.ShaderMaterial({
+    side:THREE.BackSide, depthWrite:false,
+    uniforms:{},
+    vertexShader:`varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader:`varying vec3 vP;
+      void main(){
+        float t = clamp(vP.y/900.0*.5+.5, 0., 1.);
+        vec3 a = vec3(0.025,0.035,0.06);
+        vec3 b = vec3(0.10,0.06,0.12);
+        vec3 c = vec3(0.30,0.18,0.22);
+        vec3 col = mix(a,b,t);
+        col = mix(col, c, smoothstep(0.45,0.55,t));
+        gl_FragColor = vec4(col,1.);
+      }`
+  });
+  scene.add(new THREE.Mesh(geo,mat));
+}
+
+addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// drag-to-look
+let dragging=false, lastX=0;
+renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;camAuto=false;});
+addEventListener('pointerup',()=>dragging=false);
+addEventListener('pointermove',e=>{
+  if(!dragging)return;
+  camAngle -= (e.clientX-lastX)*0.005;
+  lastX = e.clientX;
+});
+
+/* ============================================================
+   STAGE 1 — TERRAIN
+   ============================================================ */
+function buildTerrain(rng){
+  const noise = makeNoise(rng);
+  const seg = TERRAIN_RES;
+  const geo = new THREE.PlaneGeometry(WORLD*2, WORLD*2, seg, seg);
+  geo.rotateX(-Math.PI/2);
+  const pos = geo.attributes.position;
+  const heights = new Float32Array((seg+1)*(seg+1));
+
+  // ridge function for valleys
+  for (let i=0;i<pos.count;i++){
+    const x = pos.getX(i), z = pos.getZ(i);
+    const nx = (x+WORLD)/(WORLD*2), nz = (z+WORLD)/(WORLD*2);
+    let n = noise(nx*3.2, nz*3.2);     // base
+    let r = 1.0 - Math.abs(noise(nx*1.7+5.1, nz*1.7-2.3)*2-1);  // ridges
+    let h = (n*0.8 + r*r*0.6 - 0.45) * 36;
+    // soften edges so city sits in a basin
+    const edge = Math.min(nx,1-nx,nz,1-nz);
+    h *= Math.min(1, edge*4);
+    pos.setY(i, h);
+    heights[i] = h;
+  }
+  geo.computeVertexNormals();
+
+  // flat-shaded faceted look
+  const nonIndexed = geo.toNonIndexed();
+  nonIndexed.computeVertexNormals();
+  // earth-tone vertex colors based on slope+height
+  const np = nonIndexed.attributes.position;
+  const nn = nonIndexed.attributes.normal;
+  const cols = new Float32Array(np.count*3);
+  const cGrass = new THREE.Color(0x6f7e3e);
+  const cDry   = new THREE.Color(0x9b8b5e);
+  const cRock  = new THREE.Color(0x5d564d);
+  const cSnow  = new THREE.Color(0xd9d6c8);
+  const cSand  = new THREE.Color(0xc6b58a);
+  for (let i=0;i<np.count;i++){
+    const y = np.getY(i);
+    const ny = nn.getY(i);
+    let col = cGrass.clone();
+    if (y < 1)        col.copy(cSand).lerp(cGrass, Math.max(0,y));
+    else if (y < 8)   col.copy(cGrass).lerp(cDry, (y-1)/7);
+    else              col.copy(cDry).lerp(cRock, Math.min(1,(y-8)/12));
+    if (ny < 0.86)    col.lerp(cRock, (0.86-ny)*2.0);
+    if (y > 18)       col.lerp(cSnow, Math.min(1,(y-18)/8));
+    cols[i*3]   = col.r;
+    cols[i*3+1] = col.g;
+    cols[i*3+2] = col.b;
+  }
+  nonIndexed.setAttribute('color', new THREE.BufferAttribute(cols,3));
+  const mat = new THREE.MeshLambertMaterial({vertexColors:true, flatShading:true});
+  const mesh = new THREE.Mesh(nonIndexed, mat);
+  scene.add(mesh);
+
+  // sample helper for road planning
+  function heightAt(cx,cz){    // city tile coords -> world height
+    const wx = (cx+0.5)/N * (WORLD*2) - WORLD;
+    const wz = (cz+0.5)/N * (WORLD*2) - WORLD;
+    // bilinear from heights array
+    const u = (wx+WORLD)/(WORLD*2)*seg;
+    const v = (wz+WORLD)/(WORLD*2)*seg;
+    const i = Math.max(0,Math.min(seg-1,Math.floor(u)));
+    const j = Math.max(0,Math.min(seg-1,Math.floor(v)));
+    const fx = u-i, fy = v-j;
+    function H(x,y){ return heights[x + y*(seg+1)]; }
+    const a = H(i,j), b = H(i+1,j), c = H(i,j+1), d = H(i+1,j+1);
+    return (a*(1-fx)+b*fx)*(1-fy) + (c*(1-fx)+d*fx)*fy;
+  }
+  return { mesh, heightAt };
+}
+
+/* ============================================================
+   STAGE 2 — ROADS via constrained growth
+   (a WFC-flavoured grid: each tile state is the bitmask of
+    its 4-direction connections; constraints are local
+    consistency + slope + low-cost-frontier expansion)
+   ============================================================ */
+const DX = [1,0,-1,0], DZ = [0,1,0,-1];
+const BIT = [1,2,4,8];   // E, S, W, N
+
+function planRoadsIncremental(rng, heightAt){
+  // tile cost map (slope penalty) + valley preference
+  const cost = new Float32Array(N*N);
+  const slope = new Float32Array(N*N);
+  for (let z=0;z<N;z++) for (let x=0;x<N;x++){
+    const h = heightAt(x,z);
+    let mx = 0;
+    for (let k=0;k<4;k++){
+      const nx = x+DX[k], nz = z+DZ[k];
+      if (nx<0||nz<0||nx>=N||nz>=N) continue;
+      mx = Math.max(mx, Math.abs(heightAt(nx,nz)-h));
+    }
+    slope[x+z*N] = mx;
+    // penalize high terrain & steep slope, reward valleys (low h)
+    cost[x+z*N] = 1 + mx*0.55 + Math.max(0,h)*0.04;
+    if (h < -1) cost[x+z*N] += 4; // avoid water
+  }
+
+  const conn = new Uint8Array(N*N);     // bitmask of road connections
+  const isRoad = new Uint8Array(N*N);
+  // priority frontier: [-priority, x, z, parentX, parentZ]
+  // tiny binary heap
+  const heap = [];
+  function hpush(item){
+    heap.push(item);
+    let i = heap.length-1;
+    while (i>0){
+      const p = (i-1)>>1;
+      if (heap[p][0] > heap[i][0]){ [heap[p],heap[i]] = [heap[i],heap[p]]; i = p; } else break;
+    }
+  }
+  function hpop(){
+    if (!heap.length) return null;
+    const top = heap[0], last = heap.pop();
+    if (heap.length){ heap[0] = last;
+      let i=0;
+      for(;;){
+        const l = i*2+1, r = i*2+2; let s = i;
+        if (l<heap.length && heap[l][0]<heap[s][0]) s = l;
+        if (r<heap.length && heap[r][0]<heap[s][0]) s = r;
+        if (s!==i){ [heap[s],heap[i]] = [heap[i],heap[s]]; i = s; } else break;
+      }
+    }
+    return top;
+  }
+
+  // Choose 3-5 seed downtown cores in low-cost areas
+  const seeds = [];
+  const tries = 200;
+  for (let t=0;t<tries && seeds.length<4;t++){
+    const x = (rng()*N)|0, z = (rng()*N)|0;
+    if (heightAt(x,z) < 4 && slope[x+z*N] < 1.5){
+      let okay = true;
+      for (const s of seeds) if (Math.hypot(s[0]-x,s[1]-z)<14){ okay=false; break; }
+      if (okay) seeds.push([x,z]);
+    }
+  }
+  if (!seeds.length) seeds.push([N>>1, N>>1]);
+
+  for (const [x,z] of seeds){
+    isRoad[x+z*N] = 1;
+    for (let k=0;k<4;k++){
+      const nx = x+DX[k], nz = z+DZ[k];
+      if (nx<0||nz<0||nx>=N||nz>=N) continue;
+      hpush([cost[nx+nz*N] + rng()*0.2, nx, nz, x, z]);
+    }
+  }
+
+  // Pre-baked "WFC tile set" — the legal connection patterns.
+  // For each tile we store the bitmask of which neighbours are roads;
+  // legal patterns are: straights(1+4,2+8), L-bends, T's, +, dead-ends.
+  // (All 16 masks are valid in our simple set.)
+  // We just enforce: each new tile must connect to >=1 existing road.
+
+  const order = [];   // emission order for animation
+  let added = 0;
+  const target = Math.floor(N*N*0.18);   // ~18% road coverage
+  while (added < target && heap.length){
+    const item = hpop();
+    if (!item) break;
+    const [, x, z, px, pz] = item;
+    if (isRoad[x+z*N]) {
+      // even if already road, still record connection back to parent
+      const dx = x-px, dz = z-pz;
+      const dirFromP = (dx===1)?0 : (dz===1)?1 : (dx===-1)?2 : 3;
+      conn[px+pz*N] |= BIT[dirFromP];
+      conn[x+z*N]   |= BIT[(dirFromP+2)&3];
+      continue;
+    }
+    isRoad[x+z*N] = 1;
+    added++;
+    // record the connection that admitted us
+    const dx = x-px, dz = z-pz;
+    const dirFromP = (dx===1)?0 : (dz===1)?1 : (dx===-1)?2 : 3;
+    conn[px+pz*N] |= BIT[dirFromP];
+    conn[x+z*N]   |= BIT[(dirFromP+2)&3];
+    order.push([x,z,px,pz]);
+
+    // expand frontier with cost penalties + small jitter
+    for (let k=0;k<4;k++){
+      const nx = x+DX[k], nz = z+DZ[k];
+      if (nx<0||nz<0||nx>=N||nz>=N) continue;
+      if (isRoad[nx+nz*N]) continue;
+      // discourage immediate U-turn back to parent
+      const back = (nx===px && nz===pz) ? 5 : 0;
+      const c = cost[nx+nz*N] + back + rng()*0.6
+              + (slope[nx+nz*N] > 2 ? 8 : 0);
+      hpush([c, nx, nz, x, z]);
+    }
+  }
+
+  // Add a few "T" loops: connect nearby roads with manhattan paths
+  for (let pass=0; pass<3; pass++){
+    for (let z=1;z<N-1;z++) for (let x=1;x<N-1;x++){
+      if (!isRoad[x+z*N]) continue;
+      // count neighbour roads
+      let nc=0; for (let k=0;k<4;k++){
+        const nx=x+DX[k],nz=z+DZ[k];
+        if (nx>=0&&nz>=0&&nx<N&&nz<N&&isRoad[nx+nz*N]) nc++;
+      }
+      if (nc>=2) continue;
+      if (rng()>0.05) continue;
+      // try to bridge to a road within 4 tiles
+      const dir = (rng()*4)|0;
+      let cx=x, cz=z;
+      for (let s=1;s<=4;s++){
+        cx += DX[dir]; cz += DZ[dir];
+        if (cx<0||cz<0||cx>=N||cz>=N) break;
+        if (isRoad[cx+cz*N]){
+          // fill the bridge
+          let bx=x, bz=z;
+          for (let i=0;i<s;i++){
+            bx += DX[dir]; bz += DZ[dir];
+            if (!isRoad[bx+bz*N]){
+              isRoad[bx+bz*N] = 1;
+              order.push([bx,bz, bx-DX[dir], bz-DZ[dir]]);
+            }
+            const a = (bx-DX[dir]) + (bz-DZ[dir])*N;
+            const b = bx + bz*N;
+            conn[a] |= BIT[dir];
+            conn[b] |= BIT[(dir+2)&3];
+          }
+          break;
+        }
+        if (slope[cx+cz*N] > 2) break;
+      }
+    }
+  }
+  return { isRoad, conn, order, slope, cost, seeds };
+}
+
+/* ============================================================
+   STAGE 3 — DISTRICTS via approximate centrality
+   (true betweenness is O(V*E) which is fine here, but we
+    use a fast approximation: sample many random shortest
+    paths and count tile crossings.)
+   ============================================================ */
+function computeCentrality(road, rng){
+  // collect road tile indices
+  const tiles = [];
+  for (let i=0;i<N*N;i++) if (road.isRoad[i]) tiles.push(i);
+  const cent = new Float32Array(N*N);
+
+  if (tiles.length < 2) return cent;
+
+  // BFS shortest path between random pairs, increment cent on path
+  const SAMPLES = Math.min(900, tiles.length*4);
+  const prev = new Int32Array(N*N);
+  const visited = new Uint8Array(N*N);
+  const queue = new Int32Array(N*N);
+  for (let s=0;s<SAMPLES;s++){
+    const a = tiles[(rng()*tiles.length)|0];
+    const b = tiles[(rng()*tiles.length)|0];
+    if (a===b) continue;
+    visited.fill(0);
+    let qh=0, qt=0;
+    queue[qt++] = a; visited[a]=1; prev[a]=-1;
+    let found = false;
+    while (qh<qt){
+      const u = queue[qh++];
+      if (u===b){ found=true; break; }
+      const ux = u % N, uz = (u/N)|0;
+      const c = road.conn[u];
+      for (let k=0;k<4;k++){
+        if (!(c & BIT[k])) continue;
+        const nx = ux+DX[k], nz = uz+DZ[k];
+        if (nx<0||nz<0||nx>=N||nz>=N) continue;
+        const v = nx + nz*N;
+        if (visited[v]) continue;
+        visited[v] = 1; prev[v] = u; queue[qt++] = v;
+      }
+    }
+    if (!found) continue;
+    // walk back, increment cent (skip endpoints)
+    let cur = b;
+    while (cur !== -1){
+      cent[cur] += 1;
+      cur = prev[cur];
+    }
+  }
+  // normalize
+  let mx = 0;
+  for (let i=0;i<N*N;i++) if (cent[i] > mx) mx = cent[i];
+  if (mx>0) for (let i=0;i<N*N;i++) cent[i] /= mx;
+  return cent;
+}
+
+function classifyDistricts(road, cent, heightAt){
+  const dist = new Uint8Array(N*N);
+  for (let i=0;i<N*N;i++){
+    if (!road.isRoad[i]) continue;
+    const x = i%N, z = (i/N)|0;
+    const c = cent[i];
+    const h = heightAt(x,z);
+    if (c > 0.55)            dist[i] = DISTRICT.DOWNTOWN;
+    else if (c > 0.25)       dist[i] = DISTRICT.COMMERCIAL;
+    else if (h > 6)          dist[i] = DISTRICT.RESIDENTIAL;   // hilly outskirts
+    else if (h < 1.5)        dist[i] = DISTRICT.INDUSTRIAL;    // flatlands/edges
+    else                     dist[i] = DISTRICT.RESIDENTIAL;
+  }
+  return dist;
+}
+
+/* ============================================================
+   ROAD MESH (instanced quads)
+   ============================================================ */
+function makeRoadMeshes(road, getHeight){
+  // we render road tiles as instanced thin boxes so we can
+  // recolor each instance for districts and traffic heat.
+  const total = N*N;
+  const tileGeom = new THREE.BoxGeometry(TILE*0.85, 0.4, TILE*0.85);
+  const mat = new THREE.MeshBasicMaterial({vertexColors:false});
+  const inst = new THREE.InstancedMesh(tileGeom, mat, total);
+  inst.count = 0;
+  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  const color = new THREE.InstancedBufferAttribute(new Float32Array(total*3),3);
+  color.setUsage(THREE.DynamicDrawUsage);
+  inst.instanceColor = color;
+  // need MeshBasicMaterial with vertexColors? Use ShaderMaterial for instanceColor uniform
+  // Three's InstancedMesh supports setColorAt natively — use MeshLambertMaterial.
+  const mat2 = new THREE.MeshLambertMaterial({});
+  inst.material = mat2;
+
+  const dummy = new THREE.Object3D();
+  const indexFor = new Int32Array(N*N).fill(-1);
+  const heat = new Float32Array(N*N);
+
+  function addTile(x,z){
+    const idx = inst.count++;
+    indexFor[x+z*N] = idx;
+    const wx = (x+0.5)/N*(WORLD*2)-WORLD;
+    const wz = (z+0.5)/N*(WORLD*2)-WORLD;
+    const h = getHeight(x,z);
+    dummy.position.set(wx, h+0.4, wz);
+    dummy.rotation.set(0,0,0);
+    dummy.scale.set(1,1,1);
+    dummy.updateMatrix();
+    inst.setMatrixAt(idx, dummy.matrix);
+    inst.setColorAt(idx, new THREE.Color(0x2b3140));
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    return idx;
+  }
+
+  scene.add(inst);
+  return { inst, indexFor, heat, addTile };
+}
+
+/* ============================================================
+   STAGE 4 — BUILDINGS (instanced boxes)
+   ============================================================ */
+function buildBuildings(road, dist, cent, heightAt, rng){
+  const placed = [];
+  const occupied = new Uint8Array(N*N);
+  for (let z=0;z<N;z++) for (let x=0;x<N;x++){
+    if (road.isRoad[x+z*N]) continue;
+    if (heightAt(x,z) < -0.5) continue;          // skip water
+    if (heightAt(x,z) > 16)   continue;          // skip mountain peaks
+    // adjacent to road?
+    let adj = -1;
+    for (let k=0;k<4;k++){
+      const nx = x+DX[k], nz = z+DZ[k];
+      if (nx>=0&&nz>=0&&nx<N&&nz<N && road.isRoad[nx+nz*N]){
+        if (adj<0 || cent[nx+nz*N] > cent[adj%N + ((adj/N)|0)*N]) adj = nx+nz*N;
+      }
+    }
+    if (adj<0) continue;
+    if (rng() < 0.30) continue;                   // sparse lots
+    occupied[x+z*N] = 1;
+    const adjX = adj%N, adjZ = (adj/N)|0;
+    const d = dist[adj];
+    const c = cent[adj];
+    let baseH = 1.5 + c*22 + rng()*1.8;
+    if (d === DISTRICT.DOWNTOWN)    baseH *= 1.4;
+    if (d === DISTRICT.COMMERCIAL)  baseH *= 0.95;
+    if (d === DISTRICT.RESIDENTIAL) baseH = 2 + rng()*3.5;
+    if (d === DISTRICT.INDUSTRIAL)  baseH = 3 + rng()*2.5;
+    placed.push({x,z,adjX,adjZ,h:baseH,d,seed:rng()});
+  }
+  // sort tallest first for nicer reveal
+  placed.sort((a,b)=>b.h-a.h);
+  return placed;
+}
+
+function makeBuildingMesh(plan, heightAt){
+  const geom = new THREE.BoxGeometry(1,1,1);
+  const mat = new THREE.MeshLambertMaterial({});
+  const inst = new THREE.InstancedMesh(geom, mat, plan.length);
+  inst.count = 0;
+  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  inst.castShadow = false;
+  scene.add(inst);
+
+  const dummy = new THREE.Object3D();
+
+  function addOne(i){
+    const b = plan[i];
+    const wx = (b.x+0.5)/N*(WORLD*2)-WORLD;
+    const wz = (b.z+0.5)/N*(WORLD*2)-WORLD;
+    const ground = heightAt(b.x,b.z);
+    const w = TILE*(0.45 + b.seed*0.3);
+    const d = TILE*(0.45 + ((b.seed*7.13)%1)*0.3);
+    const h = b.h;
+    dummy.position.set(wx, ground + h/2, wz);
+    dummy.scale.set(w, h, d);
+    dummy.rotation.y = (b.seed*8.7)%1 < 0.5 ? 0 : Math.PI/2;
+    dummy.updateMatrix();
+    inst.setMatrixAt(inst.count, dummy.matrix);
+    const base = districtColor[b.d] || new THREE.Color(0x888);
+    const c = base.clone().multiplyScalar(0.5 + b.seed*0.4);
+    inst.setColorAt(inst.count, c);
+    inst.count++;
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+  }
+  return { inst, addOne };
+}
+
+/* ============================================================
+   STAGE 5 — TRAFFIC AGENTS
+   ============================================================ */
+function makeAgents(road, count){
+  const tiles = [];
+  for (let i=0;i<N*N;i++) if (road.isRoad[i]) tiles.push(i);
+  const ag = [];
+  for (let i=0;i<count;i++){
+    ag.push({
+      path:null, pi:0, t:0,
+      speed: 0.6 + Math.random()*1.4,
+      x:0, y:0, z:0,
+    });
+  }
+  // Render as Points for cheap rendering
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const mat = new THREE.PointsMaterial({
+    size: 1.6, sizeAttenuation:true,
+    color: 0x6dffc6, transparent:true, opacity:0.95,
+    depthWrite:false, blending:THREE.AdditiveBlending
+  });
+  const points = new THREE.Points(geo, mat);
+  scene.add(points);
+
+  return { ag, tiles, points, pos };
+}
+
+function pathBFS(road, a, b){
+  if (a===b) return [a];
+  const prev = new Int32Array(N*N).fill(-1);
+  const visited = new Uint8Array(N*N);
+  const queue = new Int32Array(N*N);
+  let qh=0, qt=0;
+  queue[qt++] = a; visited[a]=1;
+  while (qh<qt){
+    const u = queue[qh++];
+    if (u===b){
+      const out = [];
+      let cur = b;
+      while (cur!==-1){ out.push(cur); cur = prev[cur]; }
+      out.reverse();
+      return out;
+    }
+    const ux = u%N, uz = (u/N)|0;
+    const c = road.conn[u];
+    for (let k=0;k<4;k++){
+      if (!(c & BIT[k])) continue;
+      const nx = ux+DX[k], nz = uz+DZ[k];
+      if (nx<0||nz<0||nx>=N||nz>=N) continue;
+      const v = nx+nz*N;
+      if (visited[v]) continue;
+      visited[v] = 1; prev[v] = u; queue[qt++] = v;
+    }
+  }
+  return null;
+}
+
+/* ============================================================
+   ORCHESTRATION — build the world over ~8 seconds
+   ============================================================ */
+const els = {
+  seed: document.getElementById('seed'),
+  cntRoads: document.getElementById('cnt-roads'),
+  cntBld: document.getElementById('cnt-bld'),
+  cntAg: document.getElementById('cnt-ag'),
+  bar: document.getElementById('bar'),
+  fps: document.getElementById('fps'),
+  stages: [...document.querySelectorAll('#stages .stage')],
+};
+
+function setStage(i, state){
+  // state: 'active' | 'done'
+  for (let k=0;k<els.stages.length;k++){
+    const s = els.stages[k];
+    if (k < i)        s.className = 'stage done';
+    else if (k === i) s.className = state==='done' ? 'stage done' : 'stage active';
+    else              s.className = 'stage';
+  }
+}
+function setProgress(p){ els.bar.style.width = (p*100).toFixed(1)+'%'; }
+
+function disposeWorld(w){
+  if (!w) return;
+  scene.traverse(()=>{}); // noop; we'll just remove tracked nodes
+  for (const obj of w.tracked){
+    scene.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material){
+      if (Array.isArray(obj.material)) obj.material.forEach(m=>m.dispose());
+      else obj.material.dispose();
+    }
+  }
+}
+
+function buildCity(seed){
+  if (world) disposeWorld(world);
+  world = { tracked:[], stage:0, t0:performance.now() };
+  els.seed.textContent = seed.toString(36).toUpperCase();
+  els.cntRoads.textContent = '0';
+  els.cntBld.textContent = '0';
+  els.cntAg.textContent = '0';
+  setProgress(0);
+
+  const rng = mulberry32(seed);
+
+  // -- STAGE 1: Terrain (~1s window) ------------
+  setStage(0,'active');
+  const terr = buildTerrain(rng);
+  world.terrain = terr;
+  world.tracked.push(terr.mesh);
+  // brief delay for visual beat
+  setTimeout(()=>{
+    setStage(0,'done'); setProgress(0.20);
+
+    // -- STAGE 2: Roads (~3s) -------------------
+    setStage(1,'active');
+    const road = planRoadsIncremental(rng, terr.heightAt);
+    world.road = road;
+    const rmesh = makeRoadMeshes(road, terr.heightAt);
+    world.rmesh = rmesh;
+    world.tracked.push(rmesh.inst);
+
+    const totalSteps = road.order.length;
+    const stageMs = 3000;
+    const t1 = performance.now();
+    let i = 0;
+    function step(){
+      const elapsed = performance.now() - t1;
+      const target = Math.min(totalSteps, Math.floor(totalSteps * (elapsed/stageMs)));
+      while (i < target){
+        const [x,z] = road.order[i++];
+        rmesh.addTile(x,z);
+      }
+      els.cntRoads.textContent = i;
+      setProgress(0.20 + 0.40*(i/totalSteps));
+      if (i < totalSteps && elapsed < stageMs){
+        requestAnimationFrame(step);
+      } else {
+        // ensure all placed
+        while (i < totalSteps){
+          const [x,z] = road.order[i++];
+          rmesh.addTile(x,z);
+        }
+        els.cntRoads.textContent = i;
+        setStage(1,'done');
+        stage3();
+      }
+    }
+    step();
+
+    function stage3(){
+      // -- STAGE 3: Districts (~1s) -------------
+      setStage(2,'active');
+      setProgress(0.62);
+      // small async chunk so UI repaints
+      setTimeout(()=>{
+        const cent = computeCentrality(road, rng);
+        const dist = classifyDistricts(road, cent, terr.heightAt);
+        world.cent = cent; world.dist = dist;
+        // recolor road tiles by district + add subtle pulse for DT
+        for (let z=0;z<N;z++) for (let x=0;x<N;x++){
+          const idx = rmesh.indexFor[x+z*N];
+          if (idx<0) continue;
+          const d = dist[x+z*N];
+          const base = districtColor[d] ? districtColor[d].clone() : new THREE.Color(0x444);
+          base.multiplyScalar(0.55);
+          rmesh.inst.setColorAt(idx, base);
+        }
+        rmesh.inst.instanceColor.needsUpdate = true;
+        setStage(2,'done'); setProgress(0.66);
+        stage4();
+      }, 250);
+    }
+
+    function stage4(){
+      // -- STAGE 4: Buildings (~3s) -------------
+      setStage(3,'active');
+      const plan = buildBuildings(road, world.dist, world.cent, terr.heightAt, rng);
+      world.plan = plan;
+      const bm = makeBuildingMesh(plan, terr.heightAt);
+      world.buildings = bm;
+      world.tracked.push(bm.inst);
+
+      const stageMs = 3000;
+      const t1 = performance.now();
+      let i = 0;
+      function step(){
+        const elapsed = performance.now() - t1;
+        const target = Math.min(plan.length, Math.floor(plan.length * (elapsed/stageMs)));
+        while (i < target){ bm.addOne(i++); }
+        els.cntBld.textContent = i;
+        setProgress(0.66 + 0.27*(i/plan.length));
+        if (i < plan.length && elapsed < stageMs){
+          requestAnimationFrame(step);
+        } else {
+          while (i < plan.length){ bm.addOne(i++); }
+          els.cntBld.textContent = i;
+          setStage(3,'done');
+          stage5();
+        }
+      }
+      step();
+    }
+
+    function stage5(){
+      // -- STAGE 5: Traffic (continuous) --------
+      setStage(4,'active');
+      setProgress(1.0);
+      const N_AG = 1100;
+      const a = makeAgents(road, N_AG);
+      world.agents = a;
+      els.cntAg.textContent = N_AG;
+      world.tracked.push(a.points);
+      // pre-seed all agents with a path
+      for (const ag of a.ag){ assignPath(ag, road, a.tiles); }
+      setStage(4,'done');   // visually mark on, but stage stays running
+      els.stages[4].className = 'stage active';
+    }
+  }, 600);
+}
+
+function assignPath(ag, road, tiles){
+  for (let tries=0;tries<6;tries++){
+    const a = tiles[(Math.random()*tiles.length)|0];
+    const b = tiles[(Math.random()*tiles.length)|0];
+    if (a===b) continue;
+    const p = pathBFS(road, a, b);
+    if (p && p.length > 4){ ag.path = p; ag.pi = 0; ag.t = 0; return; }
+  }
+  ag.path = null;
+}
+
+/* ============================================================
+   ANIMATION LOOP
+   ============================================================ */
+let lastT = performance.now();
+let fpsAcc = 0, fpsN = 0, fpsTimer = 0;
+function tick(){
+  const now = performance.now();
+  const dt = Math.min(0.05,(now-lastT)/1000);
+  lastT = now;
+
+  // camera
+  if (camAuto) camAngle += dt*0.10;
+  const bob = Math.sin(now*0.0006)*8;
+  camera.position.set(
+    Math.cos(camAngle)*camDist,
+    camHeight + bob,
+    Math.sin(camAngle)*camDist
+  );
+  camera.lookAt(camTarget);
+
+  // traffic
+  if (world && world.agents && world.road){
+    const a = world.agents;
+    const road = world.road;
+    const rmesh = world.rmesh;
+    const heat = rmesh.heat;
+    const heightAt = world.terrain.heightAt;
+    const pos = a.pos;
+    for (let i=0;i<a.ag.length;i++){
+      const g = a.ag[i];
+      if (!g.path){ assignPath(g, road, a.tiles); if (!g.path) continue; }
+      g.t += dt * g.speed;
+      while (g.t >= 1 && g.pi < g.path.length-1){ g.t -= 1; g.pi++; }
+      if (g.pi >= g.path.length-1){
+        // arrived
+        assignPath(g, road, a.tiles);
+        if (!g.path) continue;
+      }
+      const cur = g.path[g.pi];
+      const nxt = g.path[g.pi+1] ?? cur;
+      const cx = cur%N, cz = (cur/N)|0;
+      const nx = nxt%N, nz = (nxt/N)|0;
+      const wx0 = (cx+0.5)/N*(WORLD*2)-WORLD;
+      const wz0 = (cz+0.5)/N*(WORLD*2)-WORLD;
+      const wx1 = (nx+0.5)/N*(WORLD*2)-WORLD;
+      const wz1 = (nz+0.5)/N*(WORLD*2)-WORLD;
+      const u = g.t;
+      const x = wx0 + (wx1-wx0)*u;
+      const z = wz0 + (wz1-wz0)*u;
+      const h = heightAt((cx+nx)*0.5, (cz+nz)*0.5);
+      pos[i*3]   = x;
+      pos[i*3+1] = h + 1.0;
+      pos[i*3+2] = z;
+      // accumulate heat
+      heat[cur] += dt * 1.2;
+    }
+    a.points.geometry.attributes.position.needsUpdate = true;
+
+    // periodically fade heat into colors
+    if ((now - (world._heatT||0)) > 90){
+      world._heatT = now;
+      // global decay so old roads cool down slowly
+      for (let k=0;k<heat.length;k++) heat[k] *= 0.992;
+      // recolor a portion of road tiles each frame for cost
+      const tmp = new THREE.Color();
+      for (let k=0;k<heat.length;k++){
+        const idx = rmesh.indexFor[k];
+        if (idx<0) continue;
+        const h = Math.min(1, heat[k]*0.25);
+        const d = world.dist[k];
+        const base = districtColor[d] ? districtColor[d].clone() : new THREE.Color(0x444);
+        base.multiplyScalar(0.55);
+        // blend toward warm yellow/white
+        const hot = new THREE.Color().setRGB(1.0, 0.95, 0.55).multiplyScalar(0.5+h);
+        tmp.copy(base).lerp(hot, h);
+        rmesh.inst.setColorAt(idx, tmp);
+      }
+      rmesh.inst.instanceColor.needsUpdate = true;
+    }
+  }
+
+  renderer.render(scene, camera);
+
+  // fps
+  fpsAcc += 1; fpsTimer += dt;
+  if (fpsTimer > 0.5){
+    els.fps.textContent = Math.round(fpsAcc/fpsTimer);
+    fpsAcc = 0; fpsTimer = 0;
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ============================================================
+   UI HOOKS
+   ============================================================ */
+document.getElementById('regen').addEventListener('click', ()=> buildCity((Math.random()*2**31)>>>0));
+document.getElementById('cam').addEventListener('click', ()=> camAuto = !camAuto);
+addEventListener('keydown',e=>{
+  if (e.key === 'r' || e.key === 'R') buildCity((Math.random()*2**31)>>>0);
+  if (e.key === 'c' || e.key === 'C') camAuto = !camAuto;
+});
+
+// initial build
+buildCity(seedFromUrl());
+</script>
+</body>
+</html>

@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tidepolyp · Learn with Kody</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cellipse cx='16' cy='17' rx='8' ry='10' fill='%23ff7cae'/%3E%3C/svg%3E">
+<style>
+  /* ── Tidepolyp: a bioluminescent soft-body anemone. Committed single-theme
+       (abyssal dark) by design — the subject is a creature that only glows in
+       the deep. Neutrals are cyan-biased, not inherited grey. ── */
+  :root{
+    --abyss-0:#03080e;      /* deepest water */
+    --abyss-1:#071420;      /* mid column */
+    --glass:rgba(8,22,32,.62);
+    --glass-line:rgba(120,220,210,.16);
+    --ink:#d6efec;          /* cyan-biased near-white text */
+    --ink-dim:#7fa6a4;      /* muted caption */
+    --cyan:#49f0d2;         /* primary biolume */
+    --violet:#9f83ff;       /* secondary */
+    --coral:#ff7d9e;        /* rare pop */
+    --shadow:0 8px 40px rgba(0,0,0,.55);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:radial-gradient(120% 90% at 50% 8%,var(--abyss-1),var(--abyss-0) 70%);
+    color:var(--ink);font-family:var(--sans);overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #stage{position:fixed;inset:0;display:block}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+  /* ── floating HUD ── */
+  .hud{position:fixed;left:18px;top:16px;z-index:5;max-width:min(92vw,380px);
+    display:flex;flex-direction:column;gap:12px;pointer-events:none}
+  .card{pointer-events:auto;background:var(--glass);border:1px solid var(--glass-line);
+    border-radius:14px;padding:13px 15px;box-shadow:var(--shadow);
+    backdrop-filter:blur(9px) saturate(1.2);-webkit-backdrop-filter:blur(9px) saturate(1.2)}
+  .idrow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .title{font-size:19px;font-weight:700;letter-spacing:.3px;
+    background:linear-gradient(92deg,var(--cyan),var(--violet));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .rarity{font-size:10.5px;text-transform:uppercase;letter-spacing:1.4px;
+    padding:2px 8px;border-radius:999px;border:1px solid currentColor;font-weight:600}
+  .idline{margin-top:7px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);
+    display:flex;align-items:center;gap:7px}
+  .idline b{color:var(--cyan);font-weight:600;letter-spacing:.5px}
+  .cap{margin-top:9px;font-size:11.5px;line-height:1.5;color:var(--ink-dim)}
+  .cap em{color:var(--violet);font-style:normal}
+
+  .btns{display:flex;gap:8px;flex-wrap:wrap}
+  button,.filebtn{pointer-events:auto;font-family:var(--sans);font-size:12.5px;
+    font-weight:600;letter-spacing:.2px;color:var(--ink);cursor:pointer;
+    background:var(--glass);border:1px solid var(--glass-line);border-radius:10px;
+    padding:9px 13px;box-shadow:var(--shadow);transition:transform .12s,border-color .18s,background .18s}
+  button:hover,.filebtn:hover{transform:translateY(-1px);border-color:rgba(120,240,220,.42);
+    background:rgba(14,34,46,.82)}
+  button:active{transform:translateY(0)}
+  button:focus-visible,.filebtn:focus-visible,summary:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+  .primary{border-color:rgba(120,240,220,.5)}
+  .primary::before{content:"✦ "}
+
+  /* ── DNA panel ── */
+  .dna{position:fixed;left:18px;bottom:16px;z-index:5;max-width:min(92vw,380px)}
+  details{background:var(--glass);border:1px solid var(--glass-line);border-radius:12px;
+    box-shadow:var(--shadow);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);overflow:hidden}
+  summary{list-style:none;cursor:pointer;padding:10px 14px;font-size:11.5px;font-weight:600;
+    letter-spacing:.6px;text-transform:uppercase;color:var(--ink-dim);
+    display:flex;align-items:center;gap:8px}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"⬢";color:var(--cyan)}
+  details[open] summary{border-bottom:1px solid var(--glass-line);color:var(--cyan)}
+  pre{margin:0;padding:12px 14px;max-height:min(46vh,340px);overflow:auto;
+    font-family:var(--mono);font-size:11px;line-height:1.55;color:#a9d8d0;
+    white-space:pre;tab-size:2}
+
+  /* ── load dialog ── */
+  .load{position:fixed;inset:0;z-index:20;display:none;place-items:center;
+    background:rgba(2,6,10,.72);backdrop-filter:blur(4px);padding:18px}
+  .load.on{display:grid}
+  .loadbox{width:min(560px,94vw);background:var(--abyss-1);border:1px solid var(--glass-line);
+    border-radius:16px;padding:20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:12px}
+  .loadbox h2{margin:0;font-size:15px;font-weight:700}
+  .loadbox p{margin:0;font-size:12px;color:var(--ink-dim);line-height:1.5}
+  textarea{width:100%;height:120px;resize:vertical;font-family:var(--mono);font-size:11px;
+    color:var(--ink);background:var(--abyss-0);border:1px solid var(--glass-line);
+    border-radius:10px;padding:10px;line-height:1.5}
+  textarea:focus-visible{outline:2px solid var(--cyan);outline-offset:1px}
+  .loadrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .loaderr{font-size:11.5px;color:var(--coral);min-height:14px}
+  .spacer{flex:1}
+  input[type=file]{display:none}
+  @media (prefers-reduced-motion:reduce){button,.filebtn{transition:none}}
+</style>
+</head>
+<body>
+<main id="stage">
+  <canvas id="c"></canvas>
+</main>
+
+<div class="hud">
+  <div class="btns">
+    <button class="primary" id="new">New Tidepolyp</button>
+    <button id="save">🥚 Save .egg</button>
+    <button id="load">Load .egg</button>
+  </div>
+  <div class="card">
+    <div class="idrow">
+      <span class="title" id="ttl">Tidepolyp</span>
+      <span class="rarity" id="rar">uncommon</span>
+    </div>
+    <div class="idline">id <b id="idv">············</b></div>
+    <div class="cap">A soft-body anemone grown from a <em>rappter</em> genome — arms are live Verlet ropes swaying in a simulated current.</div>
+  </div>
+</div>
+
+<div class="dna">
+  <details>
+    <summary>genome · DNA</summary>
+    <pre id="json"></pre>
+  </details>
+</div>
+
+<div class="load" id="loadmodal">
+  <div class="loadbox">
+    <h2>Load a .egg</h2>
+    <p>Paste an egg string, or choose a <code>.egg</code> file. It unpacks to the exact same creature.</p>
+    <textarea id="eggin" spellcheck="false" placeholder="paste egg base64 here…"></textarea>
+    <div class="loaderr" id="loaderr"></div>
+    <div class="loadrow">
+      <label class="filebtn" for="eggfile">Choose file…</label>
+      <input type="file" id="eggfile" accept=".egg,text/plain">
+      <span class="spacer"></span>
+      <button id="cancel">Cancel</button>
+      <button class="primary" id="render" style="border-color:rgba(120,240,220,.5)">Hatch</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   FAUNA-EGG CORE — verified byte-exact against openrappter-vui / genome.js.
+   Embed VERBATIM in each demo. Do NOT edit: genomeId must stay reproducible
+   or the .egg will not load in rapp·go. (Verified: genomeId of the reference
+   egg === "fb18657910a5", and re-encode reproduces the original bytes.)
+   ══════════════════════════════════════════════════════════════════════════ */
+const EGG = (() => {
+  const b64enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const b64dec = s => { s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); };
+  async function sha256hex(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  function canonical(v){
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v!==null&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  async function genomeId(genome){ return (await sha256hex(canonical(genome))).slice(0,12); }
+  // xmur3 → mulberry32 deterministic PRNG (byte-identical to genome.js mkRng)
+  function mkRng(seed){ let h=1779033703^seed.length; for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),3432918353);h=h<<13|h>>>19;} h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); let s=(h^=h>>>16)>>>0; return function(){s+=0x6D2B79F5;let t=Math.imul(s^s>>>15,1|s);t=(t+Math.imul(t^t>>>7,61|t))^t;return((t^t>>>14)>>>0)/4294967296;}; }
+  // geohash encode (precision 6) so each egg carries a plausible born.coord
+  function geohash(lat,lng,precision=6){ const B='0123456789bcdefghjkmnpqrstuvwxyz'; let even=true,hash='',bits=0,hc=0; const la=[-90,90],lo=[-180,180]; while(hash.length<precision){ if(even){const m=(lo[0]+lo[1])/2; if(lng>m){hc=(hc<<1)|1;lo[0]=m;}else{hc<<=1;lo[1]=m;}} else {const m=(la[0]+la[1])/2; if(lat>m){hc=(hc<<1)|1;la[0]=m;}else{hc<<=1;la[1]=m;}} even=!even; if(++bits===5){hash+=B[hc];bits=0;hc=0;} } return hash; }
+
+  // Pack a genome into a canonical .egg payload (matches openrappter-vui exactly).
+  async function pack(genome, meta={}){
+    const id = await genomeId(genome);
+    const rng = mkRng(id);
+    const payload = {
+      genome, id,
+      born: meta.born || { coord: geohash((rng()*140)-70, (rng()*360)-180), t: 0 },
+      title: meta.title || 'a rappter',
+      rarity: meta.rarity || 'uncommon',
+      source: meta.source || 'learnwithkody-fauna'
+    };
+    return { egg: b64enc(JSON.stringify(payload)), id, payload };
+  }
+  function unpack(b64){ return JSON.parse(b64dec(b64.trim())); }
+  function download(b64, id){ const a=document.createElement('a'); a.href='data:application/octet-stream;base64,'+btoa(b64); /* raw text egg */ a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(b64); a.download=`rappter-${String(id).slice(0,8)}.egg`; document.body.appendChild(a); a.click(); a.remove(); }
+  return { b64enc, b64dec, genomeId, mkRng, geohash, pack, unpack, download };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TIDEPOLYP — genome → morphology → Verlet soft-body → cinematic render
+   ══════════════════════════════════════════════════════════════════════════ */
+(() => {
+"use strict";
+
+const R = (a,b)=>a+Math.random()*(b-a);
+const RI = (a,b)=>Math.round(R(a,b));
+const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+const clamp = (x,a,b)=>x<a?a:x>b?b:x;
+const lerp = (a,b,t)=>a+(b-a)*t;
+const r2 = x => Math.round(x*1000)/1000;
+
+// HSL → hex, so palettes are picked from an intentional hue space, not random noise.
+function hsl(h,s,l){
+  h=((h%360)+360)%360; s=clamp(s,0,100)/100; l=clamp(l,0,100)/100;
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+  let r=0,g=0,b=0;
+  if(h<60){r=c;g=x;} else if(h<120){r=x;g=c;} else if(h<180){g=c;b=x;}
+  else if(h<240){g=x;b=c;} else if(h<300){r=x;b=c;} else {r=c;b=x;}
+  const H=v=>Math.round((v+m)*255).toString(16).padStart(2,'0');
+  return '#'+H(r)+H(g)+H(b);
+}
+function hexRGB(hex){const n=parseInt(hex.slice(1),16);return[n>>16&255,n>>8&255,n&255];}
+function rgba(hex,a){const[r,g,b]=hexRGB(hex);return`rgba(${r},${g},${b},${a})`;}
+
+/* ── GENOME GENERATION (biased to Tidepolyp identity) ─────────────────────
+   Anemones live in cold-water bioluminescence, so palettes anchor in the
+   teal→violet→magenta arc with one warm bead pop. Shape is a ring, symmetry
+   radial. Motion favors constant drift + slow reach/pulse. Fresh every call. */
+function makeGenome(){
+  // Palette: a biolume family + a complementary bead accent.
+  const anchor = pick([172, 190, 205, 258, 288, 322]);     // cold biolume anchors
+  const spread = R(18, 46);
+  const deep   = hsl(anchor - spread*0.5, R(52,72), R(10,17));   // stalk / body shadow
+  const mid    = hsl(anchor,              R(58,80), R(30,42));   // arm mid
+  const bright = hsl(anchor + spread,     R(70,95), R(52,64));   // arm light
+  const bead   = hsl(anchor + 150 + R(-24,24), R(80,100), R(58,70)); // bioluminescent tip
+  const rim    = hsl(anchor + spread*1.6, R(60,90), R(70,82));   // disc highlight
+
+  const form = {
+    role:'form', k:40,
+    shape:'ring', symmetry:'radial',
+    limbs: RI(1,6),                       // accent "guard" tentacles interspersed
+    segments: RI(6,12),                   // → arm ring density (armCount = segments*2)
+    body_r: r2(R(0.24, 0.44)),            // oral-disc radius
+    limb_len: r2(R(0.34, 0.6)),           // arm reach
+    // ── Tidepolyp extension genes (hash into the id; still a valid egg) ──
+    tentacle_taper: r2(R(0.1, 0.34)),     // tip thinness
+    column_h: r2(R(0.28, 0.52)),          // anchoring stalk height
+    bead: r2(R(0.7, 1.5))                 // luminous tip size
+  };
+  const form_glow = R(0.45, 1);
+  const surface = {
+    role:'surface', k:60,
+    palette:[deep, mid, bright, bead, rim],
+    pattern: pick(['glow','spot','glow','stripe','solid','glow']),  // glow-biased
+    glow: r2(form_glow),
+    opacity: r2(R(0.78, 1))
+  };
+  const motion = {
+    role:'motion', k:50,
+    breathe: r2(R(0.3, 0.9)),
+    drift:   r2(R(0.45, 1)),              // current sway — always present
+    pulse:   r2(R(0.25, 0.85)),           // contraction beat
+    reach:   r2(R(0.3, 0.9)),             // inward curl on the beat
+    // extension
+    current_speed: r2(R(0.5, 1.4))
+  };
+  return { layers:[form, surface, motion], compose:{ windows:[[0,1,2]], loop:true } };
+}
+
+// Rarity is a readout of how extreme the genome is — feels earned, not random.
+function rarityOf(g){
+  const [f,s,m]=g.layers;
+  let score=0;
+  if(f.segments>=11) score++;
+  if(f.limb_len>0.55) score++;
+  if(s.glow>0.85) score++;
+  if(s.pattern==='glow') score++;
+  if(m.drift>0.9) score++;
+  if(m.pulse>0.75 && m.reach>0.75) score++;
+  if(f.limbs>=5) score++;
+  return score>=5?'legendary':score>=4?'epic':score>=2?'rare':'uncommon';
+}
+const RARITY_COLOR = { uncommon:'#7fb0ad', rare:'#57d3ff', epic:'#b78bff', legendary:'#ffcf6b' };
+
+/* ── CANVAS + WORLD ───────────────────────────────────────────────────────*/
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W=0, H=0, DPR=1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = canvas.clientWidth; H = canvas.clientHeight;
+  canvas.width = Math.max(1,Math.round(W*DPR));
+  canvas.height= Math.max(1,Math.round(H*DPR));
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  if(creature) buildBody(creature.genome, true);
+}
+
+/* ── BODY BUILD: genome → geometry → Verlet arm ropes ─────────────────────*/
+let creature = null;
+
+function buildBody(genome, keepPhase){
+  const [f,s,m] = genome.layers;
+  const rng = EGG.mkRng(creature && creature.id ? creature.id : 'seed'); // deterministic jitter per creature
+  const S = Math.min(W,H);
+  const cx = W*0.5;
+  const discY = H*0.54;
+  const discRx = f.body_r * S * 1.05;
+  const discRy = discRx * 0.36;                 // perspective-flattened ring
+  const floorY = H*0.985;
+  const armLen = (0.16 + f.limb_len*0.62) * S;
+  const P = clamp(Math.round(9 + f.limb_len*8), 9, 18);   // nodes per rope
+  const armCount = f.segments * 2;              // ring density from segments
+  const rot = rng()*Math.PI*2;
+
+  const arms = [];
+  for(let i=0;i<armCount;i++){
+    const th = rot + (i/armCount)*Math.PI*2;
+    const isGuard = (i % Math.max(2, Math.round(armCount/Math.max(1,f.limbs)))) === 0;
+    const lenJit = 0.82 + rng()*0.36;
+    const len = armLen * lenJit * (isGuard?1.28:1);
+    const seg = len/(P-1);
+    const phase = rng()*Math.PI*2;
+    const swayGain = 0.7 + rng()*0.6;
+    // rest direction: outward + up (crown splay)
+    const ox = Math.cos(th)*0.78;
+    const oy = -1;
+    const on = Math.hypot(ox,oy);
+    const dirX = ox/on, dirY = oy/on;
+    // anchor on the oral rim (front vs back by sin)
+    const ax = cx + discRx*Math.cos(th);
+    const ay = discY - discRy*Math.sin(th);
+    const pts=[];
+    for(let k=0;k<P;k++){
+      const x = ax + dirX*seg*k;
+      const y = ay + dirY*seg*k;
+      pts.push({x,y,ox:x,oy:y});
+    }
+    arms.push({ th, seg, P, phase, swayGain, isGuard, len,
+                baseA:th, dirX, dirY, depth:Math.sin(th) });
+    arms[arms.length-1].pts = pts;
+  }
+  // draw back arms first (depth>0 behind disc), front last
+  arms.sort((a,b)=>a.depth-b.depth);
+
+  const prevT = keepPhase && creature ? creature.t : 0;
+  const beads = arms.map(()=>({pulse:rng()*Math.PI*2}));
+
+  // floating motes (ambient plankton)
+  const motes=[];
+  for(let i=0;i<46;i++) motes.push({
+    x:Math.random()*W, y:Math.random()*H, r:R(0.5,2.1),
+    vy:-R(4,16), ph:Math.random()*Math.PI*2, sp:R(.4,1.2)
+  });
+
+  creature = {
+    ...creature, genome, f,s,m, cx, discY, discRx, discRy, floorY,
+    armLen, P, armCount, arms, beads, motes,
+    palette:s.palette, t:prevT
+  };
+}
+
+/* ── PHYSICS: Verlet integration + distance constraints ──────────────────*/
+function stepPhysics(dt){
+  const {arms,f,s,m} = creature;
+  const t = creature.t;
+  const S = Math.min(W,H);
+
+  // breathing + contraction beat modulate the oral disc live
+  const breathe = 1 + Math.sin(t*0.9)*0.05*m.breathe;
+  const beat = 0.5 - 0.5*Math.cos(t*(0.5 + m.pulse*0.9)*Math.PI*0.6);  // 0..1 pulse envelope
+  const contract = beat * m.pulse;
+  const discRx = creature.discRx * breathe * (1 - 0.14*contract);
+  const discRy = creature.discRy * breathe * (1 - 0.14*contract);
+  const cx = creature.cx, discY = creature.discY;
+  creature._discRx=discRx; creature._discRy=discRy; creature._beat=beat;
+
+  const cur = m.drift, curW = m.current_speed;
+  const damp = 0.986;
+  const dt2 = dt*dt;
+
+  for(const arm of arms){
+    const pts = arm.pts, P = pts.length;
+    // live anchor (rides the contracting/breathing rim)
+    const ax = cx + discRx*Math.cos(arm.baseA);
+    const ay = discY - discRy*Math.sin(arm.baseA);
+
+    for(let k=1;k<P;k++){
+      const p = pts[k];
+      const frac = k/(P-1);
+      // current: horizontal swirl, stronger toward the tip
+      let fx = Math.sin(t*curW + arm.phase + arm.baseA*1.3)*cur*38*arm.swayGain*frac;
+      fx    += Math.cos(t*curW*0.6 + arm.phase*1.7)*cur*14*frac;
+      // buoyancy: gentle lift so arms stand up in the water
+      let fy = -10*frac - 6;
+      // reach: on the pulse beat, tips curl inward toward the mouth (grab)
+      const inx = (cx - p.x), iny = (discY - 8 - p.y);
+      const inl = Math.hypot(inx,iny)||1;
+      const grab = m.reach * contract * 46 * frac;
+      fx += (inx/inl)*grab;
+      fy += (iny/inl)*grab*0.7;
+
+      const vx=(p.x-p.ox)*damp, vy=(p.y-p.oy)*damp;
+      p.ox=p.x; p.oy=p.y;
+      p.x += vx + fx*dt2;
+      p.y += vy + fy*dt2;
+    }
+    // constraint relaxation (rope stiffness); pin node 0 to live anchor
+    for(let it=0; it<12; it++){
+      pts[0].x=ax; pts[0].y=ay;
+      for(let k=0;k<P-1;k++){
+        const a=pts[k], b=pts[k+1];
+        let dx=b.x-a.x, dy=b.y-a.y;
+        let d=Math.hypot(dx,dy)||0.0001;
+        const diff=(d-arm.seg)/d*0.5;
+        const mx=dx*diff, my=dy*diff;
+        if(k>0){ a.x+=mx; a.y+=my; }
+        b.x-=mx; b.y-=my;
+      }
+    }
+  }
+}
+
+/* ── RENDER ───────────────────────────────────────────────────────────────*/
+function drawBackground(t){
+  // abyssal vertical gradient
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#04101a'); g.addColorStop(0.55,'#050d15'); g.addColorStop(1,'#020609');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // moving caustic light shafts
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const bright = creature.palette[4];
+  for(let i=0;i<4;i++){
+    const x = W*(0.2+0.2*i) + Math.sin(t*0.25+i)*W*0.06;
+    const w = W*0.14;
+    const lg=ctx.createLinearGradient(x-w,0,x+w,H);
+    lg.addColorStop(0,'rgba(0,0,0,0)');
+    lg.addColorStop(0.5,rgba(bright,0.03));
+    lg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=lg;
+    ctx.beginPath();
+    ctx.moveTo(x-w,0); ctx.lineTo(x+w,0); ctx.lineTo(x+w*2,H); ctx.lineTo(x,H);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawMotes(t,dt){
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const col = creature.palette[3];
+  for(const p of creature.motes){
+    p.y += p.vy*dt; p.ph += dt*p.sp;
+    if(p.y < -4){ p.y=H+4; p.x=Math.random()*W; }
+    const a = 0.10 + 0.10*Math.sin(p.ph);
+    ctx.fillStyle=rgba(col,a);
+    ctx.beginPath(); ctx.arc(p.x + Math.sin(p.ph)*6, p.y, p.r, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawColumn(){
+  const {cx,discY,floorY,_discRx,palette,f}=creature;
+  const rx=_discRx||creature.discRx;
+  const topW = rx*0.7, botW = rx*1.02;
+  const g=ctx.createLinearGradient(0,discY,0,floorY);
+  g.addColorStop(0,palette[1]); g.addColorStop(0.5,palette[0]);
+  g.addColorStop(1,'#02060a');
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.moveTo(cx-topW, discY);
+  ctx.bezierCurveTo(cx-topW*0.8, discY+(floorY-discY)*0.4, cx-botW, floorY-40, cx-botW*1.05, floorY);
+  ctx.lineTo(cx+botW*1.05, floorY);
+  ctx.bezierCurveTo(cx+botW, floorY-40, cx+topW*0.8, discY+(floorY-discY)*0.4, cx+topW, discY);
+  ctx.closePath(); ctx.fill();
+  // holdfast glow on the seabed
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const hg=ctx.createRadialGradient(cx,floorY,4,cx,floorY,botW*1.8);
+  hg.addColorStop(0,rgba(palette[3],0.16)); hg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(cx,floorY,botW*1.8,40,0,0,7); ctx.fill();
+  ctx.restore();
+}
+
+// One soft-body arm as a tapered filled ribbon + luminous bead tip.
+function drawArm(arm, idx, t){
+  const {palette,s,f}=creature;
+  const pts=arm.pts, P=pts.length;
+  const baseW = (arm.isGuard?7.5:5.5) * Math.min(1.6, Math.min(W,H)/520);
+  const tipW = baseW * f.tentacle_taper;
+  const op = s.opacity;
+
+  // build offset outline
+  const left=[], right=[];
+  for(let k=0;k<P;k++){
+    const a=pts[Math.max(0,k-1)], b=pts[Math.min(P-1,k+1)];
+    let dx=b.x-a.x, dy=b.y-a.y; const d=Math.hypot(dx,dy)||1; dx/=d; dy/=d;
+    const w = lerp(baseW, tipW, k/(P-1));
+    const nx=-dy*w, ny=dx*w;
+    left.push([pts[k].x+nx, pts[k].y+ny]);
+    right.push([pts[k].x-nx, pts[k].y-ny]);
+  }
+  // gradient along the arm
+  const g=ctx.createLinearGradient(pts[0].x,pts[0].y,pts[P-1].x,pts[P-1].y);
+  g.addColorStop(0,rgba(palette[1],op));
+  g.addColorStop(0.55,rgba(palette[2],op));
+  g.addColorStop(1,rgba(palette[3],op));
+
+  ctx.beginPath();
+  ctx.moveTo(left[0][0],left[0][1]);
+  for(let k=1;k<P;k++) ctx.lineTo(left[k][0],left[k][1]);
+  for(let k=P-1;k>=0;k--) ctx.lineTo(right[k][0],right[k][1]);
+  ctx.closePath();
+  ctx.fillStyle=g; ctx.fill();
+
+  // pattern overlays
+  if(s.pattern==='stripe'){
+    ctx.save(); ctx.globalAlpha=0.28*op; ctx.strokeStyle=rgba(palette[0],1); ctx.lineWidth=1.4;
+    for(let k=1;k<P-1;k+=2){
+      ctx.beginPath(); ctx.moveTo(left[k][0],left[k][1]); ctx.lineTo(right[k][0],right[k][1]); ctx.stroke();
+    }
+    ctx.restore();
+  } else if(s.pattern==='spot'){
+    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle=rgba(palette[4],0.5*op);
+    for(let k=1;k<P;k+=2){ ctx.beginPath(); ctx.arc(pts[k].x,pts[k].y, lerp(baseW,tipW,k/(P-1))*0.55,0,7); ctx.fill(); }
+    ctx.restore();
+  }
+
+  // whole-arm faint bioluminescence for glow pattern
+  if(s.pattern==='glow'){
+    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.18*s.glow;
+    ctx.strokeStyle=rgba(palette[3],1); ctx.lineWidth=baseW*0.8; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+    for(let k=1;k<P;k++) ctx.lineTo(pts[k].x,pts[k].y);
+    ctx.stroke(); ctx.restore();
+  }
+
+  // luminous bead at the tip
+  const tip=pts[P-1];
+  const bp = creature.beads[idx];
+  const pulse = 0.6 + 0.4*Math.sin(t*2.2 + bp.pulse);
+  const br = (3.2 + f.bead*3.4) * pulse * Math.min(1.5, Math.min(W,H)/520);
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const rg=ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,br*4);
+  rg.addColorStop(0,rgba(palette[3],0.95*s.glow));
+  rg.addColorStop(0.3,rgba(palette[3],0.4*s.glow));
+  rg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(tip.x,tip.y,br*4,0,7); ctx.fill();
+  ctx.fillStyle=rgba(palette[4],0.95);
+  ctx.beginPath(); ctx.arc(tip.x,tip.y,br*0.6,0,7); ctx.fill();
+  ctx.restore();
+}
+
+function drawDisc(){
+  const {cx,discY,_discRx,_discRy,palette}=creature;
+  const rx=_discRx||creature.discRx, ry=_discRy||creature.discRy;
+  // oral disc: fleshy dome
+  ctx.save();
+  const g=ctx.createRadialGradient(cx,discY-ry*0.3,ry*0.2,cx,discY,rx*1.1);
+  g.addColorStop(0,palette[4]); g.addColorStop(0.5,palette[2]);
+  g.addColorStop(1,palette[0]);
+  ctx.fillStyle=g;
+  ctx.beginPath(); ctx.ellipse(cx,discY,rx,ry,0,0,7); ctx.fill();
+  // mouth
+  ctx.fillStyle=rgba(palette[0],0.9);
+  ctx.beginPath(); ctx.ellipse(cx,discY,rx*0.34,ry*0.42,0,0,7); ctx.fill();
+  const mg=ctx.createRadialGradient(cx,discY,0,cx,discY,rx*0.34);
+  mg.addColorStop(0,rgba(palette[3],0.5*creature.s.glow)); mg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle=mg;
+  ctx.beginPath(); ctx.ellipse(cx,discY,rx*0.34,ry*0.42,0,0,7); ctx.fill(); ctx.restore();
+  ctx.restore();
+}
+
+function render(t, dt){
+  drawBackground(t);
+  drawColumn();
+  // back arms (depth>0) — already sorted so we split around 0
+  const arms=creature.arms;
+  let i=0;
+  for(; i<arms.length && arms[i].depth>0.02; i++) drawArm(arms[i], i, t);
+  drawDisc();
+  for(; i<arms.length; i++) drawArm(arms[i], i, t);
+  drawMotes(t, dt);
+  // vignette
+  ctx.save();
+  const vg=ctx.createRadialGradient(W/2,H*0.5,Math.min(W,H)*0.35,W/2,H*0.5,Math.max(W,H)*0.75);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.55)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H); ctx.restore();
+}
+
+/* ── ANIMATION LOOP ───────────────────────────────────────────────────────*/
+let last=performance.now();
+function loop(now){
+  let dt=(now-last)/1000; last=now;
+  if(dt>0.05) dt=0.05;                 // clamp after tab-away
+  if(creature){
+    creature.t += dt;
+    stepPhysics(dt);
+    render(creature.t, dt);
+    if(window.FAUNA) window.FAUNA.frame++;
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ── EGG STATE + UI WIRING ────────────────────────────────────────────────*/
+let currentGenome=null, currentId='', currentEggB64='', currentPayload=null;
+
+const el = {
+  ttl:document.getElementById('ttl'), rar:document.getElementById('rar'),
+  idv:document.getElementById('idv'), json:document.getElementById('json'),
+  newBtn:document.getElementById('new'), saveBtn:document.getElementById('save'),
+  loadBtn:document.getElementById('load'), modal:document.getElementById('loadmodal'),
+  eggin:document.getElementById('eggin'), eggfile:document.getElementById('eggfile'),
+  render:document.getElementById('render'), cancel:document.getElementById('cancel'),
+  loaderr:document.getElementById('loaderr')
+};
+
+function paintUI(){
+  const rarity = currentPayload.rarity;
+  el.ttl.textContent = currentPayload.title;
+  el.rar.textContent = rarity;
+  el.rar.style.color = RARITY_COLOR[rarity] || '#7fb0ad';
+  el.idv.textContent = currentId;
+  el.json.textContent = JSON.stringify(currentGenome, null, 2);
+}
+
+// Adopt a genome: pack → id → build body → paint. Shared by new + load.
+async function adopt(genome, meta){
+  const rarity = meta && meta.rarity ? meta.rarity : rarityOf(genome);
+  const packed = await EGG.pack(genome, { title:'Tidepolyp', rarity, source:'learnwithkody-fauna', born: meta && meta.born });
+  currentGenome = genome;
+  currentId = packed.id;
+  currentEggB64 = packed.egg;
+  currentPayload = packed.payload;
+  creature = { id:packed.id, genome };   // seed so buildBody jitter is deterministic
+  buildBody(genome, false);
+  paintUI();
+  return packed.id;
+}
+
+async function newCreature(){
+  const id = await adopt(makeGenome());
+  return id;
+}
+
+async function loadEgg(b64){
+  const payload = EGG.unpack(b64);        // throws on bad input
+  if(!payload || !payload.genome || !Array.isArray(payload.genome.layers))
+    throw new Error('not a rappter egg');
+  // preserve the egg's own title/rarity/born so the round-trip is exact
+  const id = await adopt(payload.genome, { rarity:payload.rarity, born:payload.born });
+  currentPayload = payload;               // keep exact original metadata
+  currentEggB64 = b64.trim();
+  el.ttl.textContent = payload.title || 'Tidepolyp';
+  el.rar.textContent = payload.rarity || 'uncommon';
+  el.rar.style.color = RARITY_COLOR[payload.rarity] || '#7fb0ad';
+  return id;
+}
+
+el.newBtn.addEventListener('click', ()=>{ el.newBtn.disabled=true; newCreature().finally(()=>el.newBtn.disabled=false); });
+el.saveBtn.addEventListener('click', ()=>{ if(currentEggB64) EGG.download(currentEggB64, currentId); });
+
+el.loadBtn.addEventListener('click', ()=>{ el.loaderr.textContent=''; el.modal.classList.add('on'); el.eggin.focus(); });
+el.cancel.addEventListener('click', ()=> el.modal.classList.remove('on'));
+el.modal.addEventListener('click', e=>{ if(e.target===el.modal) el.modal.classList.remove('on'); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') el.modal.classList.remove('on'); });
+
+el.render.addEventListener('click', async ()=>{
+  const v=el.eggin.value.trim();
+  if(!v){ el.loaderr.textContent='Paste an egg string first.'; return; }
+  try{ await loadEgg(v); el.modal.classList.remove('on'); el.eggin.value=''; }
+  catch(err){ el.loaderr.textContent='Could not hatch that egg — '+(err.message||'invalid'); }
+});
+el.eggfile.addEventListener('change', ()=>{
+  const file=el.eggfile.files[0]; if(!file) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ el.eggin.value=String(rd.result||'').trim(); el.loaderr.textContent=''; };
+  rd.onerror=()=>{ el.loaderr.textContent='Could not read that file.'; };
+  rd.readAsText(file);
+});
+
+/* ── BOOT ─────────────────────────────────────────────────────────────────*/
+window.addEventListener('resize', resize);
+resize();
+newCreature().then(id=>{
+  // Debug hook — the automated gate drives these. Set AFTER first render.
+  window.FAUNA = {
+    title:'Tidepolyp',
+    get genome(){ return currentGenome; },
+    get id(){ return currentId; },
+    get eggB64(){ return currentEggB64; },
+    newCreature: async ()=> await newCreature(),
+    loadEgg: async (b64)=> await loadEgg(b64),
+    frame:0
+  };
+});
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>

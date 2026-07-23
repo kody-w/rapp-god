@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Artifacts Sync Manager</title>
+<meta name="description" content="Visual sync dashboard for managing GitHub artifacts with animated pipeline view, scoring challenges, combo system, and procedural data generation">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#f0f6fc;height:100vh;overflow:hidden}
+:root{--primary:#58a6ff;--primary-dark:#388bfd;--success:#3fb950;--warning:#d29922;--danger:#f85149;--bg:#0d1117;--surface:#161b22;--border:#30363d;--text:#f0f6fc;--text-muted:#8b949e}
+#title-screen{position:fixed;top:0;left:0;width:100%;height:100%;background:radial-gradient(ellipse at center,#161b22 0%,#0d1117 100%);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#title-screen h1{font-size:42px;color:var(--primary);margin-bottom:8px;text-shadow:0 0 30px rgba(88,166,255,.3)}
+#title-screen .sub{color:var(--text-muted);font-size:16px;margin-bottom:32px}
+.title-btn{width:260px;padding:14px;margin:6px;font-size:14px;border-radius:8px;background:var(--primary);color:#fff;border:none;cursor:pointer;font-weight:600;transition:all .2s}
+.title-btn:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(88,166,255,.3)}
+.title-btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.diff-row{display:flex;gap:8px;margin:16px 0}
+.diff-opt{padding:8px 20px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);color:var(--primary);cursor:pointer;font-size:13px;transition:all .2s}
+.diff-opt.active{background:rgba(88,166,255,.2);border-color:var(--primary)}
+#pause-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(13,17,23,.92);z-index:999;display:none;flex-direction:column;align-items:center;justify-content:center}
+#pause-overlay h2{font-size:36px;color:var(--primary);margin-bottom:20px}
+#game-over{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(13,17,23,.95);z-index:999;display:none;flex-direction:column;align-items:center;justify-content:center}
+#game-over h2{font-size:30px;color:var(--text-muted);margin-bottom:8px}
+.final-score{font-size:56px;color:var(--primary);font-weight:800;margin:12px 0}
+.end-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0;width:300px}
+.end-stat{background:rgba(88,166,255,.05);border:1px solid rgba(88,166,255,.1);border-radius:8px;padding:10px;text-align:center}
+.end-stat .label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px}
+.end-stat .val{font-size:20px;color:var(--primary);font-weight:700}
+#app{display:flex;height:100vh;display:none}
+#sidebar{width:300px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-head{padding:14px 16px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,#161b22,#1c2333)}
+.sidebar-head h1{font-size:15px;color:var(--primary);letter-spacing:.5px}
+.sidebar-head .mode{font-size:11px;color:var(--text-muted);margin-top:3px}
+.sidebar-body{flex:1;overflow-y:auto;padding:12px}
+.panel{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px}
+.panel h3{font-size:11px;color:var(--primary);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.form-row{margin-bottom:8px}
+.form-row label{display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600}
+input[type="text"],textarea,select{width:100%;padding:7px 10px;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:inherit;transition:border-color .2s}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--primary)}
+textarea{resize:vertical;font-family:'SF Mono',Monaco,monospace;font-size:11px}
+.btn{width:100%;padding:9px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;transition:all .2s;margin-bottom:5px}
+.btn:hover{opacity:.9;transform:translateY(-1px)}
+.btn.sec{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn.suc{background:var(--success)}
+.btn.danger{background:var(--danger)}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#toolbar{background:var(--surface);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;justify-content:space-between;align-items:center}
+.hud{display:flex;gap:16px}
+.hud-item{text-align:center}
+.hud-lbl{font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px}
+.hud-val{font-size:18px;font-weight:700;color:var(--primary)}
+.stat{font-size:12px;color:var(--text-muted)}
+.stat span{color:var(--primary);font-weight:700}
+#view{flex:1;overflow:auto;padding:20px;background:radial-gradient(ellipse at center,#111820 0%,#0d1117 100%)}
+canvas{display:block;margin:0 auto;border-radius:8px;box-shadow:0 4px 30px rgba(0,0,0,.5)}
+.artifact-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.artifact-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;transition:all .2s;cursor:pointer;position:relative}
+.artifact-card:hover{border-color:var(--primary);box-shadow:0 0 15px rgba(88,166,255,.1);transform:translateY(-2px)}
+.artifact-card.selected{border-color:var(--primary);background:rgba(88,166,255,.05)}
+.artifact-card .name{font-weight:600;color:var(--text);margin-bottom:6px;font-size:13px}
+.artifact-card .meta{font-size:11px;color:var(--text-muted);display:flex;flex-direction:column;gap:3px}
+.artifact-card .actions{display:flex;gap:6px;margin-top:10px}
+.artifact-card .actions .btn{width:auto;padding:5px 12px;font-size:11px;margin:0}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.badge.synced{background:rgba(63,185,80,.15);color:var(--success)}
+.badge.pending{background:rgba(210,153,34,.15);color:var(--warning)}
+.badge.conflict{background:rgba(248,81,73,.15);color:var(--danger)}
+.badge.new{background:rgba(88,166,255,.15);color:var(--primary)}
+#challenge-panel{display:none}
+#challenge-desc{font-size:12px;color:var(--text-muted);margin-bottom:8px}
+#challenge-timer{font-size:22px;color:var(--primary);font-weight:700;text-align:center;margin-bottom:8px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;padding-bottom:0}
+.tab{padding:6px 14px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-weight:500;transition:all .2s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--primary);border-bottom-color:var(--primary)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.empty-state{text-align:center;padding:40px;color:var(--text-muted)}
+.empty-state .icon{font-size:40px;opacity:.5;margin-bottom:12px}
+#toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(88,166,255,.15);border:1px solid var(--primary);color:var(--primary);padding:10px 24px;border-radius:8px;font-weight:700;font-size:13px;opacity:0;transition:opacity .3s;z-index:2000;pointer-events:none}
+#combo-display{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;font-weight:900;color:var(--primary);text-shadow:0 0 20px rgba(88,166,255,.5);opacity:0;z-index:500;pointer-events:none;transition:opacity .3s,transform .3s}
+.particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:400}
+.loading-spinner{display:inline-block;width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeSlideIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.pipeline-canvas{width:100%;height:300px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:16px}
+.sync-log{max-height:200px;overflow-y:auto;font-family:'SF Mono',Monaco,monospace;font-size:11px;padding:10px;background:rgba(0,0,0,.3);border-radius:6px;border:1px solid var(--border)}
+.sync-log .entry{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.sync-log .entry.success{color:var(--success)}
+.sync-log .entry.error{color:var(--danger)}
+.sync-log .entry.info{color:var(--primary)}
+.lb-entry{display:flex;justify-content:space-between;padding:5px 8px;border-radius:4px;font-size:12px;margin-bottom:2px}
+.lb-entry:nth-child(odd){background:rgba(255,255,255,.02)}
+.lb-entry .rank{color:var(--primary);font-weight:700;width:24px}
+@media(max-width:768px){#sidebar{width:240px}.artifact-grid{grid-template-columns:1fr}}
+@media(max-width:600px){#app{flex-direction:column}#sidebar{width:100%;max-height:40vh}}
+</style>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+<meta name="rappterzoo:author" content="agent">
+<meta name="rappterzoo:author-type" content="agent">
+<meta name="rappterzoo:category" content="visual_art">
+<meta name="rappterzoo:tags" content="3d,svg,animation,creative">
+<meta name="rappterzoo:type" content="visual">
+<meta name="rappterzoo:complexity" content="advanced">
+<meta name="rappterzoo:created" content="2025-12-27">
+<meta name="rappterzoo:generation" content="1">
+</head>
+<body>
+<div id="title-screen">
+<h1>Sync Manager</h1>
+<p class="sub">GitHub Artifacts Pipeline Simulator</p>
+<div class="diff-row">
+<div class="diff-opt active" data-d="casual" onclick="setDiff('casual')">Casual</div>
+<div class="diff-opt" data-d="normal" onclick="setDiff('normal')">Normal</div>
+<div class="diff-opt" data-d="hard" onclick="setDiff('hard')">Expert</div>
+</div>
+<button class="title-btn" onclick="startFree()">Sandbox Mode</button>
+<button class="title-btn secondary" onclick="startChallenge()">Pipeline Challenge</button>
+<button class="title-btn secondary" onclick="toggleScores()">High Scores</button>
+<div id="title-scores" style="margin-top:16px;width:300px;display:none"></div>
+</div>
+<div id="pause-overlay">
+<h2>PAUSED</h2>
+<p style="color:var(--text-muted);margin-bottom:20px">Press ESC to resume</p>
+<button class="title-btn" onclick="togglePause()">Resume</button>
+<button class="title-btn secondary" onclick="toTitle()">Main Menu</button>
+</div>
+<div id="game-over">
+<h2>PIPELINE COMPLETE</h2>
+<div class="final-score" id="final-score">0</div>
+<div class="end-stats" id="end-stats"></div>
+<button class="title-btn" onclick="startChallenge()">Retry</button>
+<button class="title-btn secondary" onclick="toTitle()">Main Menu</button>
+</div>
+<div id="toast"></div>
+<div id="combo-display"></div>
+<div class="particles" id="particles"></div>
+<div id="app">
+<div id="sidebar">
+<div class="sidebar-head">
+<h1>SYNC MANAGER</h1>
+<div class="mode" id="mode-label">Sandbox Mode</div>
+</div>
+<div class="sidebar-body">
+<div class="panel">
+<h3>Repository</h3>
+<div class="form-row"><label>Owner</label><input type="text" id="repoOwner" value="kody-w" placeholder="username"></div>
+<div class="form-row"><label>Repo</label><input type="text" id="repoName" value="localFirstTools" placeholder="repository"></div>
+<div class="form-row"><label>Branch</label><input type="text" id="repoBranch" value="main"></div>
+<button class="btn" onclick="discoverArtifacts()">Discover Artifacts</button>
+<button class="btn sec" onclick="generateArtifacts()">Generate Random</button>
+</div>
+<div class="panel" id="challenge-panel">
+<h3>Current Challenge</h3>
+<div id="challenge-desc"></div>
+<div id="challenge-timer"></div>
+<button class="btn suc" onclick="submitSync()">Submit Sync</button>
+</div>
+<div class="panel">
+<h3>Pipeline Actions</h3>
+<button class="btn" onclick="syncAll()">Sync All Selected</button>
+<button class="btn sec" onclick="validateAll()">Validate Pipeline</button>
+<button class="btn sec" onclick="exportConfig()">Export Config</button>
+<button class="btn sec" onclick="importConfig()">Import Config</button>
+<input type="file" id="importFile" accept=".json" style="display:none">
+</div>
+<div class="panel">
+<h3>Sync Log</h3>
+<div class="sync-log" id="sync-log"><div class="entry info">System ready. Discover or generate artifacts to begin.</div></div>
+</div>
+</div>
+</div>
+<div id="main">
+<div id="toolbar">
+<div style="display:flex;gap:12px;align-items:center">
+<div class="stat">Artifacts: <span id="stat-count">0</span></div>
+<div class="stat">Synced: <span id="stat-synced">0</span></div>
+<div class="stat" id="combo-stat" style="display:none">Combo: <span id="stat-combo">x1</span></div>
+</div>
+<div class="hud">
+<div class="hud-item"><div class="hud-lbl">Score</div><div class="hud-val" id="hud-score">0</div></div>
+<div class="hud-item"><div class="hud-lbl">Level</div><div class="hud-val" id="hud-level">1</div></div>
+<div class="hud-item"><div class="hud-lbl">Streak</div><div class="hud-val" id="hud-streak">0</div></div>
+</div>
+</div>
+<div id="view">
+<canvas id="pipeline" class="pipeline-canvas" width="800" height="280"></canvas>
+<div class="tabs" id="view-tabs">
+<button class="tab active" onclick="switchView('artifacts')">Artifacts</button>
+<button class="tab" onclick="switchView('settings')">Settings</button>
+<button class="tab" onclick="switchView('history')">History</button>
+</div>
+<div id="artifacts-view" class="tab-content active">
+<div class="artifact-grid" id="artifact-grid">
+<div class="empty-state"><div class="icon">--</div><p>No artifacts discovered yet. Click "Discover" or "Generate Random" to begin.</p></div>
+</div>
+</div>
+<div id="settings-view" class="tab-content">
+<div class="panel"><h3>Export/Import</h3>
+<div class="form-row"><label>Config JSON</label><textarea id="configArea" rows="8" placeholder='{"owner":"...","repo":"...","artifacts":[]}'></textarea></div>
+<button class="btn" onclick="applyConfig()">Apply Config</button>
+<button class="btn sec" onclick="downloadConfig()">Download JSON</button>
+</div>
+</div>
+<div id="history-view" class="tab-content">
+<div class="panel"><h3>Sync History</h3><div id="history-list"></div></div>
+</div>
+</div>
+</div>
+</div>
+<script>
+const pipeCanvas=document.getElementById('pipeline'),pCtx=pipeCanvas.getContext('2d');
+let audioCtx=null,artifacts=[],selected=new Set(),syncHistory=[];
+let GS={mode:'title',score:0,level:1,streak:0,combo:1,synced:0,timer:0,interval:null,paused:false,diff:'normal',totalTime:0,bestCombo:1,totalSyncs:0,perfectSyncs:0};
+const CHALLENGES=[
+{desc:'Discover and sync 3 artifacts without conflicts',target:3,time:60,type:'sync'},
+{desc:'Generate 5 random artifacts and validate all',target:5,time:50,type:'generate'},
+{desc:'Resolve 2 merge conflicts and sync',target:2,time:45,type:'conflict'},
+{desc:'Create a full pipeline with 4 stages synced',target:4,time:55,type:'pipeline'},
+{desc:'Speed sync: process 6 artifacts in under a minute',target:6,time:60,type:'speed'},
+{desc:'Export a clean config with 5+ artifacts',target:5,time:40,type:'export'},
+{desc:'Detect and fix 3 broken artifacts',target:3,time:50,type:'fix'},
+{desc:'Chain-sync 4 dependent artifacts in order',target:4,time:65,type:'chain'}
+];
+let challengeIdx=0,pipelineNodes=[],pipelineAngle=0;
+function initAudio(){if(audioCtx)return;try{audioCtx=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}
+function snd(type){
+if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);const t=audioCtx.currentTime;
+switch(type){
+case'click':o.frequency.setValueAtTime(700,t);o.frequency.exponentialRampToValueAtTime(350,t+.06);g.gain.setValueAtTime(.12,t);g.gain.exponentialRampToValueAtTime(.001,t+.08);o.type='sine';o.start(t);o.stop(t+.08);break;
+case'sync':o.frequency.setValueAtTime(440,t);o.frequency.setValueAtTime(660,t+.08);o.frequency.setValueAtTime(880,t+.16);g.gain.setValueAtTime(.1,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.type='sine';o.start(t);o.stop(t+.3);break;
+case'combo':o.frequency.setValueAtTime(880,t);o.frequency.exponentialRampToValueAtTime(1760,t+.12);g.gain.setValueAtTime(.08,t);g.gain.exponentialRampToValueAtTime(.001,t+.15);o.type='triangle';o.start(t);o.stop(t+.15);break;
+case'fail':o.frequency.setValueAtTime(250,t);o.frequency.exponentialRampToValueAtTime(80,t+.25);g.gain.setValueAtTime(.1,t);g.gain.exponentialRampToValueAtTime(.001,t+.25);o.type='sawtooth';o.start(t);o.stop(t+.25);break;
+case'levelup':o.frequency.setValueAtTime(523,t);o.frequency.setValueAtTime(659,t+.1);o.frequency.setValueAtTime(784,t+.2);o.frequency.setValueAtTime(1047,t+.3);g.gain.setValueAtTime(.08,t);g.gain.exponentialRampToValueAtTime(.001,t+.45);o.type='sine';o.start(t);o.stop(t+.45);break;
+case'gen':o.frequency.setValueAtTime(200,t);o.frequency.exponentialRampToValueAtTime(600,t+.1);g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.001,t+.1);o.type='sine';o.start(t);o.stop(t+.1);break;
+case'menu':o.frequency.setValueAtTime(500,t);g.gain.setValueAtTime(.05,t);g.gain.exponentialRampToValueAtTime(.001,t+.04);o.type='sine';o.start(t);o.stop(t+.04);break;
+}
+}
+function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.style.opacity='1';setTimeout(()=>el.style.opacity='0',2000)}
+function showCombo(txt){const el=document.getElementById('combo-display');el.textContent=txt;el.style.opacity='1';el.style.transform='translate(-50%,-50%) scale(1.4)';setTimeout(()=>{el.style.opacity='0';el.style.transform='translate(-50%,-50%) scale(1)'},700)}
+function particles(x,y,col,n){
+const c=document.getElementById('particles');
+for(let i=0;i<n;i++){const p=document.createElement('div');const a=Math.random()*Math.PI*2,s=2+Math.random()*3,sz=3+Math.random()*4;
+p.style.cssText=`position:absolute;left:${x}px;top:${y}px;width:${sz}px;height:${sz}px;background:${col};border-radius:50%;pointer-events:none`;
+c.appendChild(p);let px=x,py=y,vx=Math.cos(a)*s,vy=Math.sin(a)*s,life=1;
+const anim=()=>{life-=.025;px+=vx;py+=vy+.8;p.style.left=px+'px';p.style.top=py+'px';p.style.opacity=life;if(life>0)requestAnimationFrame(anim);else p.remove()};requestAnimationFrame(anim)}
+}
+function setDiff(d){GS.diff=d;document.querySelectorAll('.diff-opt').forEach(e=>e.classList.toggle('active',e.dataset.d===d));snd('click')}
+function startFree(){initAudio();snd('menu');GS.mode='free';document.getElementById('title-screen').style.display='none';document.getElementById('app').style.display='flex';document.getElementById('mode-label').textContent='Sandbox Mode';document.getElementById('challenge-panel').style.display='none';generateArtifacts();startPipeline()}
+function startChallenge(){initAudio();snd('levelup');GS={...GS,mode:'challenge',score:0,level:1,streak:0,combo:1,synced:0,totalTime:0,bestCombo:1,totalSyncs:0,perfectSyncs:0};challengeIdx=0;
+document.getElementById('title-screen').style.display='none';document.getElementById('game-over').style.display='none';document.getElementById('app').style.display='flex';
+document.getElementById('mode-label').textContent='Challenge Mode';document.getElementById('challenge-panel').style.display='block';document.getElementById('combo-stat').style.display='inline';
+updateHUD();loadChallenge();startPipeline()}
+function loadChallenge(){
+const ch=CHALLENGES[challengeIdx%CHALLENGES.length];
+const tm=GS.diff==='casual'?1.4:GS.diff==='hard'?.7:1;
+GS.timer=Math.floor(ch.time*tm);
+document.getElementById('challenge-desc').innerHTML='<strong>Level '+GS.level+':</strong> '+ch.desc;
+document.getElementById('challenge-timer').textContent=GS.timer+'s';
+if(GS.interval)clearInterval(GS.interval);
+GS.interval=setInterval(()=>{if(GS.paused)return;GS.timer--;GS.totalTime++;
+document.getElementById('challenge-timer').textContent=GS.timer+'s';
+document.getElementById('challenge-timer').style.color=GS.timer<=10?'var(--danger)':'var(--primary)';
+if(GS.timer<=0){clearInterval(GS.interval);failChallenge()}},1000);
+generateArtifacts();
+}
+function submitSync(){
+if(GS.mode!=='challenge')return;clearInterval(GS.interval);
+let pts=100+GS.timer*4;
+const sel=selected.size;if(sel>=4)pts+=40;
+const dm=GS.diff==='casual'?.8:GS.diff==='hard'?1.5:1;
+pts=Math.floor(pts*dm*GS.combo);
+if(pts>180)GS.perfectSyncs++;
+GS.score+=pts;GS.synced+=sel;GS.totalSyncs++;GS.streak++;
+if(GS.streak%3===0){GS.combo=Math.min(GS.combo+1,8);snd('combo');showCombo('x'+GS.combo+' COMBO!');particles(window.innerWidth/2,window.innerHeight/2,'#58a6ff',25)}
+if(GS.combo>GS.bestCombo)GS.bestCombo=GS.combo;
+snd('sync');toast('+'+pts+' pts (x'+GS.combo+')');
+GS.level++;challengeIdx++;
+if(challengeIdx>=CHALLENGES.length*2){endChallenge();return}
+updateHUD();loadChallenge()
+}
+function failChallenge(){GS.streak=0;GS.combo=1;snd('fail');toast('Time expired!');GS.level++;challengeIdx++;if(challengeIdx>=CHALLENGES.length*2){endChallenge();return}updateHUD();loadChallenge()}
+function endChallenge(){
+clearInterval(GS.interval);document.getElementById('app').style.display='none';document.getElementById('game-over').style.display='flex';
+document.getElementById('final-score').textContent=GS.score;
+document.getElementById('end-stats').innerHTML=`<div class="end-stat"><div class="label">Syncs</div><div class="val">${GS.totalSyncs}</div></div><div class="end-stat"><div class="label">Best Combo</div><div class="val">x${GS.bestCombo}</div></div><div class="end-stat"><div class="label">Perfect</div><div class="val">${GS.perfectSyncs}</div></div><div class="end-stat"><div class="label">Time</div><div class="val">${GS.totalTime}s</div></div>`;
+saveScore(GS.score);snd('levelup')
+}
+function updateHUD(){
+document.getElementById('hud-score').textContent=GS.score;document.getElementById('hud-level').textContent=GS.level;
+document.getElementById('hud-streak').textContent=GS.streak;document.getElementById('stat-synced').textContent=GS.synced;
+document.getElementById('stat-combo').textContent='x'+GS.combo;document.getElementById('stat-count').textContent=artifacts.length}
+function togglePause(){GS.paused=!GS.paused;document.getElementById('pause-overlay').style.display=GS.paused?'flex':'none';snd('menu')}
+function toTitle(){GS.paused=false;if(GS.interval)clearInterval(GS.interval);document.getElementById('pause-overlay').style.display='none';document.getElementById('game-over').style.display='none';document.getElementById('app').style.display='none';document.getElementById('title-screen').style.display='flex'}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();if(GS.mode!=='title')togglePause()}if((e.key==='r'||e.key==='R')&&GS.mode==='challenge'&&!GS.paused)startChallenge()});
+const NAMES=['auth-service','data-pipeline','ui-components','api-gateway','config-manager','test-runner','deploy-script','logger-util','cache-layer','db-migration','webhook-handler','rate-limiter','healthcheck','search-index','notification-svc','storage-adapter'];
+const STATUSES=['synced','pending','conflict','new'];
+function generateArtifacts(){
+const n=4+Math.floor(Math.random()*8);artifacts=[];selected.clear();
+for(let i=0;i<n;i++){
+artifacts.push({id:i,name:NAMES[Math.floor(Math.random()*NAMES.length)]+'-'+(Math.floor(Math.random()*99)+1)+'.html',
+status:STATUSES[Math.floor(Math.random()*STATUSES.length)],size:Math.floor(Math.random()*500+10),
+version:'1.'+Math.floor(Math.random()*10)+'.'+Math.floor(Math.random()*20),
+lastSync:new Date(Date.now()-Math.random()*86400000*30).toISOString().split('T')[0],
+deps:Math.floor(Math.random()*4),errors:Math.random()<.2?Math.floor(Math.random()*3+1):0})
+}
+snd('gen');renderArtifacts();updatePipeline();addLog('Generated '+n+' artifacts','info');updateHUD()
+}
+function discoverArtifacts(){
+const owner=document.getElementById('repoOwner').value||'kody-w';
+const repo=document.getElementById('repoName').value||'localFirstTools';
+addLog('Discovering artifacts from '+owner+'/'+repo+'...','info');
+setTimeout(()=>{generateArtifacts();addLog('Discovery complete: '+artifacts.length+' artifacts found','success');
+if(GS.mode==='free'){GS.score+=25;updateHUD();toast('+25 discovery bonus')}},500)
+}
+function renderArtifacts(){
+const grid=document.getElementById('artifact-grid');
+if(artifacts.length===0){grid.innerHTML='<div class="empty-state"><div class="icon">--</div><p>No artifacts</p></div>';return}
+grid.innerHTML=artifacts.map((a,i)=>`<div class="artifact-card${selected.has(i)?' selected':''}" onclick="toggleSelect(${i})">
+<div class="name">${a.name} <span class="badge ${a.status}">${a.status}</span></div>
+<div class="meta"><span>Size: ${a.size}KB | v${a.version}</span><span>Last sync: ${a.lastSync}</span><span>Deps: ${a.deps} | Errors: ${a.errors}</span></div>
+<div class="actions"><button class="btn sec" onclick="event.stopPropagation();syncOne(${i})">Sync</button><button class="btn sec" onclick="event.stopPropagation();fixArtifact(${i})">Fix</button></div></div>`).join('')
+}
+function toggleSelect(i){if(selected.has(i))selected.delete(i);else selected.add(i);snd('click');renderArtifacts()}
+function syncOne(i){
+const a=artifacts[i];if(a.status==='synced'){toast('Already synced');return}
+if(a.errors>0){toast('Fix errors first!');snd('fail');return}
+a.status='synced';a.lastSync=new Date().toISOString().split('T')[0];
+snd('sync');addLog('Synced: '+a.name,'success');renderArtifacts();updatePipeline();
+if(GS.mode==='free'){GS.score+=15;GS.synced++;updateHUD();toast('+15 sync points')}
+if(GS.mode==='challenge'){GS.synced++;updateHUD()}
+}
+function fixArtifact(i){
+const a=artifacts[i];if(a.errors===0){toast('No errors to fix');return}
+a.errors=0;if(a.status==='conflict')a.status='pending';
+snd('sync');addLog('Fixed: '+a.name,'success');renderArtifacts();
+if(GS.mode==='free'){GS.score+=20;updateHUD();toast('+20 fix bonus')}
+}
+function syncAll(){
+let synced=0;selected.forEach(i=>{const a=artifacts[i];if(a.status!=='synced'&&a.errors===0){a.status='synced';a.lastSync=new Date().toISOString().split('T')[0];synced++}});
+if(synced===0){toast('Nothing to sync');snd('fail');return}
+snd('sync');addLog('Batch synced '+synced+' artifacts','success');renderArtifacts();updatePipeline();selected.clear();
+if(GS.mode==='free'){GS.score+=synced*15;GS.synced+=synced;updateHUD();toast('+'+synced*15+' points')}
+if(GS.mode==='challenge'){GS.synced+=synced;updateHUD()}
+particles(window.innerWidth/2,300,'#3fb950',20)
+}
+function validateAll(){
+let errors=0;artifacts.forEach(a=>{if(a.errors>0)errors++});
+if(errors===0){snd('sync');toast('All artifacts valid!');addLog('Validation passed: 0 errors','success');if(GS.mode==='free'){GS.score+=30;updateHUD()}}
+else{snd('fail');toast(errors+' artifacts have errors');addLog('Validation failed: '+errors+' errors','error')}
+}
+function addLog(msg,type){
+const log=document.getElementById('sync-log');
+const entry=document.createElement('div');entry.className='entry '+type;
+entry.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
+log.insertBefore(entry,log.firstChild);
+if(log.children.length>50)log.removeChild(log.lastChild);
+syncHistory.push({msg,type,time:new Date().toISOString()});renderHistory()
+}
+function renderHistory(){
+const list=document.getElementById('history-list');
+list.innerHTML=syncHistory.slice(-20).reverse().map(h=>`<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:11px;color:${h.type==='success'?'var(--success)':h.type==='error'?'var(--danger)':'var(--text-muted)'}">${h.msg}</div>`).join('')
+}
+function switchView(name){
+document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['artifacts','settings','history'][i]===name));
+document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+document.getElementById(name+'-view').classList.add('active');snd('click')
+}
+function exportConfig(){
+const cfg={owner:document.getElementById('repoOwner').value,repo:document.getElementById('repoName').value,branch:document.getElementById('repoBranch').value,artifacts,history:syncHistory.slice(-20)};
+document.getElementById('configArea').value=JSON.stringify(cfg,null,2);switchView('settings');snd('sync');toast('Config exported');
+if(GS.mode==='free'){GS.score+=10;updateHUD()}
+}
+function importConfig(){document.getElementById('importFile').click()}
+document.getElementById('importFile').addEventListener('change',e=>{
+const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(d.artifacts)artifacts=d.artifacts;if(d.owner)document.getElementById('repoOwner').value=d.owner;renderArtifacts();updatePipeline();snd('sync');toast('Config imported');addLog('Config imported','info')}catch(e){snd('fail');toast('Invalid JSON')}};r.readAsText(f);e.target.value=''
+});
+function applyConfig(){try{const d=JSON.parse(document.getElementById('configArea').value);if(d.artifacts)artifacts=d.artifacts;renderArtifacts();updatePipeline();snd('sync');toast('Config applied');addLog('Manual config applied','info')}catch(e){snd('fail');toast('Invalid JSON')}}
+function downloadConfig(){
+const cfg=JSON.stringify({owner:document.getElementById('repoOwner').value,repo:document.getElementById('repoName').value,artifacts},null,2);
+const b=new Blob([cfg],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='sync-config.json';a.click();URL.revokeObjectURL(u);snd('sync');toast('Downloaded')
+}
+function saveScore(score){const hs=JSON.parse(localStorage.getItem('syncmgr:scores')||'[]');hs.push({score,date:new Date().toISOString(),diff:GS.diff,syncs:GS.totalSyncs});hs.sort((a,b)=>b.score-a.score);localStorage.setItem('syncmgr:scores',JSON.stringify(hs.slice(0,20)))}
+function toggleScores(){
+const el=document.getElementById('title-scores');el.style.display=el.style.display==='none'?'block':'none';
+const hs=JSON.parse(localStorage.getItem('syncmgr:scores')||'[]');
+if(hs.length===0){el.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:12px">No scores yet</div>';return}
+el.innerHTML='<h3 style="color:var(--primary);font-size:13px;text-align:center;margin-bottom:8px">TOP SCORES</h3>'+hs.slice(0,10).map((h,i)=>`<div class="lb-entry"><span class="rank">#${i+1}</span><span style="flex:1;color:var(--text-muted)">${h.diff} - ${h.syncs} syncs</span><span style="color:#fff;font-weight:600">${h.score}</span></div>`).join('');
+snd('menu')
+}
+function saveState(){localStorage.setItem('syncmgr:state',JSON.stringify({artifacts,history:syncHistory.slice(-50)}))}
+function loadState(){try{const s=JSON.parse(localStorage.getItem('syncmgr:state'));if(s&&s.artifacts)artifacts=s.artifacts;if(s&&s.history)syncHistory=s.history}catch(e){}}
+function updatePipeline(){
+pipelineNodes=[];
+const stages=['Discover','Validate','Transform','Sync','Deploy'];
+const sw=pipeCanvas.width,sh=pipeCanvas.height;
+const synced=artifacts.filter(a=>a.status==='synced').length;
+const pending=artifacts.filter(a=>a.status==='pending').length;
+const conflicts=artifacts.filter(a=>a.status==='conflict').length;
+stages.forEach((s,i)=>{
+let status='pending';
+if(i===0&&artifacts.length>0)status='done';
+if(i===1&&artifacts.filter(a=>a.errors===0).length===artifacts.length&&artifacts.length>0)status='done';
+if(i===2&&pending===0&&artifacts.length>0)status='done';
+if(i===3&&synced===artifacts.length&&artifacts.length>0)status='done';
+if(i===4&&synced===artifacts.length&&conflicts===0&&artifacts.length>0)status='done';
+pipelineNodes.push({name:s,x:60+i*(sw-120)/4,y:sh/2,status,pulse:0})
+})
+}
+function drawPipeline(){
+const w=pipeCanvas.width,h=pipeCanvas.height;
+pCtx.fillStyle='#161b22';pCtx.fillRect(0,0,w,h);
+pipelineAngle+=.02;
+if(pipelineNodes.length===0)return;
+for(let i=0;i<pipelineNodes.length-1;i++){
+const a=pipelineNodes[i],b=pipelineNodes[i+1];
+pCtx.beginPath();pCtx.moveTo(a.x+30,a.y);pCtx.lineTo(b.x-30,b.y);
+pCtx.strokeStyle=a.status==='done'?'#3fb950':'#30363d';pCtx.lineWidth=3;pCtx.stroke();
+if(a.status==='done'){
+const t=(Math.sin(pipelineAngle*2+i)+1)/2;
+const mx=a.x+30+(b.x-30-a.x-30)*t;
+pCtx.beginPath();pCtx.arc(mx,a.y,4,0,Math.PI*2);pCtx.fillStyle='#3fb950';pCtx.fill()
+}
+}
+pipelineNodes.forEach((n,i)=>{
+n.pulse=Math.sin(pipelineAngle+i)*3;
+const col=n.status==='done'?'#3fb950':'#58a6ff';
+pCtx.beginPath();pCtx.arc(n.x,n.y+n.pulse,26,0,Math.PI*2);
+pCtx.fillStyle=n.status==='done'?'rgba(63,185,80,.15)':'rgba(88,166,255,.1)';pCtx.fill();
+pCtx.strokeStyle=col;pCtx.lineWidth=2;pCtx.stroke();
+if(n.status==='done'){pCtx.shadowColor=col;pCtx.shadowBlur=12;pCtx.stroke();pCtx.shadowBlur=0}
+pCtx.fillStyle=col;pCtx.font='bold 11px sans-serif';pCtx.textAlign='center';pCtx.fillText(n.name,n.x,n.y+n.pulse+4);
+pCtx.fillStyle='#8b949e';pCtx.font='10px sans-serif';pCtx.fillText(n.status==='done'?'OK':'...',n.x,n.y+n.pulse+18)
+});
+pCtx.fillStyle='#8b949e';pCtx.font='10px sans-serif';pCtx.textAlign='left';
+pCtx.fillText('Pipeline Status',10,20);
+const synced=artifacts.filter(a=>a.status==='synced').length;
+pCtx.fillStyle='#3fb950';pCtx.fillText(synced+'/'+artifacts.length+' synced',10,36);
+requestAnimationFrame(drawPipeline)
+}
+function startPipeline(){updatePipeline();drawPipeline()}
+let resizeTO;window.addEventListener('resize',()=>{clearTimeout(resizeTO);resizeTO=setTimeout(()=>{const v=document.getElementById('view');if(v){pipeCanvas.width=Math.min(800,v.clientWidth-40)}},200)});
+pipeCanvas.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
+loadState();
+</script>
+</body>
+</html>

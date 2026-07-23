@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MERIDIAN GALLERIA — Mall of Dreams (Round 17 PORTAL)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0c0a14;color:#f4ecd8;font-family:-apple-system,Helvetica,Arial,sans-serif}
+canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none;font-size:12px;letter-spacing:.04em}
+#floorstamp{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(20,14,30,.78);border:1px solid #b58a4f;padding:8px 22px;border-radius:4px;font-weight:700;font-size:14px;letter-spacing:.18em;text-shadow:0 0 8px #ffcc88;color:#ffe7b8;min-width:380px;text-align:center}
+#worldinfo{position:absolute;top:54px;left:50%;transform:translateX(-50%);font-size:10px;color:#e6c089;letter-spacing:.18em;background:rgba(20,14,30,.6);padding:3px 14px;border-radius:3px}
+#cyclecount{position:absolute;top:14px;right:14px;background:rgba(20,14,30,.78);border:1px solid #b58a4f;padding:8px 14px;border-radius:4px;color:#ffd9a8;min-width:240px;text-align:right}
+#minimap{position:absolute;top:60px;left:14px;background:rgba(20,14,30,.85);border:1px solid #b58a4f;border-radius:4px}
+#shoppers{position:absolute;top:60px;right:14px;background:rgba(20,14,30,.85);border:1px solid #b58a4f;border-radius:4px;padding:8px 12px;min-width:230px;font-size:11px;line-height:1.55;color:#f4ecd8}
+#featured{position:absolute;bottom:60px;left:14px;background:rgba(20,14,30,.85);border:1px solid #b58a4f;padding:8px 14px;border-radius:4px;max-width:380px;line-height:1.5}
+#cammeta{position:absolute;bottom:60px;right:14px;background:rgba(20,14,30,.85);border:1px solid #b58a4f;padding:6px 12px;border-radius:4px;font-size:11px;color:#ffcc88;letter-spacing:.14em}
+#chyron{position:absolute;bottom:0;left:0;right:0;height:36px;background:linear-gradient(180deg,rgba(20,14,30,.4),rgba(20,14,30,.95));border-top:1px solid #b58a4f;overflow:hidden;display:flex;align-items:center}
+#chyronlabel{flex-shrink:0;background:#b58a4f;color:#1a1020;padding:6px 14px;font-weight:700;letter-spacing:.18em;font-size:11px;height:100%;display:flex;align-items:center}
+#chyrontext{white-space:nowrap;padding-left:30px;animation:scroll 46s linear infinite;color:#ffe7b8;font-weight:600}
+@keyframes scroll{from{transform:translateX(100%)}to{transform:translateX(-100%)}}
+.label{color:#ffb077;font-weight:700;letter-spacing:.14em}
+.k{color:#9cf}
+#legend{position:absolute;top:260px;left:14px;background:rgba(20,14,30,.7);border:1px solid #b58a4f;padding:6px 10px;border-radius:4px;font-size:10px;color:#e6c089;line-height:1.6;max-width:200px}
+.f1{color:#ffb84d}.f2{color:#ff77cc}.f3{color:#66e8ff}.f4{color:#dcd6c0}.f5{color:#ff8855}.fa{color:#c8a878}
+</style>
+</head>
+<body>
+<!-- ROUND17_PORTAL v1 -->
+<div id="hud">
+  <div id="floorstamp">FLOOR 1 OF 5 · FOOD COURT</div>
+  <div id="worldinfo">MERIDIAN GALLERIA · OPEN 'TIL 9:30 PM</div>
+  <div id="cyclecount">DAY 1 · 47 SHOPPERS HERE</div>
+  <canvas id="minimap" width="190" height="190"></canvas>
+  <div id="shoppers"><b>FEATURED SHOPPERS</b><br><span id="shopperslist">loading…</span></div>
+  <div id="legend"><b>MERIDIAN GALLERIA</b><br>5-floor mall · atrium fountain · glass elevator · 12 regulars · open 10–9:30</div>
+  <div id="featured"><span class="label">NOW</span> <span id="featname">—</span><br><span id="featrole">—</span></div>
+  <div id="cammeta"><span id="camlabel">CAM 01 — ATRIUM FOUNTAIN</span></div>
+  <div id="chyron"><div id="chyronlabel">MERIDIAN LIVE</div><div id="chyrontext">welcome to MERIDIAN GALLERIA — five floors of nostalgia, neon, and warm amber light…</div></div>
+</div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+var W=window.innerWidth,H=window.innerHeight;
+var renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.6));
+renderer.setSize(W,H);
+renderer.setClearColor(0x0c0a14,1);
+document.body.appendChild(renderer.domElement);
+
+var scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x14101e,0.012);
+
+var camera=new THREE.PerspectiveCamera(55,W/H,0.1,400);
+camera.position.set(0,6,30);
+
+// ============ FLOOR PALETTES ============
+var FLOORS=[
+  {name:'FOOD COURT',sub:'mid-century coffee shop',y:0,bg:0x2a1a0a,key:0xffb84d,accent:0xff7755,fog:0x1a1208,hud:'floor 1 of 5: food court · 47 shoppers here · open \'til 9:30 pm',font:'mid-century'},
+  {name:'FASHION',sub:'italic runway',y:8,bg:0x2a0a1f,key:0xff77cc,accent:0xff3399,fog:0x180818,hud:'floor 2 of 5: fashion · 38 shoppers here · open \'til 9:30 pm',font:'italic'},
+  {name:'TECH',sub:'monospace LCD',y:16,bg:0x081420,key:0x66e8ff,accent:0x4488ff,fog:0x040a14,hud:'floor 3 of 5: tech · 52 shoppers here · open \'til 9:30 pm',font:'mono'},
+  {name:'ART',sub:'thin serif',y:24,bg:0x1c1c1a,key:0xdcd6c0,accent:0xc8a878,fog:0x121210,hud:'floor 4 of 5: art · 24 shoppers here · open \'til 9:30 pm',font:'serif'},
+  {name:'ROOFTOP ARCADE',sub:'neon script',y:32,bg:0x180a2a,key:0xff8855,accent:0x9966ff,fog:0x0c0820,hud:'floor 5 of 5: rooftop arcade · 61 shoppers here · open \'til 9:30 pm',font:'neon'},
+  {name:'ATRIUM',sub:'glass + brass',y:0,bg:0x14101e,key:0xffd9a8,accent:0x66bbff,fog:0x100c1c,hud:'central atrium · 5-story fountain · 220 shoppers here',font:'classic'}
+];
+
+// ============ LOCALSTORAGE MEMORY ============
+var MEM_KEY='meridian_mall_memory_v1';
+var SHOPPER_NAMES=['Lou Park','Cassie Park','Reggie Park','Marisol','Tee','Cris','Dre','Ren','Vidal','Esi','Ade','Mr. Whitford','Olaf'];
+var SHOPPER_ROLES=[
+  'dad-of-two, t-shirt mission','9, wants a smoothie','7, wants pretzel + arcade','17, vintage band tee hunt','17, sketches in food court','partners, anniversary gift','partners, picking earrings','tripod up, OOTD reel','solo gamer, save up for monitor','mom, art-class supplies','toddler, escalator fan','retiree, decaf + repair shop','janitor, mop & soft hum'];
+var INSTANCE_NAMES=['Andy','Bea','Cleo','Devi','Ed','Faye','Gus','Hana','Ivo','Jules','Kit','Lin','Max','Noor','Otto','Pia','Quinn','Rae','Sol','Tam','Uli','Vera','Wes','Xan','Yas','Zev','Aro','Bram','Cyd','Dax','Elin','Fenn','Gia','Hugo','Inez','Joss','Kai','Lana','Mira','Nate','Oz','Posy','Ria','Sami','Toma','Una','Veda','Wyn','Yara','Zeb','Aja','Bex','Cy','Doro','Eda','Fritz','Gali','Hiro','Iso','Jin','Kira','Liv','Mo','Nia','Oli','Petra','Quil','Roan','Sky','Tov','Ula','Viv','Wyatt','Yon','Zia','Avi','Bo','Cara','Dimi','Eli','Fia','Gem','Hesh','Ila','Jax','Kep','Lou-A','Mara','Nyx','Oren','Pax','Risa','Sari','Tilo','Una-B'];
+var EMPLOYEES=[
+  ['Marco (pizza)','Yuki (sushi)','Coco (ice cream)','Ben (coffee)','Ash (smoothie)'],
+  ['Stell (Avalune)','Juno (Kitsune)','Brae (Metro)','Mae (dressing rm)','Iz (shoes)'],
+  ['Toni (gaming)','Ravi (electronics)','Lex (wireless)','Sim (repair)','Doc (museum)'],
+  ['Aurelia (Aurelio)','Hue (Chromatic)','Sumi (Ink&Water)','Cole (sculpture)','Pip (gift)'],
+  ['Jay (mini-golf)','Bex (batting)','Pixel (arcade)','Vee (bar)','Sol (deck)']
+];
+var STORES=[
+  ['Sliceworks Pizza','Chirashi Bowl','Glaciér Scoops','Daybreak Coffee','Verdant Smoothies','The Pretzelry'],
+  ['AVALUNE','KITSUNE STREET','METRO LANE'],
+  ['Pixelborn Gaming','Lumen Electronics','SignalCarrier','MicroFix Repair','Cathode Hall (museum)'],
+  ['AURELIO MODERN','CHROMATIC','INK & WATER'],
+  ['Greenway Mini-Golf','Slugger Cages','Quartz Arcade','Skyline Lounge','Sunset Deck']
+];
+
+function loadMem(){
+  try{
+    var raw=localStorage.getItem(MEM_KEY);
+    if(raw){var m=JSON.parse(raw); if(m && m.day) return m;}
+  }catch(e){}
+  var shoppers=[];
+  for(var i=0;i<SHOPPER_NAMES.length;i++){
+    shoppers.push({name:SHOPPER_NAMES[i],role:SHOPPER_ROLES[i],floors:[],bags:0,spent:0,list:rollList(i)});
+  }
+  return {day:1,shoppers:shoppers,totalBags:0,totalSpent:0};
+}
+function rollList(seed){
+  var pool=['t-shirts','sneakers','headphones','smoothie','coffee','pretzel','sushi roll','ice cream','poster','sketchbook','vinyl','controller','pop figure','bonsai','earrings','bag','jacket','phone case','print','glasses'];
+  var n=2+(seed%3);var out=[];for(var k=0;k<n;k++){out.push(pool[(seed*7+k*5)%pool.length]);}return out;
+}
+function saveMem(){try{localStorage.setItem(MEM_KEY,JSON.stringify(MEMORY));}catch(e){}}
+var MEMORY=loadMem();
+
+function reseed(){
+  // advance mall day, re-roll lists, returning shoppers get new lists
+  MEMORY.day=(MEMORY.day||1)+1;
+  for(var i=0;i<MEMORY.shoppers.length;i++){
+    var s=MEMORY.shoppers[i];
+    s.floors=[];
+    s.list=rollList(i+MEMORY.day*3);
+  }
+  saveMem();
+  pushChyron('DAY '+MEMORY.day+' — sun rises over MERIDIAN GALLERIA. Returning regulars: '+MEMORY.shoppers.slice(0,4).map(function(s){return s.name;}).join(', ')+'… Bags so far: '+MEMORY.totalBags+'.');
+}
+
+// ============ LIGHTS ============
+var amb=new THREE.AmbientLight(0xfff0d8,0.45);scene.add(amb);
+var sun=new THREE.DirectionalLight(0xffd9a8,0.8);sun.position.set(40,80,30);scene.add(sun);
+var rim=new THREE.DirectionalLight(0x66bbff,0.25);rim.position.set(-40,30,-30);scene.add(rim);
+
+// per-floor accent lights
+var floorLights=[];
+for(var fi=0;fi<5;fi++){
+  var pl=new THREE.PointLight(FLOORS[fi].key,1.2,28);
+  pl.position.set(0,FLOORS[fi].y+3.5,0);
+  scene.add(pl);
+  floorLights.push(pl);
+}
+
+// ============ MALL GEOMETRY ============
+var MALL=new THREE.Group();scene.add(MALL);
+
+// shared materials
+var matFloorWarm=new THREE.MeshStandardMaterial({color:0xc89968,roughness:0.85,metalness:0.05});
+var matFloorMag=new THREE.MeshStandardMaterial({color:0x553344,roughness:0.6,metalness:0.1});
+var matFloorTech=new THREE.MeshStandardMaterial({color:0x223040,roughness:0.5,metalness:0.2});
+var matFloorArt=new THREE.MeshStandardMaterial({color:0xece6d0,roughness:0.95,metalness:0.0});
+var matFloorRoof=new THREE.MeshStandardMaterial({color:0x2a1a3a,roughness:0.7,metalness:0.05});
+var floorMats=[matFloorWarm,matFloorMag,matFloorTech,matFloorArt,matFloorRoof];
+
+var matGlass=new THREE.MeshStandardMaterial({color:0xaaccff,roughness:0.05,metalness:0.7,transparent:true,opacity:0.18});
+var matBrass=new THREE.MeshStandardMaterial({color:0xc8a060,roughness:0.3,metalness:0.85});
+var matRail=new THREE.MeshStandardMaterial({color:0x806040,roughness:0.4,metalness:0.6});
+
+// floor slabs (donut with central atrium hole)
+function buildSlab(y,mat){
+  // outer slab
+  var outer=new THREE.Mesh(new THREE.BoxGeometry(60,0.3,60),mat);
+  outer.position.y=y;MALL.add(outer);
+  // atrium hole — emulate by overlaying a slab with hole using ring shape
+  var ringShape=new THREE.Shape();
+  ringShape.moveTo(-30,-30);ringShape.lineTo(30,-30);ringShape.lineTo(30,30);ringShape.lineTo(-30,30);ringShape.lineTo(-30,-30);
+  var hole=new THREE.Path();hole.absarc(0,0,8,0,Math.PI*2,true);
+  ringShape.holes.push(hole);
+  var ringGeo=new THREE.ShapeGeometry(ringShape);
+  ringGeo.rotateX(-Math.PI/2);
+  var ring=new THREE.Mesh(ringGeo,mat);
+  ring.position.y=y+0.2;
+  MALL.add(ring);
+  return ring;
+}
+for(var fi=0;fi<5;fi++){buildSlab(FLOORS[fi].y,floorMats[fi]);}
+// ground basement
+var basement=new THREE.Mesh(new THREE.BoxGeometry(60,0.3,60),new THREE.MeshStandardMaterial({color:0x141018}));
+basement.position.y=-0.4;MALL.add(basement);
+// roof slab (ceiling of floor 5 — partly open for sky)
+var roofMat=new THREE.MeshStandardMaterial({color:0x281a30,roughness:0.8});
+var roofRingShape=new THREE.Shape();
+roofRingShape.moveTo(-30,-30);roofRingShape.lineTo(30,-30);roofRingShape.lineTo(30,30);roofRingShape.lineTo(-30,30);roofRingShape.lineTo(-30,-30);
+var roofHole=new THREE.Path();roofHole.absarc(0,0,12,0,Math.PI*2,true);
+roofRingShape.holes.push(roofHole);
+var roofGeo=new THREE.ShapeGeometry(roofRingShape);roofGeo.rotateX(-Math.PI/2);
+var roof=new THREE.Mesh(roofGeo,roofMat);roof.position.y=40;MALL.add(roof);
+
+// outer walls — glassy curtain
+function buildOuterWalls(){
+  var wallMat=new THREE.MeshStandardMaterial({color:0x2a2236,roughness:0.4,metalness:0.5});
+  var glass=new THREE.MeshStandardMaterial({color:0x8899bb,roughness:0.1,metalness:0.6,transparent:true,opacity:0.12});
+  var sides=[[0,0,30,60,1,40],[0,0,-30,60,1,40],[30,0,0,1,40,60],[-30,0,0,1,40,60]];
+  for(var s=0;s<sides.length;s++){
+    var c=sides[s];
+    var w=new THREE.Mesh(new THREE.BoxGeometry(c[3],c[4],c[5]),glass);
+    w.position.set(c[0],20,c[2]);MALL.add(w);
+  }
+}
+buildOuterWalls();
+
+// ============ ATRIUM (central column with fountain + escalators + glass elevator) ============
+var ATRIUM=new THREE.Group();scene.add(ATRIUM);
+
+// fountain (5-story tall, in basement up to floor 1.5)
+var fountainBase=new THREE.Mesh(new THREE.CylinderGeometry(7,7.5,0.6,32),new THREE.MeshStandardMaterial({color:0x8a6a40,roughness:0.5,metalness:0.4}));
+fountainBase.position.set(0,0.1,0);ATRIUM.add(fountainBase);
+var fountainPool=new THREE.Mesh(new THREE.CylinderGeometry(6.6,6.6,0.4,32),new THREE.MeshStandardMaterial({color:0x4a8ec8,roughness:0.2,metalness:0.1,transparent:true,opacity:0.8}));
+fountainPool.position.set(0,0.35,0);ATRIUM.add(fountainPool);
+// fountain spire — 5 stories tall
+for(var k=0;k<5;k++){
+  var tier=new THREE.Mesh(new THREE.CylinderGeometry(0.6+k*0.1,1.2-k*0.1,1.2,16),new THREE.MeshStandardMaterial({color:0xc8a060,roughness:0.3,metalness:0.7}));
+  tier.position.set(0,1.2+k*7,0);ATRIUM.add(tier);
+  var basin=new THREE.Mesh(new THREE.CylinderGeometry(2.4-k*0.3,2.4-k*0.3,0.18,24),new THREE.MeshStandardMaterial({color:0xddc080,roughness:0.4,metalness:0.5}));
+  basin.position.set(0,2+k*7,0);ATRIUM.add(basin);
+}
+var fountainTop=new THREE.Mesh(new THREE.SphereGeometry(0.9,18,12),new THREE.MeshStandardMaterial({color:0xffe0b0,emissive:0xffd9a8,emissiveIntensity:0.6,roughness:0.3}));
+fountainTop.position.set(0,36,0);ATRIUM.add(fountainTop);
+
+// fountain particles (water)
+var FCOUNT=300;
+var fGeo=new THREE.BufferGeometry();
+var fPos=new Float32Array(FCOUNT*3),fVel=new Float32Array(FCOUNT*3);
+for(var i=0;i<FCOUNT;i++){
+  var ang=Math.random()*Math.PI*2,r=Math.random()*0.4;
+  fPos[i*3]=Math.cos(ang)*r;fPos[i*3+1]=1.0+Math.random()*1.2;fPos[i*3+2]=Math.sin(ang)*r;
+  fVel[i*3]=(Math.random()-0.5)*0.04;fVel[i*3+1]=0.10+Math.random()*0.08;fVel[i*3+2]=(Math.random()-0.5)*0.04;
+}
+fGeo.setAttribute('position',new THREE.BufferAttribute(fPos,3));
+var fMat=new THREE.PointsMaterial({color:0xaaddff,size:0.15,transparent:true,opacity:0.8});
+var fountainPts=new THREE.Points(fGeo,fMat);ATRIUM.add(fountainPts);
+
+// glass elevator (2x2x3 cab moving up/down central shaft on +x side of atrium)
+var elevatorShaft=new THREE.Mesh(new THREE.BoxGeometry(2.2,38,2.2),new THREE.MeshStandardMaterial({color:0xaaccff,roughness:0.05,metalness:0.5,transparent:true,opacity:0.15}));
+elevatorShaft.position.set(6,19,0);ATRIUM.add(elevatorShaft);
+var elevator=new THREE.Group();
+var cab=new THREE.Mesh(new THREE.BoxGeometry(1.9,2.6,1.9),new THREE.MeshStandardMaterial({color:0xddccaa,roughness:0.1,metalness:0.4,transparent:true,opacity:0.45,emissive:0xffd9a8,emissiveIntensity:0.18}));
+elevator.add(cab);
+var cabFloor=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.1,1.9),new THREE.MeshStandardMaterial({color:0x806040,roughness:0.4,metalness:0.6}));
+cabFloor.position.y=-1.3;elevator.add(cabFloor);
+var cabLight=new THREE.PointLight(0xffd9a8,0.6,8);cabLight.position.y=1.0;elevator.add(cabLight);
+elevator.position.set(6,3,0);ATRIUM.add(elevator);
+
+// escalators between floors (4 sets — N/S sides)
+function buildEscalator(y0,y1,xz,dir){
+  var grp=new THREE.Group();
+  var len=Math.sqrt((y1-y0)*(y1-y0)+8*8);
+  var ang=Math.atan2(y1-y0,8);
+  var step=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.25,len),new THREE.MeshStandardMaterial({color:0xaaaaaa,roughness:0.4,metalness:0.6}));
+  step.position.set(0,(y0+y1)/2,0);step.rotation.x=-ang;grp.add(step);
+  var rail=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.6,len),new THREE.MeshStandardMaterial({color:0x4a3a2a,roughness:0.4,metalness:0.4,transparent:true,opacity:0.5}));
+  rail.position.set(0,(y0+y1)/2+0.4,0);rail.rotation.x=-ang;grp.add(rail);
+  // step lines
+  var stepCount=10;
+  for(var s=0;s<stepCount;s++){
+    var sm=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.04,0.4),new THREE.MeshStandardMaterial({color:0x141018}));
+    var t=s/stepCount;
+    sm.position.set(0,y0+(y1-y0)*t+0.16,-4+8*t);
+    grp.add(sm);
+  }
+  grp.position.set(xz[0],0,xz[1]);
+  if(dir){grp.rotation.y=Math.PI;}
+  ATRIUM.add(grp);
+  return grp;
+}
+// 4 escalator sets, one between each floor (1->2, 2->3, 3->4, 4->5)
+for(var fi=0;fi<4;fi++){
+  buildEscalator(FLOORS[fi].y+0.2,FLOORS[fi+1].y+0.2,[-9,-3+(fi%2)*0.2],fi%2);
+  buildEscalator(FLOORS[fi].y+0.2,FLOORS[fi+1].y+0.2,[-9,3-(fi%2)*0.2],(fi+1)%2);
+}
+
+// atrium railings around hole on each floor
+for(var fi=0;fi<5;fi++){
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(8.2,0.12,8,40),matBrass);
+  ring.position.set(0,FLOORS[fi].y+1.0,0);ring.rotation.x=Math.PI/2;ATRIUM.add(ring);
+  var ring2=new THREE.Mesh(new THREE.TorusGeometry(8.2,0.06,6,40),matBrass);
+  ring2.position.set(0,FLOORS[fi].y+0.4,0);ring2.rotation.x=Math.PI/2;ATRIUM.add(ring2);
+}
+
+// ============ FLOOR-SPECIFIC SUB-LOCATIONS ============
+function box(w,h,d,c,emi){
+  var m=new THREE.MeshStandardMaterial({color:c,roughness:0.6,metalness:0.15});
+  if(emi!==undefined){m.emissive=new THREE.Color(emi);m.emissiveIntensity=0.55;}
+  return new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);
+}
+function cyl(rt,rb,h,c,emi){
+  var m=new THREE.MeshStandardMaterial({color:c,roughness:0.5,metalness:0.2});
+  if(emi!==undefined){m.emissive=new THREE.Color(emi);m.emissiveIntensity=0.55;}
+  return new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,12),m);
+}
+
+// Floor 1 — FOOD COURT
+var F1=new THREE.Group();F1.position.y=FLOORS[0].y;scene.add(F1);
+var SUBLOCS=[[],[],[],[],[]];
+function addKiosk(grp,x,z,name,col,emi){
+  var k=new THREE.Group();
+  var counter=box(3,1.2,2,col);counter.position.y=0.6;k.add(counter);
+  var awning=box(3.2,0.4,2.2,col,emi);awning.position.y=2.6;k.add(awning);
+  var post1=box(0.2,2.0,0.2,0x6a4a2a);post1.position.set(-1.4,1.0,-0.9);k.add(post1);
+  var post2=post1.clone();post2.position.set(1.4,1.0,-0.9);k.add(post2);
+  var sign=box(2.4,0.5,0.1,col,emi);sign.position.set(0,3.0,1.05);k.add(sign);
+  k.position.set(x,0,z);grp.add(k);
+  SUBLOCS[0].push({name:name,pos:new THREE.Vector3(x,0,z),floor:0});
+  return k;
+}
+addKiosk(F1,-22,-22,'Sliceworks Pizza',0xee5533,0xff7755);
+addKiosk(F1,-22,-12,'Chirashi Bowl',0xff8866,0xffaa88);
+addKiosk(F1,-22,-2,'Glaciér Scoops',0xffccaa,0xffe6cc);
+addKiosk(F1,-22,8,'Daybreak Coffee',0x6a4422,0x9a6a3a);
+addKiosk(F1,-22,18,'Verdant Smoothies',0x88cc66,0xaaee88);
+addKiosk(F1,22,18,'The Pretzelry',0xc89048,0xeeb666);
+// seating area (tables + chairs)
+for(var t=0;t<10;t++){
+  var tx=14+(t%5)*2.0,tz=-22+Math.floor(t/5)*3;
+  var tbl=cyl(0.7,0.7,0.7,0x886644);tbl.position.set(tx,0.35,tz);F1.add(tbl);
+  for(var c=0;c<4;c++){
+    var cx=tx+Math.cos(c*Math.PI/2)*1.2,cz=tz+Math.sin(c*Math.PI/2)*1.2;
+    var ch=box(0.5,0.5,0.5,0x664422);ch.position.set(cx,0.25,cz);F1.add(ch);
+  }
+}
+SUBLOCS[0].push({name:'Seating Area',pos:new THREE.Vector3(15,0,-19),floor:0});
+// condiment bar
+var condBar=box(4,1,1,0xaa8866);condBar.position.set(0,0.5,22);F1.add(condBar);
+SUBLOCS[0].push({name:'Condiment Bar',pos:new THREE.Vector3(0,0,22),floor:0});
+// return trays station
+var rtray=box(1.5,1.2,1.5,0x444444);rtray.position.set(20,0.6,-2);F1.add(rtray);
+SUBLOCS[0].push({name:'Return Trays',pos:new THREE.Vector3(20,0,-2),floor:0});
+// floor signage (food court mid-century)
+var f1sign=box(8,1.2,0.3,0xffb84d,0xff7733);f1sign.position.set(0,3.5,-29);F1.add(f1sign);
+// hanging lamps
+for(var l=0;l<8;l++){
+  var lamp=cyl(0.4,0.4,0.4,0xffe6c8,0xffd9a8);
+  var la=l/8*Math.PI*2;
+  lamp.position.set(Math.cos(la)*16,3.2,Math.sin(la)*16);F1.add(lamp);
+  var pl=new THREE.PointLight(0xffd9a8,0.4,8);pl.position.copy(lamp.position);F1.add(pl);
+}
+
+// Floor 2 — FASHION
+var F2=new THREE.Group();F2.position.y=FLOORS[1].y;scene.add(F2);
+function addBoutique(grp,x,z,name,col,emi){
+  var b=new THREE.Group();
+  var wall=box(7,4,0.3,0x44222e);wall.position.set(0,2,-2.5);b.add(wall);
+  var awning=box(7.5,0.6,0.5,col,emi);awning.position.set(0,3.6,-2.2);b.add(awning);
+  var sign=box(6,0.7,0.15,col,emi);sign.position.set(0,4.2,-2.4);b.add(sign);
+  // mannequins
+  for(var m=0;m<3;m++){
+    var mb=cyl(0.25,0.4,0.6,0xeeddc8);mb.position.set(-2+m*2,0.3,-1);b.add(mb);
+    var mt=box(0.6,1.2,0.3,0xeeddc8);mt.position.set(-2+m*2,1.2,-1);b.add(mt);
+    var mh=cyl(0.18,0.18,0.4,0xeeddc8);mh.position.set(-2+m*2,2.1,-1);b.add(mh);
+  }
+  // floor pad (different from main floor color)
+  var pad=box(7,0.05,4,col);pad.position.set(0,0.05,-1);b.add(pad);
+  b.position.set(x,0,z);grp.add(b);
+  SUBLOCS[1].push({name:name,pos:new THREE.Vector3(x,0,z),floor:1});
+  return b;
+}
+addBoutique(F2,-18,-22,'AVALUNE',0xff77cc,0xff3399);
+addBoutique(F2,-18,-2,'KITSUNE STREET',0xff5577,0xff77aa);
+addBoutique(F2,-18,18,'METRO LANE',0xaa66cc,0xcc88ee);
+// dressing rooms
+for(var d=0;d<3;d++){
+  var dr=box(2,3,2,0x664455);dr.position.set(8,1.5,-15+d*4);F2.add(dr);
+  var dCurtain=box(2,2.6,0.1,0xff77cc,0xff3399);dCurtain.position.set(8,1.3,-14+d*4);F2.add(dCurtain);
+}
+SUBLOCS[1].push({name:'Dressing Rooms',pos:new THREE.Vector3(8,0,-13),floor:1});
+// shoe try-on bench
+var tobench=box(4,0.8,1.2,0x884466);tobench.position.set(8,0.4,5);F2.add(tobench);
+SUBLOCS[1].push({name:'Shoe Try-On Bench',pos:new THREE.Vector3(8,0,5),floor:1});
+// window display (along north wall)
+var wd=box(8,3,0.2,0xff77cc,0xff3399);wd.position.set(15,2,-20);F2.add(wd);
+SUBLOCS[1].push({name:'Window Display',pos:new THREE.Vector3(15,0,-20),floor:1});
+// runway (central catwalk)
+var runway=box(12,0.1,2,0xff3399,0xff77cc);runway.position.set(15,0.15,5);F2.add(runway);
+// hanging spot lights
+for(var l=0;l<6;l++){
+  var pl=new THREE.PointLight(0xff77cc,0.5,10);pl.position.set(-15+l*6,4.5,5);F2.add(pl);
+}
+
+// Floor 3 — TECH
+var F3=new THREE.Group();F3.position.y=FLOORS[2].y;scene.add(F3);
+function addTechStore(grp,x,z,name,col,emi){
+  var s=new THREE.Group();
+  var wall=box(8,4,0.2,0x222a30);wall.position.set(0,2,-2);s.add(wall);
+  var sign=box(7,0.6,0.1,col,emi);sign.position.set(0,4.0,-1.95);s.add(sign);
+  // shelves
+  for(var sh=0;sh<3;sh++){
+    var shelf=box(7,0.1,1.0,0x445566);shelf.position.set(0,1.0+sh*0.9,-1.5);s.add(shelf);
+    for(var p=0;p<5;p++){
+      var prod=box(0.5,0.4,0.4,col,emi);prod.position.set(-2.8+p*1.4,1.3+sh*0.9,-1.4);s.add(prod);
+    }
+  }
+  // floor pad
+  var pad=box(8,0.05,4,col);pad.position.set(0,0.05,-1);s.add(pad);
+  s.position.set(x,0,z);grp.add(s);
+  SUBLOCS[2].push({name:name,pos:new THREE.Vector3(x,0,z),floor:2});
+  return s;
+}
+addTechStore(F3,-20,-22,'Pixelborn Gaming',0x66e8ff,0x44aaff);
+addTechStore(F3,-20,-10,'Lumen Electronics',0x88aaff,0x4488ff);
+addTechStore(F3,-20,2,'SignalCarrier',0x66ffaa,0x44ddaa);
+addTechStore(F3,-20,14,'MicroFix Repair',0xffaa66,0xff8844);
+// vintage computer museum
+var museum=new THREE.Group();
+var mWall=box(10,4,0.2,0x224050);mWall.position.set(0,2,-3);museum.add(mWall);
+var mSign=box(9,0.7,0.1,0x66e8ff,0x44aaff);mSign.position.set(0,4.0,-2.95);museum.add(mSign);
+for(var v=0;v<5;v++){
+  var pc=box(0.8,0.6,0.7,0xeeddcc);pc.position.set(-3.5+v*1.7,1.0,-2.0);museum.add(pc);
+  var crt=box(0.7,0.6,0.6,0x665544);crt.position.set(-3.5+v*1.7,1.6,-2.0);museum.add(crt);
+  var screen=box(0.5,0.4,0.05,0x88ffaa,0x66ddaa);screen.position.set(-3.5+v*1.7,1.6,-1.65);museum.add(screen);
+}
+museum.position.set(20,0,-15);F3.add(museum);
+SUBLOCS[2].push({name:'Cathode Hall (museum)',pos:new THREE.Vector3(20,0,-15),floor:2});
+// tech ceiling glow strips
+for(var l=0;l<8;l++){
+  var strip=box(6,0.05,0.4,0x66e8ff,0x44aaff);strip.position.set(-15+l*4,4.5,5);F3.add(strip);
+}
+for(var l=0;l<6;l++){
+  var pl=new THREE.PointLight(0x66e8ff,0.4,10);pl.position.set(-15+l*5,4,0);F3.add(pl);
+}
+
+// Floor 4 — ART
+var F4=new THREE.Group();F4.position.y=FLOORS[3].y;scene.add(F4);
+function addGallery(grp,x,z,name,col){
+  var g=new THREE.Group();
+  var wall=box(9,4,0.2,0xece6d0);wall.position.set(0,2,-3);g.add(wall);
+  var sign=box(8,0.5,0.05,0x222222);sign.position.set(0,4.1,-2.95);g.add(sign);
+  // 4 paintings on wall
+  for(var p=0;p<4;p++){
+    var f=box(1.5,1.2,0.08,0x333333);f.position.set(-3+p*2,2.2,-2.85);g.add(f);
+    var painting=box(1.3,1.0,0.04,col);painting.position.set(-3+p*2,2.2,-2.8);g.add(painting);
+  }
+  // bench
+  var bench=box(3,0.5,0.8,0x886644);bench.position.set(0,0.25,1);g.add(bench);
+  // floor pad
+  var pad=box(9,0.05,5,0xf6f0dc);pad.position.set(0,0.05,-0.5);g.add(pad);
+  g.position.set(x,0,z);grp.add(g);
+  SUBLOCS[3].push({name:name,pos:new THREE.Vector3(x,0,z),floor:3});
+  return g;
+}
+addGallery(F4,-20,-22,'AURELIO MODERN',0xc88866);
+addGallery(F4,-20,-2,'CHROMATIC',0xee6688);
+addGallery(F4,-20,18,'INK & WATER',0x336699);
+// sculpture nook
+var sculptBase=cyl(1.2,1.5,0.6,0xddc8a0);sculptBase.position.set(15,0.3,-15);F4.add(sculptBase);
+var sculpt=new THREE.Mesh(new THREE.IcosahedronGeometry(1.0,1),new THREE.MeshStandardMaterial({color:0xc8a060,roughness:0.3,metalness:0.7}));
+sculpt.position.set(15,1.6,-15);F4.add(sculpt);
+SUBLOCS[3].push({name:'Sculpture Nook',pos:new THREE.Vector3(15,0,-15),floor:3});
+// reading bench
+var rbench=box(4,0.5,1.2,0x886644);rbench.position.set(15,0.25,0);F4.add(rbench);
+SUBLOCS[3].push({name:'Bench',pos:new THREE.Vector3(15,0,0),floor:3});
+// gift shop
+var giftWall=box(6,3.5,0.2,0xeeddc8);giftWall.position.set(15,1.75,15);F4.add(giftWall);
+var giftSign=box(5,0.5,0.05,0x886644);giftSign.position.set(15,3.4,15.05);F4.add(giftSign);
+SUBLOCS[3].push({name:'Gift Shop',pos:new THREE.Vector3(15,0,15),floor:3});
+// gallery ceiling track lights
+for(var l=0;l<10;l++){
+  var pl=new THREE.PointLight(0xfff0d8,0.35,8);pl.position.set(-20+l*4.5,4.2,0);F4.add(pl);
+}
+
+// Floor 5 — ROOFTOP ARCADE
+var F5=new THREE.Group();F5.position.y=FLOORS[4].y;scene.add(F5);
+// mini-golf (3 holes)
+for(var h=0;h<3;h++){
+  var green=box(4,0.1,3,0x66cc66);green.position.set(-22,0.05,-22+h*5);F5.add(green);
+  var hole=cyl(0.3,0.3,0.05,0x111111);hole.position.set(-22,0.12,-22+h*5);F5.add(hole);
+  var flag=box(0.05,1.5,0.05,0x888888);flag.position.set(-21,0.9,-22+h*5);F5.add(flag);
+  var flagF=box(0.04,0.4,0.5,0xff5555);flagF.position.set(-20.8,1.4,-22+h*5);F5.add(flagF);
+}
+SUBLOCS[4].push({name:'Greenway Mini-Golf',pos:new THREE.Vector3(-22,0,-18),floor:4});
+// batting cages (3)
+for(var b=0;b<3;b++){
+  var cage=box(3,3,3,0x4a4a4a,0x222222);cage.material.transparent=true;cage.material.opacity=0.3;cage.position.set(-22,1.5,5+b*4);F5.add(cage);
+  var pitch=box(0.5,1.0,0.5,0xff8855);pitch.position.set(-22,0.5,4+b*4);F5.add(pitch);
+}
+SUBLOCS[4].push({name:'Slugger Cages',pos:new THREE.Vector3(-22,0,9),floor:4});
+// retro arcade (cluster of cabinets)
+for(var a=0;a<8;a++){
+  var cab=box(1.0,2.0,1.2,0x222244);cab.position.set(15+(a%4)*1.6,1.0,-22+Math.floor(a/4)*2);F5.add(cab);
+  var screen=box(0.7,0.6,0.05,0x66e8ff,0xff77cc);screen.position.set(15+(a%4)*1.6,1.4,-21.4+Math.floor(a/4)*2);F5.add(screen);
+}
+SUBLOCS[4].push({name:'Quartz Arcade',pos:new THREE.Vector3(17,0,-21),floor:4});
+// rooftop bar with neon signs
+var bar=box(8,1.2,2,0x442233);bar.position.set(15,0.6,8);F5.add(bar);
+var barTop=box(8,0.1,2,0x886644);barTop.position.set(15,1.25,8);F5.add(barTop);
+var neon1=box(5,0.5,0.1,0xff77cc,0xff3399);neon1.position.set(15,3.5,7);F5.add(neon1);
+var neon2=box(3,0.4,0.1,0x66e8ff,0x44aaff);neon2.position.set(13,4.2,7);F5.add(neon2);
+// stools
+for(var st=0;st<5;st++){
+  var stool=cyl(0.3,0.3,0.9,0x664422);stool.position.set(11+st*1.5,0.45,9.5);F5.add(stool);
+}
+SUBLOCS[4].push({name:'Skyline Lounge',pos:new THREE.Vector3(15,0,8),floor:4});
+// sunset deck (with chairs facing west)
+for(var c=0;c<5;c++){
+  var chair=box(0.8,1.0,0.8,0xc88866);chair.position.set(20,0.5,-15+c*2.5);F5.add(chair);
+}
+var deckRail=box(0.2,0.8,12,0xc8a060);deckRail.position.set(25,0.4,-9);F5.add(deckRail);
+SUBLOCS[4].push({name:'Sunset Deck',pos:new THREE.Vector3(22,0,-10),floor:4});
+// rooftop sky color (background dome)
+var sky=new THREE.Mesh(new THREE.SphereGeometry(150,16,12,0,Math.PI*2,0,Math.PI/2),new THREE.MeshBasicMaterial({color:0x4a2a4a,side:THREE.BackSide}));
+sky.position.y=40;scene.add(sky);
+// neon lights on rooftop
+for(var l=0;l<8;l++){
+  var pl=new THREE.PointLight(l%2?0xff77cc:0x66e8ff,0.5,12);
+  pl.position.set(-20+l*5,3.5,0);F5.add(pl);
+}
+
+// ============ NPCs ============
+function makeNPC(col,sz,head){
+  var g=new THREE.Group();
+  var body=cyl(0.25,0.3,sz||1.0,col);body.position.y=(sz||1.0)/2;g.add(body);
+  var hd=new THREE.Mesh(new THREE.SphereGeometry(0.18,10,8),new THREE.MeshStandardMaterial({color:head||0xeeccaa,roughness:0.7}));
+  hd.position.y=(sz||1.0)+0.18;g.add(hd);
+  return g;
+}
+var FEATURED_NPCS=[];
+var FEAT_COLORS=[0xee6644,0xffaa44,0x88cc44,0x44aaff,0xaa66dd,0xff77cc,0xee4488,0xeeaa44,0x44ccdd,0xff8866,0xffcc88,0x886644,0x447766];
+for(var i=0;i<SHOPPER_NAMES.length;i++){
+  var n=makeNPC(FEAT_COLORS[i],i===1||i===2||i===10?0.6:1.0,0xeeccaa);
+  n.userData={name:SHOPPER_NAMES[i],role:SHOPPER_ROLES[i],floor:i%5,target:null,t:Math.random()*100,wait:0,bags:0};
+  // initial position on initial floor
+  var fl=n.userData.floor;
+  var sub=SUBLOCS[fl][Math.floor(Math.random()*SUBLOCS[fl].length)];
+  n.position.set(sub.pos.x,FLOORS[fl].y+0.25,sub.pos.z);
+  scene.add(n);
+  FEATURED_NPCS.push(n);
+}
+
+// 100 instanced shoppers (just point sprites for perf)
+var INSTANCE_COUNT=100;
+var instGeo=new THREE.BufferGeometry();
+var iPos=new Float32Array(INSTANCE_COUNT*3);
+var iCol=new Float32Array(INSTANCE_COUNT*3);
+var INSTANCE_DATA=[];
+for(var i=0;i<INSTANCE_COUNT;i++){
+  var fl=Math.floor(Math.random()*5);
+  var sub=SUBLOCS[fl][Math.floor(Math.random()*SUBLOCS[fl].length)];
+  var x=sub.pos.x+(Math.random()-0.5)*4;
+  var z=sub.pos.z+(Math.random()-0.5)*4;
+  iPos[i*3]=x;iPos[i*3+1]=FLOORS[fl].y+0.6;iPos[i*3+2]=z;
+  var c=new THREE.Color().setHSL(Math.random(),0.5,0.55);
+  iCol[i*3]=c.r;iCol[i*3+1]=c.g;iCol[i*3+2]=c.b;
+  INSTANCE_DATA.push({floor:fl,name:INSTANCE_NAMES[i%INSTANCE_NAMES.length],t:Math.random()*100,target:null,wait:0});
+}
+instGeo.setAttribute('position',new THREE.BufferAttribute(iPos,3));
+instGeo.setAttribute('color',new THREE.BufferAttribute(iCol,3));
+var instMat=new THREE.PointsMaterial({size:0.55,vertexColors:true,sizeAttenuation:true});
+var instPts=new THREE.Points(instGeo,instMat);scene.add(instPts);
+
+// employees (5 per floor) — small fixed npcs
+var EMPLOYEE_NPCS=[];
+for(var fi=0;fi<5;fi++){
+  for(var e=0;e<EMPLOYEES[fi].length;e++){
+    var sub=SUBLOCS[fi][e%SUBLOCS[fi].length];
+    var emp=makeNPC(0x444466,1.0,0xddbb99);
+    emp.position.set(sub.pos.x+1.5,FLOORS[fi].y+0.25,sub.pos.z+1.5);
+    emp.userData={name:EMPLOYEES[fi][e],floor:fi,role:'employee'};
+    scene.add(emp);
+    EMPLOYEE_NPCS.push(emp);
+  }
+}
+
+// ============ CAMERAS (18+) ============
+var CAMERAS=[
+  {n:'CAM 01 — ATRIUM FOUNTAIN',f:function(t){
+    camera.position.set(Math.cos(t*0.04)*16,4+Math.sin(t*0.06)*1.5,Math.sin(t*0.04)*16);
+    camera.lookAt(0,5,0);}},
+  {n:'CAM 02 — GLASS ELEVATOR POV',f:function(t){
+    camera.position.set(elevator.position.x-0.3,elevator.position.y+0.6,elevator.position.z-0.3);
+    camera.lookAt(0,elevator.position.y+0.3,0);}},
+  {n:'CAM 03 — ELEVATOR EXTERIOR',f:function(t){
+    camera.position.set(13,elevator.position.y+1,4);
+    camera.lookAt(elevator.position.x,elevator.position.y,elevator.position.z);}},
+  {n:'CAM 04 — ESCALATOR SIDE',f:function(t){
+    camera.position.set(-15,FLOORS[Math.floor(t/3)%5].y+3,-12);
+    camera.lookAt(-9,FLOORS[Math.floor(t/3)%5].y+2,0);}},
+  {n:'CAM 05 — FOOD COURT WIDE',f:function(t){
+    camera.position.set(-2,FLOORS[0].y+5,12);
+    camera.lookAt(-15,FLOORS[0].y+1,0);}},
+  {n:'CAM 06 — PIZZA COUNTER CLOSE',f:function(t){
+    camera.position.set(-18,FLOORS[0].y+1.6,-22);
+    camera.lookAt(-22,FLOORS[0].y+1.2,-22);}},
+  {n:'CAM 07 — FASHION RUNWAY',f:function(t){
+    camera.position.set(15+Math.sin(t*0.1)*3,FLOORS[1].y+1.4,12);
+    camera.lookAt(15,FLOORS[1].y+1.0,5);}},
+  {n:'CAM 08 — DRESSING ROOM REVEAL',f:function(t){
+    camera.position.set(11,FLOORS[1].y+1.6,-13);
+    camera.lookAt(8,FLOORS[1].y+1.4,-13);}},
+  {n:'CAM 09 — TECH GAMING STORE',f:function(t){
+    camera.position.set(-15,FLOORS[2].y+1.5,-22);
+    camera.lookAt(-20,FLOORS[2].y+1.2,-22);}},
+  {n:'CAM 10 — CATHODE HALL CLOSE',f:function(t){
+    camera.position.set(20+Math.cos(t*0.08)*2,FLOORS[2].y+1.6,-12);
+    camera.lookAt(20,FLOORS[2].y+1.4,-15);}},
+  {n:'CAM 11 — ART GALLERY WALL',f:function(t){
+    camera.position.set(-15,FLOORS[3].y+1.8,-22);
+    camera.lookAt(-20,FLOORS[3].y+2.0,-23);}},
+  {n:'CAM 12 — SCULPTURE',f:function(t){
+    camera.position.set(15+Math.cos(t*0.15)*3,FLOORS[3].y+2.0,-12+Math.sin(t*0.15)*3);
+    camera.lookAt(15,FLOORS[3].y+1.5,-15);}},
+  {n:'CAM 13 — MINI-GOLF',f:function(t){
+    camera.position.set(-18,FLOORS[4].y+1.5,-18);
+    camera.lookAt(-22,FLOORS[4].y+0.5,-20);}},
+  {n:'CAM 14 — BATTING CAGE',f:function(t){
+    camera.position.set(-18,FLOORS[4].y+2.0,8);
+    camera.lookAt(-22,FLOORS[4].y+1.5,9);}},
+  {n:'CAM 15 — NEON BAR',f:function(t){
+    camera.position.set(11,FLOORS[4].y+2.2,11);
+    camera.lookAt(15,FLOORS[4].y+1.5,8);}},
+  {n:'CAM 16 — SUNSET DECK',f:function(t){
+    camera.position.set(20,FLOORS[4].y+1.8,-2);
+    camera.lookAt(28,FLOORS[4].y+2.5,-12);}},
+  {n:'CAM 17 — JANITOR MOP CAM (OLAF)',f:function(t){
+    var olaf=FEATURED_NPCS[12];
+    if(olaf){camera.position.set(olaf.position.x-1,olaf.position.y+1.6,olaf.position.z-1);camera.lookAt(olaf.position.x+0.5,olaf.position.y+0.5,olaf.position.z+0.5);}}},
+  {n:'CAM 18 — DRONE OVER MALL',f:function(t){
+    camera.position.set(Math.cos(t*0.02)*40,40+Math.sin(t*0.03)*6,Math.sin(t*0.02)*40);
+    camera.lookAt(0,18,0);}},
+  {n:'CAM 19 — ATRIUM TOP-DOWN',f:function(t){
+    camera.position.set(0+Math.cos(t*0.05)*1,38,0+Math.sin(t*0.05)*1);
+    camera.lookAt(0,18,0);}},
+  {n:'CAM 20 — FOOD COURT TABLE CAM',f:function(t){
+    camera.position.set(15,FLOORS[0].y+1.3,-19);
+    camera.lookAt(15+Math.cos(t*0.1)*4,FLOORS[0].y+1.0,-19+Math.sin(t*0.1)*4);}},
+  {n:'CAM 21 — GLASS ELEVATOR DOWN',f:function(t){
+    camera.position.set(elevator.position.x+0.4,elevator.position.y+1.2,elevator.position.z+0.4);
+    camera.lookAt(elevator.position.x,0,elevator.position.z);}}
+];
+
+// ============ MINI-MAP ============
+var miniCanvas=document.getElementById('minimap');
+var mctx=miniCanvas.getContext('2d');
+function drawMiniMap(){
+  mctx.fillStyle='rgba(20,14,30,0.95)';mctx.fillRect(0,0,190,190);
+  // 5 floors stacked (cross-section)
+  var floorColors=['#ffb84d','#ff77cc','#66e8ff','#dcd6c0','#ff8855'];
+  var floorNames=['F1 FOOD','F2 FASH','F3 TECH','F4 ART','F5 ROOF'];
+  for(var fi=0;fi<5;fi++){
+    var y=170-fi*30;
+    mctx.fillStyle=floorColors[fi]+'33';
+    mctx.fillRect(15,y-22,160,22);
+    mctx.strokeStyle=floorColors[fi];
+    mctx.lineWidth=1;
+    mctx.strokeRect(15,y-22,160,22);
+    // atrium hole
+    mctx.fillStyle='rgba(20,14,30,1)';
+    mctx.fillRect(85,y-22,20,22);
+    mctx.fillStyle=floorColors[fi];
+    mctx.font='bold 9px monospace';
+    mctx.fillText(floorNames[fi],18,y-9);
+  }
+  // escalators (zigzag through atrium)
+  mctx.strokeStyle='#c8a060';mctx.lineWidth=1.5;
+  mctx.beginPath();
+  for(var fi=0;fi<4;fi++){
+    var y0=170-fi*30-11,y1=170-(fi+1)*30-11;
+    var x0=fi%2?95:85,x1=fi%2?85:95;
+    mctx.moveTo(x0,y0);mctx.lineTo(x1,y1);
+  }
+  mctx.stroke();
+  // glass elevator (line)
+  mctx.strokeStyle='#aaccff';mctx.lineWidth=2;
+  mctx.beginPath();mctx.moveTo(110,20);mctx.lineTo(110,170);mctx.stroke();
+  // elevator dot
+  var elevY=170-(elevator.position.y/40)*150;
+  mctx.fillStyle='#ffe7b8';mctx.beginPath();mctx.arc(110,elevY,3,0,Math.PI*2);mctx.fill();
+  // shopper dots (featured)
+  for(var i=0;i<FEATURED_NPCS.length;i++){
+    var n=FEATURED_NPCS[i],fl=n.userData.floor;
+    var fy=170-fl*30-11;
+    var fx=18+((n.position.x+30)/60)*155;
+    mctx.fillStyle='#'+FEAT_COLORS[i].toString(16).padStart(6,'0');
+    mctx.fillRect(fx-1,fy-1,2,2);
+  }
+  // currentFloor highlight
+  var cy=170-currentFloor*30;
+  mctx.strokeStyle='#ffd9a8';mctx.lineWidth=2;mctx.strokeRect(13,cy-24,164,26);
+  // header
+  mctx.fillStyle='#ffd9a8';mctx.font='bold 10px monospace';
+  mctx.fillText('MERIDIAN GALLERIA',26,12);
+}
+
+// ============ CHYRON / FEATURED ============
+var hudFloor=document.getElementById('floorstamp');
+var hudWorld=document.getElementById('worldinfo');
+var hudCycle=document.getElementById('cyclecount');
+var hudShoppers=document.getElementById('shopperslist');
+var hudFeat=document.getElementById('featname');
+var hudFeatRole=document.getElementById('featrole');
+var hudCam=document.getElementById('camlabel');
+var chyronText=document.getElementById('chyrontext');
+
+var chyronBuffer=[
+  'welcome to MERIDIAN GALLERIA — five floors of nostalgia, neon, and warm amber light',
+  'now boarding the glass elevator — please mind the brass handrail',
+  'Lou Park buys 3 t-shirts at AVALUNE on Floor 2 while Cassie & Reggie eye smoothies on Floor 1',
+  'Vidal beats his high score at Floor 5 arcade — Quartz Arcade leaderboard refreshing',
+  'Mr. Whitford coffees at Floor 1 before heading to NEXLOGIC — a familiar face in our atrium',
+  'Ren\'s OOTD reel hits 12K views — filmed on the runway at METRO LANE, Floor 2',
+  'Esi & Ade pause at Floor 4 — toddler is mesmerized by the sculpture in the AURELIO MODERN nook',
+  'Marisol & Tee split a pretzel — sketchbook open at the food court condiment bar',
+  'Cris & Dre choose anniversary earrings at KITSUNE STREET, then head to Floor 5 for sunset',
+  'Olaf the janitor whistles down Floor 3 — the vintage CRTs hum in Cathode Hall',
+  'food court at golden hour: Sliceworks Pizza is calling, Daybreak Coffee is winding down',
+  'fashion week mood lights up the atrium fountain in magenta — courtesy of AVALUNE\'s window display'
+];
+function pushChyron(s){chyronBuffer.push(s);if(chyronBuffer.length>30)chyronBuffer.shift();}
+var chyronIdx=0;
+function rotateChyron(){
+  chyronText.textContent=chyronBuffer[chyronIdx%chyronBuffer.length];
+  chyronIdx++;
+}
+
+// ============ STATE ============
+var clock=new THREE.Clock();
+var T=0;
+var currentFloor=0;
+var camIdx=0;
+var camTimer=0;
+var camHold=8;
+var portalTimer=0;
+var portalHold=65; // 60-75s
+var elevatorTarget=0;
+var lastReseed=Date.now();
+var currentScale=1.0;
+
+// initial camera
+camera.position.set(20,5,20);
+camera.lookAt(0,3,0);
+
+// ============ NPC MOVEMENT ============
+function updateFeatured(dt){
+  for(var i=0;i<FEATURED_NPCS.length;i++){
+    var n=FEATURED_NPCS[i];var d=n.userData;
+    if(!d.target){
+      // pick a sub-loc on current floor
+      var sub=SUBLOCS[d.floor][Math.floor(Math.random()*SUBLOCS[d.floor].length)];
+      d.target=new THREE.Vector3(sub.pos.x+(Math.random()-0.5)*3,FLOORS[d.floor].y+0.25,sub.pos.z+(Math.random()-0.5)*3);
+      d.targetName=sub.name;
+      // chance of changing floor
+      if(Math.random()<0.05){
+        var nf=(d.floor+(Math.random()<0.5?1:-1)+5)%5;
+        d.floor=nf;d.target.y=FLOORS[nf].y+0.25;
+        d.target.x=SUBLOCS[nf][0].pos.x;d.target.z=SUBLOCS[nf][0].pos.z;
+        // record in MEMORY
+        if(MEMORY.shoppers[i] && MEMORY.shoppers[i].floors.indexOf(nf+1)<0){
+          MEMORY.shoppers[i].floors.push(nf+1);
+        }
+      }
+    }
+    var dx=d.target.x-n.position.x,dy=d.target.y-n.position.y,dz=d.target.z-n.position.z;
+    var dl=Math.sqrt(dx*dx+dz*dz);
+    if(dl<0.4){
+      d.wait+=dt;
+      if(d.wait>2+Math.random()*3){
+        d.target=null;d.wait=0;
+        // chance of buying (bags+spent)
+        if(Math.random()<0.3 && MEMORY.shoppers[i]){
+          MEMORY.shoppers[i].bags++;
+          var spent=5+Math.floor(Math.random()*40);
+          MEMORY.shoppers[i].spent+=spent;
+          MEMORY.totalBags++;
+          MEMORY.totalSpent+=spent;
+          if(Math.random()<0.2){
+            pushChyron(SHOPPER_NAMES[i]+' buys '+(MEMORY.shoppers[i].list[d.floor%MEMORY.shoppers[i].list.length]||'an item')+' at '+(d.targetName||'a kiosk')+' on Floor '+(d.floor+1)+' — bag '+MEMORY.shoppers[i].bags+', $'+MEMORY.shoppers[i].spent);
+          }
+        }
+      }
+    }else{
+      n.position.x+=dx/dl*0.7*dt;
+      n.position.z+=dz/dl*0.7*dt;
+    }
+    // y snap to floor
+    n.position.y=FLOORS[d.floor].y+0.25+Math.abs(Math.sin(T*4+i))*0.06;
+  }
+}
+
+function updateInstanced(dt){
+  var posAttr=instGeo.getAttribute('position');
+  for(var i=0;i<INSTANCE_COUNT;i++){
+    var d=INSTANCE_DATA[i];
+    if(!d.target){
+      var sub=SUBLOCS[d.floor][Math.floor(Math.random()*SUBLOCS[d.floor].length)];
+      d.target=[sub.pos.x+(Math.random()-0.5)*3,sub.pos.z+(Math.random()-0.5)*3];
+      if(Math.random()<0.02){d.floor=(d.floor+1)%5;}
+    }
+    var x=posAttr.array[i*3],z=posAttr.array[i*3+2];
+    var dx=d.target[0]-x,dz=d.target[1]-z;
+    var dl=Math.sqrt(dx*dx+dz*dz);
+    if(dl<0.5){
+      d.wait+=dt;if(d.wait>1+Math.random()*2){d.target=null;d.wait=0;}
+    }else{
+      posAttr.array[i*3]+=dx/dl*0.5*dt;
+      posAttr.array[i*3+2]+=dz/dl*0.5*dt;
+    }
+    posAttr.array[i*3+1]=FLOORS[d.floor].y+0.55+Math.abs(Math.sin(T*3+i*0.7))*0.04;
+  }
+  posAttr.needsUpdate=true;
+}
+
+// ============ ELEVATOR ============
+function updateElevator(dt){
+  var targetY=FLOORS[elevatorTarget].y+3;
+  var dy=targetY-elevator.position.y;
+  if(Math.abs(dy)>0.05){
+    elevator.position.y+=dy*Math.min(1,dt*1.5);
+  }
+}
+
+// ============ PORTAL TRAVEL ============
+function portal(){
+  // pick next floor
+  currentFloor=(currentFloor+1)%5;
+  elevatorTarget=currentFloor;
+  // update floor stamp + hud
+  var fl=FLOORS[currentFloor];
+  hudFloor.textContent='FLOOR '+(currentFloor+1)+' OF 5 · '+fl.name;
+  hudWorld.textContent='MERIDIAN GALLERIA · '+fl.sub.toUpperCase()+' · OPEN \'TIL 9:30 PM';
+  // adjust font for stamp
+  var fontMap={'mid-century':'Georgia, serif','italic':'italic 700 14px Georgia','mono':'monospace','serif':'serif','neon':'cursive','classic':'system'};
+  hudFloor.style.fontFamily=(fontMap[fl.font]||'monospace');
+  if(fl.font==='italic')hudFloor.style.fontStyle='italic';else hudFloor.style.fontStyle='normal';
+  // recolor stamp
+  var c=fl.key.toString(16).padStart(6,'0');
+  hudFloor.style.color='#'+c;
+  hudFloor.style.borderColor='#'+c;
+  hudFloor.style.textShadow='0 0 8px #'+c;
+  // adjust fog
+  scene.fog.color.setHex(fl.fog);
+  // chyron
+  pushChyron('— PORTAL — entering FLOOR '+(currentFloor+1)+': '+fl.name+'. '+chyronBuffer[Math.floor(Math.random()*chyronBuffer.length)]);
+  // pick a featured shopper for the role hud
+  var featIdx=Math.floor(Math.random()*FEATURED_NPCS.length);
+  hudFeat.textContent=FEATURED_NPCS[featIdx].userData.name+' — Floor '+(FEATURED_NPCS[featIdx].userData.floor+1);
+  hudFeatRole.textContent=FEATURED_NPCS[featIdx].userData.role;
+  // shopper count
+  var counts=[47,38,52,24,61];
+  hudCycle.textContent='DAY '+MEMORY.day+' · '+counts[currentFloor]+' SHOPPERS HERE';
+  // save mem
+  saveMem();
+}
+
+// ============ RESEED ============
+var startTs=Date.now();
+function maybeReseed(){
+  if(Date.now()-startTs>10*60*1000){
+    reseed();
+    startTs=Date.now();
+    // dispose / restate the random NPC targets
+    for(var i=0;i<FEATURED_NPCS.length;i++){FEATURED_NPCS[i].userData.target=null;FEATURED_NPCS[i].userData.bags=0;}
+    for(var i=0;i<INSTANCE_DATA.length;i++){INSTANCE_DATA[i].target=null;}
+    pushChyron('RESEED — DAY '+MEMORY.day+' · the gates roll up again at MERIDIAN GALLERIA');
+  }
+}
+
+// ============ MAIN LOOP ============
+function updateFountain(dt){
+  var pa=fGeo.getAttribute('position');
+  for(var i=0;i<FCOUNT;i++){
+    fPos[i*3]+=fVel[i*3];
+    fPos[i*3+1]+=fVel[i*3+1];
+    fPos[i*3+2]+=fVel[i*3+2];
+    fVel[i*3+1]-=0.012;
+    if(fPos[i*3+1]<0.6){
+      var ang=Math.random()*Math.PI*2,r=Math.random()*0.4;
+      fPos[i*3]=Math.cos(ang)*r;fPos[i*3+1]=1.0+Math.random()*0.5;fPos[i*3+2]=Math.sin(ang)*r;
+      fVel[i*3]=(Math.random()-0.5)*0.04;fVel[i*3+1]=0.10+Math.random()*0.08;fVel[i*3+2]=(Math.random()-0.5)*0.04;
+    }
+  }
+  pa.needsUpdate=true;
+}
+
+function updateShopperPanel(){
+  var html='';
+  for(var i=0;i<7;i++){
+    var n=FEATURED_NPCS[i],s=MEMORY.shoppers[i];
+    if(!n||!s)continue;
+    var floorName=FLOORS[n.userData.floor].name.split(' ')[0];
+    var clsMap=['f1','f2','f3','f4','f5'];
+    html+='<span class="'+clsMap[n.userData.floor]+'">●</span> <b>'+s.name+'</b> · '+floorName+' · '+s.bags+'b $'+s.spent+'<br>';
+  }
+  hudShoppers.innerHTML=html;
+}
+
+var chyronAcc=0;
+var shopAcc=0;
+function frame(){
+  var dt=Math.min(clock.getDelta(),0.1);
+  T+=dt;
+  // featured + instanced
+  updateFeatured(dt);
+  updateInstanced(dt);
+  updateFountain(dt);
+  updateElevator(dt);
+  // camera switch
+  camTimer+=dt;
+  if(camTimer>camHold){
+    camTimer=0;
+    camIdx=(camIdx+1)%CAMERAS.length;
+    hudCam.textContent=CAMERAS[camIdx].n;
+  }
+  CAMERAS[camIdx].f(T);
+  // portal
+  portalTimer+=dt;
+  if(portalTimer>portalHold){
+    portalTimer=0;
+    portalHold=60+Math.random()*15;
+    portal();
+  }
+  // chyron rotate every ~12s
+  chyronAcc+=dt;
+  if(chyronAcc>12){chyronAcc=0;rotateChyron();}
+  // shopper panel update
+  shopAcc+=dt;
+  if(shopAcc>2){shopAcc=0;updateShopperPanel();drawMiniMap();}
+  // reseed check
+  maybeReseed();
+  renderer.render(scene,camera);
+  requestAnimationFrame(frame);
+}
+
+// ============ INIT HUD ============
+hudFloor.textContent='FLOOR 1 OF 5 · '+FLOORS[0].name;
+hudWorld.textContent='MERIDIAN GALLERIA · '+FLOORS[0].sub.toUpperCase()+' · OPEN \'TIL 9:30 PM';
+hudCycle.textContent='DAY '+MEMORY.day+' · 47 SHOPPERS HERE';
+pushChyron('DAY '+MEMORY.day+' — meridian galleria opens. Total bags lifetime: '+(MEMORY.totalBags||0)+', spent $'+(MEMORY.totalSpent||0)+'.');
+updateShopperPanel();
+drawMiniMap();
+hudCam.textContent=CAMERAS[0].n;
+
+window.addEventListener('resize',function(){
+  W=window.innerWidth;H=window.innerHeight;
+  camera.aspect=W/H;camera.updateProjectionMatrix();
+  renderer.setSize(W,H);
+});
+
+// disposable cleanup on unload
+window.addEventListener('beforeunload',function(){
+  saveMem();
+  scene.traverse(function(o){
+    if(o.geometry)o.geometry.dispose();
+    if(o.material){
+      if(Array.isArray(o.material))o.material.forEach(function(m){m.dispose();});
+      else o.material.dispose();
+    }
+  });
+  renderer.dispose();
+});
+
+frame();
+
+})();
+</script>
+</body>
+</html>

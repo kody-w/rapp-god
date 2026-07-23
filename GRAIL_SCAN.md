@@ -4,6 +4,13 @@
 
 > **Spec id:** `rapp-grail-scan/1.0` · **status:** additive, advisory gate · **home:** kody-w/rapp-god
 >
+> **Authority correction:** this historical advisory procedure is not RAPP/1
+> acceptance and cannot bless identity, registry freshness, signatures, or
+> owner decisions. Technical authority is the pinned RAPP/1 rev-5 spec.
+> Federal governance retains only its public source commit/tree pin because
+> the local content is private-boundary withheld. Ratification and owner
+> decisions therefore fail closed. All four owner blockers remain open.
+>
 > A *grail* commit is one that the canonical corpus would bless: it violates no spec, and it leaves no spec stale. Grail Scan is the **bidirectional** procedure that proves it — a fine-grained neuron swarm reads the whole corpus against the commit, **and the commit against the whole corpus**, then a synthesis cortex issues a verdict. It is the swarm formalization of rapp-god's existing job (canonical integrity + cross-repo drift) and the [DRIFT_TRIANGLE].
 
 ---

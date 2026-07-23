@@ -1,0 +1,2201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mars Barn — Ground View</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🔴</text></svg>">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a0a04;color:#e0c8b0;font-family:'Courier New',monospace;overflow:hidden}
+#canvas{width:100vw;height:100vh;display:block}
+#hud{position:fixed;top:0;left:0;right:0;padding:12px 20px;background:linear-gradient(180deg,rgba(0,0,0,0.8),transparent);z-index:10;display:flex;justify-content:space-between;pointer-events:none}
+#hud *{pointer-events:auto}
+.hud-left,.hud-right{display:flex;flex-direction:column;gap:4px}
+.hud-right{align-items:flex-end}
+.hud-title{font-size:14px;color:#f0a060;font-weight:bold;letter-spacing:2px}
+.hud-stat{font-size:11px;color:#c09060;opacity:0.9}
+.hud-stat span{color:#f0c080}
+.hud-stat .warn{color:#ef4444}
+.hud-stat .ok{color:#4ade80}
+.hud-divider{border-top:1px solid rgba(240,160,96,0.2);margin:4px 0}
+.hud-label{font-size:9px;color:#806040;letter-spacing:1px;text-transform:uppercase}
+.hud-source{font-size:8px;color:#604830;margin-top:6px;font-style:italic}
+#bot-panel{position:fixed;bottom:0;left:0;right:0;padding:12px 20px;background:linear-gradient(0deg,rgba(0,0,0,0.85),transparent);z-index:10}
+.bot-bar{display:flex;gap:12px;overflow-x:auto;padding:4px 0}
+.bot-card{background:rgba(40,20,10,0.8);border:1px solid #4a2a10;border-radius:6px;padding:8px 12px;min-width:140px;cursor:pointer;flex-shrink:0;transition:border-color 0.2s}
+.bot-card:hover,.bot-card.active{border-color:#f0a060}
+.bot-name{font-size:12px;color:#f0c080;font-weight:bold}
+.bot-task{font-size:10px;color:#907050;margin-top:2px}
+.bot-energy{height:3px;background:#2a1a0a;border-radius:2px;margin-top:4px}
+.bot-energy-fill{height:100%;border-radius:2px;background:#f0a060;transition:width 0.5s}
+#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:20px;height:20px;z-index:5;pointer-events:none;opacity:0.3}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:#f0a060}
+#crosshair::before{width:1px;height:100%;left:50%}
+#crosshair::after{width:100%;height:1px;top:50%}
+#loading{position:fixed;inset:0;background:#0a0400;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;transition:opacity 0.5s}
+#loading.done{opacity:0;pointer-events:none}
+#loading h1{color:#f0a060;font-size:24px;letter-spacing:4px}
+#loading p{color:#907050;font-size:12px;margin-top:8px}
+#possess-hint{position:fixed;top:50%;left:50%;transform:translate(-50%,60px);color:#f0a060;font-size:12px;z-index:5;opacity:0;transition:opacity 0.3s;pointer-events:none;text-align:center}
+.hud-bar{display:inline-block;width:80px;height:8px;background:#1a0a04;border:1px solid #4a2a10;border-radius:3px;vertical-align:middle;margin-left:4px;overflow:hidden}
+.hud-bar-fill{height:100%;border-radius:2px;transition:width 0.5s}
+.hud-events{color:#ef8844;font-size:10px;margin-top:2px}
+.hud-equip-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.hud-equip-item{font-size:10px;padding:1px 5px;border-radius:3px;border:1px solid #4a2a10;background:rgba(20,10,5,0.6)}
+.hud-equip-item.ok{border-color:#2a6a2a;color:#4ade80}
+.hud-equip-item.warn{border-color:#6a5a1a;color:#facc15}
+.hud-equip-item.crit{border-color:#6a1a1a;color:#ef4444}
+.flash-overlay{position:fixed;inset:0;pointer-events:none;z-index:8;opacity:0;transition:opacity 0.3s}
+#colony-switcher{background:#1a0a04;color:#f0a060;border:1px solid #4a2a10;border-radius:4px;padding:2px 6px;font-family:'Courier New',monospace;font-size:11px;cursor:pointer;outline:none;margin-top:2px}
+#touch-move{position:fixed;bottom:100px;left:30px;width:100px;height:100px;border-radius:50%;background:rgba(240,160,96,0.15);border:2px solid rgba(240,160,96,0.3);z-index:15;display:none;touch-action:none}
+#touch-move-stick{position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(240,160,96,0.5);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none}
+#touch-look{position:fixed;bottom:100px;right:30px;width:100px;height:100px;border-radius:50%;background:rgba(240,160,96,0.15);border:2px solid rgba(240,160,96,0.3);z-index:15;display:none;touch-action:none}
+@media (pointer:coarse),(hover:none){#touch-move,#touch-look{display:block}#possess-hint{display:none}}
+#colony-switcher option{background:#1a0a04;color:#f0a060}
+#camera-presets{position:fixed;bottom:70px;right:20px;display:flex;flex-direction:column;gap:6px;z-index:10}
+.cam-btn{width:36px;height:36px;border-radius:50%;background:rgba(26,10,4,0.85);border:1px solid #4a2a10;color:#f0a060;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:border-color 0.2s,transform 0.1s}
+.cam-btn:hover{border-color:#f0a060;transform:scale(1.15)}
+.structure-label{color:#f0c080;font-family:'Courier New',monospace;font-size:10px;background:rgba(10,4,0,0.75);padding:2px 6px;border-radius:3px;border:1px solid rgba(74,42,16,0.5);white-space:nowrap;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="loading"><h1>MARS BARN</h1><p>Loading simulation state...</p></div>
+<div id="crosshair"></div>
+<div id="possess-hint">Click a bot to possess it<br><span style="font-size:10px;color:#907050">ESC to release</span></div>
+<canvas id="canvas"></canvas>
+<div class="flash-overlay" id="flash-overlay"></div>
+<div id="touch-move"><div id="touch-move-stick"></div></div>
+<div id="touch-look"></div>
+<div id="hud">
+  <div class="hud-left">
+    <div class="hud-title" id="hud-title">MARS BARN — GROUND VIEW</div>
+    <select id="colony-switcher"></select>
+    <div class="hud-stat">Sol <span id="hud-sol">0</span> | <span id="hud-time">06:00</span> LMST</div>
+    <div class="hud-stat">Ls <span id="hud-ls">0</span>° | <span id="hud-season">—</span></div>
+    <div class="hud-stat" id="hud-location">Jezero Crater · 18.38°N 77.58°E</div>
+    <div class="hud-divider"></div>
+    <div class="hud-label">Colony Status</div>
+    <div class="hud-stat">Crew: <span id="hud-crew">0</span> | Morale: <span id="hud-morale">0%</span></div>
+    <div class="hud-stat">Interior: <span id="hud-temp">20°C</span> | O₂: <span id="hud-o2" class="ok">ISRU nominal</span></div>
+    <div class="hud-divider"></div>
+    <div class="hud-label">Equipment Health</div>
+    <div class="hud-equip-row" id="hud-equip-row"></div>
+    <div class="hud-divider"></div>
+    <div class="hud-label">Active Events</div>
+    <div class="hud-events" id="hud-events">—</div>
+    <div class="hud-source">Colony sim: kody-w/mars-barn · Terrain: MOLA/HiRISE model</div>
+  </div>
+  <div class="hud-right">
+    <div class="hud-label">Atmospheric Conditions</div>
+    <div class="hud-stat">Surface: <span id="hud-ext-temp">—</span></div>
+    <div class="hud-stat">Pressure: <span id="hud-pressure">—</span> Pa</div>
+    <div class="hud-stat">Wind: <span id="hud-wind">—</span> m/s</div>
+    <div class="hud-stat">Dust τ: <span id="hud-dust">—</span> | UV: <span id="hud-uv">—</span></div>
+    <div class="hud-stat">Solar: <span id="hud-solar">—</span> W/m²</div>
+    <div class="hud-divider"></div>
+    <div class="hud-label">Colony Resources</div>
+    <div class="hud-stat">Energy: <span id="hud-energy">0</span> / 5000 kWh <span class="hud-bar"><span class="hud-bar-fill" id="hud-energy-bar" style="width:0%;background:#4ade80"></span></span></div>
+    <div class="hud-stat">Water: <span id="hud-water">0</span> / 500 L <span class="hud-bar"><span class="hud-bar-fill" id="hud-water-bar" style="width:0%;background:#38bdf8"></span></span></div>
+    <div class="hud-stat">Food: <span id="hud-food">0</span> kg | O₂: <span id="hud-o2-rate" class="ok">ISRU +4.0 kg/sol</span></div>
+    <div class="hud-stat">Battery: <span id="hud-battery-pct">0</span>% charged</div>
+    <div class="hud-divider"></div>
+    <div class="hud-label">Resupply</div>
+    <div class="hud-stat" id="hud-shuttle">No shuttles tracked</div>
+    <div class="hud-source">Weather: NASA Viking/Curiosity/MEDA data model</div>
+  </div>
+</div>
+<div id="camera-presets">
+  <button class="cam-btn" data-cam="overview" title="Overview">🏠</button>
+  <button class="cam-btn" data-cam="solar" title="Solar Field">☀️</button>
+  <button class="cam-btn" data-cam="greenhouse" title="Greenhouse">🌿</button>
+  <button class="cam-btn" data-cam="landing" title="Landing Pad">🚀</button>
+</div>
+<div id="bot-panel">
+  <div class="bot-bar" id="bot-bar"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+// ── Mars Climate Engine ─────────────────────────────────────────────────
+// Real-time Mars weather modeled from NASA mission data (1976-2026).
+// Sources: Viking 1&2, Curiosity/REMS, Perseverance/MEDA, MCD v6.1,
+//          Mars Dust Activity Database (14,974 storms MY24-MY32).
+// Algorithm: Allison & McEwen (2000) for Mars date calculations.
+
+// Jezero Crater coordinates (Perseverance landing site)
+const JEZERO_LAT = 18.38;   // °N
+const JEZERO_LON = 77.58;   // °E
+
+// Surface temperature by Ls bin: [mean_K, std_K, min_K, max_K]
+// From Curiosity/REMS multi-year averages + MCD v6.1 validation
+const TEMP_BY_LS = {
+  0:   [207, 12, 180, 235],
+  30:  [210, 11, 185, 240],
+  60:  [213, 10, 190, 243],
+  90:  [208, 11, 184, 238],
+  120: [205, 12, 180, 235],
+  150: [210, 13, 182, 245],
+  180: [218, 15, 188, 260],
+  210: [225, 18, 190, 272],
+  240: [228, 20, 192, 280],
+  270: [222, 17, 189, 272],
+  300: [218, 15, 185, 265],
+  330: [212, 13, 183, 250],
+};
+
+// Atmospheric pressure by Ls: [mean_Pa, std_Pa]
+// Viking + Curiosity seasonal CO₂ cycle
+const PRESSURE_BY_LS = {
+  0:   [750, 30],  30:  [730, 25],  60:  [710, 20],
+  90:  [700, 20],  120: [720, 25],  150: [750, 30],
+  180: [800, 35],  210: [860, 40],  240: [920, 45],
+  270: [960, 40],  300: [930, 35],  330: [850, 30],
+};
+
+// Solar irradiance by Ls: [toa_Wm2, clear_surface, storm_surface]
+const SOLAR_BY_LS = {
+  0:   [530, 350, 120],  30:  [510, 340, 115],  60:  [495, 330, 110],
+  90:  [490, 325, 105],  120: [505, 335, 110],  150: [530, 350, 120],
+  180: [570, 375, 130],  210: [620, 410, 140],  240: [670, 440, 90],
+  270: [715, 470, 80],   300: [680, 450, 100],  330: [610, 400, 135],
+};
+
+// Dust storm probability by Ls: [any_prob, regional, global, mean_sev, max_sev]
+const DUST_BY_LS = {
+  0:   [0.02, 0.005, 0.000, 0.2, 0.4],
+  30:  [0.02, 0.005, 0.000, 0.2, 0.4],
+  60:  [0.03, 0.008, 0.000, 0.25, 0.5],
+  90:  [0.03, 0.008, 0.000, 0.25, 0.5],
+  120: [0.04, 0.010, 0.000, 0.3, 0.5],
+  150: [0.05, 0.015, 0.000, 0.3, 0.6],
+  180: [0.10, 0.030, 0.002, 0.4, 0.7],
+  210: [0.15, 0.050, 0.005, 0.5, 0.8],
+  240: [0.20, 0.080, 0.010, 0.5, 0.9],
+  270: [0.25, 0.100, 0.015, 0.6, 0.95],
+  300: [0.18, 0.060, 0.008, 0.5, 0.85],
+  330: [0.08, 0.020, 0.002, 0.3, 0.6],
+};
+
+// Wind speed by Ls: [mean_ms, gust_ms] — derived from MEDA/REMS
+const WIND_BY_LS = {
+  0:   [4.0, 12],  30:  [3.5, 10],  60:  [3.0, 9],
+  90:  [3.0, 8],   120: [3.5, 10],  150: [4.0, 12],
+  180: [5.5, 16],  210: [7.0, 22],  240: [8.5, 28],
+  270: [9.0, 35],  300: [7.5, 25],  330: [5.0, 15],
+};
+
+const SEASONS = [
+  [0,   'Early Spring'],  [30,  'Spring'],        [60,  'Late Spring'],
+  [90,  'Early Summer'],  [120, 'Mid Summer'],     [150, 'Late Summer'],
+  [180, 'Autumn Equinox'],[210, 'Dust Season'],    [240, 'Peak Dust'],
+  [270, 'Perihelion'],    [300, 'Late Winter'],     [330, 'Winter Waning'],
+];
+
+function interpolateTable(table, ls) {
+  const bin = Math.floor((((ls % 360) + 360) % 360) / 30) * 30;
+  const nextBin = (bin + 30) % 360;
+  const frac = (((ls % 360) + 360) % 360 - bin) / 30;
+  const a = table[bin], b = table[nextBin];
+  return a.map((v, i) => v + (b[i] - v) * frac);
+}
+
+function julianDate(date) {
+  return date.getTime() / 86400000 + 2440587.5;
+}
+
+function marsDateFromEarth(earthDate) {
+  const jd = julianDate(earthDate);
+  const jdTT = jd + 69.184 / 86400; // TT offset
+  const dJ2000 = jdTT - 2451545.0;
+  // Mars Sol Date (Allison & McEwen 2000)
+  const msd = (dJ2000 - 4.5) / 1.0274912517 + 44796.0 - 0.00096;
+  // Mean anomaly (degrees)
+  const M = (19.3871 + 0.52402075 * msd) % 360;
+  const Mrad = M * Math.PI / 180;
+  // Equation of center
+  const eoc = 10.691 * Math.sin(Mrad)
+            + 0.623 * Math.sin(2 * Mrad)
+            + 0.050 * Math.sin(3 * Mrad)
+            + 0.005 * Math.sin(4 * Mrad);
+  let ls = (M + eoc + 270.3863) % 360;
+  if (ls < 0) ls += 360;
+  // Local Mean Solar Time at Jezero
+  const mtc = (24 * msd) % 24;
+  let lmst = (mtc + JEZERO_LON / 15) % 24;
+  if (lmst < 0) lmst += 24;
+  return { msd, ls, lmst, sol: Math.floor(msd) };
+}
+
+function diurnalTemp(minK, maxK, lmst) {
+  // Peak temperature ~14:00, minimum ~5:00 LMST
+  const phase = (lmst - 14) / 24 * 2 * Math.PI;
+  const amp = (maxK - minK) / 2;
+  const center = (maxK + minK) / 2;
+  return center + amp * Math.cos(phase);
+}
+
+function computeMarsWeather(earthDate) {
+  const md = marsDateFromEarth(earthDate || new Date());
+  const temp = interpolateTable(TEMP_BY_LS, md.ls);
+  const pres = interpolateTable(PRESSURE_BY_LS, md.ls);
+  const solar = interpolateTable(SOLAR_BY_LS, md.ls);
+  const dust = interpolateTable(DUST_BY_LS, md.ls);
+  const wind = interpolateTable(WIND_BY_LS, md.ls);
+
+  // Diurnal temperature with real min/max envelope
+  const surfaceTempK = diurnalTemp(temp[2], temp[3], md.lmst);
+  const surfaceTempC = surfaceTempK - 273.15;
+
+  // Current dust optical depth (tau) — baseline + seasonal
+  const baseTau = 0.3 + dust[3] * 1.5; // 0.3 clear-sky baseline + severity-scaled
+
+  // UV index (0-16 scale, Mars gets intense UV due to thin atmosphere)
+  const solarFrac = solar[1] / 470; // fraction of peak
+  const uvIndex = Math.round(solarFrac * 12 * (1 - baseTau * 0.3) * 10) / 10;
+
+  // Actual surface solar accounting for dust
+  const surfaceSolar = Math.round(solar[1] * (1 - baseTau * 0.4));
+
+  const seasonIdx = Math.floor((((md.ls % 360) + 360) % 360) / 30);
+  const seasonName = SEASONS[seasonIdx][1];
+
+  // Format local time
+  const hours = Math.floor(md.lmst);
+  const minutes = Math.floor((md.lmst - hours) * 60);
+  const timeStr = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}`;
+
+  return {
+    sol: md.sol,
+    ls: Math.round(md.ls * 10) / 10,
+    lmst: md.lmst,
+    timeStr,
+    season: seasonName,
+    tempK: Math.round(surfaceTempK),
+    tempC: Math.round(surfaceTempC),
+    pressurePa: Math.round(pres[0]),
+    windMs: Math.round(wind[0] * 10) / 10,
+    gustMs: Math.round(wind[1]),
+    dustTau: Math.round(baseTau * 100) / 100,
+    uvIndex,
+    solarWm2: surfaceSolar,
+    dustStormProb: Math.round(dust[0] * 100),
+    seasonIdx,
+  };
+}
+
+let currentWeather = computeMarsWeather();
+// ── End Mars Climate Engine ─────────────────────────────────────────────
+
+const RAW = 'https://raw.githubusercontent.com/kody-w/mars-barn/main';
+const MARS_COLOR = 0xb44a2a;
+
+const COLONIES = [
+  { id: 'mars-barn', label: 'Mars Barn — Jezero', file: 'state/colony.json' },
+  { id: 'olympus', label: 'Olympus Base', file: 'state/olympus_base.json' },
+  { id: 'hobbit', label: 'The Hobbit Hole', file: 'state/the_hobbit_hole.json' },
+  { id: 'valles', label: 'Valles Marineris Outpost', file: 'state/valles_marineris_outpost.json' },
+  { id: 'doa', label: 'Dead on Arrival', file: 'state/dead_on_arrival.json' },
+];
+let currentColonyFile = COLONIES[0].file;
+
+// Dynamic sky color based on dust conditions
+function skyColorFromWeather(w) {
+  // Clear: dark rust (0x2a1008), Dusty: hazy orange (0x6a3018), Storm: brown (0x4a2008)
+  const dustFrac = Math.min(1, (w.dustTau - 0.3) / 2.0);
+  const r = Math.round(0x2a + (0x6a - 0x2a) * dustFrac);
+  const g = Math.round(0x10 + (0x30 - 0x10) * dustFrac);
+  const b = Math.round(0x08 + (0x18 - 0x08) * dustFrac);
+  return (r << 16) | (g << 8) | b;
+}
+
+const SKY_COLOR = skyColorFromWeather(currentWeather);
+
+// State
+let colony = null;
+let bots = [];
+let possessedBot = null;
+let clock = new THREE.Clock();
+let colonyObjects = [];
+let cameraTarget = null;
+let cameraLookTarget = null;
+let labelMap = {};
+let css2dRenderer = null;
+let terrainMesh = null; // stored for raycasting
+let dustParticles = null; // wind-driven dust
+let starField = null; // night sky stars
+let activeEventMeshes = []; // event visualization meshes
+let shuttleMeshes = []; // resupply shuttles
+let cameraShakeTimer = 0; // marsquake shake
+let habWindowMat = null; // reference for night glow
+let habGlowLight = null; // interior light for night
+let landingPadPos = { x: 0, z: 30 }; // landing pad position
+const BATTERY_MAX = 5000;
+const WATER_MAX = 500;
+const MARS_GRAVITY_FACTOR = 0.38;
+
+// Raycast-based terrain height — bulletproof, uses actual mesh surface
+const _rayOrigin = new THREE.Vector3();
+const _rayDown = new THREE.Vector3(0, -1, 0);
+const _raycaster = new THREE.Raycaster();
+
+function getTerrainY(x, z) {
+  if (!terrainMesh) return terrainHeight(x, z);
+  _rayOrigin.set(x, 500, z);
+  _raycaster.set(_rayOrigin, _rayDown);
+  const hits = _raycaster.intersectObject(terrainMesh);
+  return hits.length > 0 ? hits[0].point.y : terrainHeight(x, z);
+}
+
+// Scene setup
+const canvas = document.getElementById('canvas');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(SKY_COLOR);
+scene.fog = new THREE.FogExp2(SKY_COLOR, 0.005 + currentWeather.dustTau * 0.008);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(0, 5, 30); // repositioned after terrain creation in init()
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+
+// CSS2D Renderer for structure labels
+css2dRenderer = new CSS2DRenderer();
+css2dRenderer.setSize(window.innerWidth, window.innerHeight);
+css2dRenderer.domElement.style.position = 'absolute';
+css2dRenderer.domElement.style.top = '0px';
+css2dRenderer.domElement.style.pointerEvents = 'none';
+document.body.appendChild(css2dRenderer.domElement);
+
+// Controls
+const controls = new PointerLockControls(camera, document.body);
+canvas.addEventListener('click', () => {
+  if (!possessedBot) controls.lock();
+});
+
+// Movement
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Escape' && possessedBot) releasePossession();
+});
+document.addEventListener('keyup', e => keys[e.code] = false);
+
+// Touch controls for mobile
+const touchMove = { x: 0, z: 0, active: false };
+const touchLook = { active: false, startX: 0, startY: 0 };
+
+const touchMoveEl = document.getElementById('touch-move');
+const touchStick = document.getElementById('touch-move-stick');
+const touchLookEl = document.getElementById('touch-look');
+
+if (touchMoveEl) {
+  touchMoveEl.addEventListener('touchstart', e => { e.preventDefault(); touchMove.active = true; }, { passive: false });
+  touchMoveEl.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const rect = touchMoveEl.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    const t = e.touches[0];
+    const dx = (t.clientX - cx) / (rect.width / 2);
+    const dz = (t.clientY - cy) / (rect.height / 2);
+    touchMove.x = Math.max(-1, Math.min(1, dx));
+    touchMove.z = Math.max(-1, Math.min(1, dz));
+    touchStick.style.transform = `translate(${-50 + touchMove.x * 30}%, ${-50 + touchMove.z * 30}%)`;
+  }, { passive: false });
+  touchMoveEl.addEventListener('touchend', () => {
+    touchMove.active = false; touchMove.x = 0; touchMove.z = 0;
+    touchStick.style.transform = 'translate(-50%, -50%)';
+  });
+}
+if (touchLookEl) {
+  touchLookEl.addEventListener('touchstart', e => {
+    e.preventDefault();
+    touchLook.active = true;
+    touchLook.startX = e.touches[0].clientX;
+    touchLook.startY = e.touches[0].clientY;
+  }, { passive: false });
+  touchLookEl.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (!touchLook.active) return;
+    const dx = (e.touches[0].clientX - touchLook.startX) * 0.003;
+    const dy = (e.touches[0].clientY - touchLook.startY) * 0.003;
+    camera.rotation.y -= dx;
+    camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.rotation.x - dy));
+    touchLook.startX = e.touches[0].clientX;
+    touchLook.startY = e.touches[0].clientY;
+  }, { passive: false });
+  touchLookEl.addEventListener('touchend', () => { touchLook.active = false; });
+}
+
+// Lighting — Mars sun (intensity from real solar irradiance)
+const sunIntensity = 0.8 + (currentWeather.solarWm2 / 470) * 0.7;
+const sun = new THREE.DirectionalLight(0xffd4a0, sunIntensity);
+sun.position.set(100, 80, 50);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.far = 300;
+sun.shadow.camera.left = -100;
+sun.shadow.camera.right = 100;
+sun.shadow.camera.top = 100;
+sun.shadow.camera.bottom = -100;
+scene.add(sun);
+
+const ambient = new THREE.AmbientLight(0x4a2a1a, 0.4);
+scene.add(ambient);
+
+const hemi = new THREE.HemisphereLight(0xffd4a0, 0x3a1008, 0.3);
+scene.add(hemi);
+
+// ── Jezero Crater Terrain Engine ────────────────────────────────────────
+// Procedural terrain calibrated to Perseverance/HiRISE surface data.
+// Jezero floor: -2600m elevation, gentle undulation, rocky basalt outcrops,
+// sand ripples, scattered impact sub-craters. 500m x 500m ground patch.
+//
+// Sources: MOLA DEM (463m/px), HiRISE DTM (1m/px), Perseverance NavCam
+// measurements of surface roughness at cm-to-m scale.
+
+// Seeded hash noise (deterministic, no external library)
+function _hash(x, y) {
+  let h = (x | 0) * 374761393 + (y | 0) * 668265263;
+  h = ((h ^ (h >>> 13)) * 1274126177) | 0;
+  h = ((h ^ (h >>> 16)) & 0x7fffffff);
+  return h / 0x7fffffff;
+}
+
+function _noise2d(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const n00 = _hash(ix, iy), n10 = _hash(ix + 1, iy);
+  const n01 = _hash(ix, iy + 1), n11 = _hash(ix + 1, iy + 1);
+  return (n00 * (1 - sx) + n10 * sx) * (1 - sy)
+       + (n01 * (1 - sx) + n11 * sx) * sy;
+}
+
+function fbm(x, y, octaves, lac, gain) {
+  let sum = 0, amp = 1, freq = 1, max = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += (_noise2d(x * freq, y * freq) - 0.5) * 2 * amp;
+    max += amp;
+    amp *= gain;
+    freq *= lac;
+  }
+  return sum / max;
+}
+
+// Small crater depressions (3 pre-placed sub-craters in the scene)
+const SUB_CRATERS = [
+  { x: 60, z: -40, r: 12, d: 1.5 },
+  { x: -45, z: 55, r: 8, d: 1.0 },
+  { x: 80, z: 70, r: 15, d: 2.0 },
+  { x: -90, z: -60, r: 10, d: 1.2 },
+];
+
+function terrainHeight(x, z) {
+  // 1. Gentle crater floor undulation (2-5m over 200m) — MOLA scale
+  const base = fbm(x * 0.004 + 7.3, z * 0.004 + 13.7, 5, 2.0, 0.5) * 4;
+
+  // 2. Rocky outcrops — basalt ridges (Séítah-like, 1-3m features)
+  const outcrops = fbm(x * 0.025 + 41.2, z * 0.025 + 29.8, 3, 2.2, 0.45) * 2;
+  // Mask: outcrops only in certain zones (patchy rock fields)
+  const rockMask = Math.max(0, fbm(x * 0.008, z * 0.008, 2, 2.0, 0.5));
+
+  // 3. Sand ripples — aeolian features (0.1-0.3m, periodic)
+  const rippleDir = x * 0.7 + z * 0.3; // dominant wind direction
+  const ripples = Math.sin(rippleDir * 0.8) * 0.15
+                + Math.sin(rippleDir * 1.3 + x * 0.2) * 0.08;
+
+  // 4. Fine-scale roughness (cm-scale rock scatter)
+  const micro = fbm(x * 0.15 + 100, z * 0.15 + 200, 2, 2.0, 0.5) * 0.3;
+
+  // 5. Gentle slope toward crater center (SE direction, ~0.5° grade)
+  const slope = (x * 0.3 + z * 0.5) * 0.002;
+
+  // 6. Sub-crater depressions
+  let craters = 0;
+  for (const c of SUB_CRATERS) {
+    const dist = Math.sqrt((x - c.x) ** 2 + (z - c.z) ** 2);
+    if (dist < c.r * 1.3) {
+      const t = dist / c.r;
+      // Parabolic crater profile with raised rim
+      if (t < 1.0) craters -= c.d * (1 - t * t);
+      else if (t < 1.3) craters += c.d * 0.2 * (1 - (t - 1) / 0.3);
+    }
+  }
+
+  return base + outcrops * rockMask + ripples * (1 - rockMask * 0.5) + micro + slope + craters;
+}
+
+function createTerrain() {
+  const SIZE = 500, SEGS = 256; // higher resolution for detail
+  const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEGS, SEGS);
+  const verts = geo.attributes.position.array;
+
+  // Add vertex colors for geological variation
+  const colors = new Float32Array((SEGS + 1) * (SEGS + 1) * 3);
+
+  for (let i = 0, ci = 0; i < verts.length; i += 3, ci += 3) {
+    const x = verts[i], y = verts[i + 1];
+    const wz = -y; // world Z after rotation
+    const h = terrainHeight(x, wz);
+    verts[i + 2] = h + (_hash(x * 3.7, wz * 5.1) - 0.5) * 0.15;
+
+    // Color variation: dark basalt, reddish regolith, lighter dust
+    const rockiness = Math.max(0, fbm(x * 0.008, wz * 0.008, 2, 2.0, 0.5));
+    const dusty = _hash(x * 0.1 + 50, wz * 0.1 + 50);
+    // Base: Mars red-brown (0.70, 0.29, 0.16)
+    const r = 0.70 - rockiness * 0.25 + dusty * 0.06;
+    const g = 0.29 - rockiness * 0.12 + dusty * 0.03;
+    const b = 0.16 - rockiness * 0.06 + dusty * 0.02;
+    colors[ci] = Math.max(0.1, Math.min(1, r));
+    colors[ci + 1] = Math.max(0.05, Math.min(1, g));
+    colors[ci + 2] = Math.max(0.04, Math.min(1, b));
+  }
+
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.95, metalness: 0.05,
+    flatShading: true,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  terrainMesh = mesh;
+}
+
+// Colony structures — all driven by simulation state (digital twin)
+// constants.py: insulation = "aerogel + regolith sandwich"
+// HABITAT_WINDOW_AREA_M2 = 10 (5% of 200m² surface = small viewports only)
+// Mars habitats are regolith-covered for radiation shielding (GCR + solar flares)
+
+function createHabitat(x, z, radius, groundCoupling, label) {
+  const baseY = getTerrainY(x, z);
+  const buryDepth = groundCoupling || 0;
+  const group = new THREE.Group();
+
+  // Main dome shell — regolith-covered (opaque Mars-colored, not glass)
+  const shellGeo = new THREE.SphereGeometry(radius, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+  const shellMat = new THREE.MeshStandardMaterial({
+    color: 0x8a6a4a, roughness: 0.95, metalness: 0.05, // regolith-covered
+  });
+  const shell = new THREE.Mesh(shellGeo, shellMat);
+  shell.castShadow = true;
+  group.add(shell);
+
+  // Window strips — small viewport band (10m² of 200m² = 5%)
+  // Rendered as a ring of illuminated panels around the dome equator
+  const winGeo = new THREE.TorusGeometry(radius * 0.92, 0.25, 6, 24);
+  const winMat = new THREE.MeshPhysicalMaterial({
+    color: 0xaaddff, emissive: 0xaaddff, emissiveIntensity: 0.2,
+    transmission: 0.5, thickness: 0.2, opacity: 0.8, transparent: true,
+  });
+  habWindowMat = winMat;
+  const windows = new THREE.Mesh(winGeo, winMat);
+  windows.position.y = radius * 0.35;
+  windows.rotation.x = Math.PI / 2;
+  group.add(windows);
+
+  // Airlock door (visible entry point)
+  const airlockGeo = new THREE.BoxGeometry(1.2, 2.2, 0.3);
+  const airlockMat = new THREE.MeshStandardMaterial({ color: 0x555566, metalness: 0.6, roughness: 0.3 });
+  const airlock = new THREE.Mesh(airlockGeo, airlockMat);
+  airlock.position.set(0, 1.1, radius - 0.1);
+  group.add(airlock);
+  // Airlock frame light
+  const alLight = new THREE.PointLight(0x44ff44, 0.3, 3);
+  alLight.position.set(0, 2.3, radius);
+  group.add(alLight);
+
+  // Foundation / base ring
+  const ringGeo = new THREE.TorusGeometry(radius + 0.2, 0.4, 8, 32);
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.7 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.y = 0.1;
+  ring.rotation.x = Math.PI / 2;
+  group.add(ring);
+
+  // Interior warm glow (visible through windows)
+  const glow = new THREE.PointLight(0xffddaa, 0.5, radius * 4);
+  glow.position.y = radius * 0.4;
+  group.add(glow);
+  habGlowLight = glow;
+
+  // Regolith berm — radiation shielding mound around base
+  // Even surface habs (coupling=0) have bermed regolith per "regolith sandwich"
+  const bermHeight = Math.max(0.8, buryDepth * 0.7 + 0.8);
+  const bermGeo = new THREE.TorusGeometry(radius + 0.8, bermHeight, 8, 32);
+  const bermMat = new THREE.MeshStandardMaterial({ color: 0x8a5a3a, roughness: 1.0 });
+  const berm = new THREE.Mesh(bermGeo, bermMat);
+  berm.position.y = bermHeight * 0.3;
+  berm.rotation.x = Math.PI / 2;
+  group.add(berm);
+
+  // Cleared/graded area around habitat (construction disturbed soil)
+  const padGeo = new THREE.CircleGeometry(radius + 4, 32);
+  const padMat = new THREE.MeshStandardMaterial({ color: 0x7a5a3a, roughness: 1.0 });
+  const pad = new THREE.Mesh(padGeo, padMat);
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.y = 0.02;
+  group.add(pad);
+
+  group.position.set(x, baseY - buryDepth, z);
+  scene.add(group);
+  return shell;
+}
+
+function createSolarPanel(x, z, angle, dustFactor) {
+  const group = new THREE.Group();
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 2),
+    new THREE.MeshStandardMaterial({ color: 0x555555 })
+  );
+  post.position.y = 1;
+  group.add(post);
+  // Panel color shifts brownish with dust accumulation
+  const dustTint = 1 - (dustFactor || 1);
+  const panelColor = new THREE.Color(
+    0.1 + dustTint * 0.3, 0.1 + dustTint * 0.15, 0.29 - dustTint * 0.15
+  );
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.05, 2),
+    new THREE.MeshStandardMaterial({ color: panelColor, metalness: 0.8, roughness: 0.2 + dustTint * 0.5 })
+  );
+  panel.position.y = 2;
+  panel.rotation.x = -0.3;
+  panel.castShadow = true;
+  group.add(panel);
+  group.position.set(x, getTerrainY(x, z), z);
+  group.rotation.y = angle;
+  scene.add(group);
+  return group;
+}
+
+function createEquipmentModule(x, z, label, health, color) {
+  const group = new THREE.Group();
+  // Cylindrical module (like ISS-style equipment canisters)
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(1, 1, 2.5, 12),
+    new THREE.MeshStandardMaterial({
+      color: health > 0.7 ? color : 0x884422, roughness: 0.6,
+      emissive: health < 0.4 ? 0x440000 : 0x000000, emissiveIntensity: health < 0.4 ? 0.3 : 0,
+    })
+  );
+  body.position.y = 1.25;
+  body.castShadow = true;
+  group.add(body);
+  // Status light
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 8, 6),
+    new THREE.MeshStandardMaterial({
+      color: health > 0.7 ? 0x00ff44 : health > 0.4 ? 0xffaa00 : 0xff0000,
+      emissive: health > 0.7 ? 0x00ff44 : health > 0.4 ? 0xffaa00 : 0xff0000,
+      emissiveIntensity: 0.8,
+    })
+  );
+  light.position.set(0, 2.6, 0.8);
+  group.add(light);
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createCommsAntenna(x, z, health) {
+  const group = new THREE.Group();
+  // Mast
+  const mast = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 5),
+    new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mast.position.y = 2.5;
+  group.add(mast);
+  // Dish
+  const dish = new THREE.Mesh(
+    new THREE.SphereGeometry(1.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 3),
+    new THREE.MeshStandardMaterial({
+      color: 0xcccccc, metalness: 0.9, roughness: 0.1,
+      side: THREE.DoubleSide,
+    })
+  );
+  dish.position.y = 5;
+  dish.rotation.x = Math.PI + 0.3;
+  group.add(dish);
+  // Signal light
+  const sig = new THREE.PointLight(
+    health > 0.7 ? 0x00ff88 : 0xff4400, 0.3, 8
+  );
+  sig.position.y = 5.5;
+  group.add(sig);
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createBot(id, x, z, task, specColor) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 1, 0.6),
+    new THREE.MeshStandardMaterial({ color: specColor || 0xddaa44, roughness: 0.6 })
+  );
+  body.position.y = 0.7;
+  body.castShadow = true;
+  group.add(body);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.25, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0x44aadd, emissive: 0x224466, emissiveIntensity: 0.5 })
+  );
+  head.position.y = 1.4;
+  group.add(head);
+  const eye = new THREE.PointLight(0x44aadd, 0.5, 5);
+  eye.position.y = 1.4;
+  group.add(eye);
+  [-0.3, 0.3].forEach(zOff => {
+    [-0.35, 0.35].forEach(xOff => {
+      const wheel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15, 0.15, 0.1, 8),
+        new THREE.MeshStandardMaterial({ color: 0x333333 })
+      );
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(xOff, 0.15, zOff);
+      group.add(wheel);
+    });
+  });
+  group.position.set(x, getTerrainY(x, z), z);
+  group.userData = { id, task, energy: 80 + Math.random() * 20, targetX: x, targetZ: z, speed: 1 + Math.random() };
+  scene.add(group);
+  return group;
+}
+
+// ── New Structure Creation Functions ───────────────────────────────────
+
+function createISRUPlant(x, z) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 1.2, 1),
+    new THREE.MeshStandardMaterial({ color: 0x666677, metalness: 0.7, roughness: 0.3 })
+  );
+  body.position.y = 0.6;
+  body.castShadow = true;
+  group.add(body);
+  // Copper intake piping
+  const pipe1 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 2, 8),
+    new THREE.MeshStandardMaterial({ color: 0xcc7744, metalness: 0.8, roughness: 0.2 })
+  );
+  pipe1.position.set(0.9, 0.8, 0);
+  pipe1.rotation.z = Math.PI / 6;
+  group.add(pipe1);
+  // Steel output piping
+  const pipe2 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 1.5, 8),
+    new THREE.MeshStandardMaterial({ color: 0x888899, metalness: 0.9, roughness: 0.1 })
+  );
+  pipe2.position.set(-0.8, 0.9, 0);
+  pipe2.rotation.z = -Math.PI / 5;
+  group.add(pipe2);
+  // Processing glow
+  const glow = new THREE.PointLight(0x44aaff, 0.4, 4);
+  glow.position.set(0, 0.6, 0.5);
+  group.add(glow);
+  const glowMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.15, 8, 8),
+    new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 0.8, transparent: true, opacity: 0.6 })
+  );
+  glowMesh.position.set(0, 0.6, 0.55);
+  group.add(glowMesh);
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createWaterTanks(x, z, waterLevel, maxWater) {
+  const group = new THREE.Group();
+  const fill = Math.min(1, (waterLevel || 0) / (maxWater || WATER_MAX));
+  for (let i = 0; i < 3; i++) {
+    const tx = (i - 1) * 0.9;
+    const tank = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15, 0.15, 1.5, 12),
+      new THREE.MeshStandardMaterial({ color: 0xddddee, metalness: 0.6, roughness: 0.2 })
+    );
+    tank.position.set(tx, 0.75, 0);
+    tank.castShadow = true;
+    group.add(tank);
+    const fillHeight = 1.5 * fill;
+    if (fillHeight > 0.05) {
+      const fillMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.16, 0.16, fillHeight, 12),
+        new THREE.MeshStandardMaterial({ color: 0x3388cc, emissive: 0x112244, emissiveIntensity: 0.3, transparent: true, opacity: 0.7 })
+      );
+      fillMesh.position.set(tx, fillHeight / 2, 0);
+      group.add(fillMesh);
+    }
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0xccccdd, metalness: 0.7, roughness: 0.2 })
+    );
+    cap.position.set(tx, 1.5, 0);
+    group.add(cap);
+  }
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createBatteryBank(x, z, energyKwh, maxEnergy) {
+  const group = new THREE.Group();
+  const charge = Math.min(1, (energyKwh || 0) / (maxEnergy || BATTERY_MAX));
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(2, 1.5, 1),
+    new THREE.MeshStandardMaterial({ color: 0x444455, metalness: 0.5, roughness: 0.4 })
+  );
+  body.position.y = 0.75;
+  body.castShadow = true;
+  group.add(body);
+  for (let i = 0; i < 3; i++) {
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(2.02, 0.02, 1.02),
+      new THREE.MeshStandardMaterial({ color: 0x222233 })
+    );
+    line.position.y = 0.3 + i * 0.5;
+    group.add(line);
+  }
+  const ledColor = charge > 0.5 ? 0x00ff44 : charge > 0.2 ? 0xffaa00 : 0xff0000;
+  const led = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 0.1, 0.05),
+    new THREE.MeshStandardMaterial({ color: ledColor, emissive: ledColor, emissiveIntensity: 0.8 })
+  );
+  led.position.set(0, 1.2, 0.53);
+  group.add(led);
+  const fillBar = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6 * Math.max(0.01, charge), 0.06, 0.06),
+    new THREE.MeshStandardMaterial({ color: ledColor, emissive: ledColor, emissiveIntensity: 1.0 })
+  );
+  fillBar.position.set(-(1.6 * (1 - charge)) / 2, 1.05, 0.53);
+  group.add(fillBar);
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createLandingPad(x, z) {
+  const group = new THREE.Group();
+  const pad = new THREE.Mesh(
+    new THREE.PlaneGeometry(7, 7),
+    new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 1.0 })
+  );
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.y = 0.03;
+  group.add(pad);
+  const scorch = new THREE.Mesh(
+    new THREE.CircleGeometry(2.5, 16),
+    new THREE.MeshStandardMaterial({ color: 0x1a1008, roughness: 1.0 })
+  );
+  scorch.rotation.x = -Math.PI / 2;
+  scorch.position.y = 0.04;
+  group.add(scorch);
+  [[-3, -3], [-3, 3], [3, -3], [3, 3]].forEach(([bx, bz]) => {
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.8, 6),
+      new THREE.MeshStandardMaterial({ color: 0x888888 })
+    );
+    pole.position.set(bx, 0.4, bz);
+    group.add(pole);
+    const beacon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 6, 6),
+      new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xffaa00, emissiveIntensity: 0.8 })
+    );
+    beacon.position.set(bx, 0.85, bz);
+    group.add(beacon);
+    const bLight = new THREE.PointLight(0xffaa00, 0.2, 5);
+    bLight.position.set(bx, 0.9, bz);
+    group.add(bLight);
+  });
+  // H marking
+  const hMat = new THREE.MeshStandardMaterial({ color: 0xdddddd });
+  const hBar1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.01, 2), hMat);
+  hBar1.position.set(-0.6, 0.05, 0);
+  group.add(hBar1);
+  const hBar2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.01, 2), hMat);
+  hBar2.position.set(0.6, 0.05, 0);
+  group.add(hBar2);
+  const hBar3 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.01, 0.2), hMat);
+  hBar3.position.y = 0.05;
+  group.add(hBar3);
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createRadiatorPanels(habX, habZ, habRadius, heaterPowerW) {
+  const group = new THREE.Group();
+  const glowIntensity = Math.min(1, (heaterPowerW || 0) / 10000);
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI - Math.PI / 2;
+    const rx = Math.cos(angle) * (habRadius + 0.3);
+    const rz = Math.sin(angle) * (habRadius + 0.3);
+    const panel = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 1.0, 0.08),
+      new THREE.MeshStandardMaterial({
+        color: 0x333344, metalness: 0.8, roughness: 0.3,
+        emissive: 0x440000, emissiveIntensity: glowIntensity * 0.4,
+      })
+    );
+    panel.position.set(rx, habRadius * 0.7, rz);
+    panel.lookAt(new THREE.Vector3(0, panel.position.y, 0));
+    group.add(panel);
+    for (let f = 0; f < 5; f++) {
+      const fin = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.8, 0.06),
+        new THREE.MeshStandardMaterial({ color: 0x444455, metalness: 0.9 })
+      );
+      fin.position.copy(panel.position);
+      fin.position.x += (f - 2) * 0.25;
+      group.add(fin);
+    }
+  }
+  group.position.set(habX, getTerrainY(habX, habZ), habZ);
+  scene.add(group);
+  return group;
+}
+
+function createFoodStorage(x, z, foodKg) {
+  const group = new THREE.Group();
+  const stackCount = Math.min(8, Math.max(1, Math.ceil((foodKg || 0) / 2000)));
+  for (let i = 0; i < stackCount; i++) {
+    const row = Math.floor(i / 2);
+    const col = i % 2;
+    const crate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.6, 0.6),
+      new THREE.MeshStandardMaterial({ color: 0x886644, roughness: 0.8 })
+    );
+    crate.position.set(col * 0.9 - 0.45, 0.3 + row * 0.65, 0);
+    crate.castShadow = true;
+    group.add(crate);
+    const stripe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 0.05, 0.62),
+      new THREE.MeshStandardMaterial({ color: 0xddaa44 })
+    );
+    stripe.position.set(col * 0.9 - 0.45, 0.5 + row * 0.65, 0);
+    group.add(stripe);
+  }
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createSpareParts(x, z, count) {
+  const group = new THREE.Group();
+  for (let i = 0; i < Math.min(count || 0, 5); i++) {
+    const crate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, 0.25, 0.3),
+      new THREE.MeshStandardMaterial({ color: 0x667744, roughness: 0.9 })
+    );
+    crate.position.set((i % 3) * 0.4 - 0.4, 0.12 + Math.floor(i / 3) * 0.3, 0);
+    group.add(crate);
+  }
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createShuttle(shuttleData, padX, padZ) {
+  const group = new THREE.Group();
+  const status = shuttleData.status || 'in_transit';
+  const eta = shuttleData.eta_sol || 100;
+
+  if (status === 'in_transit') {
+    const altitude = Math.min(200, Math.max(15, eta * 2));
+    const capsule = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.8, 1.0, 3, 12),
+      new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.7, roughness: 0.3 })
+    );
+    capsule.position.y = altitude;
+    group.add(capsule);
+    const shield = new THREE.Mesh(
+      new THREE.SphereGeometry(1.1, 12, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x553322, roughness: 0.9 })
+    );
+    shield.position.y = altitude - 1.5;
+    group.add(shield);
+    if (eta < 5) {
+      const chute = new THREE.Mesh(
+        new THREE.SphereGeometry(4, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0xff6600, transparent: true, opacity: 0.7, side: THREE.DoubleSide })
+      );
+      chute.position.y = altitude + 6;
+      group.add(chute);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(Math.cos(a) * 3.5, altitude + 5, Math.sin(a) * 3.5),
+          new THREE.Vector3(0, altitude + 1.5, 0)
+        ]);
+        group.add(new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xccaa88 })));
+      }
+    }
+    const dLight = new THREE.PointLight(0xff4400, 0.5, altitude);
+    dLight.position.y = altitude;
+    group.add(dLight);
+  } else if (status === 'delivered') {
+    const capsule = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.8, 1.0, 3, 12),
+      new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.5, roughness: 0.5 })
+    );
+    capsule.position.y = 1.5;
+    group.add(capsule);
+    let ci = 0;
+    for (const [, val] of Object.entries(shuttleData.manifest || {})) {
+      if (val > 0) {
+        const a = (ci / 4) * Math.PI * 2;
+        const crate = new THREE.Mesh(
+          new THREE.BoxGeometry(0.8, 0.5, 0.5),
+          new THREE.MeshStandardMaterial({ color: 0xddaa44, roughness: 0.7 })
+        );
+        crate.position.set(Math.cos(a) * 2, 0.25, Math.sin(a) * 2);
+        group.add(crate);
+        ci++;
+      }
+    }
+  }
+  group.position.set(padX, getTerrainY(padX, padZ), padZ);
+  scene.add(group);
+  shuttleMeshes.push(group);
+  return group;
+}
+
+function createStarField() {
+  const geo = new THREE.BufferGeometry();
+  const count = 1500;
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count * 3; i += 3) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 800 + Math.random() * 200;
+    pos[i] = r * Math.sin(phi) * Math.cos(theta);
+    pos[i + 1] = Math.abs(r * Math.cos(phi)); // only upper hemisphere
+    pos[i + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8, transparent: true, opacity: 0 });
+  const stars = new THREE.Points(geo, mat);
+  scene.add(stars);
+  starField = stars;
+  return stars;
+}
+
+function createDustDevil(x, z) {
+  const group = new THREE.Group();
+  const height = 50 + Math.random() * 150;
+  const radius = 1 + Math.random() * 9;
+  const particleCount = 500;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(particleCount * 3);
+  for (let i = 0; i < particleCount; i++) {
+    const t = i / particleCount;
+    const y = t * height;
+    const r = radius * (0.3 + 0.7 * Math.sin(t * Math.PI));
+    const angle = t * 20 + Math.random() * 2;
+    pos[i * 3] = Math.cos(angle) * r + (Math.random() - 0.5) * 2;
+    pos[i * 3 + 1] = y;
+    pos[i * 3 + 2] = Math.sin(angle) * r + (Math.random() - 0.5) * 2;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xc4855a, size: 0.6, transparent: true, opacity: 0.5
+  });
+  group.add(new THREE.Points(geo, mat));
+  group.position.set(x, getTerrainY(x, z), z);
+  group.userData = { type: 'dust_devil', rotSpeed: 0.5 + Math.random() * 1.5 };
+  scene.add(group);
+  activeEventMeshes.push(group);
+  return group;
+}
+
+function createHeaterModule(x, z, health) {
+  const group = new THREE.Group();
+  // Box body with radiator fins
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(1.8, 2.0, 1.2),
+    new THREE.MeshStandardMaterial({
+      color: health > 0.7 ? 0xcc4400 : 0x884422, roughness: 0.5, metalness: 0.3,
+      emissive: health < 0.4 ? 0x440000 : 0x220000, emissiveIntensity: health < 0.4 ? 0.5 : 0.15,
+    })
+  );
+  body.position.y = 1.0;
+  body.castShadow = true;
+  group.add(body);
+  // Radiator fins on top
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 0.5, 0.04),
+      new THREE.MeshStandardMaterial({ color: 0x553322, metalness: 0.7, roughness: 0.4 })
+    );
+    fin.position.set(0, 2.2, (i - 1.5) * 0.25);
+    group.add(fin);
+  }
+  // Red status glow
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 8, 6),
+    new THREE.MeshStandardMaterial({
+      color: health > 0.7 ? 0x00ff44 : health > 0.4 ? 0xffaa00 : 0xff0000,
+      emissive: health > 0.7 ? 0x00ff44 : health > 0.4 ? 0xffaa00 : 0xff0000,
+      emissiveIntensity: 0.8,
+    })
+  );
+  light.position.set(0, 2.5, 0.6);
+  group.add(light);
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createWaterRecycler(x, z, health) {
+  const group = new THREE.Group();
+  // Main cylinder
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.8, 0.8, 2.2, 12),
+    new THREE.MeshStandardMaterial({
+      color: health > 0.7 ? 0x2266aa : 0x884422, roughness: 0.4, metalness: 0.4,
+      emissive: health < 0.4 ? 0x440000 : 0x000000, emissiveIntensity: health < 0.4 ? 0.3 : 0,
+    })
+  );
+  body.position.y = 1.1;
+  body.castShadow = true;
+  group.add(body);
+  // Clear tube section (shows water processing)
+  const tube = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 0.4, 0.8, 12, 1, true),
+    new THREE.MeshPhysicalMaterial({
+      color: 0x88ccee, transmission: 0.6, thickness: 0.1, roughness: 0.05,
+      transparent: true, opacity: 0.5,
+    })
+  );
+  tube.position.y = 1.1;
+  group.add(tube);
+  // Blue glow inside
+  const glow = new THREE.PointLight(0x4488cc, 0.3, 3);
+  glow.position.y = 1.1;
+  group.add(glow);
+  // Status light
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 8, 6),
+    new THREE.MeshStandardMaterial({
+      color: health > 0.7 ? 0x00ff44 : health > 0.4 ? 0xffaa00 : 0xff0000,
+      emissive: health > 0.7 ? 0x00ff44 : health > 0.4 ? 0xffaa00 : 0xff0000,
+      emissiveIntensity: 0.8,
+    })
+  );
+  light.position.set(0, 2.3, 0.7);
+  group.add(light);
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+
+function createHabSeals(x, z, health) {
+  const group = new THREE.Group();
+  // Flat panel module
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(2.0, 0.8, 1.5),
+    new THREE.MeshStandardMaterial({
+      color: health > 0.7 ? 0x666688 : 0x884422, roughness: 0.6, metalness: 0.3,
+      emissive: health < 0.4 ? 0x440000 : 0x000000, emissiveIntensity: health < 0.4 ? 0.3 : 0,
+    })
+  );
+  body.position.y = 0.4;
+  body.castShadow = true;
+  group.add(body);
+  // Seal indicator strips
+  for (let i = 0; i < 3; i++) {
+    const seal = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.6, 1.3),
+      new THREE.MeshStandardMaterial({
+        color: health > 0.7 ? 0x88aa88 : 0xaa6644,
+        emissive: health > 0.7 ? 0x224422 : 0x441111,
+        emissiveIntensity: 0.2,
+      })
+    );
+    seal.position.set(-0.7 + i * 0.7, 0.4, 0);
+    group.add(seal);
+  }
+  // Status light
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 8, 6),
+    new THREE.MeshStandardMaterial({
+      color: health > 0.7 ? 0x00ff44 : health > 0.4 ? 0xffaa00 : 0xff0000,
+      emissive: health > 0.7 ? 0x00ff44 : health > 0.4 ? 0xffaa00 : 0xff0000,
+      emissiveIntensity: 0.8,
+    })
+  );
+  light.position.set(0.8, 0.9, 0.6);
+  group.add(light);
+  group.position.set(x, getTerrainY(x, z), z);
+  scene.add(group);
+  return group;
+}
+function clearColony() {
+  colonyObjects.forEach(obj => {
+    scene.remove(obj);
+    obj.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+        else child.material.dispose();
+      }
+    });
+  });
+  colonyObjects = [];
+  bots = [];
+  activeEventMeshes = [];
+  shuttleMeshes = [];
+  dustParticles = null;
+  starField = null;
+  habWindowMat = null;
+  habGlowLight = null;
+  Object.values(labelMap).forEach(l => { scene.remove(l); });
+  labelMap = {};
+}
+
+function buildColony(state) {
+  const sceneChildrenBefore = new Set(scene.children.slice());
+  const h = state.habitat || {};
+  const crew = state.crew || {};
+  const equip = state.equipment || {};
+  const gh = state.greenhouse || {};
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // DIGITAL TWIN — structures match simulation exactly
+  // thermal.py: "Roughly 8m diameter dome", 200m² surface, 150m³ volume
+  // State defines: 1 habitat, 1 greenhouse, 5 equipment systems, 1 solar array
+  // ground_coupling_depth_m controls burial depth (regolith berm)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const groundCoupling = h.ground_coupling_depth_m || 0;
+
+  // ── Main habitat: 8m diameter regolith-shielded dome (thermal.py)
+  // "aerogel + regolith sandwich" walls, only 10m² windows (5% of surface)
+  // Buried by ground_coupling_depth_m for radiation/thermal protection
+  const habRadius = 4; // 8m diameter / 2 (from HABITAT_SURFACE_AREA=200m²)
+  createHabitat(0, 0, habRadius, groundCoupling, state.name || 'Mars Barn');
+
+  // ── Greenhouse module — enhanced with visible plant rows and LED grow lights
+  const ghArea = gh.planted_area_m2 || 15;
+  const ghLength = Math.max(3, ghArea / 3);
+  const ghWidth = Math.max(2, ghArea / ghLength);
+  const ghHeight = Math.min(3, ghWidth * 0.6);
+  const growthStage = gh.growth_stage || 0;
+
+  const ghGroup = new THREE.Group();
+  // Quonset-hut style (half-cylinder) — lay flat on ground
+  // Use a simple semicircular extrusion that's guaranteed to sit on terrain
+  const ghShape = new THREE.Shape();
+  ghShape.absarc(0, 0, ghHeight, 0, Math.PI, false);
+  ghShape.lineTo(-ghHeight, 0);
+  const ghExtrudeSettings = { steps: 1, depth: ghLength, bevelEnabled: false };
+  const ghGeo = new THREE.ExtrudeGeometry(ghShape, ghExtrudeSettings);
+  const ghMat = new THREE.MeshPhysicalMaterial({
+    color: 0xaaddcc, transmission: 0.5, thickness: 0.3,
+    opacity: 0.55, transparent: true, roughness: 0.15, side: THREE.DoubleSide,
+  });
+  const ghMesh = new THREE.Mesh(ghGeo, ghMat);
+  // Center the extrusion along its length
+  ghMesh.position.z = -ghLength / 2;
+  ghGroup.add(ghMesh);
+  // Foundation pad
+  const ghPadGeo = new THREE.BoxGeometry(ghLength + 0.5, 0.15, ghWidth + 0.5);
+  const ghPadMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 });
+  ghGroup.add(new THREE.Mesh(ghPadGeo, ghPadMat));
+
+  // Plant rows based on growth stage
+  const rowCount = Math.max(2, Math.floor(ghWidth / 0.6));
+  for (let r = 0; r < rowCount; r++) {
+    const rz = (r / (rowCount - 1) - 0.5) * (ghWidth - 0.5);
+    const rowLen = ghLength * 0.8;
+    if (growthStage <= 0.3) {
+      // Seedlings: small green dots
+      for (let s = 0; s < 8; s++) {
+        const seedling = new THREE.Mesh(
+          new THREE.SphereGeometry(0.06 + growthStage * 0.1, 6, 6),
+          new THREE.MeshStandardMaterial({ color: 0x44aa44, emissive: 0x113311, emissiveIntensity: 0.2 })
+        );
+        seedling.position.set((s / 7 - 0.5) * rowLen, 0.1 + growthStage * 0.15, rz);
+        ghGroup.add(seedling);
+      }
+    } else if (growthStage <= 0.7) {
+      // Growing: medium green blocks
+      for (let s = 0; s < 6; s++) {
+        const plant = new THREE.Mesh(
+          new THREE.BoxGeometry(0.15, 0.1 + growthStage * 0.3, 0.15),
+          new THREE.MeshStandardMaterial({ color: 0x33aa33, emissive: 0x112211, emissiveIntensity: 0.15 })
+        );
+        plant.position.set((s / 5 - 0.5) * rowLen, 0.1 + growthStage * 0.2, rz);
+        ghGroup.add(plant);
+      }
+    } else {
+      // Mature: full green mass
+      const mass = new THREE.Mesh(
+        new THREE.BoxGeometry(rowLen, 0.3 + growthStage * 0.3, 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x228822, emissive: 0x112211, emissiveIntensity: 0.2 })
+      );
+      mass.position.set(0, 0.15 + growthStage * 0.2, rz);
+      ghGroup.add(mass);
+    }
+  }
+
+  // LED grow lights — magenta/red
+  if (growthStage > 0.05) {
+    for (let li = 0; li < 3; li++) {
+      const lx = (li / 2 - 0.5) * (ghLength * 0.6);
+      const growLight = new THREE.PointLight(0xff44aa, growthStage * 0.5, ghLength);
+      growLight.position.set(lx, ghHeight * 0.75, 0);
+      ghGroup.add(growLight);
+      const bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.08, 6, 6),
+        new THREE.MeshStandardMaterial({ color: 0xff44aa, emissive: 0xff44aa, emissiveIntensity: 0.9 })
+      );
+      bulb.position.copy(growLight.position);
+      ghGroup.add(bulb);
+    }
+  }
+
+  // Misting effect if water_daily_l > 0
+  if ((gh.water_daily_l || 0) > 0 && growthStage > 0.1) {
+    const mistGeo = new THREE.BufferGeometry();
+    const mistCount = 80;
+    const mistPos = new Float32Array(mistCount * 3);
+    for (let i = 0; i < mistCount * 3; i += 3) {
+      mistPos[i] = (Math.random() - 0.5) * ghLength * 0.7;
+      mistPos[i + 1] = 0.3 + Math.random() * ghHeight * 0.5;
+      mistPos[i + 2] = (Math.random() - 0.5) * ghWidth * 0.5;
+    }
+    mistGeo.setAttribute('position', new THREE.BufferAttribute(mistPos, 3));
+    const mist = new THREE.Points(mistGeo, new THREE.PointsMaterial({
+      color: 0xaaddee, size: 0.08, transparent: true, opacity: 0.4
+    }));
+    ghGroup.add(mist);
+  }
+
+  const ghX = -habRadius - ghLength / 2 - 2;
+  const ghZ = 0;
+  ghGroup.position.set(ghX, getTerrainY(ghX, ghZ), ghZ);
+  scene.add(ghGroup);
+
+  // ── Pressurized tunnel connecting habitat to greenhouse
+  const tunnelLen = 2;
+  const tunnelX = -habRadius - tunnelLen / 2;
+  const tunnel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.8, 0.8, tunnelLen, 8),
+    new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.5, metalness: 0.3 })
+  );
+  tunnel.rotation.z = Math.PI / 2;
+  tunnel.position.set(tunnelX, getTerrainY(tunnelX, 0) + 0.8, 0);
+  scene.add(tunnel);
+
+  // ── 5 Equipment systems — unique shapes per type (state.equipment)
+  const heaterHealth = equip.heater?.health || 1;
+  const recyclerHealth = equip.water_recycler?.health || 1;
+  const sealsHealth = equip.hab_seals?.health || 1;
+  const commsHealth = equip.comms?.health || 1;
+  const panelHealth = equip.solar_panels?.health || 1;
+
+  // Life support cluster — behind habitat (unique shapes)
+  createHeaterModule(2, -habRadius - 2, heaterHealth);
+  createSpareParts(3.5, -habRadius - 2, equip.heater?.spare_parts || 0);
+  createWaterRecycler(-2, -habRadius - 2, recyclerHealth);
+  createSpareParts(-3.5, -habRadius - 2, equip.water_recycler?.spare_parts || 0);
+  createHabSeals(0, -habRadius - 4, sealsHealth);
+  createSpareParts(1.5, -habRadius - 4, equip.hab_seals?.spare_parts || 0);
+
+  // ── Comms antenna — offset for clear line of sight
+  createCommsAntenna(habRadius + 6, habRadius + 4, commsHealth);
+  createSpareParts(habRadius + 7.5, habRadius + 4, equip.comms?.spare_parts || 0);
+
+  // ── Solar array — panel count from solar_panel_area_m2
+  // Each panel ~18m² (3m x 6m with gaps). Laid out in rows east of habitat.
+  const panelArea = h.solar_panel_area_m2 || 400;
+  const dustFactor = h.panel_dust_factor || 1;
+  const panelCount = Math.min(25, Math.max(4, Math.round(panelArea / 18)));
+  const rowLength = Math.ceil(Math.sqrt(panelCount));
+  for (let i = 0; i < panelCount; i++) {
+    const row = Math.floor(i / rowLength);
+    const col = i % rowLength;
+    const px = habRadius + 8 + col * 4;
+    const pz = -(rowLength * 2.5) + row * 5;
+    createSolarPanel(px, pz, 0, dustFactor);
+  }
+
+  // ── Crew bots — one per specialization from state.crew.specializations
+  const specColors = {
+    engineer: 0xddaa44, botanist: 0x44aa44, geologist: 0xaa8844,
+    medic: 0xdd4444, scientist: 0x4488dd, power: 0xaaaa44,
+  };
+  const specEntries = Object.entries(crew.specializations || {});
+  // If no specializations in state, generate from crew_size
+  const crewSize = h.crew_size || 4;
+  const defaultSpecs = ['engineer', 'botanist', 'geologist', 'medic', 'scientist', 'power'];
+  const activeCrew = specEntries.length > 0
+    ? specEntries.flatMap(([spec, count]) => Array.from({ length: count }, () => spec))
+    : defaultSpecs.slice(0, crewSize);
+  activeCrew.forEach((spec, i) => {
+    const angle = (i / activeCrew.length) * Math.PI * 2 + 0.5;
+    const dist = habRadius + 2 + Math.random() * 8;
+    const bx = Math.cos(angle) * dist;
+    const bz = Math.sin(angle) * dist;
+    const color = specColors[spec] || 0xddaa44;
+    const bot = createBot(`CREW-${spec.toUpperCase().slice(0,3)}-0${i+1}`, bx, bz, `${spec} ops`, color);
+    bots.push(bot);
+  });
+
+  // Rocks and debris — Jezero basalt fragments and regolith boulders
+  // Perseverance data: dense rock fields near outcrops, sparser on sand sheets
+  const rockTypes = [
+    { color: 0x2a1a0e, roughness: 1.0 },    // dark basalt
+    { color: 0x3a2515, roughness: 0.95 },   // weathered basalt
+    { color: 0x4a352a, roughness: 0.9 },    // lighter regolith boulder
+    { color: 0x2e2218, roughness: 0.98 },   // olivine-bearing
+  ];
+
+  for (let i = 0; i < 120; i++) {
+    // Clustered distribution (denser near rocky terrain zones)
+    const cx = (Math.random() - 0.5) * 250;
+    const cz = (Math.random() - 0.5) * 250;
+    const rockiness = Math.max(0, fbm(cx * 0.008, cz * 0.008, 2, 2.0, 0.5));
+    // Higher chance of spawning in rocky zones
+    if (Math.random() > 0.3 + rockiness * 0.7) continue;
+
+    const size = 0.15 + Math.random() * 1.2 * (0.5 + rockiness);
+    const rt = rockTypes[Math.floor(Math.random() * rockTypes.length)];
+    const rock = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(size, Math.random() > 0.7 ? 1 : 0),
+      new THREE.MeshStandardMaterial({ color: rt.color, roughness: rt.roughness })
+    );
+    // Flatten rocks slightly (Mars rocks are often tabular)
+    rock.scale.y = 0.4 + Math.random() * 0.6;
+    rock.position.set(cx, getTerrainY(cx, cz) + size * 0.2, cz);
+    rock.rotation.set(Math.random() * 0.3, Math.random() * Math.PI * 2, Math.random() * 0.3);
+    rock.castShadow = true;
+    scene.add(rock);
+  }
+
+  // Dust particles
+  const dustGeo = new THREE.BufferGeometry();
+  const dustCount = 2000;
+  const dustPos = new Float32Array(dustCount * 3);
+  for (let i = 0; i < dustCount * 3; i += 3) {
+    dustPos[i] = (Math.random() - 0.5) * 200;
+    dustPos[i + 1] = Math.random() * 20;
+    dustPos[i + 2] = (Math.random() - 0.5) * 200;
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+    color: 0xd4956a, size: 0.15, transparent: true, opacity: Math.min(0.7, 0.2 + currentWeather.dustTau * 0.15)
+  }));
+  scene.add(dust);
+  dustParticles = dust;
+
+  // ── ISRU O₂ Plant — near habitat, processes CO₂ → O₂
+  createISRUPlant(-habRadius - 1, -habRadius - 2);
+
+  // ── Water Storage Tanks — near water recycler
+  createWaterTanks(-3.5, -habRadius - 5, h.water_reserves_l, WATER_MAX);
+
+  // ── Battery Bank — charge indicator from stored_energy_kwh
+  createBatteryBank(habRadius + 3, -2, h.stored_energy_kwh, BATTERY_MAX);
+
+  // ── Landing Pad — 30m from habitat, with beacons
+  landingPadPos = { x: 0, z: 30 };
+  createLandingPad(landingPadPos.x, landingPadPos.z);
+
+  // ── Radiator Panels — on habitat exterior, glow at night
+  createRadiatorPanels(0, 0, habRadius, h.heater_power_w);
+
+  // ── Food Storage Module — scaled by food_reserves_kg
+  createFoodStorage(habRadius + 2, habRadius + 1, h.food_reserves_kg);
+
+  // ── Resupply Shuttles
+  const resupply = state.resupply || {};
+  (resupply.shuttles || []).forEach(shuttle => {
+    createShuttle(shuttle, landingPadPos.x, landingPadPos.z);
+  });
+
+  // ── Star field for night sky
+  createStarField();
+
+  // ── Active events visualization
+  const events = (state.active_events || []).concat(
+    (state.log && state.log.length > 0) ? (state.log[state.log.length - 1].events || []) : []
+  );
+  spawnEventVisuals(events);
+
+  // Track all colony objects added to scene
+  scene.children.forEach(obj => {
+    if (!sceneChildrenBefore.has(obj)) colonyObjects.push(obj);
+  });
+
+  // Create floating structure labels
+  createStructureLabels(state);
+}
+
+function createStructureLabels(state) {
+  const h = state?.habitat || {};
+  const gh = state?.greenhouse || {};
+  const resupply = state?.resupply || {};
+  const habRadius = 4;
+
+  function makeLabel(text, x, z, yOffset) {
+    const div = document.createElement('div');
+    div.className = 'structure-label';
+    div.textContent = text;
+    const label = new CSS2DObject(div);
+    const baseY = getTerrainY(x, z);
+    label.position.set(x, baseY + yOffset, z);
+    scene.add(label);
+    colonyObjects.push(label);
+    return label;
+  }
+
+  const interiorC = Math.round((h.interior_temp_k || 293) - 273.15);
+  labelMap.habitat = makeLabel(`${state?.name || 'Habitat'} | ${interiorC}°C`, 0, 0, habRadius + 1.5);
+
+  const growthPct = Math.round((gh.growth_stage || 0) * 100);
+  labelMap.greenhouse = makeLabel(`Greenhouse | Growth: ${growthPct}%`, -habRadius - 5, 0, 4);
+
+  const energyKwh = Math.round(h.stored_energy_kwh || 0);
+  labelMap.battery = makeLabel(`Battery | ${energyKwh}/${BATTERY_MAX} kWh`, habRadius + 3, -2, 2.5);
+
+  const waterL = Math.round(h.water_reserves_l || 0);
+  labelMap.water = makeLabel(`H\u2082O | ${waterL} L`, -3.5, -habRadius - 5, 2.5);
+
+  const isruRate = h.o2_production_rate || 4.0;
+  labelMap.isru = makeLabel(`ISRU O\u2082 | ${isruRate} kg/sol`, -habRadius - 1, -habRadius - 2, 2);
+
+  const panelArea = h.solar_panel_area_m2 || 400;
+  labelMap.solar = makeLabel(`Solar Array | ${panelArea} m\u00B2`, habRadius + 12, 0, 3.5);
+
+  const shuttles = resupply?.shuttles || [];
+  if (shuttles.length > 0) {
+    const s = shuttles[0];
+    const shuttleText = s.status === 'in_transit'
+      ? `${s.id || 'Shuttle'} | ETA: ${s.eta_sol} sols`
+      : `${s.id || 'Shuttle'} | ${s.status}`;
+    labelMap.shuttle = makeLabel(shuttleText, 0, 30, 5);
+  }
+}
+
+function updateLabels(state) {
+  const h = state?.habitat || {};
+  const gh = state?.greenhouse || {};
+  const resupply = state?.resupply || {};
+
+  if (labelMap.habitat) labelMap.habitat.element.textContent = `${state?.name || 'Habitat'} | ${Math.round((h.interior_temp_k || 293) - 273.15)}°C`;
+  if (labelMap.greenhouse) labelMap.greenhouse.element.textContent = `Greenhouse | Growth: ${Math.round((gh.growth_stage || 0) * 100)}%`;
+  if (labelMap.battery) labelMap.battery.element.textContent = `Battery | ${Math.round(h.stored_energy_kwh || 0)}/${BATTERY_MAX} kWh`;
+  if (labelMap.water) labelMap.water.element.textContent = `H\u2082O | ${Math.round(h.water_reserves_l || 0)} L`;
+  if (labelMap.isru) labelMap.isru.element.textContent = `ISRU O\u2082 | ${h.o2_production_rate || 4.0} kg/sol`;
+  if (labelMap.solar) labelMap.solar.element.textContent = `Solar Array | ${h.solar_panel_area_m2 || 400} m\u00B2`;
+
+  const shuttles = resupply?.shuttles || [];
+  if (labelMap.shuttle && shuttles.length > 0) {
+    const s = shuttles[0];
+    labelMap.shuttle.element.textContent = s.status === 'in_transit'
+      ? `${s.id || 'Shuttle'} | ETA: ${s.eta_sol} sols`
+      : `${s.id || 'Shuttle'} | ${s.status}`;
+  }
+}
+
+// ── Active Event Visualization ──────────────────────────────────────────
+
+function spawnEventVisuals(events) {
+  // Clear previous event meshes
+  activeEventMeshes.forEach(m => { scene.remove(m); });
+  activeEventMeshes = [];
+
+  const eventSet = new Set(events.map(e => typeof e === 'string' ? e : ''));
+
+  if (eventSet.has('dust_devil')) {
+    const dist = 50 + Math.random() * 50;
+    const angle = Math.random() * Math.PI * 2;
+    createDustDevil(Math.cos(angle) * dist, Math.sin(angle) * dist);
+  }
+
+  if (eventSet.has('dust_storm_local') || events.some(e => e === true || e === 'storm')) {
+    // Dramatically increase fog
+    scene.fog.density = 0.03;
+  }
+
+  if (eventSet.has('solar_flare')) {
+    const overlay = document.getElementById('flash-overlay');
+    overlay.style.background = 'rgba(255,170,0,0.3)';
+    overlay.style.opacity = '1';
+    setTimeout(() => { overlay.style.opacity = '0'; }, 1500);
+  }
+
+  if (eventSet.has('marsquake')) {
+    cameraShakeTimer = 2.0;
+  }
+
+  // Warning pulses on equipment
+  events.filter(e => typeof e === 'string' && e.startsWith('warning:')).forEach(e => {
+    const target = e.split(':')[1];
+    // Flash overlay with yellow
+    const overlay = document.getElementById('flash-overlay');
+    overlay.style.background = 'rgba(255,200,0,0.15)';
+    overlay.style.opacity = '1';
+    setTimeout(() => { overlay.style.opacity = '0'; }, 800);
+  });
+}
+
+// ── Day/Night Cycle ────────────────────────────────────────────────────
+
+function updateDayNightCycle(lmst, ls) {
+  // Solar hour angle: 0 at noon
+  const hourAngle = (lmst - 12) * 15 * Math.PI / 180;
+
+  // Simplified solar elevation for Jezero (18.38°N)
+  const decl = 25.19 * Math.sin((ls - 90) * Math.PI / 180);
+  const latRad = JEZERO_LAT * Math.PI / 180;
+  const declRad = decl * Math.PI / 180;
+  const sinElev = Math.sin(latRad) * Math.sin(declRad)
+                + Math.cos(latRad) * Math.cos(declRad) * Math.cos(hourAngle);
+  const elev = Math.asin(Math.max(-1, Math.min(1, sinElev))) * 180 / Math.PI;
+
+  // Sun position
+  const sunDist = 150;
+  const sunElevRad = Math.max(-0.15, elev * Math.PI / 180);
+  const sunY = Math.sin(sunElevRad) * sunDist;
+  const sunXZ = Math.cos(sunElevRad) * sunDist;
+  sun.position.set(-Math.sin(hourAngle) * sunXZ, Math.max(2, sunY), -Math.cos(hourAngle) * sunXZ);
+
+  const isDay = elev > 2;
+  const isDawn = elev > -12 && elev <= 2;
+  const baseSolar = currentWeather.solarWm2 / 470;
+
+  // Sun intensity
+  if (isDay) {
+    const factor = Math.min(1, (elev - 2) / 25);
+    sun.intensity = (0.5 + baseSolar * 0.7) * (0.3 + 0.7 * factor);
+  } else if (isDawn) {
+    sun.intensity = 0.15 * Math.max(0, (elev + 12) / 14);
+  } else {
+    sun.intensity = 0;
+  }
+
+  // Ambient
+  if (isDay) {
+    ambient.intensity = 0.25 + 0.25 * Math.min(1, elev / 30);
+  } else if (isDawn) {
+    ambient.intensity = 0.08 + 0.17 * Math.max(0, (elev + 12) / 14);
+  } else {
+    ambient.intensity = 0.04;
+  }
+
+  // Sky color transitions
+  if (!isDay && !isDawn) {
+    scene.background.setRGB(0.02, 0.008, 0.005);
+    scene.fog.color.copy(scene.background);
+  } else if (isDawn) {
+    const t = Math.max(0, (elev + 12) / 14);
+    // Purple-orange dawn/dusk
+    scene.background.setRGB(0.02 + t * 0.2, 0.008 + t * 0.06, 0.005 + t * 0.08);
+    scene.fog.color.copy(scene.background);
+  } else {
+    const newSky = skyColorFromWeather(currentWeather);
+    scene.background.setHex(newSky);
+    scene.fog.color.setHex(newSky);
+  }
+
+  // Stars visibility
+  if (starField) {
+    if (!isDay && !isDawn) {
+      starField.material.opacity = 0.8;
+    } else if (isDawn) {
+      starField.material.opacity = Math.max(0, 0.6 * (1 - (elev + 12) / 14));
+    } else {
+      starField.material.opacity = 0;
+    }
+  }
+
+  // Habitat interior glow — brighter at night (lights visible through windows)
+  if (habGlowLight) {
+    habGlowLight.intensity = isDay ? 0.3 : isDawn ? 0.6 : 1.0;
+  }
+  if (habWindowMat) {
+    habWindowMat.emissiveIntensity = isDay ? 0.15 : isDawn ? 0.4 : 0.8;
+  }
+}
+
+// Bot AI — role-based autonomous movement
+function updateBots(dt) {
+  const morale = colony?.crew?.morale || 1.0;
+  const health = colony?.crew?.health || 1.0;
+  const habRadius = 4;
+
+  // Role-specific patrol zones (center x, center z, range)
+  const roleZones = {
+    engineer: [
+      { x: 2, z: -habRadius - 2 },  // heater
+      { x: -2, z: -habRadius - 2 }, // recycler
+      { x: habRadius + 3, z: -2 },  // battery
+      { x: habRadius + 12, z: 0 },  // solar array
+    ],
+    botanist: [
+      { x: -habRadius - 5, z: 0 },  // greenhouse
+      { x: -habRadius - 3, z: 1 },
+      { x: -habRadius - 7, z: -1 },
+    ],
+    geologist: [
+      { x: 40, z: -30 }, { x: -35, z: 45 }, { x: 60, z: 50 },
+      { x: -50, z: -40 }, { x: 30, z: 30 },
+    ],
+    medic: [
+      { x: 0, z: 0 }, { x: 2, z: 2 }, { x: -2, z: -1 }, { x: 1, z: -2 },
+    ],
+    scientist: [
+      { x: habRadius + 6, z: habRadius + 4 }, // comms
+      { x: -habRadius - 1, z: -habRadius - 2 }, // ISRU
+      { x: 20, z: -20 },
+    ],
+    power: [
+      { x: habRadius + 10, z: 0 }, { x: habRadius + 15, z: -5 },
+      { x: habRadius + 3, z: -2 },
+    ],
+  };
+
+  bots.forEach(bot => {
+    if (bot === possessedBot) return;
+    const ud = bot.userData;
+
+    // Extract role from bot id (CREW-ENG-01 → engineer)
+    const roleCode = (ud.id.match(/CREW-([A-Z]+)/)?.[1] || '').toLowerCase();
+    const roleMap = { eng: 'engineer', bot: 'botanist', geo: 'geologist', med: 'medic', sci: 'scientist', pow: 'power' };
+    const role = roleMap[roleCode] || 'engineer';
+    const zones = roleZones[role] || roleZones.engineer;
+
+    // Pick new patrol target from role zones
+    if (Math.random() < 0.008) {
+      const zone = zones[Math.floor(Math.random() * zones.length)];
+      ud.targetX = zone.x + (Math.random() - 0.5) * 6;
+      ud.targetZ = zone.z + (Math.random() - 0.5) * 6;
+    }
+
+    // Move toward target — speed scaled by morale and Mars gravity
+    const dx = ud.targetX - bot.position.x;
+    const dz = ud.targetZ - bot.position.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const speedMod = morale * MARS_GRAVITY_FACTOR * 2.5; // Mars gravity = slightly slower
+    if (dist > 1) {
+      const moveSpeed = ud.speed * speedMod * dt;
+      bot.position.x += (dx / dist) * moveSpeed;
+      bot.position.z += (dz / dist) * moveSpeed;
+      bot.position.y = getTerrainY(bot.position.x, bot.position.z);
+      bot.rotation.y = Math.atan2(dx, dz);
+
+      // Mars gravity bounce (slight vertical oscillation)
+      const bouncePhase = clock.elapsedTime * 3 * speedMod;
+      bot.position.y += Math.abs(Math.sin(bouncePhase)) * 0.05 * MARS_GRAVITY_FACTOR;
+    }
+
+    // Health-based tilt (limp if health < 0.5)
+    if (health < 0.5) {
+      bot.rotation.z = Math.sin(clock.elapsedTime * 2) * 0.15 * (1 - health);
+    } else {
+      bot.rotation.z = 0;
+    }
+
+    ud.energy = Math.max(0, ud.energy - dt * 0.1);
+  });
+}
+
+// Possess a bot — first person view through its eyes
+function possessBot(bot) {
+  possessedBot = bot;
+  controls.unlock();
+  document.getElementById('possess-hint').style.opacity = '0';
+  document.getElementById('crosshair').style.opacity = '0.6';
+  document.querySelectorAll('.bot-card').forEach(c => c.classList.remove('active'));
+  document.querySelector(`[data-bot="${bot.userData.id}"]`)?.classList.add('active');
+}
+
+function releasePossession() {
+  if (!possessedBot) return;
+  camera.position.copy(possessedBot.position).add(new THREE.Vector3(0, 5, 10));
+  possessedBot = null;
+  document.getElementById('crosshair').style.opacity = '0.3';
+  document.getElementById('possess-hint').style.opacity = '1';
+  document.querySelectorAll('.bot-card').forEach(c => c.classList.remove('active'));
+}
+
+// HUD update — colony state + real Mars weather + new data
+function updateHUD(state) {
+  const h = state?.habitat || {};
+  const c = state?.crew || {};
+  const equip = state?.equipment || {};
+  const resupply = state?.resupply || {};
+
+  // Colony status (from sim)
+  document.getElementById('hud-sol').textContent = state?.sol || currentWeather.sol;
+  document.getElementById('hud-crew').textContent = h.crew_size || 0;
+  document.getElementById('hud-morale').textContent = Math.round((c.morale || 0) * 100) + '%';
+  const moralePct = (c.morale || 0);
+  document.getElementById('hud-morale').className = moralePct < 0.3 ? 'warn' : moralePct > 0.7 ? 'ok' : '';
+  document.getElementById('hud-temp').textContent = Math.round((h.interior_temp_k || 293) - 273.15) + '°C';
+
+  // Energy with bar
+  const energy = Math.round(h.stored_energy_kwh || 0);
+  const energyPct = Math.min(100, (energy / BATTERY_MAX) * 100);
+  document.getElementById('hud-energy').textContent = energy;
+  document.getElementById('hud-battery-pct').textContent = Math.round(energyPct);
+  const ebar = document.getElementById('hud-energy-bar');
+  ebar.style.width = energyPct + '%';
+  ebar.style.background = energyPct > 50 ? '#4ade80' : energyPct > 20 ? '#facc15' : '#ef4444';
+
+  // Water with bar
+  const water = Math.round(h.water_reserves_l || 0);
+  const waterPct = Math.min(100, (water / WATER_MAX) * 100);
+  document.getElementById('hud-water').textContent = water;
+  const wbar = document.getElementById('hud-water-bar');
+  wbar.style.width = waterPct + '%';
+  wbar.style.background = waterPct > 40 ? '#38bdf8' : waterPct > 15 ? '#facc15' : '#ef4444';
+
+  // Food
+  document.getElementById('hud-food').textContent = Math.round(h.food_reserves_kg || 0);
+
+  // O₂ rate
+  const crewSize = h.crew_size || 4;
+  const o2Need = (crewSize * 0.84).toFixed(1);
+  const o2El = document.getElementById('hud-o2-rate');
+  o2El.textContent = `ISRU +4.0 / -${o2Need} kg/sol`;
+  o2El.className = 4.0 > parseFloat(o2Need) ? 'ok' : 'warn';
+
+  // O₂ status
+  const o2El2 = document.getElementById('hud-o2');
+  o2El2.textContent = 4.0 >= parseFloat(o2Need) ? 'ISRU nominal' : 'O₂ deficit!';
+  o2El2.className = 4.0 >= parseFloat(o2Need) ? 'ok' : 'warn';
+
+  // Equipment health summary
+  const equipRow = document.getElementById('hud-equip-row');
+  const systems = [
+    { name: '☀ Solar', health: equip.solar_panels?.health },
+    { name: '🔥 Heat', health: equip.heater?.health },
+    { name: '💧 H₂O', health: equip.water_recycler?.health },
+    { name: '🔒 Seal', health: equip.hab_seals?.health },
+    { name: '📡 Comm', health: equip.comms?.health },
+  ];
+  equipRow.innerHTML = systems.map(s => {
+    const hp = s.health || 1;
+    const cls = hp > 0.7 ? 'ok' : hp > 0.4 ? 'warn' : 'crit';
+    return `<span class="hud-equip-item ${cls}">${s.name} ${Math.round(hp * 100)}%</span>`;
+  }).join('');
+
+  // Shuttle status
+  const shuttles = resupply.shuttles || [];
+  const shuttleEl = document.getElementById('hud-shuttle');
+  if (shuttles.length > 0) {
+    shuttleEl.innerHTML = shuttles.map(s => {
+      if (s.status === 'in_transit') return `🚀 ${s.id}: ETA <span class="warn">${s.eta_sol} sols</span>`;
+      if (s.status === 'delivered') return `📦 ${s.id}: <span class="ok">delivered</span>`;
+      return `${s.id}: ${s.status}`;
+    }).join(' | ');
+  } else {
+    shuttleEl.textContent = 'No shuttles tracked';
+  }
+
+  // Active events
+  const events = (state?.active_events || []).concat(
+    (state?.log && state.log.length > 0) ? (state.log[state.log.length - 1].events || []) : []
+  );
+  const eventsEl = document.getElementById('hud-events');
+  if (events.length > 0) {
+    eventsEl.innerHTML = events.map(e => {
+      if (e === 'dust_devil') return '🌪 Dust Devil';
+      if (e === 'dust_storm_local') return '🌫 Dust Storm';
+      if (e === 'solar_flare') return '☢ Solar Flare';
+      if (e === 'marsquake') return '🔴 Marsquake';
+      if (typeof e === 'string' && e.startsWith('warning:')) return `⚠ ${e.split(':')[1]}`;
+      return String(e);
+    }).join(' · ');
+  } else {
+    eventsEl.textContent = '—';
+  }
+
+  // Real Mars weather (computed from Earth date + NASA data)
+  updateWeatherHUD();
+}
+
+function updateWeatherHUD() {
+  currentWeather = computeMarsWeather();
+  const w = currentWeather;
+
+  document.getElementById('hud-time').textContent = w.timeStr;
+  document.getElementById('hud-ls').textContent = w.ls;
+  document.getElementById('hud-season').textContent = w.season;
+  document.getElementById('hud-ext-temp').textContent = `${w.tempC}°C (${w.tempK}K)`;
+  document.getElementById('hud-pressure').textContent = w.pressurePa;
+  document.getElementById('hud-wind').textContent = `${w.windMs} (gusts ${w.gustMs})`;
+  document.getElementById('hud-dust').textContent = w.dustTau;
+  document.getElementById('hud-uv').textContent = w.uvIndex;
+  document.getElementById('hud-solar').textContent = w.solarWm2;
+
+  // Color-code extreme conditions
+  const tempEl = document.getElementById('hud-ext-temp');
+  tempEl.className = w.tempC < -80 ? 'warn' : '';
+  const dustEl = document.getElementById('hud-dust');
+  dustEl.className = w.dustTau > 1.5 ? 'warn' : '';
+
+  // Day/Night cycle — moves sun, adjusts sky, stars, interior lights
+  updateDayNightCycle(w.lmst, w.ls);
+
+  // Update fog for current dust + time conditions
+  scene.fog.density = 0.005 + w.dustTau * 0.008;
+}
+
+// Bot panel
+function updateBotPanel() {
+  const bar = document.getElementById('bot-bar');
+  bar.innerHTML = bots.map(bot => {
+    const ud = bot.userData;
+    const active = bot === possessedBot ? 'active' : '';
+    return `<div class="bot-card ${active}" data-bot="${ud.id}">
+      <div class="bot-name">${ud.id}</div>
+      <div class="bot-task">${ud.task}</div>
+      <div class="bot-energy"><div class="bot-energy-fill" style="width:${ud.energy}%"></div></div>
+    </div>`;
+  }).join('');
+
+  bar.querySelectorAll('.bot-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const bot = bots.find(b => b.userData.id === card.dataset.bot);
+      if (bot) possessBot(bot);
+    });
+  });
+}
+
+// Main loop
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  // Movement (WASD)
+  if (controls.isLocked || possessedBot || touchMove.active) {
+    const speed = 10 * dt;
+    const dir = new THREE.Vector3();
+    if (keys['KeyW']) dir.z -= speed;
+    if (keys['KeyS']) dir.z += speed;
+    if (keys['KeyA']) dir.x -= speed;
+    if (keys['KeyD']) dir.x += speed;
+    // Touch joystick input
+    if (touchMove.active) {
+      dir.x += touchMove.x * speed;
+      dir.z += touchMove.z * speed;
+    }
+
+    if (possessedBot) {
+      // Move possessed bot
+      dir.applyQuaternion(camera.quaternion);
+      dir.y = 0;
+      possessedBot.position.add(dir);
+      // Clamp bot to terrain
+      possessedBot.position.y = getTerrainY(possessedBot.position.x, possessedBot.position.z);
+      // Camera follows bot at eye height
+      camera.position.set(
+        possessedBot.position.x,
+        possessedBot.position.y + 1.6,
+        possessedBot.position.z
+      );
+    } else {
+      controls.moveRight(dir.x);
+      controls.moveForward(-dir.z);
+      // Clamp camera to terrain + eye height
+      camera.position.y = getTerrainY(camera.position.x, camera.position.z) + 1.7;
+    }
+  }
+
+  // Camera preset animation
+  if (cameraTarget && !controls.isLocked && !possessedBot) {
+    camera.position.lerp(cameraTarget, 0.05);
+    if (cameraLookTarget) camera.lookAt(cameraLookTarget);
+    if (camera.position.distanceTo(cameraTarget) < 0.5) {
+      cameraTarget = null;
+      cameraLookTarget = null;
+    }
+  }
+
+  updateBots(dt);
+
+  // Animate dust particles with wind direction
+  if (dustParticles) {
+    const windMs = currentWeather.windMs || 3;
+    const windAngle = currentWeather.seasonIdx * 0.5; // approximate wind direction
+    const positions = dustParticles.geometry.attributes.position.array;
+    for (let i = 0; i < positions.length; i += 3) {
+      positions[i] += Math.cos(windAngle) * windMs * 0.02 * dt;
+      positions[i + 1] += (Math.random() - 0.48) * 0.1;
+      positions[i + 2] += Math.sin(windAngle) * windMs * 0.02 * dt;
+      // Wrap around
+      if (positions[i] > 100) positions[i] = -100;
+      if (positions[i] < -100) positions[i] = 100;
+      if (positions[i + 2] > 100) positions[i + 2] = -100;
+      if (positions[i + 2] < -100) positions[i + 2] = 100;
+      if (positions[i + 1] > 25) positions[i + 1] = 0.5;
+      if (positions[i + 1] < 0) positions[i + 1] = 20;
+    }
+    dustParticles.geometry.attributes.position.needsUpdate = true;
+    // Dust opacity from dustTau
+    dustParticles.material.opacity = Math.min(0.7, 0.15 + currentWeather.dustTau * 0.15);
+  }
+
+  // Animate active event meshes (dust devils spin)
+  activeEventMeshes.forEach(mesh => {
+    if (mesh.userData.type === 'dust_devil') {
+      mesh.rotation.y += (mesh.userData.rotSpeed || 1) * dt;
+    }
+  });
+
+  // Camera shake (marsquake)
+  if (cameraShakeTimer > 0) {
+    cameraShakeTimer -= dt;
+    const intensity = Math.min(1, cameraShakeTimer) * 0.15;
+    camera.position.x += (Math.random() - 0.5) * intensity;
+    camera.position.y += (Math.random() - 0.5) * intensity * 0.5;
+    camera.position.z += (Math.random() - 0.5) * intensity;
+  }
+
+  // Shuttle bob animation
+  shuttleMeshes.forEach(s => {
+    s.children.forEach(c => {
+      if (c.position.y > 10) {
+        c.position.y += Math.sin(clock.elapsedTime * 0.5) * 0.02;
+      }
+    });
+  });
+
+  // Update bot panel every second
+  if (Math.floor(clock.elapsedTime) !== Math.floor(clock.elapsedTime - dt)) {
+    updateBotPanel();
+    // Update weather time display every second for smooth LMST clock
+    if (Math.floor(clock.elapsedTime) % 10 === 0) updateWeatherHUD();
+  }
+
+  renderer.render(scene, camera);
+  if (css2dRenderer) css2dRenderer.render(scene, camera);
+}
+
+// Init
+async function init() {
+  createTerrain();
+  camera.position.set(0, getTerrainY(0, 30) + 1.7, 30);
+
+  // Populate colony switcher
+  const switcher = document.getElementById('colony-switcher');
+  // Read colony from URL param: ?colony=olympus
+  const urlParams = new URLSearchParams(window.location.search);
+  const colonyParam = urlParams.get('colony');
+  const colonyMatch = colonyParam ? COLONIES.find(c => c.id === colonyParam) : null;
+  if (colonyMatch) currentColonyFile = colonyMatch.file;
+
+  COLONIES.forEach((c, i) => {
+    const opt = document.createElement('option');
+    opt.value = c.file;
+    opt.textContent = c.label;
+    if (colonyMatch ? c.id === colonyMatch.id : i === 0) opt.selected = true;
+    switcher.appendChild(opt);
+  });
+  switcher.addEventListener('change', async (e) => {
+    currentColonyFile = e.target.value;
+    const colonyInfo = COLONIES.find(c => c.file === currentColonyFile);
+    try {
+      const res = await fetch(`${RAW}/${currentColonyFile}?t=${Date.now()}`);
+      colony = await res.json();
+      clearColony();
+      buildColony(colony);
+      updateHUD(colony);
+      document.getElementById('hud-title').textContent =
+        `${(colonyInfo?.label || colony.name || 'COLONY').toUpperCase()} — GROUND VIEW`;
+      if (colony.location) {
+        document.getElementById('hud-location').textContent = colony.location;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch colony:', err);
+    }
+  });
+
+  // Camera preset buttons
+  const CAMERA_PRESETS = {
+    overview:   { pos: new THREE.Vector3(0, 25, 40), look: new THREE.Vector3(0, 0, 0) },
+    solar:      { pos: new THREE.Vector3(20, 8, 8), look: new THREE.Vector3(16, 0, 0) },
+    greenhouse: { pos: new THREE.Vector3(-14, 6, 8), look: new THREE.Vector3(-10, 0, 0) },
+    landing:    { pos: new THREE.Vector3(8, 12, 42), look: new THREE.Vector3(0, 0, 30) },
+  };
+  document.querySelectorAll('.cam-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const preset = CAMERA_PRESETS[btn.dataset.cam];
+      if (!preset) return;
+      if (possessedBot) releasePossession();
+      controls.unlock();
+      cameraTarget = preset.pos.clone();
+      cameraLookTarget = preset.look.clone();
+    });
+  });
+
+  // Fetch live colony state
+  try {
+    const res = await fetch(`${RAW}/${currentColonyFile}?t=${Date.now()}`);
+    colony = await res.json();
+    buildColony(colony);
+    updateHUD(colony);
+  } catch (err) {
+    console.warn('Failed to fetch colony state, using defaults');
+    buildColony({ habitat: { solar_panel_area_m2: 400, crew_size: 4 }, crew: { morale: 0.8 } });
+  }
+
+  document.getElementById('loading').classList.add('done');
+  document.getElementById('possess-hint').style.opacity = '1';
+
+  // Initial weather display
+  updateWeatherHUD();
+
+  // Auto-refresh colony state every 60s
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${RAW}/${currentColonyFile}?t=${Date.now()}`);
+      colony = await res.json();
+      updateHUD(colony);
+      updateLabels(colony);
+    } catch {}
+  }, 60000);
+
+  // Update weather every 30s (Mars time advances, diurnal cycle shifts)
+  setInterval(updateWeatherHUD, 30000);
+
+  animate();
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  if (css2dRenderer) css2dRenderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+init();
+</script>
+</body>
+</html>

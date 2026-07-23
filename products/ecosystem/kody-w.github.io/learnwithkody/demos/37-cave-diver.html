@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CAVE DIVER — Underwater Descent</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#000;color:#cfe8e6;font:12px/1.4 -apple-system,'SF Mono',Menlo,Consolas,monospace;overflow:hidden;cursor:none}
+  #stage{position:fixed;inset:0}
+  canvas{display:block}
+  #hud{position:absolute;top:14px;left:14px;background:rgba(2,16,18,.55);backdrop-filter:blur(8px);border:1px solid rgba(120,220,210,.22);border-radius:10px;padding:10px 14px;pointer-events:none;letter-spacing:.7px;text-shadow:0 1px 3px #000;min-width:200px}
+  #hud h1{margin:0 0 8px;font-size:11px;color:#9be8e0;letter-spacing:2.5px;text-transform:uppercase}
+  #hud .row{display:flex;justify-content:space-between;gap:14px;font-size:11px;color:#bbece8;font-variant-numeric:tabular-nums;margin-top:4px}
+  #hud .row b{color:#e6fffd}
+  #o2box{margin-top:8px}
+  #o2bar{position:relative;width:100%;height:14px;background:rgba(120,220,210,.08);border:1px solid rgba(120,220,210,.3);border-radius:3px;overflow:hidden}
+  #o2fill{position:absolute;left:0;top:0;bottom:0;width:100%;background:linear-gradient(90deg,#28e0c0,#7afff0);transition:width .12s,background .3s}
+  #o2fill.low{background:linear-gradient(90deg,#e08020,#ffb050)}
+  #o2fill.crit{background:linear-gradient(90deg,#ff2030,#ff5050);animation:o2pulse .35s linear infinite alternate}
+  @keyframes o2pulse{from{filter:brightness(.7)}to{filter:brightness(1.6)}}
+  #o2pct{position:absolute;inset:0;text-align:center;font-size:10px;line-height:14px;color:#000;font-weight:700;letter-spacing:1px;text-shadow:0 0 2px rgba(255,255,255,.3)}
+  #compass{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(2,16,18,.55);backdrop-filter:blur(8px);border:1px solid rgba(120,220,210,.22);border-radius:10px;padding:8px 16px;font-size:11px;color:#9be8e0;letter-spacing:3px;pointer-events:none;font-variant-numeric:tabular-nums}
+  #help{position:absolute;bottom:14px;left:14px;background:rgba(2,16,18,.55);backdrop-filter:blur(8px);border:1px solid rgba(120,220,210,.22);border-radius:10px;padding:8px 12px;pointer-events:none;font-size:11px;color:#bbece8;letter-spacing:.5px}
+  #help kbd{background:rgba(120,220,210,.15);border:1px solid rgba(120,220,210,.3);border-radius:4px;padding:1px 5px;color:#fff;font:11px monospace;margin:0 2px}
+  #status{position:absolute;bottom:14px;right:14px;background:rgba(2,16,18,.55);backdrop-filter:blur(8px);border:1px solid rgba(120,220,210,.22);border-radius:10px;padding:8px 12px;font-size:11px;color:#9be8e0;letter-spacing:1px;pointer-events:none}
+  #status.air{color:#7afff0;border-color:#7afff0;box-shadow:0 0 24px rgba(120,255,240,.35)}
+  #status.exit{color:#ffd070;border-color:#ffd070;box-shadow:0 0 24px rgba(255,210,120,.4)}
+  #vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center, transparent 35%, rgba(0,8,12,.85) 100%);z-index:5;transition:opacity .3s}
+  #vignette.crit{background:radial-gradient(ellipse at center, transparent 8%, rgba(0,0,0,1) 70%);animation:vigPulse .4s linear infinite alternate}
+  @keyframes vigPulse{from{opacity:.85}to{opacity:1}}
+  #flash{position:absolute;inset:0;pointer-events:none;background:#000;opacity:0;z-index:6;transition:opacity .8s}
+  #flash.on{opacity:1}
+  #cross{position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;pointer-events:none;z-index:4;opacity:.55}
+  #cross::before,#cross::after{content:'';position:absolute;background:#bbf6ee;box-shadow:0 0 4px #000}
+  #cross::before{left:6px;top:0;width:2px;height:14px}
+  #cross::after{top:6px;left:0;width:14px;height:2px}
+  #intro{position:absolute;inset:0;background:radial-gradient(ellipse at center,#03161a 30%,#000);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9be8e0;letter-spacing:3px;font-size:13px;z-index:99;text-align:center;cursor:pointer}
+  #intro h2{font-size:28px;letter-spacing:8px;margin:0 0 8px;color:#7afff0;text-shadow:0 0 16px rgba(120,255,240,.6)}
+  #intro p{margin:6px 0;color:#bbece8;max-width:480px;font-size:11px}
+  #intro .go{margin-top:24px;padding:12px 32px;border:1px solid #7afff0;border-radius:6px;color:#fff;background:rgba(120,255,240,.12);letter-spacing:4px;font-size:11px;animation:goPulse 1.4s ease-in-out infinite}
+  @keyframes goPulse{0%,100%{box-shadow:0 0 0 rgba(120,255,240,.5)}50%{box-shadow:0 0 24px rgba(120,255,240,.6)}}
+  #message{position:absolute;left:50%;top:35%;transform:translate(-50%,-50%);background:rgba(2,16,18,.7);backdrop-filter:blur(8px);border:1px solid rgba(255,210,120,.4);border-radius:10px;padding:14px 24px;font-size:13px;color:#ffe0a0;letter-spacing:3px;pointer-events:none;z-index:7;opacity:0;transition:opacity .5s;text-align:center}
+  #message.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="intro">
+  <h2>CAVE DIVER</h2>
+  <p>Sealed in the dark. One lamp. Limited air.</p>
+  <p style="opacity:.6">WASD to swim &middot; SPACE up &middot; CTRL down &middot; SHIFT sprint &middot; MOUSE look</p>
+  <p style="opacity:.6">Find air pockets to refill O2. Find the exit.</p>
+  <div class="go">CLICK TO DESCEND</div>
+</div>
+<div id="stage"></div>
+
+<div id="hud">
+  <h1>DIVE STATUS</h1>
+  <div class="row"><span>DEPTH</span><b id="depth">0.0 m</b></div>
+  <div id="o2box">
+    <div class="row"><span>OXYGEN</span><b id="o2val">100%</b></div>
+    <div id="o2bar"><div id="o2fill"></div><div id="o2pct">100%</div></div>
+  </div>
+</div>
+<div id="compass">N · 000</div>
+<div id="help">
+  <kbd>WASD</kbd> swim &nbsp; <kbd>SPC</kbd>/<kbd>CTRL</kbd> up/down &nbsp; <kbd>SHIFT</kbd> sprint
+</div>
+<div id="status">LAMP ON</div>
+<div id="cross"></div>
+<div id="vignette"></div>
+<div id="flash"></div>
+<div id="message"></div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// =========================================================================
+// CAVE DIVER — first-person flooded cave exploration
+// Procedural marching-cubes-ish cave / volumetric headlamp / O2 / bioluminescence
+// =========================================================================
+
+const stage = document.getElementById('stage');
+const depthEl = document.getElementById('depth');
+const o2valEl = document.getElementById('o2val');
+const o2fillEl = document.getElementById('o2fill');
+const o2pctEl = document.getElementById('o2pct');
+const compassEl = document.getElementById('compass');
+const statusEl = document.getElementById('status');
+const vigEl = document.getElementById('vignette');
+const flashEl = document.getElementById('flash');
+const introEl = document.getElementById('intro');
+const messageEl = document.getElementById('message');
+
+// ---- renderer ------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({antialias:false, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+renderer.setSize(innerWidth,innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const FOG_COLOR = new THREE.Color(0.015,0.05,0.07);
+scene.fog = new THREE.FogExp2(FOG_COLOR.getHex(), 0.085);
+scene.background = FOG_COLOR;
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.05, 80);
+
+// =========================================================================
+// CAVE GENERATION (volumetric carving with marching-cubes)
+// =========================================================================
+// Build a 3D scalar field with multiple noise octaves + tunnel "worms"
+// then run marching cubes to generate the mesh.
+
+const SX=42, SY=22, SZ=42; // grid resolution
+const VS=1.0; // voxel size
+const ORIG = new THREE.Vector3(-SX*VS/2, -SY*VS/2, -SZ*VS/2);
+
+// hash & noise
+function hash3(x,y,z){
+  let h = Math.sin(x*127.1 + y*311.7 + z*74.7)*43758.5453;
+  return h - Math.floor(h);
+}
+function smooth(t){return t*t*(3-2*t);}
+function vnoise(x,y,z){
+  const xi=Math.floor(x), yi=Math.floor(y), zi=Math.floor(z);
+  const xf=x-xi, yf=y-yi, zf=z-zi;
+  const u=smooth(xf), v=smooth(yf), w=smooth(zf);
+  const c000=hash3(xi,yi,zi), c100=hash3(xi+1,yi,zi);
+  const c010=hash3(xi,yi+1,zi), c110=hash3(xi+1,yi+1,zi);
+  const c001=hash3(xi,yi,zi+1), c101=hash3(xi+1,yi,zi+1);
+  const c011=hash3(xi,yi+1,zi+1), c111=hash3(xi+1,yi+1,zi+1);
+  const x00=c000*(1-u)+c100*u, x10=c010*(1-u)+c110*u;
+  const x01=c001*(1-u)+c101*u, x11=c011*(1-u)+c111*u;
+  const y0=x00*(1-v)+x10*v, y1=x01*(1-v)+x11*v;
+  return y0*(1-w)+y1*w;
+}
+function fbm(x,y,z){
+  let s=0, a=0.5, f=1;
+  for(let i=0;i<4;i++){ s+=vnoise(x*f,y*f,z*f)*a; f*=2; a*=0.5; }
+  return s;
+}
+
+// scalar field: positive = solid rock, negative = air/water
+// We carve worm tunnels through a solid block.
+// A list of worm path key points + sphere chambers for nodes.
+const wormPaths = [];
+const chambers = []; // {x,y,z,r}
+const airPockets = []; // {x,y,z,r} y is ceiling
+const exitMarker = {x:0,y:0,z:0};
+
+function buildPaths(){
+  // Start chamber near top-center
+  const start = {x:0,y:6,z:0,r:3.2};
+  chambers.push(start);
+  airPockets.push({x:0,y:8,z:0,r:2.0}); // start has air
+
+  // Build a tree of chambers connected by winding tunnels
+  let nodes = [start];
+  for(let i=0;i<7;i++){
+    const parent = nodes[Math.floor(Math.random()*nodes.length)];
+    const ang = Math.random()*Math.PI*2;
+    const dist = 6+Math.random()*7;
+    const yDelta = (Math.random()-0.55)*5;
+    const nx = Math.max(-SX*0.4, Math.min(SX*0.4, parent.x + Math.cos(ang)*dist));
+    const nz = Math.max(-SZ*0.4, Math.min(SZ*0.4, parent.z + Math.sin(ang)*dist));
+    const ny = Math.max(-SY*0.42, Math.min(SY*0.42, parent.y + yDelta));
+    const r = 2.2+Math.random()*1.6;
+    const node = {x:nx,y:ny,z:nz,r};
+    chambers.push(node);
+    nodes.push(node);
+
+    // create winding path between parent and node (worm)
+    const path = [];
+    const segs = 8;
+    for(let s=0;s<=segs;s++){
+      const t = s/segs;
+      // bezier-ish with side wobble
+      const wob = Math.sin(t*Math.PI)*2.5;
+      const sideAng = ang + Math.PI/2;
+      const wobx = Math.cos(sideAng)*wob*(Math.random()*2-1)*0.3;
+      const wobz = Math.sin(sideAng)*wob*(Math.random()*2-1)*0.3;
+      const woby = Math.sin(t*Math.PI*1.3)*1.2*(Math.random()*0.6+0.4) - 0.5;
+      const px = parent.x*(1-t) + nx*t + wobx;
+      const py = parent.y*(1-t) + ny*t + woby;
+      const pz = parent.z*(1-t) + nz*t + wobz;
+      const pr = 1.1 + Math.random()*0.7; // tunnel radius
+      path.push({x:px,y:py,z:pz,r:pr});
+    }
+    wormPaths.push(path);
+
+    // Some chambers get an air pocket on top
+    if(i===2 || i===5){
+      airPockets.push({x:nx,y:ny+r-0.3,z:nz,r:Math.min(1.6,r-0.6)});
+    }
+  }
+
+  // Add a couple of dead-end short stubs from random chambers
+  for(let i=0;i<4;i++){
+    const parent = chambers[1+Math.floor(Math.random()*(chambers.length-1))];
+    const ang = Math.random()*Math.PI*2;
+    const dist = 4+Math.random()*3;
+    const nx = parent.x + Math.cos(ang)*dist;
+    const nz = parent.z + Math.sin(ang)*dist;
+    const ny = parent.y + (Math.random()-0.5)*2;
+    const path = [];
+    for(let s=0;s<=5;s++){
+      const t=s/5;
+      path.push({
+        x:parent.x*(1-t)+nx*t + Math.sin(t*5)*0.4,
+        y:parent.y*(1-t)+ny*t,
+        z:parent.z*(1-t)+nz*t + Math.cos(t*5)*0.4,
+        r: 0.95 + (1-t)*0.4
+      });
+    }
+    wormPaths.push(path);
+  }
+
+  // Mark exit: pick the chamber furthest from start, extend a tunnel out
+  let far = chambers[1], fd=0;
+  for(const c of chambers){
+    const d = Math.hypot(c.x,c.y-6,c.z);
+    if(d>fd){fd=d;far=c;}
+  }
+  // tunnel pushing outward
+  const ang = Math.atan2(far.z, far.x);
+  const ex = far.x + Math.cos(ang)*7;
+  const ez = far.z + Math.sin(ang)*7;
+  const ey = far.y - 1;
+  const exitPath = [];
+  for(let s=0;s<=8;s++){
+    const t=s/8;
+    exitPath.push({
+      x:far.x*(1-t)+ex*t,
+      y:far.y*(1-t)+ey*t,
+      z:far.z*(1-t)+ez*t,
+      r: 1.4+t*0.4
+    });
+  }
+  wormPaths.push(exitPath);
+  exitMarker.x = ex; exitMarker.y = ey; exitMarker.z = ez;
+}
+buildPaths();
+
+// Build scalar field
+function fieldAt(x,y,z){
+  // base solid (positive). add noise warble.
+  let v = 1.0 + fbm(x*0.18, y*0.2, z*0.18)*0.7 - 0.4;
+  // boundaries: keep solid near edges
+  const dx = Math.abs(x)/(SX*VS*0.5), dz = Math.abs(z)/(SZ*VS*0.5), dy = Math.abs(y)/(SY*VS*0.5);
+  const edge = Math.max(dx,dz,dy);
+  v += Math.max(0,(edge-0.85))*8;
+
+  // carve chambers
+  for(const c of chambers){
+    const d = Math.hypot(x-c.x, y-c.y, z-c.z);
+    const sub = c.r - d + fbm(x*0.4,y*0.4,z*0.4)*0.4;
+    if(sub>0) v -= sub*1.2;
+  }
+  // carve worm tunnels (capsule per segment)
+  for(const path of wormPaths){
+    for(let i=0;i<path.length-1;i++){
+      const a=path[i], b=path[i+1];
+      const ax=b.x-a.x, ay=b.y-a.y, az=b.z-a.z;
+      const px=x-a.x, py=y-a.y, pz=z-a.z;
+      const len2 = ax*ax+ay*ay+az*az;
+      let t = (px*ax+py*ay+pz*az)/Math.max(0.0001,len2);
+      t = Math.max(0,Math.min(1,t));
+      const cx=ax*t, cy=ay*t, cz=az*t;
+      const dx2=px-cx, dy2=py-cy, dz2=pz-cz;
+      const d = Math.sqrt(dx2*dx2+dy2*dy2+dz2*dz2);
+      const r = a.r*(1-t)+b.r*t + fbm(x*0.5,y*0.5,z*0.5)*0.25;
+      const sub = r - d;
+      if(sub>0) v -= sub*1.3;
+    }
+  }
+  return v;
+}
+
+// ----- marching cubes -----
+// Standard tables (compact)
+const edgeTable = new Int32Array([
+0x0  , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
+0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00,
+0x190, 0x99 , 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c,
+0x99c, 0x895, 0xb9f, 0xa96, 0xd9a, 0xc93, 0xf99, 0xe90,
+0x230, 0x339, 0x33 , 0x13a, 0x636, 0x73f, 0x435, 0x53c,
+0xa3c, 0xb35, 0x83f, 0x936, 0xe3a, 0xf33, 0xc39, 0xd30,
+0x3a0, 0x2a9, 0x1a3, 0xaa , 0x7a6, 0x6af, 0x5a5, 0x4ac,
+0xbac, 0xaa5, 0x9af, 0x8a6, 0xfaa, 0xea3, 0xda9, 0xca0,
+0x460, 0x569, 0x663, 0x76a, 0x66 , 0x16f, 0x265, 0x36c,
+0xc6c, 0xd65, 0xe6f, 0xf66, 0x86a, 0x963, 0xa69, 0xb60,
+0x5f0, 0x4f9, 0x7f3, 0x6fa, 0x1f6, 0xff , 0x3f5, 0x2fc,
+0xdfc, 0xcf5, 0xfff, 0xef6, 0x9fa, 0x8f3, 0xbf9, 0xaf0,
+0x650, 0x759, 0x453, 0x55a, 0x256, 0x35f, 0x55 , 0x15c,
+0xe5c, 0xf55, 0xc5f, 0xd56, 0xa5a, 0xb53, 0x859, 0x950,
+0x7c0, 0x6c9, 0x5c3, 0x4ca, 0x3c6, 0x2cf, 0x1c5, 0xcc ,
+0xfcc, 0xec5, 0xdcf, 0xcc6, 0xbca, 0xac3, 0x9c9, 0x8c0,
+0x8c0, 0x9c9, 0xac3, 0xbca, 0xcc6, 0xdcf, 0xec5, 0xfcc,
+0xcc , 0x1c5, 0x2cf, 0x3c6, 0x4ca, 0x5c3, 0x6c9, 0x7c0,
+0x950, 0x859, 0xb53, 0xa5a, 0xd56, 0xc5f, 0xf55, 0xe5c,
+0x15c, 0x55 , 0x35f, 0x256, 0x55a, 0x453, 0x759, 0x650,
+0xaf0, 0xbf9, 0x8f3, 0x9fa, 0xef6, 0xfff, 0xcf5, 0xdfc,
+0x2fc, 0x3f5, 0xff , 0x1f6, 0x6fa, 0x7f3, 0x4f9, 0x5f0,
+0xb60, 0xa69, 0x963, 0x86a, 0xf66, 0xe6f, 0xd65, 0xc6c,
+0x36c, 0x265, 0x16f, 0x66 , 0x76a, 0x663, 0x569, 0x460,
+0xca0, 0xda9, 0xea3, 0xfaa, 0x8a6, 0x9af, 0xaa5, 0xbac,
+0x4ac, 0x5a5, 0x6af, 0x7a6, 0xaa , 0x1a3, 0x2a9, 0x3a0,
+0xd30, 0xc39, 0xf33, 0xe3a, 0x936, 0x83f, 0xb35, 0xa3c,
+0x53c, 0x435, 0x73f, 0x636, 0x13a, 0x33 , 0x339, 0x230,
+0xe90, 0xf99, 0xc93, 0xd9a, 0xa96, 0xb9f, 0x895, 0x99c,
+0x69c, 0x795, 0x49f, 0x596, 0x29a, 0x393, 0x99 , 0x190,
+0xf00, 0xe09, 0xd03, 0xc0a, 0xb06, 0xa0f, 0x905, 0x80c,
+0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0
+]);
+
+// triangle table (256 x 16) — abbreviated form generation impractical; use full table
+const triTable=[
+[-1],[0,8,3,-1],[0,1,9,-1],[1,8,3,9,8,1,-1],[1,2,10,-1],[0,8,3,1,2,10,-1],[9,2,10,0,2,9,-1],
+[2,8,3,2,10,8,10,9,8,-1],[3,11,2,-1],[0,11,2,8,11,0,-1],[1,9,0,2,3,11,-1],[1,11,2,1,9,11,9,8,11,-1],
+[3,10,1,11,10,3,-1],[0,10,1,0,8,10,8,11,10,-1],[3,9,0,3,11,9,11,10,9,-1],[9,8,10,10,8,11,-1],[4,7,8,-1],
+[4,3,0,7,3,4,-1],[0,1,9,8,4,7,-1],[4,1,9,4,7,1,7,3,1,-1],[1,2,10,8,4,7,-1],[3,4,7,3,0,4,1,2,10,-1],
+[9,2,10,9,0,2,8,4,7,-1],[2,10,9,2,9,7,2,7,3,7,9,4,-1],[8,4,7,3,11,2,-1],[11,4,7,11,2,4,2,0,4,-1],
+[9,0,1,8,4,7,2,3,11,-1],[4,7,11,9,4,11,9,11,2,9,2,1,-1],[3,10,1,3,11,10,7,8,4,-1],[1,11,10,1,4,11,1,0,4,7,11,4,-1],
+[4,7,8,9,0,11,9,11,10,11,0,3,-1],[4,7,11,4,11,9,9,11,10,-1],[9,5,4,-1],[9,5,4,0,8,3,-1],[0,5,4,1,5,0,-1],
+[8,5,4,8,3,5,3,1,5,-1],[1,2,10,9,5,4,-1],[3,0,8,1,2,10,4,9,5,-1],[5,2,10,5,4,2,4,0,2,-1],
+[2,10,5,3,2,5,3,5,4,3,4,8,-1],[9,5,4,2,3,11,-1],[0,11,2,0,8,11,4,9,5,-1],[0,5,4,0,1,5,2,3,11,-1],
+[2,1,5,2,5,8,2,8,11,4,8,5,-1],[10,3,11,10,1,3,9,5,4,-1],[4,9,5,0,8,1,8,10,1,8,11,10,-1],
+[5,4,0,5,0,11,5,11,10,11,0,3,-1],[5,4,8,5,8,10,10,8,11,-1],[9,7,8,5,7,9,-1],[9,3,0,9,5,3,5,7,3,-1],
+[0,7,8,0,1,7,1,5,7,-1],[1,5,3,3,5,7,-1],[9,7,8,9,5,7,10,1,2,-1],[10,1,2,9,5,0,5,3,0,5,7,3,-1],
+[8,0,2,8,2,5,8,5,7,10,5,2,-1],[2,10,5,2,5,3,3,5,7,-1],[7,9,5,7,8,9,3,11,2,-1],[9,5,7,9,7,2,9,2,0,2,7,11,-1],
+[2,3,11,0,1,8,1,7,8,1,5,7,-1],[11,2,1,11,1,7,7,1,5,-1],[9,5,8,8,5,7,10,1,3,10,3,11,-1],
+[5,7,0,5,0,9,7,11,0,1,0,10,11,10,0,-1],[11,10,0,11,0,3,10,5,0,8,0,7,5,7,0,-1],[11,10,5,7,11,5,-1],
+[10,6,5,-1],[0,8,3,5,10,6,-1],[9,0,1,5,10,6,-1],[1,8,3,1,9,8,5,10,6,-1],[1,6,5,2,6,1,-1],
+[1,6,5,1,2,6,3,0,8,-1],[9,6,5,9,0,6,0,2,6,-1],[5,9,8,5,8,2,5,2,6,3,2,8,-1],[2,3,11,10,6,5,-1],
+[11,0,8,11,2,0,10,6,5,-1],[0,1,9,2,3,11,5,10,6,-1],[5,10,6,1,9,2,9,11,2,9,8,11,-1],[6,3,11,6,5,3,5,1,3,-1],
+[0,8,11,0,11,5,0,5,1,5,11,6,-1],[3,11,6,0,3,6,0,6,5,0,5,9,-1],[6,5,9,6,9,11,11,9,8,-1],[5,10,6,4,7,8,-1],
+[4,3,0,4,7,3,6,5,10,-1],[1,9,0,5,10,6,8,4,7,-1],[10,6,5,1,9,7,1,7,3,7,9,4,-1],[6,1,2,6,5,1,4,7,8,-1],
+[1,2,5,5,2,6,3,0,4,3,4,7,-1],[8,4,7,9,0,5,0,6,5,0,2,6,-1],[7,3,9,7,9,4,3,2,9,5,9,6,2,6,9,-1],
+[3,11,2,7,8,4,10,6,5,-1],[5,10,6,4,7,2,4,2,0,2,7,11,-1],[0,1,9,4,7,8,2,3,11,5,10,6,-1],
+[9,2,1,9,11,2,9,4,11,7,11,4,5,10,6,-1],[8,4,7,3,11,5,3,5,1,5,11,6,-1],[5,1,11,5,11,6,1,0,11,7,11,4,0,4,11,-1],
+[0,5,9,0,6,5,0,3,6,11,6,3,8,4,7,-1],[6,5,9,6,9,11,4,7,9,7,11,9,-1],[10,4,9,6,4,10,-1],[4,10,6,4,9,10,0,8,3,-1],
+[10,0,1,10,6,0,6,4,0,-1],[8,3,1,8,1,6,8,6,4,6,1,10,-1],[1,4,9,1,2,4,2,6,4,-1],[3,0,8,1,2,9,2,4,9,2,6,4,-1],
+[0,2,4,4,2,6,-1],[8,3,2,8,2,4,4,2,6,-1],[10,4,9,10,6,4,11,2,3,-1],[0,8,2,2,8,11,4,9,10,4,10,6,-1],
+[3,11,2,0,1,6,0,6,4,6,1,10,-1],[6,4,1,6,1,10,4,8,1,2,1,11,8,11,1,-1],[9,6,4,9,3,6,9,1,3,11,6,3,-1],
+[8,11,1,8,1,0,11,6,1,9,1,4,6,4,1,-1],[3,11,6,3,6,0,0,6,4,-1],[6,4,8,11,6,8,-1],[7,10,6,7,8,10,8,9,10,-1],
+[0,7,3,0,10,7,0,9,10,6,7,10,-1],[10,6,7,1,10,7,1,7,8,1,8,0,-1],[10,6,7,10,7,1,1,7,3,-1],
+[1,2,6,1,6,8,1,8,9,8,6,7,-1],[2,6,9,2,9,1,6,7,9,0,9,3,7,3,9,-1],[7,8,0,7,0,6,6,0,2,-1],
+[7,3,2,6,7,2,-1],[2,3,11,10,6,8,10,8,9,8,6,7,-1],[2,0,7,2,7,11,0,9,7,6,7,10,9,10,7,-1],
+[1,8,0,1,7,8,1,10,7,6,7,10,2,3,11,-1],[11,2,1,11,1,7,10,6,1,6,7,1,-1],[8,9,6,8,6,7,9,1,6,11,6,3,1,3,6,-1],
+[0,9,1,11,6,7,-1],[7,8,0,7,0,6,3,11,0,11,6,0,-1],[7,11,6,-1],[7,6,11,-1],[3,0,8,11,7,6,-1],
+[0,1,9,11,7,6,-1],[8,1,9,8,3,1,11,7,6,-1],[10,1,2,6,11,7,-1],[1,2,10,3,0,8,6,11,7,-1],
+[2,9,0,2,10,9,6,11,7,-1],[6,11,7,2,10,3,10,8,3,10,9,8,-1],[7,2,3,6,2,7,-1],[7,0,8,7,6,0,6,2,0,-1],
+[2,7,6,2,3,7,0,1,9,-1],[1,6,2,1,8,6,1,9,8,8,7,6,-1],[10,7,6,10,1,7,1,3,7,-1],[10,7,6,1,7,10,1,8,7,1,0,8,-1],
+[0,3,7,0,7,10,0,10,9,6,10,7,-1],[7,6,10,7,10,8,8,10,9,-1],[6,8,4,11,8,6,-1],[3,6,11,3,0,6,0,4,6,-1],
+[8,6,11,8,4,6,9,0,1,-1],[9,4,6,9,6,3,9,3,1,11,3,6,-1],[6,8,4,6,11,8,2,10,1,-1],[1,2,10,3,0,11,0,6,11,0,4,6,-1],
+[4,11,8,4,6,11,0,2,9,2,10,9,-1],[10,9,3,10,3,2,9,4,3,11,3,6,4,6,3,-1],[8,2,3,8,4,2,4,6,2,-1],
+[0,4,2,4,6,2,-1],[1,9,0,2,3,4,2,4,6,4,3,8,-1],[1,9,4,1,4,2,2,4,6,-1],[8,1,3,8,6,1,8,4,6,6,10,1,-1],
+[10,1,0,10,0,6,6,0,4,-1],[4,6,3,4,3,8,6,10,3,0,3,9,10,9,3,-1],[10,9,4,6,10,4,-1],[4,9,5,7,6,11,-1],
+[0,8,3,4,9,5,11,7,6,-1],[5,0,1,5,4,0,7,6,11,-1],[11,7,6,8,3,4,3,5,4,3,1,5,-1],[9,5,4,10,1,2,7,6,11,-1],
+[6,11,7,1,2,10,0,8,3,4,9,5,-1],[7,6,11,5,4,10,4,2,10,4,0,2,-1],[3,4,8,3,5,4,3,2,5,10,5,2,11,7,6,-1],
+[7,2,3,7,6,2,5,4,9,-1],[9,5,4,0,8,6,0,6,2,6,8,7,-1],[3,6,2,3,7,6,1,5,0,5,4,0,-1],[6,2,8,6,8,7,2,1,8,4,8,5,1,5,8,-1],
+[9,5,4,10,1,6,1,7,6,1,3,7,-1],[1,6,10,1,7,6,1,0,7,8,7,0,9,5,4,-1],[4,0,10,4,10,5,0,3,10,6,10,7,3,7,10,-1],
+[7,6,10,7,10,8,5,4,10,4,8,10,-1],[6,9,5,6,11,9,11,8,9,-1],[3,6,11,0,6,3,0,5,6,0,9,5,-1],
+[0,11,8,0,5,11,0,1,5,5,6,11,-1],[6,11,3,6,3,5,5,3,1,-1],[1,2,10,9,5,11,9,11,8,11,5,6,-1],
+[0,11,3,0,6,11,0,9,6,5,6,9,1,2,10,-1],[11,8,5,11,5,6,8,0,5,10,5,2,0,2,5,-1],[6,11,3,6,3,5,2,10,3,10,5,3,-1],
+[5,8,9,5,2,8,5,6,2,3,8,2,-1],[9,5,6,9,6,0,0,6,2,-1],[1,5,8,1,8,0,5,6,8,3,8,2,6,2,8,-1],
+[1,5,6,2,1,6,-1],[1,3,6,1,6,10,3,8,6,5,6,9,8,9,6,-1],[10,1,0,10,0,6,9,5,0,5,6,0,-1],
+[0,3,8,5,6,10,-1],[10,5,6,-1],[11,5,10,7,5,11,-1],[11,5,10,11,7,5,8,3,0,-1],[5,11,7,5,10,11,1,9,0,-1],
+[10,7,5,10,11,7,9,8,1,8,3,1,-1],[11,1,2,11,7,1,7,5,1,-1],[0,8,3,1,2,7,1,7,5,7,2,11,-1],
+[9,7,5,9,2,7,9,0,2,2,11,7,-1],[7,5,2,7,2,11,5,9,2,3,2,8,9,8,2,-1],[2,5,10,2,3,5,3,7,5,-1],
+[8,2,0,8,5,2,8,7,5,10,2,5,-1],[9,0,1,5,10,3,5,3,7,3,10,2,-1],[9,8,2,9,2,1,8,7,2,10,2,5,7,5,2,-1],
+[1,3,5,3,7,5,-1],[0,8,7,0,7,1,1,7,5,-1],[9,0,3,9,3,5,5,3,7,-1],[9,8,7,5,9,7,-1],[5,8,4,5,10,8,10,11,8,-1],
+[5,0,4,5,11,0,5,10,11,11,3,0,-1],[0,1,9,8,4,10,8,10,11,10,4,5,-1],[10,11,4,10,4,5,11,3,4,9,4,1,3,1,4,-1],
+[2,5,1,2,8,5,2,11,8,4,5,8,-1],[0,4,11,0,11,3,4,5,11,2,11,1,5,1,11,-1],[0,2,5,0,5,9,2,11,5,4,5,8,11,8,5,-1],
+[9,4,5,2,11,3,-1],[2,5,10,3,5,2,3,4,5,3,8,4,-1],[5,10,2,5,2,4,4,2,0,-1],[3,10,2,3,5,10,3,8,5,4,5,8,0,1,9,-1],
+[5,10,2,5,2,4,1,9,2,9,4,2,-1],[8,4,5,8,5,3,3,5,1,-1],[0,4,5,1,0,5,-1],[8,4,5,8,5,3,9,0,5,0,3,5,-1],
+[9,4,5,-1],[4,11,7,4,9,11,9,10,11,-1],[0,8,3,4,9,7,9,11,7,9,10,11,-1],[1,10,11,1,11,4,1,4,0,7,4,11,-1],
+[3,1,4,3,4,8,1,10,4,7,4,11,10,11,4,-1],[4,11,7,9,11,4,9,2,11,9,1,2,-1],[9,7,4,9,11,7,9,1,11,2,11,1,0,8,3,-1],
+[11,7,4,11,4,2,2,4,0,-1],[11,7,4,11,4,2,8,3,4,3,2,4,-1],[2,9,10,2,7,9,2,3,7,7,4,9,-1],
+[9,10,7,9,7,4,10,2,7,8,7,0,2,0,7,-1],[3,7,10,3,10,2,7,4,10,1,10,0,4,0,10,-1],[1,10,2,8,7,4,-1],
+[4,9,1,4,1,7,7,1,3,-1],[4,9,1,4,1,7,0,8,1,8,7,1,-1],[4,0,3,7,4,3,-1],[4,8,7,-1],[9,10,8,10,11,8,-1],
+[3,0,9,3,9,11,11,9,10,-1],[0,1,10,0,10,8,8,10,11,-1],[3,1,10,11,3,10,-1],[1,2,11,1,11,9,9,11,8,-1],
+[3,0,9,3,9,11,1,2,9,2,11,9,-1],[0,2,11,8,0,11,-1],[3,2,11,-1],[2,3,8,2,8,10,10,8,9,-1],[9,10,2,0,9,2,-1],
+[2,3,8,2,8,10,0,1,8,1,10,8,-1],[1,10,2,-1],[1,3,8,9,1,8,-1],[0,9,1,-1],[0,3,8,-1],[-1]
+];
+
+// build verts/idx
+const verts=[]; const norms=[]; const idx=[];
+
+const field = new Float32Array(SX*SY*SZ);
+function fIdx(x,y,z){return (z*SY + y)*SX + x;}
+
+for(let z=0;z<SZ;z++){
+  for(let y=0;y<SY;y++){
+    for(let x=0;x<SX;x++){
+      const wx = ORIG.x + x*VS;
+      const wy = ORIG.y + y*VS;
+      const wz = ORIG.z + z*VS;
+      field[fIdx(x,y,z)] = fieldAt(wx,wy,wz);
+    }
+  }
+}
+
+function gradAt(x,y,z){
+  const e = 0.4;
+  const fx1 = fieldAt(x+e,y,z), fx0 = fieldAt(x-e,y,z);
+  const fy1 = fieldAt(x,y+e,z), fy0 = fieldAt(x,y-e,z);
+  const fz1 = fieldAt(x,y,z+e), fz0 = fieldAt(x,y,z-e);
+  return new THREE.Vector3(fx1-fx0, fy1-fy0, fz1-fz0).normalize();
+}
+
+const ISO = 0.0;
+function vert(p1,p2,v1,v2,out){
+  const t = (ISO - v1)/(v2 - v1);
+  out.x = p1.x + t*(p2.x-p1.x);
+  out.y = p1.y + t*(p2.y-p1.y);
+  out.z = p1.z + t*(p2.z-p1.z);
+}
+
+const cubeOff = [
+  [0,0,0],[1,0,0],[1,1,0],[0,1,0],
+  [0,0,1],[1,0,1],[1,1,1],[0,1,1]
+];
+const edgeIdx = [
+  [0,1],[1,2],[2,3],[3,0],
+  [4,5],[5,6],[6,7],[7,4],
+  [0,4],[1,5],[2,6],[3,7]
+];
+
+const cubePts = []; for(let i=0;i<8;i++) cubePts.push(new THREE.Vector3());
+const cubeVal = new Float32Array(8);
+const edgeV = []; for(let i=0;i<12;i++) edgeV.push(new THREE.Vector3());
+
+for(let z=0;z<SZ-1;z++){
+  for(let y=0;y<SY-1;y++){
+    for(let x=0;x<SX-1;x++){
+      let cubeIndex = 0;
+      for(let i=0;i<8;i++){
+        const o = cubeOff[i];
+        const v = field[fIdx(x+o[0],y+o[1],z+o[2])];
+        cubeVal[i]=v;
+        cubePts[i].set(ORIG.x+(x+o[0])*VS, ORIG.y+(y+o[1])*VS, ORIG.z+(z+o[2])*VS);
+        if(v < ISO) cubeIndex |= (1<<i);
+      }
+      const eMask = edgeTable[cubeIndex];
+      if(eMask===0) continue;
+      for(let i=0;i<12;i++){
+        if(eMask & (1<<i)){
+          const e = edgeIdx[i];
+          vert(cubePts[e[0]], cubePts[e[1]], cubeVal[e[0]], cubeVal[e[1]], edgeV[i]);
+        }
+      }
+      const tris = triTable[cubeIndex];
+      for(let i=0;tris[i]!==-1;i+=3){
+        const va = edgeV[tris[i]], vb = edgeV[tris[i+1]], vc = edgeV[tris[i+2]];
+        const base = verts.length/3;
+        verts.push(va.x,va.y,va.z, vb.x,vb.y,vb.z, vc.x,vc.y,vc.z);
+        // compute normals from gradient
+        const na = gradAt(va.x,va.y,va.z);
+        const nb = gradAt(vb.x,vb.y,vb.z);
+        const nc = gradAt(vc.x,vc.y,vc.z);
+        norms.push(na.x,na.y,na.z, nb.x,nb.y,nb.z, nc.x,nc.y,nc.z);
+        idx.push(base, base+1, base+2);
+      }
+    }
+  }
+}
+
+const caveGeo = new THREE.BufferGeometry();
+caveGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
+caveGeo.setAttribute('normal', new THREE.Float32BufferAttribute(norms,3));
+caveGeo.setIndex(idx);
+
+// Cave material with a custom shader: dim, lit only by player headlamp + bioluminescent points.
+// We pass in headlamp position/direction and a small list of point lights.
+
+const MAX_BIO = 24;
+const bioPositions = new Float32Array(MAX_BIO*3);
+const bioColors = new Float32Array(MAX_BIO*3);
+const bioIntensity = new Float32Array(MAX_BIO);
+
+const caveUniforms = {
+  fogColor: { value: FOG_COLOR },
+  fogDensity: { value: 0.085 },
+  lampPos: { value: new THREE.Vector3() },
+  lampDir: { value: new THREE.Vector3(0,0,-1) },
+  lampColor: { value: new THREE.Color(1.0,0.95,0.78) },
+  lampRange: { value: 12.0 },
+  lampInner: { value: 0.92 },
+  lampOuter: { value: 0.78 },
+  bioCount: { value: 0 },
+  bioPos: { value: bioPositions },
+  bioCol: { value: bioColors },
+  bioInt: { value: bioIntensity },
+  time: { value: 0 }
+};
+
+const caveMat = new THREE.ShaderMaterial({
+  uniforms: caveUniforms,
+  fog: false,
+  vertexShader: `
+    varying vec3 vWorld;
+    varying vec3 vNormal;
+    void main(){
+      vec4 wp = modelMatrix * vec4(position,1.0);
+      vWorld = wp.xyz;
+      vNormal = normalize(mat3(modelMatrix)*normal);
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    varying vec3 vWorld;
+    varying vec3 vNormal;
+    uniform vec3 fogColor;
+    uniform float fogDensity;
+    uniform vec3 lampPos;
+    uniform vec3 lampDir;
+    uniform vec3 lampColor;
+    uniform float lampRange;
+    uniform float lampInner;
+    uniform float lampOuter;
+    uniform int bioCount;
+    uniform vec3 bioPos[${MAX_BIO}];
+    uniform vec3 bioCol[${MAX_BIO}];
+    uniform float bioInt[${MAX_BIO}];
+    uniform float time;
+
+    float hash(vec3 p){
+      p = fract(p*0.3183099+0.1);
+      p *= 17.0;
+      return fract(p.x*p.y*p.z*(p.x+p.y+p.z));
+    }
+
+    void main(){
+      vec3 N = normalize(vNormal);
+      // ambient — extremely dim, slightly cool
+      vec3 col = vec3(0.012, 0.020, 0.024);
+
+      // base rock color (mottled)
+      vec3 rockA = vec3(0.18,0.21,0.20);
+      vec3 rockB = vec3(0.06,0.10,0.11);
+      float h = hash(floor(vWorld*1.4));
+      vec3 baseC = mix(rockB, rockA, h*0.7+0.3);
+      // crease shading via normal
+      float crease = clamp(dot(N, vec3(0,1,0))*0.5+0.5, 0.0, 1.0);
+      baseC *= mix(0.6, 1.0, crease);
+
+      // ----- headlamp contribution -----
+      vec3 toFrag = vWorld - lampPos;
+      float dist = length(toFrag);
+      vec3 ldir = toFrag / max(dist, 0.0001);
+      float coneCos = dot(ldir, normalize(lampDir));
+      float coneFall = smoothstep(lampOuter, lampInner, coneCos);
+      float distFall = clamp(1.0 - dist/lampRange, 0.0, 1.0);
+      distFall = distFall*distFall;
+      float ndl = max(dot(N, -ldir), 0.0);
+      vec3 lampC = lampColor * coneFall * distFall * (ndl*0.85 + 0.15) * 2.6;
+
+      col += baseC * lampC;
+
+      // ----- bioluminescent point lights -----
+      for(int i=0;i<${MAX_BIO};i++){
+        if(i>=bioCount) break;
+        vec3 bp = bioPos[i];
+        vec3 bd = vWorld - bp;
+        float blen = length(bd);
+        float att = 1.0/(1.0 + blen*0.6 + blen*blen*0.6);
+        float bndl = max(dot(N, -normalize(bd)), 0.0);
+        col += baseC * bioCol[i] * bioInt[i] * att * (bndl*0.7 + 0.3);
+      }
+
+      // distance fog
+      float fd = length(cameraPosition - vWorld);
+      float fa = 1.0 - exp(-fogDensity*fogDensity*fd*fd);
+      col = mix(col, fogColor*0.4, fa);
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+
+const caveMesh = new THREE.Mesh(caveGeo, caveMat);
+scene.add(caveMesh);
+
+// =========================================================================
+// BIOLUMINESCENT FAUNA placement
+// =========================================================================
+// Place glow points in chambers (and a few in tunnels). Each is a small sprite/sphere with emissive material.
+
+const fauna = []; // {mesh, basePos, color, baseInt, kind, phase}
+
+function addFauna(x,y,z, kind){
+  let color, baseInt, geo;
+  if(kind==='jelly'){
+    color = new THREE.Color(0.6,0.4,1.0);
+    baseInt = 1.4;
+    geo = new THREE.SphereGeometry(0.18, 8, 6);
+  } else if(kind==='anem'){
+    color = new THREE.Color(1.0,0.5,0.7);
+    baseInt = 1.0;
+    geo = new THREE.SphereGeometry(0.12, 6, 5);
+  } else if(kind==='fish'){
+    color = new THREE.Color(0.4,1.0,0.7);
+    baseInt = 0.9;
+    geo = new THREE.SphereGeometry(0.08, 6, 5);
+  } else { // coral
+    color = new THREE.Color(0.3,0.7,1.0);
+    baseInt = 0.7;
+    geo = new THREE.SphereGeometry(0.1, 6, 5);
+  }
+  const mat = new THREE.MeshBasicMaterial({color: color, fog:false, transparent:true, opacity:0.95});
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x,y,z);
+  scene.add(m);
+
+  // halo glow sprite
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(kind==='jelly'?0.6:0.4, 8, 6),
+    new THREE.ShaderMaterial({
+      transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending,
+      uniforms:{c:{value:color}, t:{value:0}},
+      vertexShader:`varying vec3 vN; varying vec3 vP; void main(){ vN=normalize(normalMatrix*normal); vec4 wp = modelMatrix*vec4(position,1.0); vP=wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+      fragmentShader:`uniform vec3 c; uniform float t; varying vec3 vN; varying vec3 vP; void main(){ float fres = pow(1.0-abs(vN.z), 2.0); float pulse=0.7+0.3*sin(t); float fd = length(cameraPosition - vP); float fa = exp(-0.085*0.085*fd*fd); gl_FragColor = vec4(c*fres*pulse*1.6*fa, fres*pulse*0.55); }`
+    })
+  );
+  halo.position.set(x,y,z);
+  scene.add(halo);
+
+  fauna.push({mesh:m, halo, basePos:new THREE.Vector3(x,y,z), color, baseInt, kind, phase:Math.random()*10});
+}
+
+// place fauna - try to put inside chambers and along worm tunnels
+function isInsideAir(x,y,z){
+  return fieldAt(x,y,z) < -0.05;
+}
+
+let bioCount = 0;
+function tryPlace(x,y,z,kind){
+  if(bioCount>=MAX_BIO) return false;
+  if(!isInsideAir(x,y,z)) return false;
+  // check bottom-ish too so it sits visually inside open space
+  addFauna(x,y,z,kind);
+  bioCount++;
+  return true;
+}
+
+for(const c of chambers){
+  const n = 2 + Math.floor(Math.random()*2);
+  for(let k=0;k<n;k++){
+    const ang = Math.random()*Math.PI*2;
+    const r = c.r*0.4*Math.random();
+    const px = c.x + Math.cos(ang)*r;
+    const pz = c.z + Math.sin(ang)*r;
+    const py = c.y + (Math.random()-0.5)*c.r*0.7;
+    const kinds = ['jelly','anem','fish','coral'];
+    tryPlace(px,py,pz, kinds[Math.floor(Math.random()*kinds.length)]);
+  }
+}
+// scatter a few in the tunnels
+for(let i=0;i<6 && bioCount<MAX_BIO;i++){
+  const path = wormPaths[Math.floor(Math.random()*wormPaths.length)];
+  const seg = path[Math.floor(Math.random()*path.length)];
+  const ang = Math.random()*Math.PI*2;
+  const r = seg.r*0.4*Math.random();
+  tryPlace(seg.x+Math.cos(ang)*r, seg.y+(Math.random()-0.5)*0.3, seg.z+Math.sin(ang)*r, 'coral');
+}
+
+// Exit beacon — bright golden glow at end of exit tunnel
+const exitGlowMat = new THREE.MeshBasicMaterial({color:0xffe080, fog:false, transparent:true, opacity:1.0});
+const exitOrb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 10), exitGlowMat);
+exitOrb.position.set(exitMarker.x, exitMarker.y, exitMarker.z);
+scene.add(exitOrb);
+const exitHalo = new THREE.Mesh(
+  new THREE.SphereGeometry(1.4, 12, 10),
+  new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending,
+    uniforms:{t:{value:0}},
+    vertexShader:`varying vec3 vN; varying vec3 vP; void main(){ vN=normalize(normalMatrix*normal); vec4 wp=modelMatrix*vec4(position,1.0); vP=wp.xyz; gl_Position=projectionMatrix*viewMatrix*wp; }`,
+    fragmentShader:`uniform float t; varying vec3 vN; varying vec3 vP; void main(){ float f = pow(1.0-abs(vN.z),2.0); float p=0.8+0.2*sin(t*2.0); float fd = length(cameraPosition-vP); float fa = exp(-0.085*0.085*fd*fd); gl_FragColor = vec4(vec3(1.0,0.85,0.4)*f*p*1.8*fa, f*p*0.55); }`
+  })
+);
+exitHalo.position.copy(exitOrb.position);
+scene.add(exitHalo);
+// register exit as a bio light
+if(bioCount<MAX_BIO){
+  bioPositions[bioCount*3] = exitMarker.x;
+  bioPositions[bioCount*3+1] = exitMarker.y;
+  bioPositions[bioCount*3+2] = exitMarker.z;
+  bioColors[bioCount*3] = 1.0; bioColors[bioCount*3+1] = 0.85; bioColors[bioCount*3+2] = 0.4;
+  bioIntensity[bioCount] = 2.2;
+  bioCount++;
+}
+
+// =========================================================================
+// AIR POCKET ripples (visual marker)
+// =========================================================================
+const airMarkers = [];
+for(const ap of airPockets){
+  const ringGeo = new THREE.RingGeometry(ap.r*0.7, ap.r*0.95, 24, 1);
+  const ringMat = new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, fog:false, side:THREE.DoubleSide, blending:THREE.AdditiveBlending,
+    uniforms:{t:{value:0}},
+    vertexShader:`varying vec2 vUv; varying vec3 vP; void main(){ vUv=uv; vec4 wp=modelMatrix*vec4(position,1.0); vP=wp.xyz; gl_Position=projectionMatrix*viewMatrix*wp; }`,
+    fragmentShader:`uniform float t; varying vec2 vUv; varying vec3 vP; void main(){ float r=length(vUv-0.5); float wave = sin(r*40.0 - t*3.0)*0.5+0.5; float fd=length(cameraPosition-vP); float fa=exp(-0.085*0.085*fd*fd); gl_FragColor = vec4(vec3(0.5,0.95,1.0)*wave*0.9*fa, 0.55*fa); }`
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.set(ap.x, ap.y, ap.z);
+  ring.rotation.x = -Math.PI/2;
+  scene.add(ring);
+
+  // a faint volumetric "surface plane" sprite
+  const planeGeo = new THREE.CircleGeometry(ap.r*0.95, 18);
+  const planeMat = new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, fog:false, side:THREE.DoubleSide,
+    uniforms:{t:{value:0}},
+    vertexShader:`varying vec2 vUv; varying vec3 vP; void main(){ vUv=uv; vec4 wp=modelMatrix*vec4(position,1.0); vP=wp.xyz; gl_Position=projectionMatrix*viewMatrix*wp; }`,
+    fragmentShader:`uniform float t; varying vec2 vUv; varying vec3 vP; void main(){ vec2 c = vUv-0.5; float d = length(c); float ripple = sin(d*30.0 - t*2.5)*0.3 + 0.5; float edge = smoothstep(0.5,0.3,d); float fd=length(cameraPosition-vP); float fa=exp(-0.085*0.085*fd*fd); gl_FragColor = vec4(vec3(0.6,0.95,1.0)*ripple*0.5*fa, edge*0.45*fa); }`
+  });
+  const plane = new THREE.Mesh(planeGeo, planeMat);
+  plane.position.set(ap.x, ap.y-0.05, ap.z);
+  plane.rotation.x = -Math.PI/2;
+  scene.add(plane);
+  airMarkers.push({ring, plane, ap});
+}
+
+// =========================================================================
+// PARTICULATES (drifting motes in water)
+// =========================================================================
+const particleCount = 1400;
+const pPos = new Float32Array(particleCount*3);
+const pVel = new Float32Array(particleCount*3);
+const pSeed = new Float32Array(particleCount);
+for(let i=0;i<particleCount;i++){
+  // place near origin within the world bounds; we'll move them around camera
+  pPos[i*3] = (Math.random()-0.5)*16;
+  pPos[i*3+1] = (Math.random()-0.5)*16;
+  pPos[i*3+2] = (Math.random()-0.5)*16;
+  pVel[i*3] = (Math.random()-0.5)*0.04;
+  pVel[i*3+1] = (Math.random()-0.5)*0.04;
+  pVel[i*3+2] = (Math.random()-0.5)*0.04;
+  pSeed[i] = Math.random();
+}
+const partGeo = new THREE.BufferGeometry();
+partGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+partGeo.setAttribute('seed', new THREE.BufferAttribute(pSeed, 1));
+const partMat = new THREE.ShaderMaterial({
+  transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending,
+  uniforms:{
+    lampPos:{value: caveUniforms.lampPos.value},
+    lampDir:{value: caveUniforms.lampDir.value},
+    lampColor:{value: caveUniforms.lampColor.value},
+    lampRange:{value: 12.0},
+    lampInner:{value: 0.92},
+    lampOuter:{value: 0.78},
+    t:{value:0}
+  },
+  vertexShader:`
+    attribute float seed;
+    uniform float t;
+    varying float vAlpha;
+    varying vec3 vCol;
+    uniform vec3 lampPos;
+    uniform vec3 lampDir;
+    uniform vec3 lampColor;
+    uniform float lampRange;
+    uniform float lampInner;
+    uniform float lampOuter;
+    void main(){
+      vec4 wp = modelMatrix * vec4(position,1.0);
+      vec3 toFrag = wp.xyz - lampPos;
+      float d = length(toFrag);
+      vec3 ld = toFrag/max(d,0.0001);
+      float ccos = dot(ld, normalize(lampDir));
+      float cone = smoothstep(lampOuter, lampInner, ccos);
+      float distF = clamp(1.0 - d/lampRange, 0.0, 1.0);
+      vAlpha = cone * distF * (0.5 + 0.5*seed);
+      vCol = lampColor * 1.5;
+      vec4 mv = viewMatrix * wp;
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = mix(1.5, 4.0, seed) * (1.0/(-mv.z*0.05 + 1.0)) * 30.0;
+    }
+  `,
+  fragmentShader:`
+    varying float vAlpha;
+    varying vec3 vCol;
+    void main(){
+      vec2 c = gl_PointCoord - 0.5;
+      float r = length(c);
+      if(r>0.5) discard;
+      float a = (1.0 - r*2.0);
+      gl_FragColor = vec4(vCol*a*vAlpha, a*vAlpha*0.6);
+    }
+  `
+});
+const particles = new THREE.Points(partGeo, partMat);
+scene.add(particles);
+
+// =========================================================================
+// VOLUMETRIC LAMP CONE (screen-space ray-marched fragment)
+// =========================================================================
+// Render a fullscreen quad that ray-marches a cone of light from the camera and
+// adds scattering from "particulate water" inside the cone. Composited additively.
+
+const volScene = new THREE.Scene();
+const volCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+const volUniforms = {
+  resolution:{value:new THREE.Vector2(innerWidth, innerHeight)},
+  invProj:{value:new THREE.Matrix4()},
+  invView:{value:new THREE.Matrix4()},
+  camPos:{value:new THREE.Vector3()},
+  lampDir:{value:new THREE.Vector3(0,0,-1)},
+  lampColor:{value:new THREE.Color(1.0,0.95,0.78)},
+  lampRange:{value:12.0},
+  lampInner:{value:0.94},
+  lampOuter:{value:0.80},
+  t:{value:0},
+  intensity:{value:0.65}
+};
+const volMat = new THREE.ShaderMaterial({
+  uniforms: volUniforms,
+  transparent:true,
+  depthTest:false,
+  depthWrite:false,
+  blending: THREE.AdditiveBlending,
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader:`
+    precision highp float;
+    varying vec2 vUv;
+    uniform vec2 resolution;
+    uniform mat4 invProj;
+    uniform mat4 invView;
+    uniform vec3 camPos;
+    uniform vec3 lampDir;
+    uniform vec3 lampColor;
+    uniform float lampRange;
+    uniform float lampInner;
+    uniform float lampOuter;
+    uniform float t;
+    uniform float intensity;
+
+    // 3D hash + simple value noise
+    float hash3(vec3 p){ p = fract(p*0.3183099+0.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+    float vn(vec3 p){
+      vec3 i=floor(p), f=fract(p);
+      f = f*f*(3.0-2.0*f);
+      float a=hash3(i), b=hash3(i+vec3(1,0,0));
+      float c=hash3(i+vec3(0,1,0)), d=hash3(i+vec3(1,1,0));
+      float e=hash3(i+vec3(0,0,1)), g=hash3(i+vec3(1,0,1));
+      float h=hash3(i+vec3(0,1,1)), k=hash3(i+vec3(1,1,1));
+      float x1 = mix(a,b,f.x), x2 = mix(c,d,f.x);
+      float x3 = mix(e,g,f.x), x4 = mix(h,k,f.x);
+      float y1 = mix(x1,x2,f.y), y2 = mix(x3,x4,f.y);
+      return mix(y1,y2,f.z);
+    }
+    float fbm(vec3 p){
+      float s=0.0, a=0.5;
+      for(int i=0;i<3;i++){ s += vn(p)*a; p*=2.0; a*=0.5; }
+      return s;
+    }
+
+    void main(){
+      // reconstruct ray direction from UV
+      vec2 ndc = vUv*2.0 - 1.0;
+      vec4 viewP = invProj * vec4(ndc, 1.0, 1.0);
+      viewP /= viewP.w;
+      vec3 dirView = normalize(viewP.xyz);
+      vec3 rayDir = normalize((invView * vec4(dirView, 0.0)).xyz);
+      vec3 rayOrigin = camPos;
+
+      vec3 ld = normalize(lampDir);
+      float ccos = dot(rayDir, ld);
+      float coneFall = smoothstep(lampOuter, lampInner, ccos);
+      if(coneFall < 0.001){
+        gl_FragColor = vec4(0.0);
+        return;
+      }
+
+      // ray-march along view ray, accumulate scattering inside the cone
+      float steps = 24.0;
+      float maxDist = lampRange * 1.0;
+      // jitter to break banding
+      float jitter = hash3(vec3(gl_FragCoord.xy, t));
+      float dt = maxDist/steps;
+      vec3 acc = vec3(0.0);
+      float occ = 1.0;
+      for(int i=0;i<24;i++){
+        float dn = (float(i)+jitter)*dt;
+        if(dn>maxDist) break;
+        vec3 sp = rayOrigin + rayDir*dn;
+        // distance falloff
+        float distF = max(0.0, 1.0 - dn/lampRange);
+        distF = distF*distF;
+        // cone falloff at this point relative to camera (already in cone since whole ray is)
+        // particulate density via fbm
+        float n = fbm(sp*0.55 + vec3(0.0, t*0.05, 0.0));
+        float dens = mix(0.4, 1.2, n);
+        acc += lampColor * distF * dens * dt * 0.18;
+      }
+      acc *= coneFall * intensity;
+
+      gl_FragColor = vec4(acc, 1.0);
+    }
+  `
+});
+const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), volMat);
+volScene.add(volQuad);
+
+// =========================================================================
+// PLAYER & CAMERA
+// =========================================================================
+const playerPos = new THREE.Vector3(0,6,0); // start in start chamber
+const playerVel = new THREE.Vector3();
+let yaw = 0, pitch = 0;
+
+camera.position.copy(playerPos);
+
+// =========================================================================
+// COLLISION (sample scalar field around player)
+// =========================================================================
+const PLAYER_R = 0.45;
+function collide(pos){
+  // find a candidate position; if inside solid, push out along negative gradient
+  for(let iter=0;iter<4;iter++){
+    const v = fieldAt(pos.x,pos.y,pos.z) + PLAYER_R*0.6;
+    if(v<=0) break;
+    const g = gradAt(pos.x,pos.y,pos.z);
+    pos.x -= g.x*v*0.5;
+    pos.y -= g.y*v*0.5;
+    pos.z -= g.z*v*0.5;
+  }
+}
+
+// =========================================================================
+// AUDIO (synthesized via WebAudio — ambient drones, breath, bubbles)
+// =========================================================================
+let audioCtx = null;
+let audio = {breath:null, breathGain:null, ambient:null, ambGain:null, heart:null, heartGain:null, started:false, lastBreath:0, lastBubble:0, lastWhale:0};
+
+function initAudio(){
+  if(audio.started) return;
+  audio.started = true;
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+
+  // ambient drone — low filtered noise
+  const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate*2, audioCtx.sampleRate);
+  const nd = noiseBuf.getChannelData(0);
+  for(let i=0;i<nd.length;i++){ nd[i] = (Math.random()*2-1)*0.5; }
+  const amb = audioCtx.createBufferSource();
+  amb.buffer = noiseBuf; amb.loop = true;
+  const ambFilter = audioCtx.createBiquadFilter();
+  ambFilter.type='lowpass'; ambFilter.frequency.value = 280;
+  const ambG = audioCtx.createGain(); ambG.gain.value = 0.10;
+  amb.connect(ambFilter).connect(ambG).connect(audioCtx.destination);
+  amb.start();
+  audio.ambient = amb; audio.ambGain = ambG;
+
+  // heartbeat — gain controlled
+  const hg = audioCtx.createGain(); hg.gain.value = 0.0;
+  hg.connect(audioCtx.destination);
+  audio.heartGain = hg;
+}
+
+function playBubble(){
+  if(!audioCtx) return;
+  const dur = 0.6 + Math.random()*0.6;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  osc.type='sine';
+  osc.frequency.setValueAtTime(180+Math.random()*120, now);
+  osc.frequency.exponentialRampToValueAtTime(90, now+dur);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0, now);
+  g.gain.linearRampToValueAtTime(0.05, now+0.05);
+  g.gain.exponentialRampToValueAtTime(0.001, now+dur);
+  const filt = audioCtx.createBiquadFilter();
+  filt.type='bandpass'; filt.frequency.value = 400; filt.Q.value=4;
+  osc.connect(filt).connect(g).connect(audioCtx.destination);
+  osc.start(now); osc.stop(now+dur+0.05);
+}
+
+function playBreath(rasp){
+  if(!audioCtx) return;
+  const dur = 1.4;
+  const now = audioCtx.currentTime;
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*dur, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++){ d[i] = (Math.random()*2-1) * (1 - i/d.length); }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter();
+  filt.type='bandpass';
+  filt.frequency.value = rasp ? 700 : 380;
+  filt.Q.value = rasp ? 3 : 1.5;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0, now);
+  g.gain.linearRampToValueAtTime(rasp?0.18:0.08, now+0.2);
+  g.gain.linearRampToValueAtTime(0.0, now+dur);
+  src.connect(filt).connect(g).connect(audioCtx.destination);
+  src.start(now);
+}
+
+function playHeartbeat(intensity){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  o.type='sine'; o.frequency.value=70;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0,now);
+  g.gain.linearRampToValueAtTime(0.18*intensity, now+0.04);
+  g.gain.exponentialRampToValueAtTime(0.001, now+0.18);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(now); o.stop(now+0.2);
+  // second thump
+  setTimeout(()=>{
+    const o2=audioCtx.createOscillator(); o2.type='sine'; o2.frequency.value=58;
+    const g2=audioCtx.createGain();
+    g2.gain.setValueAtTime(0,audioCtx.currentTime);
+    g2.gain.linearRampToValueAtTime(0.13*intensity, audioCtx.currentTime+0.04);
+    g2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+0.18);
+    o2.connect(g2).connect(audioCtx.destination);
+    o2.start(); o2.stop(audioCtx.currentTime+0.2);
+  },180);
+}
+
+function playWhale(){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const dur = 4.0;
+  const o = audioCtx.createOscillator();
+  o.type='sine';
+  const startF = 60 + Math.random()*30;
+  o.frequency.setValueAtTime(startF, now);
+  o.frequency.linearRampToValueAtTime(startF*1.6, now + dur*0.4);
+  o.frequency.linearRampToValueAtTime(startF*0.7, now + dur);
+  const o2 = audioCtx.createOscillator();
+  o2.type='sine';
+  o2.frequency.setValueAtTime(startF*1.5, now);
+  o2.frequency.linearRampToValueAtTime(startF*2.4, now + dur*0.4);
+  o2.frequency.linearRampToValueAtTime(startF*1.05, now+dur);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0, now);
+  g.gain.linearRampToValueAtTime(0.12, now+0.5);
+  g.gain.linearRampToValueAtTime(0.10, now+dur*0.7);
+  g.gain.exponentialRampToValueAtTime(0.001, now+dur);
+  const filt = audioCtx.createBiquadFilter();
+  filt.type='lowpass'; filt.frequency.value = 380;
+  o.connect(filt); o2.connect(filt);
+  filt.connect(g).connect(audioCtx.destination);
+  o.start(now); o2.start(now);
+  o.stop(now+dur+0.1); o2.stop(now+dur+0.1);
+}
+
+function playDrip(){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  o.type='sine';
+  o.frequency.setValueAtTime(900+Math.random()*300, now);
+  o.frequency.exponentialRampToValueAtTime(300, now+0.25);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0,now);
+  g.gain.linearRampToValueAtTime(0.05, now+0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, now+0.3);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(now); o.stop(now+0.32);
+}
+
+// =========================================================================
+// INPUT
+// =========================================================================
+const keys = {};
+addEventListener('keydown', e=>{ keys[e.code]=true; });
+addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+let pointerLocked = false;
+introEl.addEventListener('click', ()=>{
+  initAudio();
+  renderer.domElement.requestPointerLock();
+  introEl.style.transition='opacity .8s';
+  introEl.style.opacity = '0';
+  setTimeout(()=>introEl.style.display='none', 800);
+});
+
+document.addEventListener('pointerlockchange', ()=>{
+  pointerLocked = (document.pointerLockElement === renderer.domElement);
+});
+
+document.addEventListener('mousemove', e=>{
+  if(!pointerLocked) return;
+  yaw -= e.movementX * 0.0022;
+  pitch -= e.movementY * 0.0022;
+  pitch = Math.max(-Math.PI/2+0.05, Math.min(Math.PI/2-0.05, pitch));
+});
+
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  volUniforms.resolution.value.set(innerWidth, innerHeight);
+});
+
+// =========================================================================
+// GAME STATE
+// =========================================================================
+let oxygen = 100;
+let dead = false, won = false;
+let panic = 0; // 0..1
+let startMessageShown = false;
+
+function showMessage(text, color){
+  messageEl.textContent = text;
+  if(color) messageEl.style.borderColor = color;
+  messageEl.classList.add('show');
+  setTimeout(()=>messageEl.classList.remove('show'), 2200);
+}
+
+setTimeout(()=>{
+  if(!startMessageShown){
+    showMessage('FIND THE EXIT', '#ffd070');
+    startMessageShown=true;
+  }
+}, 1500);
+
+// =========================================================================
+// MAIN LOOP
+// =========================================================================
+const clock = new THREE.Clock();
+const tmpForward = new THREE.Vector3();
+const tmpRight = new THREE.Vector3();
+const tmpUp = new THREE.Vector3(0,1,0);
+
+function update(dt){
+  // camera orientation
+  camera.rotation.set(0,0,0);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  // movement vectors
+  tmpForward.set(0,0,-1).applyEuler(camera.rotation);
+  tmpRight.set(1,0,0).applyEuler(camera.rotation);
+
+  let inputAccel = new THREE.Vector3();
+  let moving = false;
+  if(keys['KeyW']){ inputAccel.add(tmpForward); moving=true; }
+  if(keys['KeyS']){ inputAccel.sub(tmpForward); moving=true; }
+  if(keys['KeyA']){ inputAccel.sub(tmpRight); moving=true; }
+  if(keys['KeyD']){ inputAccel.add(tmpRight); moving=true; }
+  if(keys['Space']){ inputAccel.y += 1; moving=true; }
+  if(keys['ControlLeft']||keys['ControlRight']){ inputAccel.y -= 1; moving=true; }
+  if(inputAccel.lengthSq()>0) inputAccel.normalize();
+
+  const sprint = keys['ShiftLeft']||keys['ShiftRight'];
+  const accelStr = (sprint?7.0:4.0);
+  playerVel.addScaledVector(inputAccel, accelStr*dt);
+
+  // drag
+  const drag = Math.exp(-2.4*dt);
+  playerVel.multiplyScalar(drag);
+
+  // limit speed
+  const maxV = sprint?5.0:3.0;
+  if(playerVel.length()>maxV) playerVel.setLength(maxV);
+
+  // tentative new position
+  const newPos = playerPos.clone().addScaledVector(playerVel, dt);
+  const before = newPos.clone();
+  collide(newPos);
+  // if collision moved us back, reduce velocity along that direction
+  const corr = newPos.clone().sub(before);
+  if(corr.lengthSq()>0.0001){
+    const cl = corr.clone().normalize();
+    const vd = playerVel.dot(cl);
+    if(vd<0) playerVel.addScaledVector(cl, -vd);
+    playerVel.multiplyScalar(0.6);
+  }
+  playerPos.copy(newPos);
+  camera.position.copy(playerPos);
+
+  // ----- oxygen -----
+  // Drain rate: base + sprint + panic
+  const speed = playerVel.length();
+  let drainRate = 1.0; // % per sec
+  if(sprint) drainRate += 0.7;
+  drainRate += speed*0.1;
+  drainRate += panic*1.2;
+  if(!dead && !won){
+    oxygen -= drainRate * dt;
+  }
+
+  // refill if head in air pocket
+  let inAir = false;
+  for(const ap of airPockets){
+    const d = Math.hypot(playerPos.x-ap.x, playerPos.y-ap.y, playerPos.z-ap.z);
+    if(d < ap.r){
+      inAir = true;
+      oxygen += 28*dt;
+      break;
+    }
+  }
+  oxygen = Math.max(0, Math.min(100, oxygen));
+
+  // panic ramps when low
+  const target = oxygen < 30 ? (1 - oxygen/30) : 0;
+  panic += (target - panic) * Math.min(1, dt*1.5);
+
+  // win
+  const dxe = playerPos.x-exitMarker.x, dye = playerPos.y-exitMarker.y, dze = playerPos.z-exitMarker.z;
+  const distExit = Math.sqrt(dxe*dxe+dye*dye+dze*dze);
+  if(distExit < 1.2 && !won){
+    won = true;
+    showMessage('YOU MADE IT OUT', '#7afff0');
+    flashEl.classList.add('on');
+    setTimeout(()=>{ location.reload(); }, 4200);
+  }
+
+  // death
+  if(oxygen<=0 && !dead && !won){
+    dead = true;
+    showMessage('OUT OF AIR', '#ff5050');
+    setTimeout(()=>{ flashEl.classList.add('on'); }, 600);
+    setTimeout(()=>{ location.reload(); }, 3500);
+  }
+
+  // ----- audio scheduling -----
+  if(audioCtx){
+    const now = audioCtx.currentTime;
+    // breathing — every ~3s, faster when low O2
+    const breathInterval = 3.5 - panic*1.8 - (sprint?0.5:0);
+    if(now - audio.lastBreath > breathInterval){
+      audio.lastBreath = now;
+      playBreath(panic>0.3);
+      // bubbles after breath
+      setTimeout(()=>playBubble(), 200);
+    }
+    // occasional bubble
+    if(now - audio.lastBubble > 2 + Math.random()*2){
+      audio.lastBubble = now;
+      if(Math.random()<0.6) playBubble();
+    }
+    // distant whale call
+    if(now - audio.lastWhale > 18 + Math.random()*15){
+      audio.lastWhale = now;
+      playWhale();
+    }
+    // heartbeat when panicked
+    if(panic>0.25){
+      audio._heartTimer = (audio._heartTimer||0) + dt;
+      const beatInt = 0.9 - panic*0.4;
+      if(audio._heartTimer >= beatInt){
+        audio._heartTimer = 0;
+        playHeartbeat(panic);
+      }
+    }
+    // occasional drip when relatively still
+    audio._dripTimer = (audio._dripTimer||0) + dt;
+    if(audio._dripTimer > 2.5 + Math.random()*4){
+      audio._dripTimer=0;
+      if(Math.random()<0.3) playDrip();
+    }
+  }
+
+  // ----- update HUD -----
+  depthEl.textContent = (-playerPos.y).toFixed(1) + ' m';
+  o2valEl.textContent = oxygen.toFixed(0)+'%';
+  o2pctEl.textContent = oxygen.toFixed(0)+'%';
+  o2fillEl.style.width = oxygen+'%';
+  o2fillEl.classList.remove('low','crit');
+  if(oxygen<30) o2fillEl.classList.add('low');
+  if(oxygen<15) o2fillEl.classList.add('crit');
+
+  // compass
+  const heading = ((-yaw*180/Math.PI) % 360 + 360) % 360;
+  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+  const dirN = dirs[Math.round(heading/45)%8];
+  compassEl.textContent = dirN+' · '+heading.toFixed(0).padStart(3,'0');
+
+  // status
+  if(distExit < 6 && distExit >= 1.2){
+    statusEl.textContent = 'EXIT NEAR';
+    statusEl.className = 'exit';
+  } else if(inAir){
+    statusEl.textContent = 'AIR POCKET · REFILLING';
+    statusEl.className = 'air';
+  } else {
+    statusEl.textContent = 'LAMP ON';
+    statusEl.className = '';
+  }
+
+  // vignette
+  if(panic>0.6) vigEl.classList.add('crit');
+  else vigEl.classList.remove('crit');
+
+  // ----- update lamp uniforms -----
+  caveUniforms.lampPos.value.copy(camera.position);
+  caveUniforms.lampDir.value.copy(tmpForward);
+  caveUniforms.bioCount.value = bioCount;
+  // upload bio data each frame (positions are static; intensities pulse)
+  for(let i=0;i<bioCount;i++){
+    let baseIntensity = 1.2;
+    let pulse = 1.0;
+    if(i < fauna.length){
+      const f = fauna[i];
+      baseIntensity = f.baseInt;
+      f.phase += dt*(f.kind==='jelly'?1.4:f.kind==='fish'?2.5:0.8);
+      pulse = 0.7 + 0.5*Math.sin(f.phase);
+      if(f.kind==='anem') pulse = 0.6 + 0.4*Math.sin(f.phase*0.6);
+      if(f.kind==='coral') pulse = 0.85 + 0.15*Math.sin(f.phase);
+      bioPositions[i*3] = f.basePos.x + Math.sin(f.phase*0.7)*0.05;
+      bioPositions[i*3+1] = f.basePos.y + Math.sin(f.phase*0.9)*0.06;
+      bioPositions[i*3+2] = f.basePos.z + Math.cos(f.phase*0.7)*0.05;
+      bioColors[i*3] = f.color.r;
+      bioColors[i*3+1] = f.color.g;
+      bioColors[i*3+2] = f.color.b;
+      f.mesh.position.set(bioPositions[i*3], bioPositions[i*3+1], bioPositions[i*3+2]);
+      if(f.halo){
+        f.halo.position.copy(f.mesh.position);
+        f.halo.material.uniforms.t.value += dt*(f.kind==='jelly'?1.5:1.0);
+      }
+    }
+    bioIntensity[i] = baseIntensity * pulse;
+  }
+  caveUniforms.time.value = clock.elapsedTime;
+
+  // exit halo + orb pulse
+  exitHalo.material.uniforms.t.value = clock.elapsedTime;
+  exitOrb.scale.setScalar(0.95 + 0.15*Math.sin(clock.elapsedTime*2.0));
+
+  // air markers update
+  for(const am of airMarkers){
+    am.ring.material.uniforms.t.value = clock.elapsedTime;
+    am.plane.material.uniforms.t.value = clock.elapsedTime;
+  }
+
+  // ----- update particles around camera -----
+  const pa = particles.geometry.attributes.position.array;
+  for(let i=0;i<particleCount;i++){
+    pa[i*3] += pVel[i*3]*dt + Math.sin(clock.elapsedTime*0.3+pSeed[i]*10)*0.005;
+    pa[i*3+1] += pVel[i*3+1]*dt + Math.cos(clock.elapsedTime*0.4+pSeed[i]*7)*0.005;
+    pa[i*3+2] += pVel[i*3+2]*dt + Math.sin(clock.elapsedTime*0.25+pSeed[i]*13)*0.005;
+    // wrap around camera
+    const dx = pa[i*3] - camera.position.x;
+    const dy = pa[i*3+1] - camera.position.y;
+    const dz = pa[i*3+2] - camera.position.z;
+    if(Math.abs(dx)>8) pa[i*3] = camera.position.x + (Math.random()-0.5)*16;
+    if(Math.abs(dy)>8) pa[i*3+1] = camera.position.y + (Math.random()-0.5)*16;
+    if(Math.abs(dz)>8) pa[i*3+2] = camera.position.z + (Math.random()-0.5)*16;
+  }
+  particles.geometry.attributes.position.needsUpdate = true;
+  partMat.uniforms.t.value = clock.elapsedTime;
+  partMat.uniforms.lampPos.value.copy(camera.position);
+  partMat.uniforms.lampDir.value.copy(tmpForward);
+
+  // volumetric uniforms
+  volUniforms.camPos.value.copy(camera.position);
+  volUniforms.lampDir.value.copy(tmpForward);
+  volUniforms.t.value = clock.elapsedTime;
+  volUniforms.invProj.value.copy(camera.projectionMatrixInverse);
+  volUniforms.invView.value.copy(camera.matrixWorld);
+  // intensity flicker subtly
+  volUniforms.intensity.value = 0.6 + 0.05*Math.sin(clock.elapsedTime*7) + 0.05*Math.sin(clock.elapsedTime*13.7);
+}
+
+let last = performance.now();
+function loop(){
+  const now = performance.now();
+  const dt = Math.min(0.05, (now-last)/1000);
+  last = now;
+
+  if(!dead && !won) update(dt);
+  else {
+    // continue rendering with slight zoom-in vignette as a death effect
+    update(0); // freeze movement updates beyond minimal
+  }
+
+  renderer.render(scene, camera);
+  renderer.autoClear = false;
+  renderer.render(volScene, volCam);
+  renderer.autoClear = true;
+
+  requestAnimationFrame(loop);
+}
+loop();
+
+</script>
+</body>
+</html>

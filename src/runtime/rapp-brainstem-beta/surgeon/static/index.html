@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brain Surgeon</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+         background: #0d1117; color: #c9d1d9; height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+           border-bottom: 1px solid #30363d; flex: 0 0 auto; }
+  header .title { font-weight: 600; color: #e6edf3; }
+  header .ctx { font-size: 11px; color: #8b949e; margin-left: auto; text-align: right; line-height: 1.3; }
+  header .grail { color: #f0883e; }
+  #log { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px; }
+  .msg { margin-bottom: 14px; max-width: 92%; }
+  .msg.you { margin-left: auto; }
+  .bubble { padding: 9px 13px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word;
+            font-size: 13px; line-height: 1.5; }
+  .you .bubble { background: #1f6feb; color: #fff; }
+  .surgeon .bubble { background: #161b22; border: 1px solid #30363d; }
+  .who { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #8b949e; margin-bottom: 4px; }
+  .tool { font-size: 11px; color: #7ee787; font-family: ui-monospace, monospace; margin: 4px 0; opacity: .85; }
+  .grail { font-size: 12px; color: #ff7b72; background: rgba(248,81,73,.08);
+           border: 1px solid rgba(248,81,73,.3); border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
+  .idle { font-size: 10px; color: #8b949e; text-align: center; margin: 8px 0; }
+  footer { flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid #30363d; display: flex; gap: 8px; }
+  textarea { flex: 1 1 auto; resize: none; background: #0d1117; color: #e6edf3;
+             border: 1px solid #30363d; border-radius: 10px; padding: 9px 12px; font: inherit; font-size: 13px;
+             min-height: 40px; max-height: 140px; }
+  textarea:focus { outline: none; border-color: #1f6feb; }
+  button { background: #238636; color: #fff; border: none; border-radius: 10px; padding: 0 16px;
+           font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #8b949e; }
+  .dot.live { background: #3fb950; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="dot" id="dot"></span>
+    <span class="title"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M4 20 L11.5 12.5"/><path d="M11.5 12.5 L19 5 a1.8 1.8 0 0 0 -2.5 -2.5 L9 10 Z" fill="currentColor" stroke="none"/></svg>Brain Surgeon</span>
+    <span class="ctx" id="ctx">connecting…</span>
+  </header>
+  <div id="log">
+    <div class="idle" id="hello">
+      The surgeon operates only on <code>agents/</code>. The grail (<span class="grail">brainstem.py</span>)
+      is off-limits. You're the liaison — drive me here, then test the patient ("play the violin") in the
+      brainstem on the left.
+    </div>
+  </div>
+  <footer>
+    <textarea id="input" placeholder="Tell the surgeon what to fix or add… (Enter to send, Shift+Enter for newline)"></textarea>
+    <button id="send" onclick="send()">Send</button>
+  </footer>
+
+<script>
+  const log = document.getElementById('log');
+  const input = document.getElementById('input');
+  const ctx = document.getElementById('ctx');
+  const dot = document.getElementById('dot');
+  let cur = null;        // current streaming surgeon bubble
+  let curText = '';
+
+  function el(cls, html) { const d = document.createElement('div'); d.className = cls; if (html != null) d.innerHTML = html; return d; }
+  function scroll() { log.scrollTop = log.scrollHeight; }
+
+  function addYou(text) {
+    const m = el('msg you');
+    m.appendChild(el('who', 'you'));
+    const b = el('bubble'); b.textContent = text; m.appendChild(b);
+    log.appendChild(m); scroll();
+  }
+  function ensureSurgeon() {
+    if (cur) return cur;
+    const m = el('msg surgeon');
+    m.appendChild(el('who', 'surgeon'));
+    const b = el('bubble'); m.appendChild(b);
+    log.appendChild(m); cur = b; curText = ''; scroll();
+    return b;
+  }
+  function endTurn() { cur = null; curText = ''; }
+
+  const es = new EventSource('/events');
+  es.onopen = () => { dot.classList.add('live'); };
+  es.onerror = () => { dot.classList.remove('live'); };
+  es.onmessage = (e) => {
+    let d; try { d = JSON.parse(e.data); } catch { return; }
+    switch (d.type) {
+      case 'session':
+        ctx.innerHTML = 'operating on <code>' + (d.agents || '').replace(/^.*\//, '…/') +
+          '</code><br><span class="grail">brainstem.py off-limits</span>';
+        break;
+      case 'delta':
+        ensureSurgeon(); curText += (d.content || ''); cur.textContent = curText; scroll();
+        break;
+      case 'assistant':
+        ensureSurgeon();
+        if (!curText) cur.textContent = d.content || '';
+        endTurn(); scroll();
+        break;
+      case 'tool':
+        log.appendChild(el('tool', (d.phase === 'start' ? 'running: ' : 'done: ') + (d.name || 'tool')));
+        scroll(); break;
+      case 'grail_blocked':
+        log.appendChild(el('grail', 'Grail protected — refused: ' + (d.detail || '') ));
+        scroll(); break;
+      case 'file_changed':
+        log.appendChild(el('tool', 'cartridge changed')); scroll(); break;
+      case 'idle':
+        endTurn(); log.appendChild(el('idle', 'ready')); scroll(); break;
+      case 'error':
+        log.appendChild(el('grail', 'Error: ' + (d.detail || 'error'))); scroll(); break;
+    }
+  };
+
+  async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = ''; input.style.height = 'auto';
+    addYou(text);
+    try {
+      await fetch('/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({ prompt: text }) });
+    } catch (err) {
+      log.appendChild(el('grail', 'Could not reach the surgeon: ' + err.message)); scroll();
+    }
+  }
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 140) + 'px'; });
+</script>
+</body>
+</html>

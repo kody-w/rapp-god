@@ -1,0 +1,241 @@
+import AppKit
+import SwiftUI
+import ServiceManagement
+import OpenRappterBarLib
+
+// MARK: - App Delegate
+
+/// Manages the NSStatusItem (menu bar icon) and the ChatWindowManager.
+/// Left-click → floating chat panel. Right-click → context menu.
+@MainActor
+public final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private var windowManager: ChatWindowManager!
+    private let dino = DinoStatusIcon()
+
+    public let viewModel = AppViewModel()
+    public let settingsViewModel = SettingsViewModel()
+    private let deepLinkHandler = DeepLinkHandler()
+
+    // MARK: - Lifecycle
+
+    public func applicationDidFinishLaunching(_ notification: Notification) {
+        setupStatusItem()
+        windowManager = ChatWindowManager(viewModel: viewModel, settingsViewModel: settingsViewModel)
+        observeViewModel()
+        registerAsLoginItem()
+
+        // Auto-start gateway if configured (starts process then connects)
+        if settingsViewModel.settingsStore.autoStartGateway {
+            viewModel.startGateway()
+        } else if settingsViewModel.settingsStore.autoConnect {
+            // Only auto-connect standalone when not auto-starting
+            // (startGateway already calls connectToGateway on success)
+            viewModel.connectToGateway(
+                host: settingsViewModel.settingsStore.host,
+                port: settingsViewModel.settingsStore.port
+            )
+        }
+
+        // Configure settings ViewModel when RPC becomes available
+        viewModel.onRpcClientReady = { [weak self] rpc in
+            self?.settingsViewModel.configure(rpcClient: rpc)
+        }
+
+        // Configure account auth with gateway restart capability
+        settingsViewModel.configureAccount(
+            processManager: viewModel.processManager,
+            onGatewayRestarted: { [weak self] in
+                guard let self else { return }
+                self.viewModel.connectToGateway(
+                    host: self.settingsViewModel.settingsStore.host,
+                    port: self.settingsViewModel.settingsStore.port
+                )
+            }
+        )
+    }
+
+    // MARK: - Status Item Setup
+
+    private func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+
+        if let button = statusItem.button {
+            // Animated dino tamagotchi icon
+            dino.attach(to: button)
+            button.target = self
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+    }
+
+    // MARK: - Click Handling
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else { return }
+
+        if event.type == .rightMouseUp {
+            showContextMenu()
+        } else {
+            // Poke the dino! Then open the panel
+            dino.poke()
+            windowManager.togglePanel(relativeTo: statusItem.button)
+        }
+    }
+
+    // MARK: - Context Menu (Right-Click)
+
+    private func showContextMenu() {
+        let menu = NSMenu()
+
+        // Status
+        let statusTitle = viewModel.connectionState == .connected ? "Connected" : "Disconnected"
+        let statusItem = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
+        statusItem.isEnabled = false
+        menu.addItem(statusItem)
+        menu.addItem(NSMenuItem.separator())
+
+        // Connection
+        if viewModel.connectionState == .disconnected {
+            menu.addItem(NSMenuItem(title: "Connect", action: #selector(menuConnect), keyEquivalent: ""))
+        } else if viewModel.connectionState == .connected {
+            menu.addItem(NSMenuItem(title: "Disconnect", action: #selector(menuDisconnect), keyEquivalent: ""))
+        }
+
+        // Gateway
+        if viewModel.processState == .stopped {
+            menu.addItem(NSMenuItem(title: "Start Gateway", action: #selector(menuStartGateway), keyEquivalent: ""))
+        } else if viewModel.processState == .running {
+            menu.addItem(NSMenuItem(title: "Stop Gateway", action: #selector(menuStopGateway), keyEquivalent: ""))
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        // New Session
+        menu.addItem(NSMenuItem(title: "New Session", action: #selector(menuNewSession), keyEquivalent: "n"))
+
+        // Open Full Window
+        menu.addItem(NSMenuItem(title: "Open Chat Window", action: #selector(menuOpenFullWindow), keyEquivalent: "o"))
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Settings
+        let settingsMenuItem = NSMenuItem(title: "Settings...", action: #selector(menuOpenSettings), keyEquivalent: ",")
+        menu.addItem(settingsMenuItem)
+
+        // Quit
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Quit \(AppConstants.appName)", action: #selector(menuQuit), keyEquivalent: "q"))
+
+        // Set targets
+        for item in menu.items where item.action != nil {
+            item.target = self
+        }
+
+        // Show menu — temporarily assign then remove so left-click still works
+        self.statusItem.menu = menu
+        self.statusItem.button?.performClick(nil)
+        self.statusItem.menu = nil
+    }
+
+    // MARK: - Menu Actions
+
+    @objc private func menuConnect() {
+        viewModel.connectToGateway(
+            host: settingsViewModel.settingsStore.host,
+            port: settingsViewModel.settingsStore.port
+        )
+    }
+
+    @objc private func menuDisconnect() {
+        viewModel.disconnectFromGateway()
+    }
+
+    @objc private func menuStartGateway() {
+        viewModel.startGateway()
+    }
+
+    @objc private func menuStopGateway() {
+        viewModel.stopGateway()
+    }
+
+    @objc private func menuNewSession() {
+        viewModel.chatViewModel.newSession()
+        windowManager.showPanel(relativeTo: statusItem.button)
+    }
+
+    @objc private func menuOpenFullWindow() {
+        windowManager.openFullWindow()
+    }
+
+    @objc private func menuOpenSettings() {
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+
+    @objc private func menuQuit() {
+        NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - Deep Links
+
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let link = deepLinkHandler.parse(url: url) else { continue }
+            handleDeepLink(link)
+        }
+    }
+
+    private func handleDeepLink(_ link: DeepLinkHandler.DeepLink) {
+        switch link {
+        case .chat(let sessionKey):
+            if let sessionKey {
+                viewModel.chatViewModel.switchToSession(sessionKey: sessionKey)
+            }
+            windowManager.showPanel(relativeTo: statusItem.button)
+        case .settings:
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        case .connect(let host, let port):
+            viewModel.connectToGateway(host: host, port: port)
+        case .unknown:
+            break
+        }
+    }
+
+    // MARK: - ViewModel Observation
+
+    /// Observes the AppViewModel's state changes and updates the status item icon.
+    private func observeViewModel() {
+        withObservationTracking {
+            _ = viewModel.connectionState
+            _ = viewModel.processState
+            _ = viewModel.menuBarUptime
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.updateStatusItem()
+                self?.observeViewModel()
+            }
+        }
+    }
+
+    private func updateStatusItem() {
+        // Update dino mood based on connection state
+        dino.setConnectionState(connected: viewModel.connectionState == .connected)
+    }
+
+    // MARK: - Login Item (auto-start on boot)
+
+    /// Register the app as a Login Item so it launches automatically when the user logs in.
+    /// Uses SMAppService on macOS 13+ — silently succeeds if already registered.
+    private func registerAsLoginItem() {
+        let service = SMAppService.mainApp
+        if service.status != .enabled {
+            do {
+                try service.register()
+            } catch {
+                // Non-fatal — app still works, just won't auto-start on reboot
+                Log.app.warning("Could not register as login item: \(error.localizedDescription)")
+            }
+        }
+    }
+
+}

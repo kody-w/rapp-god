@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Falling Sand — Powder Sandbox</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{
+    --bg:#0a0c10;
+    --panel:#11151c;
+    --panel-2:#161b25;
+    --line:#222a38;
+    --text:#cfd6e4;
+    --muted:#8893a8;
+    --accent:#7aa2ff;
+    --hot:#ff7a3a;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);
+    font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    overflow:hidden;user-select:none;-webkit-user-select:none;
+  }
+  #app{display:grid;grid-template-columns:240px 1fr;height:100vh;width:100vw}
+  #sidebar{
+    background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;min-width:0;
+  }
+  .head{
+    padding:12px 14px 10px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .head h1{margin:0;font-size:13px;letter-spacing:.06em;color:var(--text)}
+  .head small{color:var(--muted);font-size:10px}
+  .section{padding:10px 12px;border-bottom:1px solid var(--line)}
+  .section h2{
+    margin:0 0 8px;font-size:10px;letter-spacing:.14em;color:var(--muted);
+    text-transform:uppercase;font-weight:600;
+  }
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+  .el{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
+    padding:6px 6px;display:flex;align-items:center;gap:7px;
+    cursor:pointer;transition:transform .08s ease, border-color .15s, background .15s;
+    font-size:11px;color:var(--text);
+  }
+  .el:hover{border-color:#324061;background:#1a2030}
+  .el.active{
+    border-color:var(--accent);background:#1d2538;
+    box-shadow:0 0 0 1px var(--accent) inset, 0 0 14px rgba(122,162,255,.18);
+  }
+  .swatch{
+    width:14px;height:14px;border-radius:3px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.4);
+    flex:0 0 auto;
+  }
+  .row{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .row label{flex:0 0 64px;color:var(--muted);font-size:11px}
+  input[type=range]{flex:1;accent-color:var(--accent);min-width:0}
+  .btns{display:flex;gap:6px;flex-wrap:wrap}
+  button{
+    background:var(--panel-2);color:var(--text);border:1px solid var(--line);
+    border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer;
+    transition:background .15s,border-color .15s;
+  }
+  button:hover{background:#1a2030;border-color:#324061}
+  button.primary{border-color:var(--accent);color:#dde6ff}
+  .stats{
+    padding:8px 12px;color:var(--muted);font-size:11px;display:flex;
+    justify-content:space-between;border-top:1px solid var(--line);margin-top:auto;
+    background:var(--panel-2);
+  }
+  .stats span{color:var(--text)}
+  #stage{
+    position:relative;display:flex;align-items:center;justify-content:center;
+    background:
+      radial-gradient(1200px 600px at 50% 40%, #131826 0%, #0a0c10 60%);
+    overflow:hidden;
+  }
+  #wrap{
+    position:relative;width:min(96vh, calc(100vw - 260px));
+    height:min(96vh, calc(100vw - 260px));
+    background:#000;border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 10px 40px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03) inset;
+    image-rendering:pixelated;cursor:crosshair;
+  }
+  canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;display:block}
+  #hud{
+    position:absolute;left:10px;top:8px;color:#aab3c5;font-size:11px;
+    background:rgba(10,12,16,.55);padding:4px 8px;border-radius:5px;
+    pointer-events:none;backdrop-filter:blur(4px);
+  }
+  #hint{
+    position:absolute;right:10px;bottom:8px;color:#7e8aa3;font-size:10.5px;
+    background:rgba(10,12,16,.55);padding:4px 8px;border-radius:5px;
+    pointer-events:none;backdrop-filter:blur(4px);
+  }
+  .kbd{
+    background:#222a38;border:1px solid #2e394d;border-bottom-width:2px;
+    padding:0 5px;border-radius:3px;color:#cfd6e4;font-size:10px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="head">
+      <h1>POWDER SANDBOX</h1>
+      <small>WebGL2</small>
+    </div>
+
+    <div class="section">
+      <h2>Elements</h2>
+      <div id="palette" class="grid"></div>
+    </div>
+
+    <div class="section">
+      <h2>Brush</h2>
+      <div class="row">
+        <label>Size</label>
+        <input id="brush" type="range" min="1" max="40" value="6">
+        <span id="brushVal" style="width:24px;text-align:right;color:var(--text)">6</span>
+      </div>
+      <div class="row">
+        <label>Speed</label>
+        <input id="speed" type="range" min="1" max="6" value="2">
+        <span id="speedVal" style="width:24px;text-align:right;color:var(--text)">2</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Controls</h2>
+      <div class="btns">
+        <button id="pause" class="primary">Pause</button>
+        <button id="step">Step</button>
+        <button id="clear">Clear</button>
+        <button id="reset">Reset</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label style="flex:0 0 auto">Hotkeys</label>
+        <span style="color:var(--muted);font-size:10.5px">
+          <span class="kbd">space</span> pause &nbsp;
+          <span class="kbd">[</span><span class="kbd">]</span> brush
+        </span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <span>FPS <span id="fps">--</span></span>
+      <span>Cells <span id="cells">--</span></span>
+      <span>Frame <span id="frame">--</span></span>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <div id="wrap">
+      <canvas id="cv"></canvas>
+      <div id="hud"><span id="el">SAND</span></div>
+      <div id="hint">Click & drag to paint &middot; Right-click to erase</div>
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+//  Falling Sand — single-file WebGL2 cellular automaton
+//  Encoding (RGBA8 per cell):
+//    R: element ID (0..15)
+//    G: temperature (0..255, 128 = ambient)
+//    B: lifetime / metadata (0..255)
+//    A: per-cell rng nonce
+// ============================================================
+
+const GRID = 512;
+
+// --- Element table -----------------------------------------------------------
+// keep IDs in sync with shader switch.
+const ELS = [
+  { id: 0,  name:'VOID',     color:[ 10, 12, 16] },
+  { id: 1,  name:'SAND',     color:[212,180, 88] },
+  { id: 2,  name:'WATER',    color:[ 60,124,210] },
+  { id: 3,  name:'OIL',      color:[120, 84, 50] },
+  { id: 4,  name:'FIRE',     color:[255,140, 36] },
+  { id: 5,  name:'SMOKE',    color:[ 80, 80, 90] },
+  { id: 6,  name:'STEAM',    color:[180,196,210] },
+  { id: 7,  name:'LAVA',     color:[230, 86, 30] },
+  { id: 8,  name:'STONE',    color:[120,120,128] },
+  { id: 9,  name:'WOOD',     color:[120, 76, 40] },
+  { id:10,  name:'PLANT',    color:[ 80,168, 70] },
+  { id:11,  name:'SEED',     color:[210,196,120] },
+  { id:12,  name:'GUNPOWDER',color:[ 70, 70, 75] },
+  { id:13,  name:'ACID',     color:[140,220, 90] },
+  { id:14,  name:'ICE',      color:[180,224,255] },
+  { id:15,  name:'GAS',      color:[200,180,240] },
+];
+
+// --- DOM ---------------------------------------------------------------------
+const cv = document.getElementById('cv');
+cv.width = GRID; cv.height = GRID;
+
+const fpsEl = document.getElementById('fps');
+const cellsEl = document.getElementById('cells');
+const frameEl = document.getElementById('frame');
+const pauseBtn = document.getElementById('pause');
+const stepBtn = document.getElementById('step');
+const clearBtn = document.getElementById('clear');
+const resetBtn = document.getElementById('reset');
+const brushIn = document.getElementById('brush');
+const brushVal = document.getElementById('brushVal');
+const speedIn = document.getElementById('speed');
+const speedVal = document.getElementById('speedVal');
+const elLabel = document.getElementById('el');
+
+let CURRENT = 1;        // selected element
+let BRUSH = 6;
+let STEPS = 2;          // sim steps per frame
+let PAUSED = false;
+let FRAME = 0;
+let mouse = { x:-1, y:-1, down:0, button:0, prevX:-1, prevY:-1 };
+
+// --- Build palette UI --------------------------------------------------------
+const palette = document.getElementById('palette');
+const elButtons = [];
+ELS.forEach((e,i)=>{
+  const b = document.createElement('div');
+  b.className = 'el' + (i===CURRENT?' active':'');
+  b.innerHTML =
+    `<div class="swatch" style="background:rgb(${e.color.join(',')})"></div><span>${e.name.toLowerCase()}</span>`;
+  b.onclick = ()=>{ selectEl(i); };
+  palette.appendChild(b);
+  elButtons.push(b);
+});
+function selectEl(i){
+  CURRENT = i;
+  elButtons.forEach((b,j)=>b.classList.toggle('active', j===i));
+  elLabel.textContent = ELS[i].name;
+}
+
+// --- WebGL2 setup ------------------------------------------------------------
+const gl = cv.getContext('webgl2', { antialias:false, preserveDrawingBuffer:false });
+if (!gl) {
+  document.body.innerHTML =
+    '<div style="padding:30px;color:#fff;font:14px monospace">WebGL2 is required for this demo.</div>';
+  throw new Error('no webgl2');
+}
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(src);
+    throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+
+// fullscreen triangle
+const VS = `#version 300 es
+precision highp float;
+out vec2 vUV;
+void main(){
+  vec2 p = vec2((gl_VertexID==2)?3.0:-1.0, (gl_VertexID==1)?3.0:-1.0);
+  vUV = (p*0.5+0.5);
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+
+// ---------------- simulation fragment shader --------------------------------
+//
+// Strategy: each pixel's new state is a function of itself and its 8 neighbours
+// (Margolus-style "look around and decide" rather than block partitioning).
+// Movement is realised by *both* sides of a swap agreeing it should happen.
+// To avoid bias, we offset the per-frame "preferred horizontal direction"
+// using the current frame parity, plus a tiny per-cell hash for spice.
+//
+const SIM_FS = `#version 300 es
+precision highp float;
+precision highp int;
+
+uniform sampler2D uState;
+uniform float uFrame;
+uniform vec2  uTexel;       // 1/GRID
+uniform vec2  uMouse;       // in 0..1 grid space, -1 if off
+uniform float uBrush;       // radius in cells
+uniform int   uPaintEl;     // element to paint (-1 = no paint)
+uniform float uPaintTemp;   // temperature to inject when painting
+
+in vec2 vUV;
+out vec4 oColor;
+
+// element IDs (must match JS table)
+const int E_VOID=0, E_SAND=1, E_WATER=2, E_OIL=3, E_FIRE=4, E_SMOKE=5,
+          E_STEAM=6, E_LAVA=7, E_STONE=8, E_WOOD=9, E_PLANT=10, E_SEED=11,
+          E_GUNPOWDER=12, E_ACID=13, E_ICE=14, E_GAS=15;
+
+// helpers ------------------------------------------------------------------
+float hash(vec2 p, float s){
+  p = fract(p*vec2(123.34, 456.21));
+  p += dot(p, p+78.233);
+  return fract((p.x+p.y)*s);
+}
+
+vec4 fetch(ivec2 c){
+  c = clamp(c, ivec2(0), ivec2(textureSize(uState,0))-ivec2(1));
+  return texelFetch(uState, c, 0);
+}
+int eid(vec4 s){ return int(s.r*255.0 + 0.5); }
+float etemp(vec4 s){ return s.g; }     // 0..1
+float elife(vec4 s){ return s.b; }     // 0..1
+
+// classification
+bool isSolidImmovable(int e){ return e==E_STONE||e==E_WOOD||e==E_ICE||e==E_PLANT; }
+bool isPowder(int e){ return e==E_SAND||e==E_SEED||e==E_GUNPOWDER; }
+bool isLiquid(int e){ return e==E_WATER||e==E_OIL||e==E_LAVA||e==E_ACID; }
+bool isGas(int e){ return e==E_SMOKE||e==E_STEAM||e==E_FIRE||e==E_GAS; }
+bool isEmpty(int e){ return e==E_VOID; }
+bool isFlammable(int e){ return e==E_WOOD||e==E_OIL||e==E_PLANT||e==E_GUNPOWDER||e==E_GAS||e==E_SEED; }
+
+// density: higher number sinks below lower number (only used between fluids/powders)
+float density(int e){
+  if(e==E_STONE||e==E_WOOD||e==E_ICE||e==E_PLANT) return 100.0;
+  if(e==E_LAVA) return 8.0;
+  if(e==E_SAND||e==E_SEED||e==E_GUNPOWDER) return 7.0;
+  if(e==E_WATER) return 5.0;
+  if(e==E_ACID) return 4.5;
+  if(e==E_OIL)  return 3.0;
+  if(e==E_FIRE) return 0.4;
+  if(e==E_SMOKE)return 0.3;
+  if(e==E_STEAM)return 0.2;
+  if(e==E_GAS)  return 0.25;
+  return 0.0; // void
+}
+
+// is cell "passable" by another cell of element 'mover' moving in?
+// (true = mover can swap into here)
+bool canPassInto(int here, int mover){
+  if(here==E_VOID) return true;
+  if(isSolidImmovable(here)) return false;
+  // density-based displacement
+  return density(mover) > density(here) + 0.01;
+}
+
+// ============================================================
+// MAIN
+// ============================================================
+void main(){
+  ivec2 size = textureSize(uState, 0);
+  ivec2 c = ivec2(vUV * vec2(size));
+  vec4 self = fetch(c);
+  int  e    = eid(self);
+  float t   = etemp(self);
+  float lf  = elife(self);
+  float nonce = self.a;
+
+  // neighbours
+  vec4 N  = fetch(c + ivec2( 0,  1));
+  vec4 S  = fetch(c + ivec2( 0, -1));
+  vec4 E  = fetch(c + ivec2( 1,  0));
+  vec4 W  = fetch(c + ivec2(-1,  0));
+  vec4 NE = fetch(c + ivec2( 1,  1));
+  vec4 NW = fetch(c + ivec2(-1,  1));
+  vec4 SE = fetch(c + ivec2( 1, -1));
+  vec4 SW = fetch(c + ivec2(-1, -1));
+
+  int eN=eid(N), eS=eid(S), eE=eid(E), eW=eid(W);
+  int eNE=eid(NE), eNW=eid(NW), eSE=eid(SE), eSW=eid(SW);
+
+  // per-cell rng for this frame
+  float r1 = hash(vec2(c)+vec2(uFrame*0.137, 13.7), 17.13);
+  float r2 = hash(vec2(c)+vec2(uFrame*0.239, 91.1), 53.31);
+  float r3 = hash(vec2(c)+vec2(uFrame*0.071, 41.7), 91.71);
+  float r4 = hash(vec2(c)+vec2(uFrame*0.301, 11.1), 27.17);
+
+  // alternating preferred horizontal direction.
+  // Must depend ONLY on (uFrame, c.y) so the symmetric handshake half can
+  // recompute the SAME value for any neighbouring cell — otherwise cells
+  // get duplicated or lost during diagonal moves.
+  bool leftFirst = mod(uFrame + float(c.y), 2.0) < 1.0;
+
+  // result accumulators (default = stay put, slowly equalise temp toward 0.5)
+  int   newE = e;
+  float newT = mix(t, 0.5, 0.02);
+  float newL = lf;
+  float newA = nonce;
+
+  // -------------------------------------------------------------
+  // 1) Heat diffusion (always)
+  // -------------------------------------------------------------
+  float tAvg = (etemp(N)+etemp(S)+etemp(E)+etemp(W))*0.25;
+  newT = mix(newT, tAvg, 0.08);
+
+  // hot sources keep themselves hot
+  if(e==E_FIRE) newT = max(newT, 0.92);
+  if(e==E_LAVA) newT = max(newT, 0.95);
+  if(e==E_ICE)  newT = min(newT, 0.30);
+
+  // -------------------------------------------------------------
+  // 2) Reactions (state changes)
+  // -------------------------------------------------------------
+
+  // ICE: melts when hot
+  if(e==E_ICE){
+    bool nearHeat = (eN==E_FIRE||eS==E_FIRE||eE==E_FIRE||eW==E_FIRE
+                  || eN==E_LAVA||eS==E_LAVA||eE==E_LAVA||eW==E_LAVA);
+    if(nearHeat || newT > 0.65){
+      newE = E_WATER; newT = 0.45; newL = 0.0;
+    }
+  }
+
+  // WATER + LAVA -> STONE + STEAM (handled symmetrically)
+  if(e==E_WATER){
+    if(eN==E_LAVA||eS==E_LAVA||eE==E_LAVA||eW==E_LAVA||
+       eNE==E_LAVA||eNW==E_LAVA||eSE==E_LAVA||eSW==E_LAVA){
+      newE = E_STEAM; newT = 0.85; newL = 0.6;
+    }
+  }
+  if(e==E_LAVA){
+    if(eN==E_WATER||eS==E_WATER||eE==E_WATER||eW==E_WATER){
+      newE = E_STONE; newT = 0.55; newL = 0.0;
+    }
+  }
+
+  // WATER freezes if surrounded by ice
+  if(newE==E_WATER){
+    int icec=0;
+    if(eN==E_ICE)icec++; if(eS==E_ICE)icec++;
+    if(eE==E_ICE)icec++; if(eW==E_ICE)icec++;
+    if(eNE==E_ICE)icec++;if(eNW==E_ICE)icec++;
+    if(eSE==E_ICE)icec++;if(eSW==E_ICE)icec++;
+    if(icec >= 3 && r1 < 0.04){ newE = E_ICE; newT = 0.25; }
+  }
+
+  // FIRE: dies after lifetime
+  if(e==E_FIRE){
+    newL = lf + 0.03;
+    // small chance to leave smoke
+    if(newL > 0.95){
+      newE = (r2 < 0.6) ? E_SMOKE : E_VOID;
+      newL = 0.0; newT = 0.7;
+    }
+  }
+  // SMOKE/STEAM: dissipate
+  if(e==E_SMOKE){
+    newL = lf + 0.006;
+    if(newL > 0.95 && r2 < 0.05){ newE = E_VOID; newL = 0.0; }
+  }
+  if(e==E_STEAM){
+    newL = lf + 0.012;
+    if(newL > 0.95 && r2 < 0.08){ newE = E_VOID; newL = 0.0; }
+    if(newT < 0.45 && r2 < 0.02){ newE = E_WATER; newT = 0.5; newL = 0.0; }
+  }
+
+  // FIRE ignition: any flammable neighbour next to fire/lava becomes fire
+  if(isFlammable(e)){
+    bool hot = (eN==E_FIRE||eS==E_FIRE||eE==E_FIRE||eW==E_FIRE
+             || eNE==E_FIRE||eNW==E_FIRE||eSE==E_FIRE||eSW==E_FIRE
+             || eN==E_LAVA||eS==E_LAVA||eE==E_LAVA||eW==E_LAVA);
+    float ignChance = 0.0;
+    if(e==E_OIL) ignChance = 0.50;
+    else if(e==E_GAS) ignChance = 0.95;
+    else if(e==E_GUNPOWDER) ignChance = 1.0;     // explodes on contact
+    else if(e==E_PLANT) ignChance = 0.30;
+    else if(e==E_SEED)  ignChance = 0.20;
+    else if(e==E_WOOD)  ignChance = 0.08;
+    if(hot && r1 < ignChance){
+      newE = E_FIRE; newT = 0.95; newL = (e==E_WOOD)?0.2:0.0;
+    }
+    // gunpowder: extra explosive radius - if any neighbour at distance 1 is fire, blast
+    if(e==E_GUNPOWDER && hot){
+      newE = E_FIRE; newT = 1.0; newL = 0.0;
+    }
+  }
+
+  // GUNPOWDER also detonates from near explosions (nearby very hot cells)
+  if(e==E_GUNPOWDER){
+    float maxN = max(max(etemp(N),etemp(S)),max(etemp(E),etemp(W)));
+    maxN = max(maxN, max(max(etemp(NE),etemp(NW)),max(etemp(SE),etemp(SW))));
+    if(maxN > 0.85 && r1 < 0.6){
+      newE = E_FIRE; newT = 1.0; newL = 0.0;
+    }
+  }
+
+  // Empty cell can catch fire from nearby explosions if a flammable gas is around
+  // (keeps gas explosions visually punchy)
+  if(e==E_VOID){
+    bool gasNear = (eN==E_GAS||eS==E_GAS||eE==E_GAS||eW==E_GAS);
+    bool fireNear= (eN==E_FIRE||eS==E_FIRE||eE==E_FIRE||eW==E_FIRE);
+    if(gasNear && fireNear && r1 < 0.6){
+      newE = E_FIRE; newT = 0.95; newL = 0.0;
+    }
+  }
+
+  // PLANT growth: empty cell adjacent to plant + water nearby may become plant
+  if(e==E_VOID){
+    bool plantAdj = (eN==E_PLANT||eS==E_PLANT||eE==E_PLANT||eW==E_PLANT);
+    bool waterAdj = (eN==E_WATER||eS==E_WATER||eE==E_WATER||eW==E_WATER
+                  || eNE==E_WATER||eNW==E_WATER||eSE==E_WATER||eSW==E_WATER);
+    if(plantAdj && waterAdj && r1 < 0.025){
+      newE = E_PLANT; newT = 0.5; newL = 0.0;
+    }
+  }
+
+  // SEED: grows into plant when wet
+  if(e==E_SEED){
+    bool waterAdj = (eN==E_WATER||eS==E_WATER||eE==E_WATER||eW==E_WATER);
+    bool restingOnSolid = isSolidImmovable(eS) || eS==E_SAND;
+    if(waterAdj && restingOnSolid && r1 < 0.05){
+      newE = E_PLANT; newT = 0.5; newL = 0.0;
+    }
+  }
+
+  // ACID: dissolves adjacent dissolvable solids; consumed itself slowly
+  if(e==E_ACID){
+    bool eatN = (eN==E_SAND||eN==E_STONE||eN==E_WOOD||eN==E_PLANT||eN==E_ICE||eN==E_GUNPOWDER||eN==E_SEED);
+    bool eatS = (eS==E_SAND||eS==E_STONE||eS==E_WOOD||eS==E_PLANT||eS==E_ICE||eS==E_GUNPOWDER||eS==E_SEED);
+    bool eatE = (eE==E_SAND||eE==E_STONE||eE==E_WOOD||eE==E_PLANT||eE==E_ICE||eE==E_GUNPOWDER||eE==E_SEED);
+    bool eatW = (eW==E_SAND||eW==E_STONE||eW==E_WOOD||eW==E_PLANT||eW==E_ICE||eW==E_GUNPOWDER||eW==E_SEED);
+    if((eatN||eatS||eatE||eatW) && r1 < 0.06){
+      newE = E_VOID;
+    }
+  }
+  // ...and adjacent dissolvable cells get eaten
+  if(e==E_SAND||e==E_STONE||e==E_WOOD||e==E_PLANT||e==E_ICE||e==E_GUNPOWDER||e==E_SEED){
+    bool acidNear = (eN==E_ACID||eS==E_ACID||eE==E_ACID||eW==E_ACID);
+    if(acidNear){
+      float chance = (e==E_STONE)?0.015:(e==E_WOOD?0.04:0.08);
+      if(r2 < chance){ newE = E_VOID; }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 3) Movement (gravity / buoyancy)
+  //
+  // GPU CA movement: each pixel must INDEPENDENTLY compute its next state
+  // by looking at neighbours. To realise a "swap" we use a standard
+  // symmetric handshake:
+  //
+  //   For cell C wanting to move DOWN into D (and D currently holds X):
+  //     - When C runs the shader, C says "I want to LEAVE downward"  -> C becomes X.
+  //     - When D runs the shader, D sees "C above wants to come down" -> D becomes C.
+  //
+  // Both halves use the SAME deterministic predicate so they always agree
+  // on whether the swap happens. In particular the "tie-breaker" between
+  // SW/SE for powders uses the falling cell's coordinate (its row+frame),
+  // not the destination's, so both sides compute the same direction.
+  //
+  // Only fire if reactions above didn't already change newE.
+  // -------------------------------------------------------------
+
+  // ---------- helper: per-cell tie-break "left-first?" -----------
+  // Deterministic, depends only on the cell's own coords + frame parity.
+  // ----------------------------------------------------------------
+  // (we already computed leftFirst for this cell; helpers below use the
+  //  ROW+frame of the *moving* cell so both ends compute the same thing.)
+
+  if(newE == e){
+
+    // ============================================================
+    //  A) THIS CELL MOVES OUT (becomes whatever was at destination)
+    // ============================================================
+
+    // ---- powders & liquids try to fall ----
+    if(isPowder(e) || isLiquid(e)){
+      bool moved = false;
+
+      // 1) straight down
+      if(!moved && canPassInto(eS, e)){
+        newE = eS; newT = etemp(S); newL = elife(S); moved = true;
+      }
+
+      // 2) diagonal down (powders + liquids)
+      if(!moved){
+        bool canSW = canPassInto(eSW, e);
+        bool canSE = canPassInto(eSE, e);
+        // BUT: only take a diagonal if neighbour directly below them is also
+        // blocked for them (otherwise they'd take the straight-down move and
+        // we'd double-claim the same source). We approximate by requiring
+        // that the candidate diagonal cell is not itself going to receive
+        // a straight-faller from above; for our purposes the simpler rule
+        // "diagonal allowed iff straight-down is blocked here" works fine.
+        if(canSW && canSE){
+          if(leftFirst){ newE=eSW; newT=etemp(SW); newL=elife(SW); }
+          else         { newE=eSE; newT=etemp(SE); newL=elife(SE); }
+          moved = true;
+        } else if(canSW){
+          newE=eSW; newT=etemp(SW); newL=elife(SW); moved=true;
+        } else if(canSE){
+          newE=eSE; newT=etemp(SE); newL=elife(SE); moved=true;
+        }
+      }
+
+      // 3) liquids: lateral flow when can't fall
+      if(!moved && isLiquid(e)){
+        float lateral = (e==E_LAVA) ? 0.35 : 0.95;
+        if(r3 < lateral){
+          bool canW2 = canPassInto(eW, e);
+          bool canE2 = canPassInto(eE, e);
+          if(canW2 && canE2){
+            if(leftFirst){ newE=eW; newT=etemp(W); newL=elife(W); }
+            else         { newE=eE; newT=etemp(E); newL=elife(E); }
+          } else if(canW2){ newE=eW; newT=etemp(W); newL=elife(W); }
+          else  if(canE2){ newE=eE; newT=etemp(E); newL=elife(E); }
+        }
+      }
+    }
+
+    // ---- gases try to rise ----
+    if(isGas(e)){
+      bool canN = !isSolidImmovable(eN) &&
+                  (eN==E_VOID || density(e) < density(eN) - 0.01);
+      if(canN){
+        newE = eN; newT = etemp(N); newL = elife(N);
+      } else {
+        bool canNW = !isSolidImmovable(eNW) &&
+                     (eNW==E_VOID || density(e) < density(eNW)-0.01);
+        bool canNE = !isSolidImmovable(eNE) &&
+                     (eNE==E_VOID || density(e) < density(eNE)-0.01);
+        if(canNW && canNE){
+          if(leftFirst){ newE=eNW; newT=etemp(NW); newL=elife(NW); }
+          else         { newE=eNE; newT=etemp(NE); newL=elife(NE); }
+        } else if(canNW){ newE=eNW; newT=etemp(NW); newL=elife(NW); }
+        else  if(canNE){ newE=eNE; newT=etemp(NE); newL=elife(NE); }
+        else {
+          // sideways drift
+          bool canW2 = (eW==E_VOID);
+          bool canE2 = (eE==E_VOID);
+          if(canW2 && canE2){
+            if(r3 < 0.5){ newE=eW; newT=etemp(W); newL=elife(W); }
+            else        { newE=eE; newT=etemp(E); newL=elife(E); }
+          } else if(canW2){ newE=eW; newT=etemp(W); newL=elife(W); }
+          else  if(canE2){ newE=eE; newT=etemp(E); newL=elife(E); }
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  //  B) THIS CELL RECEIVES SOMETHING FROM A NEIGHBOUR
+  //     (only if A) didn't fire, otherwise we'd overwrite our "moved" state)
+  // ============================================================
+  //
+  // We check the SAME predicates from each neighbour's POV. If they would
+  // decide to move into us in their own evaluation (using their own row's
+  // leftFirst tie-breaker), we become them.
+  //
+  // The above block already handled US moving away. If we already moved,
+  // this block is skipped — preventing double-write. But to keep the
+  // simulation symmetric we have to handle the case where US == VOID (or
+  // any cell that didn't move) being TARGETED by a neighbour.
+  //
+
+  if(newE == e){
+    // helper: neighbour-N's leftFirst (one row above us, row = c.y+1)
+    bool nLF  = mod(uFrame + float(c.y+1), 2.0) < 1.0;
+    // helper: our row's leftFirst (used by E/W neighbours moving sideways into us)
+    bool ourLF = leftFirst;
+
+    bool taken = false;
+
+    // ---- powder/liquid above wants to fall straight down INTO US ----
+    if(!taken && (isPowder(eN) || isLiquid(eN)) && canPassInto(e, eN)){
+      newE = eN; newT = etemp(N); newL = elife(N);
+      taken = true;
+    }
+
+    // ---- powder/liquid at NE wants to fall diagonally to its SW (== us) ----
+    // they choose this only if (a) they can't go straight down, AND
+    // (b) their leftFirst picks SW over SE (their leftFirst is true).
+    if(!taken && (isPowder(eNE) || isLiquid(eNE)) && canPassInto(e, eNE)){
+      // their straight-down cell == cell at offset (1, 0) from us == E
+      bool theirStraight = canPassInto(eE, eNE);
+      // their other diagonal (their SE) == cell at offset (2, -1) from us
+      vec4 nese = fetch(c + ivec2(2, -1));
+      bool theirOtherDiag = canPassInto(eid(nese), eNE);
+      if(!theirStraight){
+        // tie-break only applies if both diagonals are open
+        bool willPickSW = theirOtherDiag ? nLF : true;
+        if(willPickSW){
+          newE = eNE; newT = etemp(NE); newL = elife(NE);
+          taken = true;
+        }
+      }
+    }
+
+    // ---- powder/liquid at NW wants to fall diagonally to its SE (== us) ----
+    if(!taken && (isPowder(eNW) || isLiquid(eNW)) && canPassInto(e, eNW)){
+      bool theirStraight = canPassInto(eW, eNW);
+      vec4 nwsw = fetch(c + ivec2(-2, -1));
+      bool theirOtherDiag = canPassInto(eid(nwsw), eNW);
+      if(!theirStraight){
+        bool willPickSE = theirOtherDiag ? !nLF : true;
+        if(willPickSE){
+          newE = eNW; newT = etemp(NW); newL = elife(NW);
+          taken = true;
+        }
+      }
+    }
+
+    // ---- gas below wants to rise INTO US ----
+    if(!taken && isGas(eS)){
+      bool canRise = !isSolidImmovable(e) &&
+                     (e==E_VOID || density(eS) < density(e) - 0.01);
+      if(canRise){
+        newE = eS; newT = etemp(S); newL = elife(S);
+        taken = true;
+      }
+    }
+
+    // ---- liquid to our W flows sideways INTO US ----
+    if(!taken && isLiquid(eW) && e==E_VOID){
+      // their straight-down at offset (-1,-1) from us == SW
+      bool theirStraight = canPassInto(eSW, eW);
+      // their diagonals: SW (-2,-1), SE (0,-1)==S
+      vec4 wsw = fetch(c + ivec2(-2, -1));
+      bool theirSW = canPassInto(eid(wsw), eW);
+      bool theirSE = canPassInto(eS, eW);
+      // they only flow sideways when they can't fall at all
+      if(!theirStraight && !theirSW && !theirSE){
+        // their leftFirst == ourLF (same row); they pick E over W when leftFirst is FALSE
+        // (i.e. they'd flow east → into us, since we are east of them)
+        bool willFlowEast = !ourLF;
+        float lateral = (eW==E_LAVA) ? 0.35 : 0.95;
+        if(willFlowEast && r3 < lateral){
+          newE = eW; newT = etemp(W); newL = elife(W);
+          taken = true;
+        }
+      }
+    }
+
+    // ---- liquid to our E flows sideways INTO US ----
+    if(!taken && isLiquid(eE) && e==E_VOID){
+      bool theirStraight = canPassInto(eSE, eE);
+      vec4 ese2 = fetch(c + ivec2( 2, -1));
+      bool theirSE = canPassInto(eid(ese2), eE);
+      bool theirSW = canPassInto(eS, eE);
+      if(!theirStraight && !theirSE && !theirSW){
+        bool willFlowWest = ourLF;
+        float lateral = (eE==E_LAVA) ? 0.35 : 0.95;
+        if(willFlowWest && r3 < lateral){
+          newE = eE; newT = etemp(E); newL = elife(E);
+          taken = true;
+        }
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 4) Painting (mouse brush) — applied AFTER simulation so feels responsive
+  // -------------------------------------------------------------
+  if(uPaintEl >= 0 && uMouse.x >= 0.0){
+    vec2 px = vec2(c) + vec2(0.5);
+    vec2 mp = uMouse * vec2(size);
+    float d = distance(px, mp);
+    if(d <= uBrush){
+      // density mask: 100% in centre, ~50% at edge for natural fall-off
+      float density = 1.0 - smoothstep(0.0, uBrush, d);
+      // some elements paint sparsely (fire, gas, seed)
+      float fill = 1.0;
+      if(uPaintEl == E_FIRE)  fill = 0.55;
+      if(uPaintEl == E_GAS)   fill = 0.55;
+      if(uPaintEl == E_SEED)  fill = 0.10;
+      if(uPaintEl == E_PLANT) fill = 0.85;
+      // erase always overrides
+      if(uPaintEl == E_VOID){
+        newE = E_VOID; newT = 0.5; newL = 0.0;
+      } else if(r4 < fill * (0.4 + 0.6*density)){
+        newE = uPaintEl;
+        newT = uPaintTemp;
+        newL = 0.0;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 5) Pack output
+  // -------------------------------------------------------------
+  oColor = vec4(
+    float(newE)/255.0,
+    clamp(newT, 0.0, 1.0),
+    clamp(newL, 0.0, 1.0),
+    fract(nonce + 0.073 + r1*0.13)
+  );
+}
+`;
+
+// ---------------- render fragment shader -----------------------------------
+const RENDER_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uState;
+uniform vec3 uPalette[16];
+uniform float uTime;
+in vec2 vUV;
+out vec4 oColor;
+
+void main(){
+  vec4 s = texture(uState, vUV);
+  int e = int(s.r*255.0 + 0.5);
+  float t = s.g;
+  float lf = s.b;
+  vec3 col = uPalette[e];
+
+  // small per-cell variation so flat fills look alive
+  float g = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  col *= (0.92 + 0.08 * g);
+
+  // FIRE: animate brightness by lifetime
+  if(e == 4){ // FIRE
+    float k = 1.0 - lf;
+    col = mix(vec3(0.6,0.1,0.05), vec3(1.0, 0.9, 0.3), k);
+    col += vec3(0.1) * sin(uTime*8.0 + g*30.0);
+  }
+  // LAVA: hot red glow with shimmer
+  if(e == 7){
+    col = mix(vec3(0.8, 0.2, 0.05), vec3(1.0, 0.6, 0.15), 0.4 + 0.6*g);
+    col += vec3(0.1, 0.04, 0.0) * sin(uTime*4.0 + gl_FragCoord.x*0.2);
+  }
+  // SMOKE: fade with lifetime
+  if(e == 5){
+    float a = 1.0 - lf;
+    col = mix(vec3(0.06, 0.07, 0.09), vec3(0.32, 0.32, 0.36), a);
+  }
+  // STEAM: fade
+  if(e == 6){
+    float a = 1.0 - lf;
+    col = mix(vec3(0.06, 0.08, 0.10), vec3(0.74, 0.82, 0.88), a*0.9);
+  }
+  // GAS: subtle flicker
+  if(e == 15){
+    col *= 0.9 + 0.1*sin(uTime*6.0 + gl_FragCoord.y*0.4);
+  }
+  // ACID: sparkle
+  if(e == 13){
+    col += vec3(0.0,0.05,0.0)*sin(uTime*10.0 + g*20.0);
+  }
+  // ICE: cool tint variation
+  if(e == 14){
+    col = mix(col, vec3(0.85,0.95,1.0), 0.4*g);
+  }
+  // hot cells get a subtle glow tint regardless
+  if(t > 0.7 && e != 4 && e != 7){
+    col = mix(col, vec3(1.0, 0.7, 0.3), (t-0.7)*0.5);
+  }
+
+  oColor = vec4(col, 1.0);
+}
+`;
+
+// programs --------------------------------------------------------------------
+const simProg = program(VS, SIM_FS);
+const renderProg = program(VS, RENDER_FS);
+
+const u = {
+  // sim
+  sState:    gl.getUniformLocation(simProg, 'uState'),
+  sFrame:    gl.getUniformLocation(simProg, 'uFrame'),
+  sTexel:    gl.getUniformLocation(simProg, 'uTexel'),
+  sMouse:    gl.getUniformLocation(simProg, 'uMouse'),
+  sBrush:    gl.getUniformLocation(simProg, 'uBrush'),
+  sPaintEl:  gl.getUniformLocation(simProg, 'uPaintEl'),
+  sPaintT:   gl.getUniformLocation(simProg, 'uPaintTemp'),
+  // render
+  rState:    gl.getUniformLocation(renderProg, 'uState'),
+  rPalette:  gl.getUniformLocation(renderProg, 'uPalette'),
+  rTime:     gl.getUniformLocation(renderProg, 'uTime'),
+};
+
+// VAO (no attributes; gl_VertexID does it all)
+const vao = gl.createVertexArray();
+
+// --- ping-pong textures + FBOs ----------------------------------------------
+function makeTex(w, h, data){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function makeFBO(tex){
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return f;
+}
+
+let texA, texB, fboA, fboB;
+function buildInitialState(){
+  const data = new Uint8Array(GRID*GRID*4);
+  // start with VOID; ambient temperature 128, life 0, random alpha
+  for (let i = 0; i < GRID*GRID; i++) {
+    data[i*4+0] = 0;
+    data[i*4+1] = 128;
+    data[i*4+2] = 0;
+    data[i*4+3] = (Math.random()*255)|0;
+  }
+  // sprinkle a few demo-friendly elements at the bottom
+  const set = (x,y,id,t,l)=>{
+    if(x<0||x>=GRID||y<0||y>=GRID) return;
+    const i = (y*GRID + x)*4;
+    data[i] = id;
+    data[i+1] = (t*255)|0;
+    data[i+2] = (l*255)|0;
+  };
+  // a stone floor with a gap on the right
+  for (let x = 0; x < GRID; x++) {
+    for (let y = 0; y < 6; y++) set(x, y, 8, 0.5, 0); // STONE floor
+  }
+  // a basin for water / lava demos
+  for (let y = 6; y < 80; y++) {
+    set(40, y, 8, 0.5, 0);
+    set(GRID-40, y, 8, 0.5, 0);
+  }
+  // wood pile
+  for (let y = 6; y < 30; y++) {
+    for (let x = 100; x < 130; x++) set(x, y, 9, 0.5, 0);
+  }
+  // ice cubes
+  for (let y = 6; y < 26; y++) {
+    for (let x = 200; x < 220; x++) set(x, y, 14, 0.2, 0);
+  }
+  // some sand mounds suspended (will fall when sim starts)
+  for (let y = GRID-200; y < GRID-180; y++) {
+    for (let x = 220; x < 320; x++) set(x, y, 1, 0.5, 0);
+  }
+  // a little water above
+  for (let y = GRID-260; y < GRID-240; y++) {
+    for (let x = 100; x < 200; x++) set(x, y, 2, 0.5, 0);
+  }
+  // a plant seed bed
+  for (let y = 6; y < 8; y++) {
+    for (let x = GRID-120; x < GRID-60; x++) set(x, y, 1, 0.5, 0); // sand
+  }
+  // a few seeds on top of it
+  for (let i = 0; i < 30; i++) {
+    set(GRID-120 + ((i*7)%60), 9, 11, 0.5, 0);
+  }
+
+  return data;
+}
+
+function initTextures(){
+  if (texA) gl.deleteTexture(texA);
+  if (texB) gl.deleteTexture(texB);
+  if (fboA) gl.deleteFramebuffer(fboA);
+  if (fboB) gl.deleteFramebuffer(fboB);
+  const data = buildInitialState();
+  texA = makeTex(GRID, GRID, data);
+  texB = makeTex(GRID, GRID, null);
+  fboA = makeFBO(texA);
+  fboB = makeFBO(texB);
+  FRAME = 0;
+}
+
+initTextures();
+
+// palette (flattened to vec3 array uniform)
+const paletteF = new Float32Array(16*3);
+for (let i = 0; i < 16; i++) {
+  paletteF[i*3+0] = ELS[i].color[0]/255;
+  paletteF[i*3+1] = ELS[i].color[1]/255;
+  paletteF[i*3+2] = ELS[i].color[2]/255;
+}
+
+// --- input ------------------------------------------------------------------
+const wrap = document.getElementById('wrap');
+function evToGrid(ev){
+  const r = wrap.getBoundingClientRect();
+  const x = (ev.clientX - r.left) / r.width;
+  // canvas Y axis is top->down but our texture (0..1) uses GL convention bottom->up
+  const y = 1.0 - (ev.clientY - r.top) / r.height;
+  return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+}
+wrap.addEventListener('contextmenu', e => e.preventDefault());
+wrap.addEventListener('pointerdown', e => {
+  wrap.setPointerCapture(e.pointerId);
+  mouse.down = 1;
+  mouse.button = e.button;
+  const p = evToGrid(e);
+  mouse.x = p.x; mouse.y = p.y;
+  mouse.prevX = p.x; mouse.prevY = p.y;
+});
+wrap.addEventListener('pointermove', e => {
+  const p = evToGrid(e);
+  mouse.prevX = mouse.x;
+  mouse.prevY = mouse.y;
+  mouse.x = p.x; mouse.y = p.y;
+});
+wrap.addEventListener('pointerup', e => {
+  mouse.down = 0;
+  // keep prev so we still know last paint pos
+});
+wrap.addEventListener('pointerleave', () => { mouse.down = 0; mouse.x = -1; mouse.y = -1; });
+
+// keyboard
+window.addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  if (e.code === 'Space') { togglePause(); e.preventDefault(); }
+  else if (e.code === 'BracketLeft')  { setBrush(BRUSH-1); }
+  else if (e.code === 'BracketRight') { setBrush(BRUSH+1); }
+  else if (e.code === 'KeyC') doClear();
+  else if (e.code === 'KeyR') doReset();
+  else if (/^Digit[1-9]$/.test(e.code)) {
+    const n = parseInt(e.code.slice(5),10);
+    if (n-1 < ELS.length) selectEl(n-1 + 0); // 1..9 -> first 9 elements
+  }
+});
+
+function setBrush(n){
+  BRUSH = Math.max(1, Math.min(40, n|0));
+  brushIn.value = BRUSH;
+  brushVal.textContent = BRUSH;
+}
+brushIn.oninput = () => setBrush(+brushIn.value);
+speedIn.oninput = () => { STEPS = +speedIn.value; speedVal.textContent = STEPS; };
+function togglePause(){
+  PAUSED = !PAUSED;
+  pauseBtn.textContent = PAUSED ? 'Play' : 'Pause';
+}
+pauseBtn.onclick = togglePause;
+stepBtn.onclick = () => { if (PAUSED) { stepOnce(); } };
+clearBtn.onclick = doClear;
+resetBtn.onclick = doReset;
+
+function doClear(){
+  // make all-VOID texture
+  const data = new Uint8Array(GRID*GRID*4);
+  for (let i = 0; i < GRID*GRID; i++) {
+    data[i*4+1] = 128; // ambient temp
+    data[i*4+3] = (Math.random()*255)|0;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, texA);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GRID, GRID, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  FRAME = 0;
+}
+function doReset(){
+  initTextures();
+}
+
+// --- simulation step --------------------------------------------------------
+let read = { tex: null, fbo: null }, write = { tex: null, fbo: null };
+function syncRW(){
+  // even frames: read A, write B; odd: swap
+  if (FRAME % 2 === 0) {
+    read.tex = texA; read.fbo = fboA;
+    write.tex = texB; write.fbo = fboB;
+  } else {
+    read.tex = texB; read.fbo = fboB;
+    write.tex = texA; write.fbo = fboA;
+  }
+}
+
+function stepOnce(){
+  syncRW();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, write.fbo);
+  gl.viewport(0, 0, GRID, GRID);
+  gl.useProgram(simProg);
+  gl.bindVertexArray(vao);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, read.tex);
+  gl.uniform1i(u.sState, 0);
+  gl.uniform1f(u.sFrame, FRAME);
+  gl.uniform2f(u.sTexel, 1/GRID, 1/GRID);
+
+  // mouse / paint
+  if (mouse.down && mouse.x >= 0) {
+    gl.uniform2f(u.sMouse, mouse.x, mouse.y);
+    gl.uniform1f(u.sBrush, BRUSH);
+    let paintEl = CURRENT;
+    if (mouse.button === 2) paintEl = 0; // right-click = void/erase
+    gl.uniform1i(u.sPaintEl, paintEl);
+    // temperature for painted cells
+    let pt = 0.5;
+    if (paintEl === 4)  pt = 0.95; // fire
+    if (paintEl === 7)  pt = 0.95; // lava
+    if (paintEl === 14) pt = 0.20; // ice
+    gl.uniform1f(u.sPaintT, pt);
+  } else {
+    gl.uniform2f(u.sMouse, -1, -1);
+    gl.uniform1f(u.sBrush, 0);
+    gl.uniform1i(u.sPaintEl, -1);
+    gl.uniform1f(u.sPaintT, 0.5);
+  }
+
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  FRAME++;
+}
+
+function render(){
+  // Read most recent state texture
+  const src = (FRAME % 2 === 0) ? texA : texB;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, GRID, GRID);
+  gl.useProgram(renderProg);
+  gl.bindVertexArray(vao);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, src);
+  gl.uniform1i(u.rState, 0);
+  gl.uniform3fv(u.rPalette, paletteF);
+  gl.uniform1f(u.rTime, performance.now()*0.001);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// --- main loop --------------------------------------------------------------
+let lastT = performance.now(), fpsAcc = 0, fpsN = 0, fpsDisp = 0;
+
+function loop(t){
+  const dt = t - lastT; lastT = t;
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 500) {
+    fpsDisp = (1000 * fpsN / fpsAcc) | 0;
+    fpsEl.textContent = fpsDisp;
+    cellsEl.textContent = (GRID*GRID).toLocaleString();
+    frameEl.textContent = FRAME.toLocaleString();
+    fpsAcc = 0; fpsN = 0;
+  }
+
+  if (!PAUSED) {
+    for (let i = 0; i < STEPS; i++) stepOnce();
+  } else if (mouse.down) {
+    // even when paused, allow painting (single sub-step)
+    stepOnce();
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// init UI display
+brushVal.textContent = brushIn.value;
+speedVal.textContent = speedIn.value;
+BRUSH = +brushIn.value;
+STEPS = +speedIn.value;
+selectEl(CURRENT);
+</script>
+</body>
+</html>

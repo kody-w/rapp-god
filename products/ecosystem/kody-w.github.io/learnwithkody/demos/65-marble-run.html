@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Marble Run Designer — learnwithkody</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #06080f; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: #cfd6e6; user-select: none; -webkit-user-select: none; }
+  canvas { display: block; }
+
+  #ui {
+    position: fixed; top: 16px; left: 16px;
+    background: rgba(12, 18, 32, 0.86);
+    border: 1px solid rgba(120, 150, 200, 0.25);
+    border-radius: 14px;
+    padding: 14px 16px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    width: 232px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+    z-index: 10;
+  }
+  #ui h2 { margin: 0; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: #ffd28a; font-weight: 700; }
+  #ui .sub { font-size: 10.5px; color: #8a93a8; margin-bottom: 12px; letter-spacing: 0.05em; }
+
+  .palette { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+  .palette button {
+    background: linear-gradient(180deg, #1a2238, #131a2c);
+    color: #cfd6e6; border: 1px solid #2a3552; border-radius: 8px;
+    padding: 9px 6px; cursor: pointer; font-size: 11.5px;
+    transition: all 0.12s ease;
+    font-weight: 500;
+  }
+  .palette button:hover { background: linear-gradient(180deg, #243056, #1a2342); border-color: #4a5d8a; }
+  .palette button.active {
+    background: linear-gradient(180deg, #ffaf4c, #ff7a1a);
+    color: #1a1305; border-color: #ffd28a;
+    box-shadow: 0 0 14px rgba(255, 175, 76, 0.45);
+  }
+
+  select, .btn {
+    width: 100%; background: #131a2c; color: #cfd6e6; border: 1px solid #2a3552;
+    border-radius: 8px; padding: 8px; cursor: pointer; font-size: 12px; margin-bottom: 6px;
+    font-family: inherit;
+  }
+  .btn:hover { background: #1c2540; border-color: #4a5d8a; }
+  select:hover { border-color: #4a5d8a; }
+
+  .hint {
+    font-size: 11px; color: #6f7a92; line-height: 1.65; margin-top: 8px;
+    padding-top: 10px; border-top: 1px solid #2a3552;
+  }
+  .hint kbd { background: #1c2540; padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, Menlo, monospace; color: #ffd28a; font-size: 10px; }
+
+  #counter {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(12, 18, 32, 0.86);
+    border: 1px solid rgba(120, 150, 200, 0.25);
+    border-radius: 14px;
+    padding: 10px 14px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    font-size: 12px;
+    z-index: 10;
+    letter-spacing: 0.05em;
+  }
+  #counter b { color: #ffd28a; font-weight: 700; }
+
+  #brand {
+    position: fixed; bottom: 14px; right: 18px;
+    font-size: 10.5px; color: #6f7a92; letter-spacing: 0.18em;
+    text-transform: uppercase; z-index: 10;
+  }
+  #brand a { color: #ffd28a; text-decoration: none; }
+  #brand a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h2>Marble Run</h2>
+  <div class="sub">workshop · vibe coding</div>
+  <div class="palette" id="palette">
+    <button data-p="straight">Ramp</button>
+    <button data-p="curve">Curve 90°</button>
+    <button data-p="spiral">Spiral</button>
+    <button data-p="jump">Jump</button>
+    <button data-p="halfpipe">Half-pipe</button>
+    <button data-p="funnel">Funnel</button>
+  </div>
+  <select id="presets">
+    <option value="">— preset tracks —</option>
+    <option value="drop">simple drop</option>
+    <option value="helix">double helix</option>
+    <option value="branching">branching divider</option>
+  </select>
+  <button class="btn" id="reset">Reset marbles</button>
+  <button class="btn" id="clear">Clear all pieces</button>
+  <div class="hint">
+    <kbd>L-click</kbd> place piece · spawn marble<br>
+    <kbd>R-click</kbd> delete piece<br>
+    <kbd>Wheel</kbd> rotate ghost · zoom<br>
+    <kbd>Drag</kbd> orbit camera · <kbd>Esc</kbd> deselect
+  </div>
+</div>
+<div id="counter">marbles: <b id="mc">0</b> · pieces: <b id="pc">0</b></div>
+<div id="brand"><a href="../index.html">← learnwithkody</a></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ===================================================== Constants
+const GRAVITY    = 13.5;
+const FRICTION   = 0.55;
+const BALL_R     = 0.085;
+const PORT_EPS   = 0.26;
+const PORT_DOT   = 0.15;
+const FUNNEL_DELAY = 0.55;
+const MARBLE_COLORS = [0x32e3ff, 0xff34c8, 0xffe23a, 0x35ff86];
+
+// ===================================================== Renderer / Scene
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070a14);
+scene.fog = new THREE.Fog(0x070a14, 16, 50);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+document.body.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(46, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(8, 9, 10);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 1, 0);
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 4;
+controls.maxDistance = 28;
+
+// ===================================================== Lighting
+const sun = new THREE.DirectionalLight(0xfff0d4, 1.55);
+sun.position.set(9, 14, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+const sc = sun.shadow.camera;
+sc.left = -16; sc.right = 16; sc.top = 16; sc.bottom = -16; sc.near = 0.5; sc.far = 50;
+sun.shadow.bias = -0.0004;
+scene.add(sun);
+
+scene.add(new THREE.HemisphereLight(0x6a86b5, 0x1a1530, 0.55));
+scene.add(new THREE.AmbientLight(0x252a3e, 0.45));
+
+// Sky gradient
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(80, 24, 14),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: { top:{value:new THREE.Color(0x182245)}, bot:{value:new THREE.Color(0x05070d)} },
+    vertexShader: `varying vec3 vp; void main(){ vp = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader: `varying vec3 vp; uniform vec3 top; uniform vec3 bot;
+      void main(){ float h = clamp(vp.y * 0.012 + 0.45, 0., 1.);
+        gl_FragColor = vec4(mix(bot, top, h*h), 1.0); }`
+  })
+);
+scene.add(sky);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshStandardMaterial({color: 0x0e1424, roughness: 0.96, metalness: 0.0})
+);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -0.5;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(40, 40, 0x4a5a82, 0x222a40);
+grid.position.y = -0.498;
+grid.material.transparent = true;
+grid.material.opacity = 0.55;
+scene.add(grid);
+
+// Invisible build plane (for raycasting empty cells)
+const buildPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshBasicMaterial({visible: false})
+);
+buildPlane.rotation.x = -Math.PI/2;
+buildPlane.position.y = -0.5;
+scene.add(buildPlane);
+
+// ===================================================== Piece curve definitions
+// Local space: cube [-0.5, 0.5]^3.
+// Each port is on a face center near top/bottom of the cube. Connections happen
+// when a piece's exit point in world space matches another piece's entry point.
+//
+// Convention:
+//   - "Ramp" entries are at top corner of -X face (-0.5, 0.5, 0), exits at bottom
+//     corner of +X face (0.5, -0.5, 0). Stacks diagonally down.
+//   - "Curve 90" rotates the X→-Z direction while dropping 1 unit.
+//   - "Spiral" enters on -Z top, full helix turn, exits on -Z bottom (drops 1, same XZ).
+//   - "Jump" launches from -X bottom into upward arc inside +X half (then free-fall).
+//   - "Halfpipe" enters -X top, dips to floor, exits +X top (no net drop).
+//   - "Funnel" catches free-falling marbles within its top, exits -Z bottom.
+
+function lerp(a,b,t){ return a + (b-a)*t; }
+function smooth(t){ return t*t*(3-2*t); }
+
+function curveStraight() {
+  // Ramp: (-0.5, 0.5, 0) → (0.5, -0.5, 0). +X tangent, gentle ease.
+  const pts = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i/12;
+    pts.push(new THREE.Vector3(-0.5 + t, 0.5 - smooth(t)*1.0, 0));
+  }
+  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+}
+
+function curveCurve90() {
+  // Quarter turn from -X face top to +Z face bottom, dropping 1 unit.
+  // Center of arc: (-0.5, _, +0.5), radius 0.5; angle from -π/2 to 0.
+  const pts = [];
+  pts.push(new THREE.Vector3(-0.5, 0.5, 0));
+  pts.push(new THREE.Vector3(-0.46, 0.5, 0));
+  for (let i = 1; i <= 12; i++) {
+    const u = i/12;
+    const angle = -Math.PI/2 + u * Math.PI/2;
+    const x = -0.5 + 0.5 * Math.cos(angle);
+    const z = 0.5 + 0.5 * Math.sin(angle);
+    const y = 0.5 - smooth(u) * 1.0;
+    pts.push(new THREE.Vector3(x, y, z));
+  }
+  pts.push(new THREE.Vector3(0, -0.5, 0.46));
+  pts.push(new THREE.Vector3(0, -0.5, 0.5));
+  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+}
+
+function curveSpiral() {
+  // -Z face top → +Z face bottom. Linear Z progression with X oscillation = corkscrew look.
+  const pts = [];
+  pts.push(new THREE.Vector3(0, 0.5, -0.5));
+  pts.push(new THREE.Vector3(0, 0.5, -0.46));
+  const R = 0.34;
+  const N = 28;
+  for (let i = 0; i <= N; i++) {
+    const u = i/N;
+    const θ = u * 2 * Math.PI;
+    const x = R * Math.sin(θ);
+    const z = -0.5 + u * 1.0;
+    const y = 0.45 - u * 0.9;
+    pts.push(new THREE.Vector3(x, y, z));
+  }
+  pts.push(new THREE.Vector3(0, -0.5, 0.46));
+  pts.push(new THREE.Vector3(0, -0.5, 0.5));
+  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+}
+
+function curveJump() {
+  // From bottom corner of -X face, ramps up into a launch ending mid-cube angled upward.
+  // Marble exits into free-fall. End point is in mid-air; no port match downstream.
+  const pts = [];
+  pts.push(new THREE.Vector3(-0.5, -0.5, 0));
+  pts.push(new THREE.Vector3(-0.45, -0.5, 0));
+  for (let i = 1; i <= 14; i++) {
+    const u = i/14;
+    const x = -0.5 + u * 1.0;
+    const y = -0.5 + Math.pow(u, 1.7) * 1.25;
+    pts.push(new THREE.Vector3(x, y, 0));
+  }
+  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+}
+
+function curveHalfpipe() {
+  // -X top to +X top, dipping through the bottom of cube. Net zero drop.
+  const pts = [];
+  pts.push(new THREE.Vector3(-0.5, 0.5, 0));
+  pts.push(new THREE.Vector3(-0.46, 0.5, 0));
+  for (let i = 1; i <= 16; i++) {
+    const u = i/16;
+    const x = -0.5 + u * 1.0;
+    // Cosine valley: y=0.5 at u=0 and u=1, y=-0.4 at u=0.5
+    const y = 0.5 - 0.9 * Math.sin(u * Math.PI);
+    pts.push(new THREE.Vector3(x, y, 0));
+  }
+  pts.push(new THREE.Vector3(0.46, 0.5, 0));
+  pts.push(new THREE.Vector3(0.5, 0.5, 0));
+  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+}
+
+function curveFunnel() {
+  // Visible track: from cube center down/curving out to +Z bottom face.
+  // Top is an open catch zone (handled by capture logic, not curve).
+  const pts = [];
+  pts.push(new THREE.Vector3(0, 0.05, 0));
+  pts.push(new THREE.Vector3(0, -0.05, 0.05));
+  pts.push(new THREE.Vector3(0, -0.22, 0.18));
+  pts.push(new THREE.Vector3(0, -0.36, 0.34));
+  pts.push(new THREE.Vector3(0, -0.46, 0.46));
+  pts.push(new THREE.Vector3(0, -0.5, 0.5));
+  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+}
+
+const PIECE_DEFS = {
+  straight: { name:'Ramp',     make: curveStraight, hasCatcher: false },
+  curve:    { name:'Curve',    make: curveCurve90,  hasCatcher: false },
+  spiral:   { name:'Spiral',   make: curveSpiral,   hasCatcher: false },
+  jump:     { name:'Jump',     make: curveJump,     hasCatcher: false, endsInAir: true },
+  halfpipe: { name:'Half-pipe',make: curveHalfpipe, hasCatcher: false },
+  funnel:   { name:'Funnel',   make: curveFunnel,   hasCatcher: true }
+};
+
+// ===================================================== Piece visuals
+const railMat = new THREE.MeshStandardMaterial({color: 0xd8e0ec, metalness: 0.95, roughness: 0.18});
+const accentMat = new THREE.MeshStandardMaterial({
+  color: 0xff9b50, metalness: 0.55, roughness: 0.32,
+  emissive: 0x4a1a00, emissiveIntensity: 0.55
+});
+const chassisMat = new THREE.MeshStandardMaterial({color: 0x18203a, metalness: 0.25, roughness: 0.85});
+const funnelMat = new THREE.MeshStandardMaterial({
+  color: 0x6f9bd0, metalness: 0.85, roughness: 0.25,
+  side: THREE.DoubleSide, transparent: true, opacity: 0.55,
+  emissive: 0x183560, emissiveIntensity: 0.4
+});
+
+function buildPieceMesh(type) {
+  const group = new THREE.Group();
+  const def = PIECE_DEFS[type];
+  const curve = def.make();
+
+  // Center rail (chrome tube)
+  const tube = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 48, 0.045, 10, false),
+    railMat.clone()
+  );
+  tube.castShadow = true;
+  tube.receiveShadow = true;
+  group.add(tube);
+
+  // Two outer guide rails offset perpendicular to tangent in the world-XZ plane
+  const offsets = [-0.085, 0.085];
+  for (const o of offsets) {
+    const rp = [];
+    const N = 56;
+    for (let i = 0; i <= N; i++) {
+      const t = i/N;
+      const p = curve.getPoint(t);
+      const tan = curve.getTangent(t);
+      // Perpendicular in horizontal plane (rotate tangent 90° around Y)
+      const horiz = new THREE.Vector3(-tan.z, 0, tan.x);
+      if (horiz.lengthSq() < 1e-4) horiz.set(0, 0, 1);
+      horiz.normalize();
+      rp.push(p.clone().addScaledVector(horiz, o).add(new THREE.Vector3(0, 0.045, 0)));
+    }
+    const railCurve = new THREE.CatmullRomCurve3(rp);
+    const railMesh = new THREE.Mesh(
+      new THREE.TubeGeometry(railCurve, 48, 0.018, 6, false),
+      accentMat.clone()
+    );
+    railMesh.castShadow = true;
+    group.add(railMesh);
+  }
+
+  // Small chassis under track for visual mass (skip for jump and funnel)
+  if (type !== 'jump' && type !== 'funnel') {
+    const N = 5;
+    for (let i = 1; i < N; i++) {
+      const t = i/N;
+      const p = curve.getPoint(t);
+      const post = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, Math.max(0.04, p.y + 0.5), 0.06),
+        chassisMat
+      );
+      post.position.set(p.x, (p.y - 0.5) * 0.5, p.z);
+      post.castShadow = true;
+      post.receiveShadow = true;
+      group.add(post);
+    }
+  }
+
+  // Funnel-specific cone catcher
+  if (type === 'funnel') {
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.46, 0.55, 24, 1, true),
+      funnelMat.clone()
+    );
+    cone.position.y = 0.22;
+    cone.rotation.x = Math.PI;
+    cone.castShadow = false;
+    cone.receiveShadow = false;
+    group.add(cone);
+
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.46, 0.03, 8, 32),
+      accentMat.clone()
+    );
+    ring.position.y = 0.49;
+    ring.rotation.x = Math.PI/2;
+    group.add(ring);
+  }
+
+  // Jump ramp visual: end-of-ramp plate
+  if (type === 'jump') {
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.04, 0.32),
+      accentMat.clone()
+    );
+    const endPt = curve.getPoint(1);
+    const endTan = curve.getTangent(1).normalize();
+    plate.position.copy(endPt).addScaledVector(endTan, -0.04);
+    plate.lookAt(plate.position.clone().add(endTan));
+    plate.castShadow = true;
+    group.add(plate);
+
+    // Support post for the ramp
+    const support = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.7, 0.12),
+      chassisMat
+    );
+    support.position.set(0, -0.15, 0);
+    support.castShadow = true;
+    group.add(support);
+  }
+
+  group.userData.curve = curve;
+  group.userData.type = type;
+  return group;
+}
+
+// ===================================================== Pieces world model
+const pieces = []; // { type, gx, gy, gz, rotY (0..3), mesh, worldCurve, length, queue, releaseTimer }
+const pieceMeshes = []; // for raycasting
+
+function rotPoint(p, rot) {
+  const a = rot * Math.PI / 2;
+  const ca = Math.cos(a), sa = Math.sin(a);
+  return new THREE.Vector3(
+    ca * p.x + sa * p.z,
+    p.y,
+    -sa * p.x + ca * p.z
+  );
+}
+
+function transformCurve(localCurve, gx, gy, gz, rot) {
+  const out = localCurve.points.map(p => {
+    const r = rotPoint(p, rot);
+    return new THREE.Vector3(r.x + gx, r.y + gy, r.z + gz);
+  });
+  return new THREE.CatmullRomCurve3(out, false, 'catmullrom', 0.5);
+}
+
+function pieceAt(gx, gy, gz) {
+  return pieces.find(p => p.gx === gx && p.gy === gy && p.gz === gz);
+}
+
+function placePiece(type, gx, gy, gz, rot) {
+  const existing = pieceAt(gx, gy, gz);
+  if (existing) removePiece(existing);
+
+  const mesh = buildPieceMesh(type);
+  mesh.position.set(gx, gy, gz);
+  mesh.rotation.y = rot * Math.PI / 2;
+  scene.add(mesh);
+
+  const localCurve = mesh.userData.curve;
+  const worldCurve = transformCurve(localCurve, gx, gy, gz, rot);
+  const length = worldCurve.getLength();
+
+  const piece = {
+    type, gx, gy, gz, rotY: rot, mesh,
+    worldCurve, length,
+    queue: [], releaseTimer: 0
+  };
+  mesh.userData.piece = piece;
+  pieces.push(piece);
+  pieceMeshes.push(mesh);
+  updateCounter();
+  return piece;
+}
+
+function removePiece(piece) {
+  scene.remove(piece.mesh);
+  piece.mesh.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+      else o.material.dispose();
+    }
+  });
+  // Remove marbles on/queued in this piece
+  for (let i = marbles.length - 1; i >= 0; i--) {
+    const m = marbles[i];
+    if (m.piece === piece) removeMarble(m);
+  }
+  pieces.splice(pieces.indexOf(piece), 1);
+  pieceMeshes.splice(pieceMeshes.indexOf(piece.mesh), 1);
+  updateCounter();
+}
+
+function clearAllPieces() {
+  while (pieces.length) removePiece(pieces[pieces.length - 1]);
+}
+
+function findPieceFromMesh(obj) {
+  let n = obj;
+  while (n) {
+    if (n.userData && n.userData.piece) return n.userData.piece;
+    n = n.parent;
+  }
+  return null;
+}
+
+// ===================================================== Marbles
+const marbles = [];
+let colorIdx = 0;
+
+function makeMarble(color) {
+  const geom = new THREE.SphereGeometry(BALL_R, 22, 16);
+  const mat = new THREE.MeshStandardMaterial({
+    color, metalness: 0.92, roughness: 0.18,
+    emissive: color, emissiveIntensity: 0.18
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.castShadow = true;
+  scene.add(mesh);
+
+  // Subtle point light follows brightest marbles? skip for perf
+  return {
+    mesh, color,
+    state: 'rail',           // 'rail' | 'free' | 'queued'
+    piece: null,
+    s: 0.001, v: 0.6,        // arclength + signed velocity along curve
+    position: new THREE.Vector3(),
+    velocity: new THREE.Vector3(),
+    age: 0
+  };
+}
+
+function spawnMarbleOnPiece(piece) {
+  if (!piece) return;
+  const m = makeMarble(MARBLE_COLORS[colorIdx++ % MARBLE_COLORS.length]);
+  m.piece = piece;
+  m.s = 0.002;
+  m.v = 0.6;
+  m.state = 'rail';
+  marbles.push(m);
+  updateCounter();
+  if (audio) playClink(0.8);
+}
+
+function removeMarble(m) {
+  scene.remove(m.mesh);
+  m.mesh.geometry.dispose();
+  m.mesh.material.dispose();
+  // remove from any funnel queues
+  for (const p of pieces) {
+    if (p.queue && p.queue.length) {
+      const i = p.queue.indexOf(m);
+      if (i !== -1) p.queue.splice(i, 1);
+    }
+  }
+  marbles.splice(marbles.indexOf(m), 1);
+  updateCounter();
+}
+
+function clearMarbles() {
+  while (marbles.length) removeMarble(marbles[0]);
+}
+
+// ===================================================== Physics
+function findPortMatch(worldPos, exitTangent) {
+  for (const p of pieces) {
+    const sp = p.worldCurve.getPoint(0);
+    const d = worldPos.distanceTo(sp);
+    if (d < PORT_EPS) {
+      const st = p.worldCurve.getTangent(0).normalize();
+      if (exitTangent.dot(st) > PORT_DOT) {
+        return { piece: p, dist: d };
+      }
+    }
+  }
+  return null;
+}
+
+function findFunnelCatch(pos, vel) {
+  if (vel.y >= 0) return null;
+  for (const p of pieces) {
+    if (p.type !== 'funnel') continue;
+    const dx = pos.x - p.gx;
+    const dz = pos.z - p.gz;
+    const dy = pos.y - p.gy;
+    if (Math.abs(dx) < 0.46 && Math.abs(dz) < 0.46 && dy > -0.05 && dy < 0.55) {
+      return p;
+    }
+  }
+  return null;
+}
+
+function physicsTick(dt) {
+  for (let i = marbles.length - 1; i >= 0; i--) {
+    const m = marbles[i];
+    m.age += dt;
+
+    if (m.state === 'queued') continue;
+
+    if (m.state === 'rail') {
+      const c = m.piece.worldCurve;
+      const len = m.piece.length;
+      const t = THREE.MathUtils.clamp(m.s / len, 0, 1);
+      const tan = c.getTangent(t);
+      // Curves can produce zero-length tangent in degenerate cases
+      if (tan.lengthSq() < 1e-6) tan.set(1,0,0); else tan.normalize();
+
+      const aTan = -GRAVITY * tan.y;        // gravity dotted with tangent
+      const aFric = -FRICTION * m.v;
+      m.v += (aTan + aFric) * dt;
+      m.s += m.v * dt;
+
+      if (m.s >= len) {
+        // Exit piece
+        const exitPos = c.getPoint(1);
+        const exitTanRaw = c.getTangent(1);
+        const exitTan = exitTanRaw.lengthSq() < 1e-6 ? new THREE.Vector3(1,0,0) : exitTanRaw.normalize();
+
+        const def = PIECE_DEFS[m.piece.type];
+        let snapped = null;
+        if (!def.endsInAir) snapped = findPortMatch(exitPos, exitTan);
+
+        if (snapped) {
+          const oldV = m.v;
+          m.piece = snapped.piece;
+          m.s = 0.002;
+          const newTan = m.piece.worldCurve.getTangent(0);
+          if (newTan.lengthSq() > 1e-6) newTan.normalize(); else newTan.set(1,0,0);
+          m.v = oldV * Math.max(0.4, exitTan.dot(newTan));
+          if (m.v < 0.2) m.v = 0.2;
+          playClink(Math.abs(oldV));
+        } else {
+          // Eject into free-fall
+          m.state = 'free';
+          m.position.copy(exitPos);
+          m.position.y += BALL_R;
+          m.velocity.copy(exitTan).multiplyScalar(Math.max(m.v, 0.2));
+        }
+      } else if (m.s < 0) {
+        m.s = 0; m.v = Math.max(0, m.v);
+      }
+
+      if (m.state === 'rail') {
+        const t2 = THREE.MathUtils.clamp(m.s / m.piece.length, 0, 1);
+        const p = m.piece.worldCurve.getPoint(t2);
+        m.mesh.position.set(p.x, p.y + BALL_R, p.z);
+      }
+    }
+
+    if (m.state === 'free') {
+      m.velocity.y -= GRAVITY * dt;
+      m.velocity.multiplyScalar(1 - 0.04 * dt); // tiny air drag
+      m.position.addScaledVector(m.velocity, dt);
+      m.mesh.position.copy(m.position);
+
+      // Funnel capture
+      const funnel = findFunnelCatch(m.position, m.velocity);
+      if (funnel) {
+        funnel.queue.push(m);
+        m.state = 'queued';
+        m.mesh.visible = false;
+        playClink(2.4);
+        continue;
+      }
+
+      // Try landing on a piece's start port
+      let landed = false;
+      for (const p of pieces) {
+        const sp = p.worldCurve.getPoint(0);
+        const d = m.position.distanceTo(sp);
+        if (d < PORT_EPS && m.velocity.lengthSq() > 0.001) {
+          const st = p.worldCurve.getTangent(0);
+          if (st.lengthSq() < 1e-6) continue;
+          st.normalize();
+          if (m.velocity.dot(st) > 0) {
+            m.piece = p;
+            m.s = 0.002;
+            m.v = m.velocity.dot(st);
+            m.state = 'rail';
+            playClink(m.velocity.length());
+            landed = true;
+            break;
+          }
+        }
+      }
+      if (landed) continue;
+
+      // Cull if fallen below world
+      if (m.position.y < -8 || m.age > 60) removeMarble(m);
+    }
+  }
+
+  // Funnel release
+  for (const p of pieces) {
+    if (p.type !== 'funnel') continue;
+    p.releaseTimer -= dt;
+    if (p.releaseTimer <= 0 && p.queue.length > 0) {
+      const m = p.queue.shift();
+      m.piece = p;
+      m.s = 0.005;
+      m.v = 0.45;
+      m.state = 'rail';
+      m.mesh.visible = true;
+      p.releaseTimer = FUNNEL_DELAY;
+      playClink(1.2);
+    }
+  }
+}
+
+// ===================================================== Audio
+let audio = null;
+function initAudio() {
+  if (audio) return;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    audio = new Ctx();
+    audio.master = audio.createGain();
+    audio.master.gain.value = 0.42;
+    audio.master.connect(audio.destination);
+
+    // Subtle reverb-ish via convolver fed by short noise burst
+    const conv = audio.createConvolver();
+    const ir = audio.createBuffer(2, audio.sampleRate * 1.2, audio.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      for (let i = 0; i < d.length; i++) {
+        d[i] = (Math.random()*2-1) * Math.pow(1 - i/d.length, 2.6);
+      }
+    }
+    conv.buffer = ir;
+    audio.reverb = audio.createGain();
+    audio.reverb.gain.value = 0.18;
+    conv.connect(audio.reverb).connect(audio.master);
+    audio.convIn = conv;
+
+    // Ambient pad
+    audio.padGain = audio.createGain();
+    audio.padGain.gain.value = 0.0;
+    audio.padFilter = audio.createBiquadFilter();
+    audio.padFilter.type = 'lowpass';
+    audio.padFilter.frequency.value = 320;
+    audio.padFilter.Q.value = 1.4;
+    audio.padOscs = [];
+    const baseFreqs = [98, 147, 196, 245, 294]; // G2, D3, G3, B3, D4
+    for (const f of baseFreqs) {
+      const o = audio.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const g = audio.createGain();
+      g.gain.value = 0.16 + Math.random()*0.04;
+      // slow LFO on each for shimmer
+      const lfo = audio.createOscillator();
+      const lfoGain = audio.createGain();
+      lfo.frequency.value = 0.08 + Math.random()*0.12;
+      lfoGain.gain.value = 0.6;
+      lfo.connect(lfoGain).connect(o.frequency);
+      lfo.start();
+      o.connect(g).connect(audio.padFilter);
+      o.start();
+      audio.padOscs.push(o);
+    }
+    audio.padFilter.connect(audio.padGain).connect(audio.master);
+    audio.padFilter.connect(audio.padGain);
+    audio.padGain.connect(audio.convIn);
+  } catch (e) {
+    console.warn('Audio init failed:', e);
+    audio = null;
+  }
+}
+
+let lastClinkAt = 0;
+function playClink(velocity) {
+  if (!audio) return;
+  const now = audio.currentTime;
+  if (now - lastClinkAt < 0.012) return; // avoid clipping cluster
+  lastClinkAt = now;
+
+  const v = Math.min(Math.max(velocity, 0.1), 9);
+  const pitch = 540 + v * 80 + (Math.random()*40 - 20);
+  const harmonics = [
+    {f: 1.0, g: 0.75},
+    {f: 2.01, g: 0.42},
+    {f: 3.74, g: 0.20},
+    {f: 5.62, g: 0.10},
+    {f: 7.31, g: 0.05}
+  ];
+  const env = audio.createGain();
+  const peak = Math.min(0.55, 0.18 + v * 0.05);
+  env.gain.setValueAtTime(0.0001, now);
+  env.gain.exponentialRampToValueAtTime(peak, now + 0.004);
+  env.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+  env.connect(audio.master);
+  env.connect(audio.convIn);
+
+  for (const h of harmonics) {
+    const o = audio.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(pitch * h.f, now);
+    o.frequency.exponentialRampToValueAtTime(pitch * h.f * 0.985, now + 0.5);
+    const g = audio.createGain();
+    g.gain.value = h.g;
+    o.connect(g).connect(env);
+    o.start(now);
+    o.stop(now + 0.7);
+  }
+}
+
+function updateAmbient() {
+  if (!audio) return;
+  const count = marbles.filter(m => m.state !== 'queued').length;
+  const target = Math.min(0.22, count * 0.045);
+  audio.padGain.gain.linearRampToValueAtTime(target, audio.currentTime + 0.18);
+  audio.padFilter.frequency.linearRampToValueAtTime(280 + count * 220, audio.currentTime + 0.25);
+}
+
+// ===================================================== Interaction
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let selectedType = null;
+let ghostMesh = null;
+let ghostRot = 0;
+let ghostCell = null;
+
+function setSelected(type) {
+  if (selectedType === type) {
+    selectedType = null;
+  } else {
+    selectedType = type;
+  }
+  document.querySelectorAll('#palette button').forEach(b =>
+    b.classList.toggle('active', b.dataset.p === selectedType));
+  if (!selectedType) clearGhost();
+}
+
+function clearGhost() {
+  if (ghostMesh) {
+    scene.remove(ghostMesh);
+    ghostMesh.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+        else o.material.dispose();
+      }
+    });
+    ghostMesh = null;
+  }
+  ghostCell = null;
+}
+
+function makeGhostMaterial(group) {
+  group.traverse(o => {
+    if (o.isMesh) {
+      const m = o.material.clone();
+      m.transparent = true;
+      m.opacity = 0.42;
+      if ('emissive' in m) {
+        m.emissive = new THREE.Color(0x4488ff);
+        m.emissiveIntensity = 0.6;
+      }
+      m.depthWrite = false;
+      o.material = m;
+      o.castShadow = false;
+      o.receiveShadow = false;
+    }
+  });
+}
+
+function setMouse(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+}
+
+function pickCell() {
+  raycaster.setFromCamera(mouse, camera);
+  const piecesHit = raycaster.intersectObjects(pieceMeshes, true);
+  if (piecesHit.length) {
+    const piece = findPieceFromMesh(piecesHit[0].object);
+    if (piece) {
+      // Place above the hit piece's cube (stacking)
+      // Determine stack direction by hit normal in world Y
+      const n = piecesHit[0].face?.normal?.clone();
+      let dy = 1;
+      if (n) {
+        const wn = n.clone().transformDirection(piecesHit[0].object.matrixWorld);
+        if (wn.y < -0.5) dy = -1;
+      }
+      let gy = piece.gy + dy;
+      // Avoid stacking into existing piece
+      while (pieceAt(piece.gx, gy, piece.gz)) gy += dy;
+      return { gx: piece.gx, gy, gz: piece.gz, hitPiece: piece };
+    }
+  }
+  const ground = raycaster.intersectObject(buildPlane);
+  if (ground.length) {
+    const p = ground[0].point;
+    return { gx: Math.round(p.x), gy: 0, gz: Math.round(p.z), hitPiece: null };
+  }
+  return null;
+}
+
+renderer.domElement.addEventListener('mousemove', (e) => {
+  setMouse(e);
+  if (!selectedType) { clearGhost(); return; }
+  const cell = pickCell();
+  if (!cell) return;
+  if (!ghostMesh) {
+    ghostMesh = buildPieceMesh(selectedType);
+    makeGhostMaterial(ghostMesh);
+    scene.add(ghostMesh);
+  }
+  ghostMesh.position.set(cell.gx, cell.gy, cell.gz);
+  ghostMesh.rotation.y = ghostRot * Math.PI / 2;
+  ghostCell = cell;
+});
+
+renderer.domElement.addEventListener('mouseleave', clearGhost);
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  setMouse(e);
+  initAudio();
+  if (audio && audio.state === 'suspended') audio.resume();
+
+  if (e.button === 2) {
+    // Delete piece under cursor
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(pieceMeshes, true);
+    if (hits.length) {
+      const piece = findPieceFromMesh(hits[0].object);
+      if (piece) removePiece(piece);
+    }
+    return;
+  }
+
+  if (e.button !== 0) return;
+
+  if (selectedType) {
+    if (ghostCell) {
+      placePiece(selectedType, ghostCell.gx, ghostCell.gy, ghostCell.gz, ghostRot);
+    }
+  } else {
+    // Spawn marble at clicked piece (or its highest connected ancestor for "start")
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(pieceMeshes, true);
+    if (hits.length) {
+      const piece = findPieceFromMesh(hits[0].object);
+      if (piece) spawnMarbleOnPiece(findStartOf(piece));
+    }
+  }
+});
+
+// Walk upstream (find any piece whose exit matches this piece's entry); return the topmost
+function findStartOf(piece, visited = new Set()) {
+  if (visited.has(piece)) return piece;
+  visited.add(piece);
+  const entry = piece.worldCurve.getPoint(0);
+  const entryTan = piece.worldCurve.getTangent(0).normalize();
+  for (const p of pieces) {
+    if (p === piece) continue;
+    if (PIECE_DEFS[p.type].endsInAir) continue;
+    const exit = p.worldCurve.getPoint(1);
+    const exitTan = p.worldCurve.getTangent(1).normalize();
+    if (exit.distanceTo(entry) < PORT_EPS && exitTan.dot(entryTan) > PORT_DOT) {
+      return findStartOf(p, visited);
+    }
+  }
+  return piece;
+}
+
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+renderer.domElement.addEventListener('wheel', (e) => {
+  if (selectedType) {
+    e.preventDefault();
+    e.stopPropagation();
+    ghostRot = (ghostRot + (e.deltaY > 0 ? 1 : 3)) % 4;
+    if (ghostMesh) ghostMesh.rotation.y = ghostRot * Math.PI / 2;
+  }
+}, { passive: false, capture: true });
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    setSelected(null);
+  } else if (e.key === 'r' || e.key === 'R') {
+    if (selectedType) {
+      ghostRot = (ghostRot + 1) % 4;
+      if (ghostMesh) ghostMesh.rotation.y = ghostRot * Math.PI / 2;
+    }
+  }
+});
+
+document.querySelectorAll('#palette button').forEach(b => {
+  b.addEventListener('click', () => {
+    initAudio();
+    if (audio && audio.state === 'suspended') audio.resume();
+    setSelected(b.dataset.p);
+  });
+});
+
+document.getElementById('reset').addEventListener('click', () => {
+  clearMarbles();
+});
+
+document.getElementById('clear').addEventListener('click', () => {
+  clearMarbles();
+  clearAllPieces();
+});
+
+document.getElementById('presets').addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (!v) return;
+  loadPreset(v);
+  e.target.value = '';
+});
+
+// ===================================================== Presets
+// Each piece: [type, gx, gy, gz, rot]
+// Convention: pieces enter on -X or -Z face and exit on +X or +Z face. Connections
+// align positionally and tangentially (verified with port-tracing math).
+const PRESETS = {
+  drop: [
+    ['straight',  0, 4,  0, 0],
+    ['straight',  1, 3,  0, 0],
+    ['curve',     2, 2,  0, 0],
+    ['spiral',    2, 1,  1, 0],
+    ['straight',  2, 0,  2, 3],
+    ['curve',     2,-1,  3, 3],
+    ['halfpipe',  1,-2,  3, 2]
+  ],
+  helix: [
+    ['straight',  0, 5,  0, 0],
+    ['curve',     1, 4,  0, 0],
+    ['spiral',    1, 3,  1, 0],
+    ['spiral',    1, 2,  2, 0],
+    ['spiral',    1, 1,  3, 0],
+    ['curve',     1, 0,  4, 3],
+    ['halfpipe',  0,-1,  4, 2]
+  ],
+  branching: [
+    // Cascade → jump → free-fall arcs into funnel → spiral → exit
+    ['straight',  0, 4,  0, 0],
+    ['straight',  1, 3,  0, 0],
+    ['jump',      2, 3,  0, 0],
+    ['funnel',    3, 2,  0, 0],
+    ['spiral',    3, 1,  1, 0],
+    ['curve',     3, 0,  2, 3],
+    ['halfpipe',  2,-1,  2, 2]
+  ]
+};
+
+function loadPreset(name) {
+  clearMarbles();
+  clearAllPieces();
+  const list = PRESETS[name];
+  if (!list) return;
+  for (const [type, x, y, z, r] of list) {
+    placePiece(type, x, y, z, r);
+  }
+  // Re-aim camera to fit
+  const box = new THREE.Box3();
+  for (const p of pieces) box.expandByObject(p.mesh);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  controls.target.copy(center);
+  controls.update();
+}
+
+// Initial preset to give immediate "wow"
+loadPreset('drop');
+
+// ===================================================== UI counter
+function updateCounter() {
+  document.getElementById('mc').textContent = marbles.length;
+  document.getElementById('pc').textContent = pieces.length;
+}
+updateCounter();
+
+// ===================================================== Main loop
+let lastT = performance.now();
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.033, (now - lastT) / 1000);
+  lastT = now;
+
+  // Sub-step physics for stability
+  const subSteps = 3;
+  const sdt = dt / subSteps;
+  for (let i = 0; i < subSteps; i++) physicsTick(sdt);
+
+  updateAmbient();
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+
+// ===================================================== Resize
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// Tip: spawn one marble at the start to show off immediately
+setTimeout(() => {
+  if (pieces.length) {
+    spawnMarbleOnPiece(findStartOf(pieces[0]));
+  }
+}, 600);
+</script>
+</body>
+</html>

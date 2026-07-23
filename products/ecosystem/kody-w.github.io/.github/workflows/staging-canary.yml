@@ -1,0 +1,110 @@
+name: Staging Canary — Build & Validate
+
+# Digital Twin → GitHub Pages (staging) → rappter.com (production)
+#
+# This pipeline ensures broken builds NEVER reach production:
+#   1. Push to main → Jekyll builds on GitHub Pages (staging)
+#   2. If build fails → stops here, production untouched
+#   3. If build passes → staging is live at kody-w.github.io
+#   4. Manual review → push to rappter.com (production) via blog-import tool
+#
+# The Digital Twin (local OpenRappter) is the source of truth.
+# GitHub Pages is the canary. rappter.com is production.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # ── Stage 1: Build & Validate ──
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install test dependencies
+        run: python3 -m pip install --requirement tests/requirements.txt
+
+      - name: Run content quality gates
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Install Jekyll
+        run: gem install jekyll
+
+      - name: Build Jekyll site
+        run: jekyll build --strict_front_matter
+        env:
+          JEKYLL_ENV: staging
+
+      - name: Validate HTML (non-blocking)
+        run: |
+          # Check for broken builds — empty output, missing index
+          test -f _site/index.html || (echo "ERROR: index.html missing!" && exit 1)
+          echo "✅ Build validated — $(find _site -name '*.html' | wc -l) HTML files"
+
+      - name: Check for PII leaks (safety gate)
+        run: |
+          # Ensure no PII patterns leaked into the built site
+          if grep -rE '[a-zA-Z0-9._%+-]+@(icloud|me|mac)\.com' _site/ --include='*.html' | grep -v 'example\|placeholder\|test'; then
+            echo "ERROR: Possible PII (iCloud email) found in built site!"
+            exit 1
+          else
+            echo "✅ PII check passed"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+
+  # ── Stage 2: Deploy to GitHub Pages (staging) ──
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ── Stage 3: Production notification ──
+  # rappter.com deployment is MANUAL — this just notifies
+  notify-production-ready:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Production ready notification
+        run: |
+          echo "🚀 Staging deployed to kody-w.github.io"
+          echo "📋 Review staging, then manually push to rappter.com"
+          echo ""
+          echo "To deploy to production:"
+          echo "  1. Review: https://kody-w.github.io"
+          echo "  2. Open: http://localhost:18790/blog-import.html"
+          echo "  3. Import posts to rappter.com via the blog import tool"
+          echo ""
+          echo "Production deployment is manual — this pipeline NEVER auto-pushes to rappter.com"

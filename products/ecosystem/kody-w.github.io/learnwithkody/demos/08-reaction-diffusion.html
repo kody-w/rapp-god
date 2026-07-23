@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Reaction-Diffusion Painter | learnwithkody</title>
+<style>
+  :root {
+    --bg: #08080c;
+    --panel: rgba(14, 16, 24, 0.78);
+    --panel-border: rgba(120, 140, 200, 0.18);
+    --text: #e7ecf6;
+    --muted: #8e94a8;
+    --accent: #66e3ff;
+    --accent-2: #ff6ad5;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: block;
+    width: 100%; height: 100%;
+    background: #000;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  #title {
+    position: fixed;
+    top: 14px; left: 16px;
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    pointer-events: none;
+    z-index: 5;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.7);
+  }
+  #title b {
+    color: var(--text);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+  #fps {
+    position: fixed;
+    top: 14px; right: 16px;
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    z-index: 5;
+    background: rgba(0,0,0,0.35);
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  #panel {
+    position: fixed;
+    bottom: 16px; left: 16px;
+    width: min(380px, calc(100vw - 32px));
+    background: var(--panel);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 14px 14px 12px;
+    z-index: 10;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+  }
+  #panel h2 {
+    margin: 0 0 10px;
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+  }
+  .row label {
+    font-size: 11px;
+    color: var(--muted);
+    width: 16px;
+    text-align: right;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+    height: 22px;
+  }
+  .row .val {
+    font-size: 11px;
+    color: var(--text);
+    width: 56px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    background: rgba(255,255,255,0.04);
+    padding: 3px 6px;
+    border-radius: 4px;
+  }
+  .preset-row, .btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  button {
+    background: rgba(255,255,255,0.05);
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.14s ease;
+    letter-spacing: 0.02em;
+  }
+  button:hover {
+    background: rgba(102, 227, 255, 0.12);
+    border-color: rgba(102, 227, 255, 0.45);
+    color: #fff;
+    transform: translateY(-1px);
+  }
+  button:active { transform: translateY(0); }
+  button.action {
+    background: rgba(255, 106, 213, 0.10);
+    border-color: rgba(255, 106, 213, 0.35);
+  }
+  button.action:hover {
+    background: rgba(255, 106, 213, 0.20);
+    border-color: rgba(255, 106, 213, 0.65);
+  }
+  button.toggle.on {
+    background: rgba(102, 227, 255, 0.18);
+    border-color: rgba(102, 227, 255, 0.55);
+    color: #fff;
+  }
+  .divider {
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+    margin: 10px 0 6px;
+  }
+  .hint {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+    text-align: center;
+    letter-spacing: 0.06em;
+  }
+  .hint kbd {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text);
+  }
+  #err {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.85);
+    color: #ff8b8b;
+    padding: 24px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    z-index: 100;
+    text-align: center;
+    line-height: 1.6;
+  }
+  @media (max-width: 520px) {
+    #panel { width: calc(100vw - 24px); left: 12px; bottom: 12px; padding: 12px; }
+    #title { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <div id="title"><b>Reaction-Diffusion</b> &nbsp;&middot;&nbsp; gray-scott painter</div>
+  <div id="fps">--</div>
+
+  <div id="panel">
+    <h2>Parameters</h2>
+    <div class="row">
+      <label for="fSlider">F</label>
+      <input id="fSlider" type="range" min="0.01" max="0.10" step="0.0005" value="0.0545" />
+      <span id="fVal" class="val">0.0545</span>
+    </div>
+    <div class="row">
+      <label for="kSlider">k</label>
+      <input id="kSlider" type="range" min="0.04" max="0.07" step="0.0005" value="0.0620" />
+      <span id="kVal" class="val">0.0620</span>
+    </div>
+
+    <div class="divider"></div>
+    <h2>Presets</h2>
+    <div class="preset-row" id="presetRow"></div>
+
+    <div class="divider"></div>
+    <h2>Palette &amp; Actions</h2>
+    <div class="btn-row" id="paletteRow"></div>
+    <div class="btn-row" style="margin-top: 6px;">
+      <button class="action" id="resetBtn">Reset</button>
+      <button class="action" id="seedBtn">Random Seed</button>
+      <button class="action" id="saveBtn">Save PNG</button>
+    </div>
+    <div class="hint">Click &amp; drag canvas to paint &middot; <kbd>Space</kbd> pause &middot; <kbd>R</kbd> reset</div>
+  </div>
+
+  <div id="err"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('stage');
+  const errEl = document.getElementById('err');
+
+  const gl = canvas.getContext('webgl2', {
+    antialias: false,
+    preserveDrawingBuffer: true,
+    premultipliedAlpha: false,
+    alpha: false,
+  });
+
+  function fail(msg) {
+    errEl.style.display = 'flex';
+    errEl.innerHTML = msg;
+    throw new Error(msg);
+  }
+
+  if (!gl) {
+    fail('WebGL2 is required.<br>Please use a recent Chrome, Firefox, Safari, or Edge.');
+  }
+
+  const extCBF = gl.getExtension('EXT_color_buffer_float');
+  const extLF = gl.getExtension('OES_texture_float_linear');
+  const useFloat = !!extCBF;
+  const useFloatLinear = !!extLF;
+
+  // Internal sim resolution (square). The display canvas can be any size.
+  let SIM_SIZE = 1024;
+  // Drop sim size on small / mobile devices to keep things smooth.
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (Math.min(window.innerWidth, window.innerHeight) < 700) SIM_SIZE = 768;
+  if (Math.min(window.innerWidth, window.innerHeight) < 480) SIM_SIZE = 512;
+
+  // ---------------- Shaders ----------------
+
+  const QUAD_VS = `#version 300 es
+  precision highp float;
+  layout(location=0) in vec2 a_pos;
+  out vec2 v_uv;
+  void main() {
+    v_uv = a_pos * 0.5 + 0.5;
+    gl_Position = vec4(a_pos, 0.0, 1.0);
+  }`;
+
+  // Gray-Scott update shader.
+  // We store U in .r and V in .g of the texture.
+  const SIM_FS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+
+  uniform sampler2D u_state;
+  uniform vec2 u_texel;       // 1.0 / sim_size
+  uniform float u_F;
+  uniform float u_k;
+  uniform float u_dt;
+  uniform float u_Du;
+  uniform float u_Dv;
+
+  uniform int   u_paint;      // 1 if painting this step
+  uniform vec2  u_paintPos;   // in [0,1]
+  uniform float u_paintR;     // in [0,1]
+  uniform float u_paintAmt;   // amount of V to deposit
+
+  void main() {
+    vec2 uv = v_uv;
+    vec2 t  = u_texel;
+
+    // 9-point laplacian kernel (Patrick / Karl Sims weights).
+    vec2 c  = texture(u_state, uv).rg;
+    vec2 n  = texture(u_state, uv + vec2(0.0,  t.y)).rg;
+    vec2 s  = texture(u_state, uv + vec2(0.0, -t.y)).rg;
+    vec2 e  = texture(u_state, uv + vec2( t.x, 0.0)).rg;
+    vec2 w  = texture(u_state, uv + vec2(-t.x, 0.0)).rg;
+    vec2 ne = texture(u_state, uv + vec2( t.x,  t.y)).rg;
+    vec2 nw = texture(u_state, uv + vec2(-t.x,  t.y)).rg;
+    vec2 se = texture(u_state, uv + vec2( t.x, -t.y)).rg;
+    vec2 sw = texture(u_state, uv + vec2(-t.x, -t.y)).rg;
+
+    vec2 lap =
+        (n + s + e + w) * 0.20 +
+        (ne + nw + se + sw) * 0.05 +
+        c * (-1.0);
+
+    float u = c.r;
+    float v = c.g;
+    float uvv = u * v * v;
+
+    float du = (u_Du * lap.r) - uvv + u_F * (1.0 - u);
+    float dv = (u_Dv * lap.g) + uvv - (u_F + u_k) * v;
+
+    u += du * u_dt;
+    v += dv * u_dt;
+
+    // Paint brush deposit (additive on V, slight removal of U).
+    if (u_paint == 1) {
+      // Compute distance in normalized texture space, then convert to a
+      // shape-correct radius (square texture so this is fine).
+      vec2 d = uv - u_paintPos;
+      float r = length(d);
+      if (r < u_paintR) {
+        float w = smoothstep(u_paintR, u_paintR * 0.25, r);
+        v = clamp(v + w * u_paintAmt, 0.0, 1.0);
+        u = clamp(u - w * u_paintAmt * 0.6, 0.0, 1.0);
+      }
+    }
+
+    u = clamp(u, 0.0, 1.0);
+    v = clamp(v, 0.0, 1.0);
+    outColor = vec4(u, v, 0.0, 1.0);
+  }`;
+
+  // Seed shader: clears + writes a small spot
+  const SEED_FS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+  uniform vec2 u_seedPos;   // [0,1]
+  uniform float u_seedR;    // [0,1]
+  uniform float u_noise;    // 0..1
+  uniform float u_seed;
+  // Hash for cheap noise
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 345.45));
+    p += dot(p, p + 34.345);
+    return fract(p.x * p.y);
+  }
+  void main() {
+    float u = 1.0;
+    float v = 0.0;
+    vec2 d = v_uv - u_seedPos;
+    float r = length(d);
+    if (r < u_seedR) {
+      float w = smoothstep(u_seedR, u_seedR * 0.2, r);
+      v = w;
+      u = 1.0 - 0.5 * w;
+    }
+    if (u_noise > 0.0) {
+      float n = hash(v_uv * 800.0 + u_seed * 17.13);
+      v += (n - 0.45) * u_noise * (0.6 + 0.4 * smoothstep(0.45, 0.0, length(v_uv - 0.5)));
+      v = clamp(v, 0.0, 1.0);
+    }
+    outColor = vec4(u, v, 0.0, 1.0);
+  }`;
+
+  // Display shader -- maps V (and a bit of U) to a color palette.
+  const DISP_FS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+  uniform sampler2D u_state;
+  uniform int u_palette;
+  uniform vec2 u_aspect;     // adjusts uv so we cover the canvas centered + cropped
+  uniform vec2 u_offset;
+  uniform float u_time;
+
+  // Palette helpers
+  vec3 pal_classic(float t) {
+    // dark blue -> cyan -> white
+    vec3 a = vec3(0.02, 0.04, 0.10);
+    vec3 b = vec3(0.05, 0.45, 0.85);
+    vec3 c = vec3(0.40, 0.95, 1.00);
+    vec3 d = vec3(1.00, 1.00, 1.00);
+    if (t < 0.33) return mix(a, b, t / 0.33);
+    if (t < 0.75) return mix(b, c, (t - 0.33) / 0.42);
+    return mix(c, d, (t - 0.75) / 0.25);
+  }
+  vec3 pal_fire(float t) {
+    // black -> red -> orange -> yellow -> white
+    vec3 a = vec3(0.01, 0.00, 0.01);
+    vec3 b = vec3(0.45, 0.04, 0.05);
+    vec3 c = vec3(0.95, 0.30, 0.05);
+    vec3 d = vec3(1.00, 0.85, 0.30);
+    vec3 e = vec3(1.00, 1.00, 0.95);
+    if (t < 0.25) return mix(a, b, t / 0.25);
+    if (t < 0.55) return mix(b, c, (t - 0.25) / 0.30);
+    if (t < 0.80) return mix(c, d, (t - 0.55) / 0.25);
+    return mix(d, e, (t - 0.80) / 0.20);
+  }
+  vec3 pal_twilight(float t) {
+    // deep purple -> magenta -> orange -> pale
+    vec3 a = vec3(0.03, 0.02, 0.10);
+    vec3 b = vec3(0.30, 0.08, 0.45);
+    vec3 c = vec3(0.85, 0.20, 0.60);
+    vec3 d = vec3(1.00, 0.55, 0.35);
+    vec3 e = vec3(1.00, 0.94, 0.85);
+    if (t < 0.25) return mix(a, b, t / 0.25);
+    if (t < 0.55) return mix(b, c, (t - 0.25) / 0.30);
+    if (t < 0.80) return mix(c, d, (t - 0.55) / 0.25);
+    return mix(d, e, (t - 0.80) / 0.20);
+  }
+  vec3 pal_bio(float t) {
+    // lab dish: dark teal -> green -> chartreuse -> warm white
+    vec3 a = vec3(0.00, 0.04, 0.06);
+    vec3 b = vec3(0.02, 0.30, 0.30);
+    vec3 c = vec3(0.20, 0.75, 0.40);
+    vec3 d = vec3(0.85, 0.95, 0.45);
+    vec3 e = vec3(1.00, 1.00, 0.92);
+    if (t < 0.30) return mix(a, b, t / 0.30);
+    if (t < 0.65) return mix(b, c, (t - 0.30) / 0.35);
+    if (t < 0.85) return mix(c, d, (t - 0.65) / 0.20);
+    return mix(d, e, (t - 0.85) / 0.15);
+  }
+
+  vec3 paletteOf(int idx, float t) {
+    if (idx == 0) return pal_classic(t);
+    if (idx == 1) return pal_fire(t);
+    if (idx == 2) return pal_twilight(t);
+    return pal_bio(t);
+  }
+
+  void main() {
+    // Center & crop the square sim into the (possibly non-square) canvas.
+    vec2 uv = v_uv * u_aspect + u_offset;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+      outColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+    vec2 s = texture(u_state, uv).rg;
+
+    // The visible chemical is V (the "predator"), but we boost contrast.
+    float v = s.g;
+    float u = s.r;
+    // Use V mostly, but darken where U is high (no V activity).
+    float t = clamp(pow(v * 1.3, 0.85), 0.0, 1.0);
+
+    vec3 col = paletteOf(u_palette, t);
+
+    // Subtle bloom-ish boost in bright areas + faint vignette
+    col += pow(t, 4.0) * 0.25;
+    float r = length(v_uv - 0.5);
+    col *= smoothstep(0.95, 0.20, r) * 0.55 + 0.55;
+
+    // Mild gamma
+    col = pow(col, vec3(0.92));
+    outColor = vec4(col, 1.0);
+  }`;
+
+  // ---------------- GL helpers ----------------
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(sh) || 'unknown';
+      gl.deleteShader(sh);
+      throw new Error('Shader compile error: ' + log + '\nSource:\n' + src);
+    }
+    return sh;
+  }
+
+  function program(vsSrc, fsSrc) {
+    const vs = compile(gl.VERTEX_SHADER, vsSrc);
+    const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.bindAttribLocation(prog, 0, 'a_pos');
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      const log = gl.getProgramInfoLog(prog) || 'unknown';
+      throw new Error('Program link error: ' + log);
+    }
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    return prog;
+  }
+
+  let simProg, seedProg, dispProg;
+  try {
+    simProg  = program(QUAD_VS, SIM_FS);
+    seedProg = program(QUAD_VS, SEED_FS);
+    dispProg = program(QUAD_VS, DISP_FS);
+  } catch (e) {
+    console.error(e);
+    fail('Shader compile failed:<br><pre style="text-align:left;white-space:pre-wrap;color:#ffaeae">' +
+         (e.message || String(e)).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) +
+         '</pre>');
+  }
+
+  // Fullscreen quad
+  const quadVAO = gl.createVertexArray();
+  gl.bindVertexArray(quadVAO);
+  const quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1, -1,  1, -1, -1,  1,
+    -1,  1,  1, -1,  1,  1,
+  ]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+
+  // Ping-pong textures + framebuffers
+  function makeTex() {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    const internal = useFloat ? gl.RG16F : gl.RGBA8;
+    const fmt = useFloat ? gl.RG : gl.RGBA;
+    const type = useFloat ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+    gl.texImage2D(gl.TEXTURE_2D, 0, internal, SIM_SIZE, SIM_SIZE, 0, fmt, type, null);
+    const filter = useFloat && useFloatLinear ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+
+  function makeFBO(tex) {
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error('FBO incomplete: 0x' + status.toString(16));
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return fb;
+  }
+
+  let texA, texB, fbA, fbB;
+  function rebuildSimTextures() {
+    if (texA) gl.deleteTexture(texA);
+    if (texB) gl.deleteTexture(texB);
+    if (fbA) gl.deleteFramebuffer(fbA);
+    if (fbB) gl.deleteFramebuffer(fbB);
+    try {
+      texA = makeTex();
+      texB = makeTex();
+      fbA = makeFBO(texA);
+      fbB = makeFBO(texB);
+    } catch (e) {
+      // fallback path: drop sim size, drop float
+      console.warn('Texture build failed, retrying smaller', e);
+      throw e;
+    }
+  }
+
+  try {
+    rebuildSimTextures();
+  } catch (e) {
+    fail('Failed to allocate simulation textures.<br>' + (e.message || ''));
+  }
+
+  // ---------------- Uniform locations ----------------
+
+  const simUni = {
+    state:   gl.getUniformLocation(simProg, 'u_state'),
+    texel:   gl.getUniformLocation(simProg, 'u_texel'),
+    F:       gl.getUniformLocation(simProg, 'u_F'),
+    k:       gl.getUniformLocation(simProg, 'u_k'),
+    dt:      gl.getUniformLocation(simProg, 'u_dt'),
+    Du:      gl.getUniformLocation(simProg, 'u_Du'),
+    Dv:      gl.getUniformLocation(simProg, 'u_Dv'),
+    paint:   gl.getUniformLocation(simProg, 'u_paint'),
+    paintPos:gl.getUniformLocation(simProg, 'u_paintPos'),
+    paintR:  gl.getUniformLocation(simProg, 'u_paintR'),
+    paintAmt:gl.getUniformLocation(simProg, 'u_paintAmt'),
+  };
+  const seedUni = {
+    seedPos: gl.getUniformLocation(seedProg, 'u_seedPos'),
+    seedR:   gl.getUniformLocation(seedProg, 'u_seedR'),
+    noise:   gl.getUniformLocation(seedProg, 'u_noise'),
+    seed:    gl.getUniformLocation(seedProg, 'u_seed'),
+  };
+  const dispUni = {
+    state:   gl.getUniformLocation(dispProg, 'u_state'),
+    palette: gl.getUniformLocation(dispProg, 'u_palette'),
+    aspect:  gl.getUniformLocation(dispProg, 'u_aspect'),
+    offset:  gl.getUniformLocation(dispProg, 'u_offset'),
+    time:    gl.getUniformLocation(dispProg, 'u_time'),
+  };
+
+  // ---------------- State ----------------
+
+  const state = {
+    F: 0.0545,
+    k: 0.0620,
+    Du: 1.0,
+    Dv: 0.5,
+    dt: 1.0,
+    subSteps: 12,
+    palette: 0, // 0 classic, 1 fire, 2 twilight, 3 bio
+    paused: false,
+    pingIsA: true, // reading from A, writing to B
+  };
+
+  // Painting input
+  const paint = {
+    active: false,
+    x: 0.5, y: 0.5,
+    radius: 0.025,
+    amount: 0.6,
+  };
+
+  // ---------------- Resize / aspect ----------------
+
+  let canvasW = 0, canvasH = 0;
+  function resize() {
+    const w = Math.max(2, Math.floor(window.innerWidth * dpr));
+    const h = Math.max(2, Math.floor(window.innerHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    canvasW = w;
+    canvasH = h;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // For the display shader: the sim is square (1:1). The canvas may not be.
+  // We "cover" the canvas: the smaller canvas dimension maps to the full
+  // sim, the longer dimension extends beyond [0,1] (handled by the discard).
+  function dispAspect() {
+    const w = canvasW, h = canvasH;
+    let ax = 1.0, ay = 1.0, ox = 0.0, oy = 0.0;
+    if (w > h) {
+      ax = w / h;
+      ox = -(ax - 1.0) * 0.5;
+    } else {
+      ay = h / w;
+      oy = -(ay - 1.0) * 0.5;
+    }
+    return { ax, ay, ox, oy };
+  }
+
+  // Convert client (CSS) coords -> simulation [0,1] uv coords (cover-mapped).
+  function clientToSimUV(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const px = (clientX - rect.left) / rect.width;   // 0..1 across canvas
+    const py = (clientY - rect.top) / rect.height;
+    const { ax, ay, ox, oy } = dispAspect();
+    const u = px * ax + ox;
+    const v = py * ay + oy;
+    // GL textures are bottom-up; v_uv in display is bottom-up too because
+    // the quad maps (-1,-1)->(0,0). But screen-y is top-down. We need to flip.
+    return { u: u, v: 1.0 - v };
+  }
+
+  // ---------------- Sim ops ----------------
+
+  function bindFB(fb, w, h) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.viewport(0, 0, w, h);
+  }
+  function bindBackbuffer() {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvasW, canvasH);
+  }
+  function drawQuad() {
+    gl.bindVertexArray(quadVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.bindVertexArray(null);
+  }
+
+  function seed(centerSeed = true, noise = 0.0) {
+    gl.useProgram(seedProg);
+    gl.uniform2f(seedUni.seedPos, 0.5, 0.5);
+    gl.uniform1f(seedUni.seedR, centerSeed ? 0.04 : 0.0);
+    gl.uniform1f(seedUni.noise, noise);
+    gl.uniform1f(seedUni.seed, Math.random() * 100.0);
+    bindFB(fbA, SIM_SIZE, SIM_SIZE);
+    drawQuad();
+    bindFB(fbB, SIM_SIZE, SIM_SIZE);
+    drawQuad();
+    state.pingIsA = true;
+  }
+
+  // Initial seed (center spot + faint noise to break symmetry quickly)
+  seed(true, 0.10);
+
+  function simStep() {
+    gl.useProgram(simProg);
+    gl.uniform2f(simUni.texel, 1.0 / SIM_SIZE, 1.0 / SIM_SIZE);
+    gl.uniform1f(simUni.F, state.F);
+    gl.uniform1f(simUni.k, state.k);
+    gl.uniform1f(simUni.dt, state.dt);
+    gl.uniform1f(simUni.Du, state.Du);
+    gl.uniform1f(simUni.Dv, state.Dv);
+    gl.uniform1i(simUni.paint, paint.active ? 1 : 0);
+    gl.uniform2f(simUni.paintPos, paint.x, paint.y);
+    gl.uniform1f(simUni.paintR, paint.radius);
+    gl.uniform1f(simUni.paintAmt, paint.amount);
+
+    const srcTex = state.pingIsA ? texA : texB;
+    const dstFB  = state.pingIsA ? fbB  : fbA;
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(simUni.state, 0);
+
+    bindFB(dstFB, SIM_SIZE, SIM_SIZE);
+    drawQuad();
+
+    state.pingIsA = !state.pingIsA;
+  }
+
+  function display(time) {
+    gl.useProgram(dispProg);
+    const { ax, ay, ox, oy } = dispAspect();
+    gl.uniform2f(dispUni.aspect, ax, ay);
+    gl.uniform2f(dispUni.offset, ox, oy);
+    gl.uniform1i(dispUni.palette, state.palette);
+    gl.uniform1f(dispUni.time, time);
+
+    const srcTex = state.pingIsA ? texA : texB;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(dispUni.state, 0);
+
+    bindBackbuffer();
+    drawQuad();
+  }
+
+  // ---------------- Input ----------------
+
+  function setPaintFromEvent(ev) {
+    let cx, cy;
+    if (ev.touches && ev.touches.length) {
+      cx = ev.touches[0].clientX;
+      cy = ev.touches[0].clientY;
+    } else {
+      cx = ev.clientX;
+      cy = ev.clientY;
+    }
+    const { u, v } = clientToSimUV(cx, cy);
+    paint.x = u;
+    paint.y = v;
+  }
+
+  canvas.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    canvas.setPointerCapture(ev.pointerId);
+    paint.active = true;
+    setPaintFromEvent(ev);
+  });
+  canvas.addEventListener('pointermove', (ev) => {
+    if (!paint.active) return;
+    ev.preventDefault();
+    setPaintFromEvent(ev);
+  });
+  function endPaint(ev) {
+    if (!paint.active) return;
+    paint.active = false;
+    try { canvas.releasePointerCapture(ev.pointerId); } catch(_) {}
+  }
+  canvas.addEventListener('pointerup', endPaint);
+  canvas.addEventListener('pointercancel', endPaint);
+  canvas.addEventListener('pointerleave', endPaint);
+
+  // Keyboard
+  window.addEventListener('keydown', (ev) => {
+    if (ev.target && (ev.target.tagName === 'INPUT' || ev.target.tagName === 'TEXTAREA')) return;
+    if (ev.code === 'Space') { state.paused = !state.paused; ev.preventDefault(); }
+    else if (ev.key === 'r' || ev.key === 'R') { seed(true, 0.10); }
+    else if (ev.key === 's' || ev.key === 'S') { savePNG(); }
+  });
+
+  // ---------------- UI wiring ----------------
+
+  const fSlider = document.getElementById('fSlider');
+  const kSlider = document.getElementById('kSlider');
+  const fVal = document.getElementById('fVal');
+  const kVal = document.getElementById('kVal');
+
+  function fmt(x) { return x.toFixed(4); }
+
+  function updateSliderUI() {
+    fSlider.value = state.F.toFixed(4);
+    kSlider.value = state.k.toFixed(4);
+    fVal.textContent = fmt(state.F);
+    kVal.textContent = fmt(state.k);
+  }
+  updateSliderUI();
+
+  fSlider.addEventListener('input', () => {
+    state.F = parseFloat(fSlider.value);
+    fVal.textContent = fmt(state.F);
+  });
+  kSlider.addEventListener('input', () => {
+    state.k = parseFloat(kSlider.value);
+    kVal.textContent = fmt(state.k);
+  });
+
+  // Presets
+  const presets = [
+    ['Coral',         0.0545, 0.0620],
+    ['Zebra',         0.0350, 0.0600],
+    ['Solitons',      0.0300, 0.0620],
+    ['Mazes',         0.0290, 0.0570],
+    ['Spots',         0.0250, 0.0600],
+    ['Mitosis',       0.0367, 0.0649],
+    ['Chaos',         0.0260, 0.0510],
+  ];
+  const presetRow = document.getElementById('presetRow');
+  presets.forEach(([name, F, k]) => {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.title = `F = ${F.toFixed(4)}, k = ${k.toFixed(4)}`;
+    b.addEventListener('click', () => {
+      state.F = F; state.k = k;
+      updateSliderUI();
+      // Re-seed if the simulation has gone fully homogeneous
+      // (we don't always reset -- you can morph between presets).
+    });
+    presetRow.appendChild(b);
+  });
+
+  // Palettes
+  const palettes = ['Classic', 'Fire', 'Twilight', 'Bio'];
+  const paletteRow = document.getElementById('paletteRow');
+  const palBtns = [];
+  palettes.forEach((name, i) => {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.classList.add('toggle');
+    if (i === state.palette) b.classList.add('on');
+    b.addEventListener('click', () => {
+      state.palette = i;
+      palBtns.forEach((bb, j) => bb.classList.toggle('on', j === i));
+    });
+    paletteRow.appendChild(b);
+    palBtns.push(b);
+  });
+
+  // Action buttons
+  document.getElementById('resetBtn').addEventListener('click', () => seed(true, 0.10));
+  document.getElementById('seedBtn').addEventListener('click', () => seed(false, 0.45));
+  document.getElementById('saveBtn').addEventListener('click', () => savePNG());
+
+  function savePNG() {
+    // Make sure we render with preserveDrawingBuffer so this works.
+    try {
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      a.download = `reaction-diffusion-${stamp}.png`;
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      console.error(e);
+      alert('Could not save PNG: ' + e.message);
+    }
+  }
+
+  // ---------------- Main loop ----------------
+
+  const fpsEl = document.getElementById('fps');
+  let frameCount = 0;
+  let lastFpsT = performance.now();
+  let smoothedFps = 60;
+
+  function frame(t) {
+    if (!state.paused) {
+      // Run multiple sub-steps per displayed frame for fast pattern formation.
+      // While the user paints, every step deposits chemical (so you actually
+      // see a thick brush stroke, not a pinprick).
+      for (let i = 0; i < state.subSteps; i++) {
+        simStep();
+      }
+    }
+    display(t * 0.001);
+
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsT > 500) {
+      const fps = (frameCount * 1000) / (now - lastFpsT);
+      smoothedFps = smoothedFps * 0.6 + fps * 0.4;
+      fpsEl.textContent = smoothedFps.toFixed(0) + ' fps  ' + SIM_SIZE + '²  ' +
+                          (useFloat ? 'RG16F' : 'RGBA8') +
+                          (state.paused ? '  paused' : '');
+      lastFpsT = now;
+      frameCount = 0;
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // Expose for console tinkering
+  window.__rd = { state, paint, seed, savePNG };
+})();
+</script>
+</body>
+</html>

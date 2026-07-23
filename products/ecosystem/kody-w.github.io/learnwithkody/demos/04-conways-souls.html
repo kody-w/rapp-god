@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Conway's Souls — 1024² Game of Life with Genetic Inheritance</title>
+<style>
+  :root {
+    --bg: #07080c;
+    --panel: rgba(14,16,22,0.78);
+    --border: #1f2230;
+    --text: #d6dae6;
+    --muted: #7a8094;
+    --accent: #5ad8ff;
+    --accent2: #ff5ad8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Mono", "Menlo", monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    background: radial-gradient(ellipse at center, #0c0f18 0%, #04050a 80%);
+  }
+  #cv {
+    image-rendering: pixelated;
+    cursor: crosshair;
+    box-shadow: 0 0 60px rgba(90,216,255,0.15), 0 0 0 1px #1f2230;
+    background: #000;
+  }
+  #ui {
+    position: fixed; top: 12px; left: 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    width: 280px;
+    font-size: 12px;
+    line-height: 1.45;
+    z-index: 10;
+  }
+  #ui h1 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  #ui .sub { color: var(--muted); margin-bottom: 10px; font-size: 11px; }
+  .row { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+  button {
+    flex: 1 1 auto;
+    background: #161a26;
+    border: 1px solid #262b3c;
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.12s;
+    min-width: 56px;
+  }
+  button:hover { background: #1e2434; border-color: #3a4258; color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button.active { background: #1a2b3a; border-color: var(--accent); color: var(--accent); }
+  .stat {
+    display: flex; justify-content: space-between;
+    padding: 2px 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat span:first-child { color: var(--muted); }
+  .stat span:last-child { color: var(--text); }
+  .slider-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .slider-row label { color: var(--muted); flex: 0 0 70px; }
+  .slider-row input[type=range] {
+    flex: 1; accent-color: var(--accent); height: 4px;
+  }
+  .slider-row .val { color: var(--text); flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums; }
+  #histogram {
+    position: fixed; bottom: 12px; left: 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    width: 280px;
+    font-size: 11px;
+    z-index: 10;
+  }
+  #histogram h2 {
+    margin: 0 0 8px 0; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent2);
+  }
+  .hbar {
+    display: flex; align-items: center; gap: 6px;
+    margin: 3px 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .hsw {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.1);
+    flex-shrink: 0;
+  }
+  .hbg {
+    flex: 1; height: 8px; background: #11141d;
+    border-radius: 3px; overflow: hidden; position: relative;
+  }
+  .hfill { height: 100%; transition: width 0.3s; }
+  .hpct { color: var(--muted); flex: 0 0 38px; text-align: right; font-size: 10px; }
+  .hhex { color: var(--muted); font-size: 10px; flex: 0 0 70px; font-family: "SF Mono", monospace; }
+  #hint {
+    position: fixed; top: 12px; right: 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    backdrop-filter: blur(10px);
+    font-size: 11px; color: var(--muted);
+    line-height: 1.6;
+    z-index: 10;
+    max-width: 220px;
+  }
+  #hint b { color: var(--accent); font-weight: 600; }
+  kbd {
+    background: #1a1e2a; border: 1px solid #2a3040;
+    padding: 1px 5px; border-radius: 3px; font-size: 10px;
+    color: var(--text); font-family: inherit;
+  }
+  .legend {
+    color: var(--muted); font-size: 10px; margin-top: 6px;
+    font-style: italic;
+  }
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(20,24,34,0.92); border: 1px solid var(--accent);
+    color: var(--accent); padding: 8px 16px; border-radius: 6px;
+    font-size: 12px; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; z-index: 100;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv" width="1024" height="1024"></canvas></div>
+
+<div id="ui">
+  <h1>Conway's Souls</h1>
+  <div class="sub">1024² Life · 32-bit lineages · GPU ping-pong</div>
+
+  <div class="row">
+    <button id="btnPlay">Pause</button>
+    <button id="btnStep">Step</button>
+    <button id="btnSeed">Seed Random</button>
+  </div>
+  <div class="row">
+    <button id="btnReset">Reset</button>
+    <button id="btnClear">Clear</button>
+    <button id="btnSpread">Spread Souls</button>
+  </div>
+
+  <div class="slider-row">
+    <label>Speed</label>
+    <input type="range" id="speed" min="0" max="240" value="60" step="1">
+    <span class="val" id="speedVal">60</span>
+  </div>
+  <div class="slider-row">
+    <label>Brush</label>
+    <input type="range" id="brush" min="1" max="40" value="6" step="1">
+    <span class="val" id="brushVal">6</span>
+  </div>
+
+  <div class="stat"><span>Generation</span><span id="gen">0</span></div>
+  <div class="stat"><span>Population</span><span id="pop">—</span></div>
+  <div class="stat"><span>Density</span><span id="dens">—</span></div>
+  <div class="stat"><span>Steps / sec</span><span id="sps">—</span></div>
+  <div class="stat"><span>Render FPS</span><span id="fps">—</span></div>
+  <div class="stat"><span>Unique souls (sample)</span><span id="usouls">—</span></div>
+  <div class="legend">Cells inherit a 32-bit "soul" from a parent. Each birth XOR-mutates one bit. Color = soul.</div>
+</div>
+
+<div id="hint">
+  <b>Drag</b> to draw cells<br>
+  <b>Shift+Drag</b> to erase<br>
+  <kbd>Space</kbd> play/pause &nbsp;
+  <kbd>S</kbd> step<br>
+  <kbd>R</kbd> reset &nbsp;
+  <kbd>C</kbd> clear &nbsp;
+  <kbd>N</kbd> seed
+</div>
+
+<div id="histogram">
+  <h2>Soul Histogram (top lineages)</h2>
+  <div id="hlist"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+// ============================================================================
+// Conway's Game of Life with 32-bit Soul Inheritance
+// All on GPU via WebGL2 ping-pong framebuffers.
+// State texture: RGBA8UI per cell.
+//   alpha = 255 if alive, 0 if dead
+//   rgb (24 bits) + (high bit of alpha would be wasted) = soul packed into RGB
+//   Actually: we use ALL of RGBA — alpha low bit = alive flag, rest = soul bits
+//   Simpler scheme: alpha = alive (0 or 255), RGB = 24-bit soul
+//   We pack a 24-bit soul into RGB so it survives roundtrips through RGBA8.
+// ============================================================================
+
+const GRID = 1024; // try 1024, fallback to 512 if init fails
+let actualGrid = GRID;
+
+const cv = document.getElementById('cv');
+const gl = cv.getContext('webgl2', {
+  antialias: false,
+  preserveDrawingBuffer: false,
+  powerPreference: 'high-performance'
+});
+
+if (!gl) {
+  document.body.innerHTML =
+    '<div style="color:#f88;padding:40px;font-family:monospace">WebGL2 is required for this demo. Please use a modern browser.</div>';
+  throw new Error('WebGL2 unavailable');
+}
+
+// resize canvas to fit viewport while staying square
+function fitCanvas() {
+  const pad = 10;
+  const sz = Math.min(window.innerWidth, window.innerHeight) - pad * 2;
+  const s = Math.max(256, Math.floor(sz));
+  cv.style.width = s + 'px';
+  cv.style.height = s + 'px';
+}
+fitCanvas();
+window.addEventListener('resize', fitCanvas);
+
+// ----------------------------------------------------------------------------
+// Shader helpers
+// ----------------------------------------------------------------------------
+function compile(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(sh);
+    console.error('Shader compile error:\n' + log + '\n\nSource:\n' + src);
+    throw new Error(log);
+  }
+  return sh;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    throw new Error('Program link error: ' + gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+// ----------------------------------------------------------------------------
+// Vertex shader: full-screen triangle
+// ----------------------------------------------------------------------------
+const VS = `#version 300 es
+out vec2 v_uv;
+void main() {
+  // big triangle covering [-1,1]^2
+  vec2 pos = vec2(
+    (gl_VertexID == 1) ? 3.0 : -1.0,
+    (gl_VertexID == 2) ? 3.0 : -1.0
+  );
+  v_uv = pos * 0.5 + 0.5;
+  gl_Position = vec4(pos, 0.0, 1.0);
+}`;
+
+// ----------------------------------------------------------------------------
+// SIM shader: read state, compute Conway + soul inheritance
+// state texture is RGBA8 — alpha encodes alive (>=128), rgb encodes 24-bit soul
+// ----------------------------------------------------------------------------
+const FS_SIM = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 v_uv;
+out vec4 outColor;
+uniform sampler2D u_state;
+uniform vec2 u_texel; // 1/grid
+uniform uint u_gen;
+uniform uint u_grid;
+
+// pack/unpack 24-bit soul into RGB (8 bits each)
+uint packSoul(uvec3 rgb) {
+  return (rgb.r << 16) | (rgb.g << 8) | rgb.b;
+}
+uvec3 unpackSoul(uint s) {
+  return uvec3((s >> 16) & 0xFFu, (s >> 8) & 0xFFu, s & 0xFFu);
+}
+
+// fetch (alive, soul) for an offset cell. Wraps with toroidal topology.
+ivec4 fetchCell(ivec2 c) {
+  int g = int(u_grid);
+  c = ivec2((c.x + g) % g, (c.y + g) % g);
+  vec4 s = texelFetch(u_state, c, 0);
+  // s is in [0,1]; convert to 0..255
+  uvec4 u = uvec4(s * 255.0 + 0.5);
+  int alive = (u.a >= 128u) ? 1 : 0;
+  return ivec4(int(u.r), int(u.g), int(u.b), alive);
+}
+
+// 32-bit hash for pseudorandomness, deterministic per (cell, generation)
+uint hash32(uint x) {
+  x ^= x >> 16;
+  x *= 0x7feb352du;
+  x ^= x >> 15;
+  x *= 0x846ca68bu;
+  x ^= x >> 16;
+  return x;
+}
+uint cellHash(ivec2 c, uint gen) {
+  uint h = uint(c.x) * 73856093u ^ uint(c.y) * 19349663u ^ gen * 83492791u;
+  return hash32(h);
+}
+
+void main() {
+  ivec2 cell = ivec2(v_uv * vec2(u_grid));
+
+  // count neighbors and gather living parents' souls
+  int alive_n = 0;
+  uvec3 parents[3]; // up to 3 (only used at exactly 3)
+
+  // unrolled 3x3 neighborhood
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      if (dx == 0 && dy == 0) continue;
+      ivec4 nc = fetchCell(cell + ivec2(dx, dy));
+      if (nc.w == 1) {
+        if (alive_n < 3) {
+          parents[alive_n] = uvec3(nc.r, nc.g, nc.b);
+        }
+        alive_n++;
+      }
+    }
+  }
+
+  ivec4 self = fetchCell(cell);
+  bool wasAlive = (self.w == 1);
+  bool willLive;
+  uvec3 newSoul;
+
+  if (wasAlive) {
+    // S23: stays alive on 2 or 3 neighbors
+    willLive = (alive_n == 2 || alive_n == 3);
+    newSoul = uvec3(self.r, self.g, self.b);
+  } else {
+    // B3: born on exactly 3
+    willLive = (alive_n == 3);
+    if (willLive) {
+      // pick one of three parents pseudorandomly
+      uint h = cellHash(cell, u_gen);
+      uint pick = h % 3u;
+      // also use h to pick a bit to mutate
+      uint mutBit = (h >> 4) & 31u;
+      uvec3 src = parents[pick];
+      uint soul = packSoul(src);
+      // mutation: XOR a single bit. 24-bit soul, but mutBit may be 24..31 — clamp to 0..23 sometimes
+      // Use 24-bit mutation to keep soul within RGB.
+      uint b = mutBit % 24u;
+      soul ^= (1u << b);
+      newSoul = unpackSoul(soul);
+    } else {
+      newSoul = uvec3(0u);
+    }
+  }
+
+  // emit normalized RGBA
+  float a = willLive ? 1.0 : 0.0;
+  outColor = vec4(vec3(newSoul) / 255.0, a);
+}`;
+
+// ----------------------------------------------------------------------------
+// PAINT shader: accept (x, y, radius, alive, soul) and render into state
+// ----------------------------------------------------------------------------
+const FS_PAINT = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+uniform sampler2D u_state;
+uniform vec2 u_texel;
+uniform vec2 u_center; // grid coords
+uniform float u_radius;
+uniform float u_mode;  // 1 = paint alive, 0 = erase
+uniform vec3 u_soul;   // 0..1
+uniform uint u_grid;
+uniform uint u_seed;
+
+uint hash32(uint x) {
+  x ^= x >> 16;
+  x *= 0x7feb352du;
+  x ^= x >> 15;
+  x *= 0x846ca68bu;
+  x ^= x >> 16;
+  return x;
+}
+
+void main() {
+  ivec2 cell = ivec2(v_uv * vec2(u_grid));
+  vec4 cur = texture(u_state, v_uv);
+  float d = distance(vec2(cell) + 0.5, u_center);
+  if (d <= u_radius) {
+    if (u_mode > 0.5) {
+      // paint alive with a unique soul varying per cell so mutations have somewhere to go
+      uint h = hash32(uint(cell.x) * 374761393u ^ uint(cell.y) * 668265263u ^ u_seed);
+      vec3 s = vec3(
+        float((h >> 16) & 0xFFu),
+        float((h >> 8) & 0xFFu),
+        float(h & 0xFFu)
+      ) / 255.0;
+      // blend toward provided soul a bit so brushes look coherent
+      s = mix(s, u_soul, 0.35);
+      outColor = vec4(s, 1.0);
+    } else {
+      outColor = vec4(0.0);
+    }
+  } else {
+    outColor = cur;
+  }
+}`;
+
+// ----------------------------------------------------------------------------
+// SEED shader: random fill with random souls at given density
+// ----------------------------------------------------------------------------
+const FS_SEED = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+uniform float u_density;
+uniform uint u_grid;
+uniform uint u_seed;
+
+uint hash32(uint x) {
+  x ^= x >> 16;
+  x *= 0x7feb352du;
+  x ^= x >> 15;
+  x *= 0x846ca68bu;
+  x ^= x >> 16;
+  return x;
+}
+void main() {
+  ivec2 c = ivec2(v_uv * vec2(u_grid));
+  uint h = hash32(uint(c.x) * 374761393u ^ uint(c.y) * 668265263u ^ u_seed);
+  float r = float(h & 0xFFFFu) / 65535.0;
+  if (r < u_density) {
+    uint h2 = hash32(h ^ 0xa511e9b3u);
+    vec3 s = vec3(
+      float((h2 >> 16) & 0xFFu),
+      float((h2 >> 8) & 0xFFu),
+      float(h2 & 0xFFu)
+    ) / 255.0;
+    outColor = vec4(s, 1.0);
+  } else {
+    outColor = vec4(0.0);
+  }
+}`;
+
+// ----------------------------------------------------------------------------
+// CLEAR shader (just outputs zero)
+// ----------------------------------------------------------------------------
+const FS_CLEAR = `#version 300 es
+precision highp float;
+out vec4 outColor;
+void main() { outColor = vec4(0.0); }`;
+
+// ----------------------------------------------------------------------------
+// SPREAD shader: smooths/blends soul across alive neighbors (cosmetic mix step)
+// ----------------------------------------------------------------------------
+const FS_SPREAD = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+uniform sampler2D u_state;
+uniform uint u_grid;
+
+void main() {
+  ivec2 cell = ivec2(v_uv * vec2(u_grid));
+  int g = int(u_grid);
+  vec4 self = texelFetch(u_state, cell, 0);
+  if (self.a < 0.5) { outColor = self; return; }
+  vec3 sum = self.rgb;
+  float w = 1.0;
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      if (dx == 0 && dy == 0) continue;
+      ivec2 nc = ivec2((cell.x + dx + g) % g, (cell.y + dy + g) % g);
+      vec4 n = texelFetch(u_state, nc, 0);
+      if (n.a > 0.5) { sum += n.rgb; w += 1.0; }
+    }
+  }
+  outColor = vec4(sum / w, 1.0);
+}`;
+
+// ----------------------------------------------------------------------------
+// DISPLAY shader: render state to canvas, with soul-based color emphasis.
+// We push souls through a saturation/glow function for mesmerizing visuals.
+// ----------------------------------------------------------------------------
+const FS_DISPLAY = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+uniform sampler2D u_state;
+uniform uint u_grid;
+
+vec3 boost(vec3 c) {
+  // saturate around luminance, then gamma
+  float maxc = max(max(c.r, c.g), c.b);
+  float minc = min(min(c.r, c.g), c.b);
+  float l = (maxc + minc) * 0.5;
+  vec3 boosted = mix(vec3(l), c, 1.6);
+  return pow(clamp(boosted, 0.0, 1.0), vec3(0.85));
+}
+
+void main() {
+  vec4 s = texture(u_state, v_uv);
+  if (s.a < 0.5) {
+    // dead cell — soft dark with subtle vignette
+    float d = length(v_uv - 0.5) * 1.4;
+    vec3 bg = mix(vec3(0.020, 0.025, 0.045), vec3(0.005, 0.005, 0.012), d);
+    outColor = vec4(bg, 1.0);
+  } else {
+    vec3 c = boost(s.rgb);
+    // small additive glow so dense areas pop
+    c += 0.10;
+    outColor = vec4(c, 1.0);
+  }
+}`;
+
+// ----------------------------------------------------------------------------
+// Build programs
+// ----------------------------------------------------------------------------
+const progSim     = program(VS, FS_SIM);
+const progPaint   = program(VS, FS_PAINT);
+const progSeed    = program(VS, FS_SEED);
+const progClear   = program(VS, FS_CLEAR);
+const progSpread  = program(VS, FS_SPREAD);
+const progDisplay = program(VS, FS_DISPLAY);
+
+// dummy VAO (we use gl_VertexID, no attributes needed but must be bound)
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+
+// ----------------------------------------------------------------------------
+// Create textures + framebuffers (ping-pong)
+// ----------------------------------------------------------------------------
+function makeTex(size) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  return t;
+}
+function makeFBO(tex) {
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  if (status !== gl.FRAMEBUFFER_COMPLETE) {
+    throw new Error('FBO incomplete: 0x' + status.toString(16));
+  }
+  return f;
+}
+
+let texA, texB, fboA, fboB;
+try {
+  texA = makeTex(actualGrid);
+  texB = makeTex(actualGrid);
+  fboA = makeFBO(texA);
+  fboB = makeFBO(texB);
+} catch (e) {
+  // fallback to 512
+  console.warn('1024 grid failed, falling back to 512: ' + e.message);
+  actualGrid = 512;
+  texA = makeTex(actualGrid);
+  texB = makeTex(actualGrid);
+  fboA = makeFBO(texA);
+  fboB = makeFBO(texB);
+}
+
+// ping-pong: read from "front", write to "back", then swap
+let front = { tex: texA, fbo: fboA };
+let back  = { tex: texB, fbo: fboB };
+function swap() {
+  const t = front; front = back; back = t;
+}
+
+// ----------------------------------------------------------------------------
+// Draw helpers
+// ----------------------------------------------------------------------------
+function drawTo(fbo, sizeX, sizeY) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, sizeX, sizeY);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function bindStateTexture(prog, unit) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, front.tex);
+  const loc = gl.getUniformLocation(prog, 'u_state');
+  if (loc) gl.uniform1i(loc, unit);
+}
+
+// ----------------------------------------------------------------------------
+// Operations
+// ----------------------------------------------------------------------------
+let generation = 0;
+
+function seedRandom(density) {
+  gl.useProgram(progSeed);
+  gl.uniform1f(gl.getUniformLocation(progSeed, 'u_density'), density);
+  gl.uniform1ui(gl.getUniformLocation(progSeed, 'u_grid'), actualGrid);
+  gl.uniform1ui(gl.getUniformLocation(progSeed, 'u_seed'), (Math.random() * 0xFFFFFFFF) >>> 0);
+  drawTo(back.fbo, actualGrid, actualGrid);
+  swap();
+  generation = 0;
+}
+
+function clearAll() {
+  gl.useProgram(progClear);
+  drawTo(back.fbo, actualGrid, actualGrid);
+  swap();
+  generation = 0;
+}
+
+function spreadSouls() {
+  gl.useProgram(progSpread);
+  bindStateTexture(progSpread, 0);
+  gl.uniform1ui(gl.getUniformLocation(progSpread, 'u_grid'), actualGrid);
+  drawTo(back.fbo, actualGrid, actualGrid);
+  swap();
+}
+
+function step() {
+  gl.useProgram(progSim);
+  bindStateTexture(progSim, 0);
+  gl.uniform2f(gl.getUniformLocation(progSim, 'u_texel'), 1.0/actualGrid, 1.0/actualGrid);
+  gl.uniform1ui(gl.getUniformLocation(progSim, 'u_gen'), generation >>> 0);
+  gl.uniform1ui(gl.getUniformLocation(progSim, 'u_grid'), actualGrid);
+  drawTo(back.fbo, actualGrid, actualGrid);
+  swap();
+  generation++;
+}
+
+function paint(cx, cy, radius, mode, soul) {
+  gl.useProgram(progPaint);
+  bindStateTexture(progPaint, 0);
+  gl.uniform2f(gl.getUniformLocation(progPaint, 'u_texel'), 1.0/actualGrid, 1.0/actualGrid);
+  gl.uniform2f(gl.getUniformLocation(progPaint, 'u_center'), cx, cy);
+  gl.uniform1f(gl.getUniformLocation(progPaint, 'u_radius'), radius);
+  gl.uniform1f(gl.getUniformLocation(progPaint, 'u_mode'), mode);
+  gl.uniform3f(gl.getUniformLocation(progPaint, 'u_soul'), soul[0], soul[1], soul[2]);
+  gl.uniform1ui(gl.getUniformLocation(progPaint, 'u_grid'), actualGrid);
+  gl.uniform1ui(gl.getUniformLocation(progPaint, 'u_seed'), (Math.random() * 0xFFFFFFFF) >>> 0);
+  drawTo(back.fbo, actualGrid, actualGrid);
+  swap();
+}
+
+function display() {
+  gl.useProgram(progDisplay);
+  bindStateTexture(progDisplay, 0);
+  gl.uniform1ui(gl.getUniformLocation(progDisplay, 'u_grid'), actualGrid);
+  // draw directly to canvas
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// ----------------------------------------------------------------------------
+// Initial state: random seed at 50% density
+// ----------------------------------------------------------------------------
+seedRandom(0.5);
+
+// ----------------------------------------------------------------------------
+// Stats: read back a small sample for population & histogram
+// ----------------------------------------------------------------------------
+// We do periodic CPU read of a 256x256 sub-region (or full grid downscaled).
+// For perf we read the whole grid only every ~30 frames.
+
+const sampleBuf = new Uint8Array(actualGrid * actualGrid * 4);
+let lastSample = { gen: -1, pop: 0, total: actualGrid * actualGrid, top: [] };
+
+function sampleState() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, front.fbo);
+  gl.readPixels(0, 0, actualGrid, actualGrid, gl.RGBA, gl.UNSIGNED_BYTE, sampleBuf);
+  // count alive + soul histogram (sample every 4th cell for speed)
+  let alive = 0;
+  // bucket souls into a Map. Sample stride 4 in both dims (so grid/16th cells).
+  const bucket = new Map();
+  const stride = actualGrid >= 1024 ? 4 : 2;
+  for (let y = 0; y < actualGrid; y += stride) {
+    const row = y * actualGrid * 4;
+    for (let x = 0; x < actualGrid; x += stride) {
+      const i = row + x * 4;
+      const a = sampleBuf[i + 3];
+      if (a >= 128) {
+        alive++;
+        // 24-bit soul
+        const s = (sampleBuf[i] << 16) | (sampleBuf[i+1] << 8) | sampleBuf[i+2];
+        bucket.set(s, (bucket.get(s) || 0) + 1);
+      }
+    }
+  }
+  // Approximate population by scaling sample
+  const sampledCells = Math.ceil(actualGrid / stride) * Math.ceil(actualGrid / stride);
+  const popEstimate = Math.round(alive * (actualGrid * actualGrid) / sampledCells);
+
+  // Top souls
+  const arr = [];
+  for (const [k, v] of bucket) arr.push([k, v]);
+  arr.sort((a, b) => b[1] - a[1]);
+  const top = arr.slice(0, 8);
+  const totalSampled = alive || 1;
+
+  lastSample = {
+    gen: generation,
+    pop: popEstimate,
+    sampledAlive: alive,
+    sampledTotal: sampledCells,
+    unique: bucket.size,
+    top: top.map(([s, c]) => ({ soul: s, frac: c / totalSampled }))
+  };
+}
+
+// ----------------------------------------------------------------------------
+// Histogram render
+// ----------------------------------------------------------------------------
+const hlist = document.getElementById('hlist');
+function renderHistogram() {
+  if (!lastSample.top || lastSample.top.length === 0) {
+    hlist.innerHTML = '<div style="color:#555;font-style:italic">no living cells</div>';
+    return;
+  }
+  const max = lastSample.top[0].frac;
+  let html = '';
+  for (const e of lastSample.top) {
+    const r = (e.soul >> 16) & 0xFF;
+    const g = (e.soul >> 8) & 0xFF;
+    const b = e.soul & 0xFF;
+    // boost color for swatch like display
+    const br = Math.min(255, r + 26);
+    const bg = Math.min(255, g + 26);
+    const bb = Math.min(255, b + 26);
+    const hex = '#' + e.soul.toString(16).padStart(6, '0').toUpperCase();
+    const pctNum = e.frac * 100;
+    const pct = pctNum.toFixed(2) + '%';
+    const widthPct = (e.frac / max) * 100;
+    html += '<div class="hbar">'
+      + '<div class="hsw" style="background:rgb(' + br + ',' + bg + ',' + bb + ')"></div>'
+      + '<span class="hhex">' + hex + '</span>'
+      + '<div class="hbg"><div class="hfill" style="width:' + widthPct + '%;background:rgb(' + br + ',' + bg + ',' + bb + ')"></div></div>'
+      + '<span class="hpct">' + pct + '</span>'
+      + '</div>';
+  }
+  hlist.innerHTML = html;
+}
+
+// ----------------------------------------------------------------------------
+// UI
+// ----------------------------------------------------------------------------
+const $gen = document.getElementById('gen');
+const $pop = document.getElementById('pop');
+const $dens = document.getElementById('dens');
+const $sps = document.getElementById('sps');
+const $fps = document.getElementById('fps');
+const $usouls = document.getElementById('usouls');
+const $btnPlay = document.getElementById('btnPlay');
+const $btnStep = document.getElementById('btnStep');
+const $btnSeed = document.getElementById('btnSeed');
+const $btnReset = document.getElementById('btnReset');
+const $btnClear = document.getElementById('btnClear');
+const $btnSpread = document.getElementById('btnSpread');
+const $speed = document.getElementById('speed');
+const $speedVal = document.getElementById('speedVal');
+const $brush = document.getElementById('brush');
+const $brushVal = document.getElementById('brushVal');
+const $toast = document.getElementById('toast');
+
+let playing = true;
+let targetSPS = 60;
+let brushSize = 6;
+
+function setPlaying(p) {
+  playing = p;
+  $btnPlay.textContent = p ? 'Pause' : 'Play';
+  $btnPlay.classList.toggle('active', p);
+}
+
+function showToast(msg) {
+  $toast.textContent = msg;
+  $toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => $toast.classList.remove('show'), 1100);
+}
+
+setPlaying(true);
+
+$btnPlay.addEventListener('click', () => setPlaying(!playing));
+$btnStep.addEventListener('click', () => { setPlaying(false); step(); });
+$btnSeed.addEventListener('click', () => { seedRandom(0.5); showToast('seeded 50%'); });
+$btnReset.addEventListener('click', () => { seedRandom(0.5); generation = 0; setPlaying(true); showToast('reset'); });
+$btnClear.addEventListener('click', () => { clearAll(); showToast('cleared'); });
+$btnSpread.addEventListener('click', () => { spreadSouls(); showToast('blended souls'); });
+
+$speed.addEventListener('input', () => {
+  targetSPS = parseInt($speed.value);
+  $speedVal.textContent = targetSPS === 0 ? 'off' : targetSPS;
+});
+$brush.addEventListener('input', () => {
+  brushSize = parseInt($brush.value);
+  $brushVal.textContent = brushSize;
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+  else if (e.key === 's' || e.key === 'S') { setPlaying(false); step(); }
+  else if (e.key === 'r' || e.key === 'R') { seedRandom(0.5); generation = 0; setPlaying(true); showToast('reset'); }
+  else if (e.key === 'c' || e.key === 'C') { clearAll(); showToast('cleared'); }
+  else if (e.key === 'n' || e.key === 'N') { seedRandom(0.5); showToast('seeded'); }
+});
+
+// ----------------------------------------------------------------------------
+// Mouse drawing
+// ----------------------------------------------------------------------------
+let drawing = false;
+let eraseMode = false;
+let drawSoul = [Math.random(), Math.random(), Math.random()];
+
+function pickSoul() {
+  drawSoul = [Math.random(), Math.random(), Math.random()];
+}
+
+function eventToGrid(e) {
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = 1.0 - (e.clientY - rect.top) / rect.height; // flip Y for GL
+  return [x * actualGrid, y * actualGrid];
+}
+
+cv.addEventListener('pointerdown', (e) => {
+  drawing = true;
+  eraseMode = e.shiftKey;
+  pickSoul();
+  cv.setPointerCapture(e.pointerId);
+  const [gx, gy] = eventToGrid(e);
+  paint(gx, gy, brushSize, eraseMode ? 0 : 1, drawSoul);
+});
+cv.addEventListener('pointermove', (e) => {
+  if (!drawing) return;
+  const [gx, gy] = eventToGrid(e);
+  paint(gx, gy, brushSize, eraseMode ? 0 : 1, drawSoul);
+});
+cv.addEventListener('pointerup', (e) => {
+  drawing = false;
+  try { cv.releasePointerCapture(e.pointerId); } catch (_) {}
+});
+cv.addEventListener('pointercancel', () => { drawing = false; });
+cv.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ----------------------------------------------------------------------------
+// Main loop
+// ----------------------------------------------------------------------------
+let lastFrame = performance.now();
+let lastSPSAt = performance.now();
+let stepsThisSec = 0;
+let framesThisSec = 0;
+let renderedSPS = 0;
+let renderedFPS = 0;
+let stepAccumulator = 0;
+
+let lastSampleAt = 0;
+
+function frame(now) {
+  const dt = (now - lastFrame) / 1000;
+  lastFrame = now;
+
+  // simulate
+  if (playing && targetSPS > 0) {
+    stepAccumulator += dt * targetSPS;
+    // cap steps per frame to avoid runaway
+    let stepsThisFrame = Math.min(8, Math.floor(stepAccumulator));
+    stepAccumulator -= stepsThisFrame;
+    for (let i = 0; i < stepsThisFrame; i++) {
+      step();
+      stepsThisSec++;
+    }
+  }
+
+  // render
+  display();
+  framesThisSec++;
+
+  // sample every ~250ms for stats
+  if (now - lastSampleAt > 250) {
+    sampleState();
+    renderHistogram();
+    lastSampleAt = now;
+  }
+
+  // 1Hz stats refresh
+  if (now - lastSPSAt >= 1000) {
+    renderedSPS = stepsThisSec;
+    renderedFPS = framesThisSec;
+    stepsThisSec = 0;
+    framesThisSec = 0;
+    lastSPSAt = now;
+
+    $gen.textContent = generation.toLocaleString();
+    if (lastSample.pop !== undefined) {
+      $pop.textContent = lastSample.pop.toLocaleString();
+      const dens = (lastSample.pop / (actualGrid * actualGrid)) * 100;
+      $dens.textContent = dens.toFixed(2) + '%';
+      $usouls.textContent = lastSample.unique.toLocaleString();
+    }
+    $sps.textContent = renderedSPS;
+    $fps.textContent = renderedFPS;
+  } else {
+    $gen.textContent = generation.toLocaleString();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+
+// initial UI populate
+$gen.textContent = '0';
+$pop.textContent = '~' + Math.round(actualGrid * actualGrid * 0.5).toLocaleString();
+$dens.textContent = '~50%';
+
+// announce grid size used
+showToast('Grid: ' + actualGrid + ' × ' + actualGrid + ' = ' + (actualGrid * actualGrid).toLocaleString() + ' cells');
+
+</script>
+</body>
+</html>

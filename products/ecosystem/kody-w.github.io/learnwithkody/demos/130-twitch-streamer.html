@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ApexBob_TV — LIVE on Twitch</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#0e0e10;color:#efeff1;font-family:'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;font-size:13px}
+#root{position:fixed;inset:0;display:grid;grid-template-columns:1fr 360px;grid-template-rows:auto 1fr auto;background:#0e0e10}
+#topbar{grid-column:1/3;grid-row:1;height:46px;background:#18181b;border-bottom:1px solid #2a2a2e;display:flex;align-items:center;padding:0 14px;gap:14px;z-index:30}
+#topbar .logo{font-size:18px;font-weight:900;color:#a970ff;letter-spacing:-.5px}
+#topbar .crumb{color:#adadb8;font-size:12px}
+#topbar .crumb b{color:#efeff1}
+#topbar .spacer{flex:1}
+#topbar .qual{display:flex;gap:8px;align-items:center;color:#adadb8;font-size:11px}
+#topbar .qbox{background:#2a2a2e;padding:3px 8px;border-radius:3px;color:#efeff1;font-weight:600;letter-spacing:.5px}
+#topbar .bps{color:#00d26a}
+#topbar .song{color:#adadb8;font-size:11px;display:flex;align-items:center;gap:6px;max-width:280px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#topbar .song .nt{color:#a970ff}
+
+#stage{grid-column:1;grid-row:2;position:relative;background:#000;overflow:hidden}
+#game{position:absolute;inset:0}
+#game canvas{display:block;width:100%;height:100%}
+
+/* game UI overlay */
+#gameui{position:absolute;inset:0;pointer-events:none;z-index:5}
+#hpbar{position:absolute;left:24px;bottom:160px;width:230px;height:18px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18)}
+#hpbar i{display:block;height:100%;background:linear-gradient(90deg,#ff3838,#ff8a3a);transition:width .25s}
+#hpbar .lab{position:absolute;left:6px;top:1px;font-size:10px;letter-spacing:2px;color:#fff;text-shadow:0 1px 2px #000}
+#shieldbar{position:absolute;left:24px;bottom:182px;width:230px;height:9px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18)}
+#shieldbar i{display:block;height:100%;background:linear-gradient(90deg,#3ad6ff,#7aa6ff);transition:width .25s}
+#ammo{position:absolute;right:24px;bottom:160px;text-align:right;text-shadow:0 2px 4px #000}
+#ammo .n{font-size:42px;font-weight:900;color:#fff;line-height:1;letter-spacing:-1px}
+#ammo .n small{font-size:18px;color:#adadb8;margin-left:4px}
+#ammo .gun{font-size:11px;color:#ffce4a;letter-spacing:3px;margin-top:2px}
+#minimap{position:absolute;top:14px;right:14px;width:130px;height:130px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.22);border-radius:50%;overflow:hidden}
+#minimap canvas{width:100%;height:100%;display:block}
+#killstreak{position:absolute;top:14px;left:50%;transform:translateX(-50%);text-align:center;text-shadow:0 2px 6px #000}
+#killstreak .ks{font-size:22px;font-weight:900;color:#ffce4a;letter-spacing:2px}
+#killstreak .pl{font-size:10px;color:#adadb8;letter-spacing:4px;margin-top:2px}
+#crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;pointer-events:none}
+#crosshair::before,#crosshair::after{content:"";position:absolute;background:rgba(255,255,255,.85);box-shadow:0 0 4px rgba(0,0,0,.8)}
+#crosshair::before{left:50%;top:0;width:2px;height:18px;transform:translateX(-50%)}
+#crosshair::after{top:50%;left:0;width:18px;height:2px;transform:translateY(-50%)}
+#hitmark{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:30px;height:30px;opacity:0;transition:opacity .15s;pointer-events:none}
+#hitmark.show{opacity:1}
+#hitmark::before,#hitmark::after{content:"";position:absolute;background:#ff3838;width:30px;height:2px;left:0;top:14px}
+#hitmark::after{transform:rotate(90deg)}
+#killfeed{position:absolute;top:14px;left:14px;width:280px;display:flex;flex-direction:column;gap:4px}
+.kf{background:rgba(0,0,0,.55);padding:5px 9px;font-size:11px;color:#efeff1;border-left:3px solid #a970ff;animation:kfin .3s ease}
+.kf b{color:#a970ff}
+.kf .vs{color:#666;margin:0 5px}
+.kf .vic{color:#ff8a3a}
+.kf.you{border-color:#ffce4a}
+.kf.you b{color:#ffce4a}
+.kf.dead{border-color:#ff3838}
+.kf.dead .vic{color:#ffce4a}
+@keyframes kfin{from{transform:translateX(-30px);opacity:0}to{transform:translateX(0);opacity:1}}
+#dmgvignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at center,transparent 50%,rgba(255,40,40,0) 100%);transition:background .15s}
+#dmgvignette.hit{background:radial-gradient(circle at center,transparent 35%,rgba(255,40,40,.55) 95%)}
+#deathscreen{position:absolute;inset:0;background:rgba(40,0,0,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .4s;backdrop-filter:saturate(.4)}
+#deathscreen.show{opacity:1}
+#deathscreen .you{font-size:64px;font-weight:900;color:#ff3838;letter-spacing:6px;text-shadow:0 4px 16px rgba(0,0,0,.9)}
+#deathscreen .by{font-size:14px;color:#fff;margin-top:8px;letter-spacing:2px}
+#deathscreen .respawn{font-size:11px;color:#adadb8;margin-top:18px;letter-spacing:4px}
+
+/* facecam */
+#facecam{position:absolute;left:14px;bottom:14px;width:230px;height:160px;background:#1a0e26;border:2px solid #a970ff;border-radius:6px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.7),0 0 22px rgba(169,112,255,.25);z-index:8}
+#facecam canvas{width:100%;height:100%;display:block}
+#facecam .nm{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,transparent,rgba(0,0,0,.85));padding:14px 8px 5px;font-size:11px;font-weight:700;color:#fff;letter-spacing:1px;display:flex;justify-content:space-between;align-items:center}
+#facecam .nm .lvl{display:flex;gap:2px;align-items:flex-end;height:10px}
+#facecam .nm .lvl i{display:block;width:2px;background:#00d26a}
+#bubble{position:absolute;left:248px;bottom:120px;background:#fff;color:#0e0e10;padding:7px 11px;border-radius:14px;font-size:12px;font-weight:600;max-width:260px;opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s;z-index:9;box-shadow:0 4px 14px rgba(0,0,0,.5)}
+#bubble.show{opacity:1;transform:translateY(0)}
+#bubble::before{content:"";position:absolute;left:-8px;bottom:14px;width:0;height:0;border:8px solid transparent;border-right-color:#fff;border-left:0}
+
+/* alerts overlay */
+#alert{position:absolute;top:90px;left:50%;transform:translateX(-50%) translateY(-40px);min-width:480px;max-width:680px;background:linear-gradient(135deg,#a970ff,#5c2db8);border:2px solid #fff;border-radius:8px;padding:14px 22px;text-align:center;color:#fff;opacity:0;transition:opacity .35s,transform .35s;z-index:12;box-shadow:0 8px 28px rgba(0,0,0,.6)}
+#alert.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#alert .typ{font-size:11px;letter-spacing:5px;color:#ffce4a;font-weight:700;margin-bottom:4px}
+#alert .ti{font-size:18px;font-weight:800;letter-spacing:.5px}
+#alert .sb{font-size:12px;font-style:italic;color:#fff;opacity:.92;margin-top:5px}
+#alert.donation{background:linear-gradient(135deg,#00d26a,#019a4a)}
+#alert.sub{background:linear-gradient(135deg,#a970ff,#5c2db8)}
+#alert.raid{background:linear-gradient(135deg,#ff3838,#a01515)}
+#alert.host{background:linear-gradient(135deg,#3a78d2,#1a4080)}
+#alert.bits{background:linear-gradient(135deg,#ffce4a,#c08a00);color:#1a1100}
+#alert.bits .typ{color:#5c2db8}
+#alert.clip{background:linear-gradient(135deg,#ff8a3a,#a04510)}
+#alert.milestone{background:linear-gradient(135deg,#a970ff,#ff3a85);font-size:1.08em}
+#alert.poll{background:linear-gradient(135deg,#1a1a1d,#3a3a40);text-align:left}
+#alert.poll .typ{color:#a970ff;text-align:center}
+#alert.poll .ti{text-align:center;margin-bottom:8px;font-size:14px}
+#alert.poll .row{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px}
+#alert.poll .row .pct{width:46px;text-align:right;font-weight:700}
+#alert.poll .row .bar{flex:1;height:8px;background:rgba(255,255,255,.15);border-radius:4px;overflow:hidden}
+#alert.poll .row .bar i{display:block;height:100%;background:#a970ff;transition:width .4s}
+#alert.poll .row.no .bar i{background:#ff3838}
+
+/* bottom bar (game side) — subgoal */
+#subgoal{position:absolute;left:0;right:0;bottom:0;height:36px;background:linear-gradient(180deg,rgba(0,0,0,.65),rgba(0,0,0,.85));border-top:1px solid #2a2a2e;display:flex;align-items:center;padding:0 14px;gap:12px;z-index:7;color:#efeff1;font-size:11px}
+#subgoal .lab{font-weight:700;letter-spacing:1px;color:#a970ff}
+#subgoal .bar{flex:1;height:10px;background:#2a2a2e;border-radius:5px;overflow:hidden;position:relative}
+#subgoal .bar i{display:block;height:100%;background:linear-gradient(90deg,#a970ff,#ff3a85);transition:width .8s;animation:goalpulse 1.6s infinite}
+@keyframes goalpulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.3)}}
+#subgoal .num{font-weight:700;color:#fff;letter-spacing:1px}
+#subgoal .num small{color:#adadb8;font-weight:400;margin-left:3px}
+
+/* meta corner — channel info */
+#meta{position:absolute;top:14px;left:14px;display:none}
+#chinfo{position:absolute;left:14px;top:60px;display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.55);padding:7px 11px;border-radius:6px;backdrop-filter:blur(4px);z-index:8}
+#chinfo .av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#a970ff,#ff3a85);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#fff;border:2px solid #00d26a}
+#chinfo .nm{font-size:14px;font-weight:700;color:#fff}
+#chinfo .nm .live{display:inline-block;background:#ff3838;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;letter-spacing:1px;margin-left:6px;font-weight:700;vertical-align:middle}
+#chinfo .vw{font-size:11px;color:#adadb8;display:flex;align-items:center;gap:4px;margin-top:2px}
+#chinfo .vw::before{content:"";width:6px;height:6px;background:#ff3838;border-radius:50%;display:inline-block}
+#chinfo .fw{margin-left:8px;background:#a970ff;color:#fff;border:none;padding:7px 14px;font-size:12px;font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.5px}
+#chinfo .fw.followed{background:#2a2a2e;color:#adadb8}
+#chinfo .fw.followed::before{content:"♥ "}
+#title{position:absolute;left:14px;top:108px;max-width:540px;background:rgba(0,0,0,.55);padding:8px 12px;border-radius:6px;z-index:8;backdrop-filter:blur(4px)}
+#title .ti{font-size:14px;font-weight:700;color:#fff;letter-spacing:.3px}
+#title .tags{margin-top:5px;display:flex;gap:5px;flex-wrap:wrap}
+#title .tags span{background:#2a2a2e;color:#adadb8;font-size:10px;padding:2px 8px;border-radius:10px}
+#title .tags span.fav{color:#a970ff}
+
+/* chat column */
+#chatcol{grid-column:2;grid-row:2/4;background:#18181b;border-left:1px solid #2a2a2e;display:flex;flex-direction:column;min-height:0;z-index:20}
+#chathead{height:46px;border-bottom:1px solid #2a2a2e;display:flex;align-items:center;padding:0 14px;color:#efeff1;font-size:13px;font-weight:600}
+#chathead .ico{margin-right:10px;color:#adadb8}
+#chathead .right{margin-left:auto;color:#adadb8;font-size:14px}
+#chatbox{flex:1;overflow:hidden;position:relative;padding:8px 12px}
+#chatlist{position:absolute;left:0;right:0;bottom:0;padding:0 12px 8px}
+.cm{padding:3px 0;font-size:12.5px;line-height:1.5;color:#efeff1;word-wrap:break-word;animation:cmin .18s ease}
+@keyframes cmin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.cm .b{display:inline-block;width:14px;height:14px;vertical-align:-2px;margin-right:3px;border-radius:2px;font-size:9px;text-align:center;line-height:14px;font-weight:900;color:#fff}
+.cm .b.mod{background:#00ad03}
+.cm .b.vip{background:#e005b9}
+.cm .b.sub1{background:#a970ff}
+.cm .b.sub6{background:#5c2db8}
+.cm .b.sub24{background:#ffce4a;color:#1a1100}
+.cm .b.fnd{background:#ff3a85;color:#fff}
+.cm .b.bro{background:#3a78d2}
+.cm .b.bits{background:#00d26a}
+.cm .u{font-weight:700;display:inline}
+.cm .sep{color:#adadb8;margin:0 2px}
+.cm .t{color:#dadadc}
+.cm .em{display:inline-block;background:#2a2a2e;color:#a970ff;padding:0 3px;border-radius:2px;font-weight:700;font-size:11.5px;margin:0 1px}
+.cm.mention{background:rgba(169,112,255,.12);border-left:2px solid #a970ff;padding-left:6px;margin-left:-8px}
+.cm.donread{background:rgba(0,210,106,.12);border-left:2px solid #00d26a;padding-left:6px;margin-left:-8px;font-style:italic}
+.cm.modaction{color:#adadb8;font-style:italic;background:rgba(255,56,56,.08);padding:3px 6px;margin-left:-6px;border-left:2px solid #ff3838}
+.cm.modaction .u{color:#ff8a8a;font-style:normal}
+.cm.system{color:#adadb8;font-style:italic;text-align:center;padding:4px 0;font-size:11.5px}
+.cm.system b{color:#a970ff;font-style:normal}
+
+#chatcompose{height:120px;border-top:1px solid #2a2a2e;padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+#chatcompose .input{flex:1;background:#0e0e10;border:1px solid #2a2a2e;border-radius:4px;padding:8px 10px;color:#adadb8;font-size:12px;display:flex;align-items:center;justify-content:space-between}
+#chatcompose .input .ph{color:#5c5c66}
+#chatcompose .row{display:flex;align-items:center;gap:8px;font-size:11px;color:#adadb8}
+#chatcompose .row .send{margin-left:auto;background:#a970ff;color:#fff;border:none;padding:5px 14px;font-weight:700;border-radius:3px;font-size:12px}
+#chatcompose .row .em{padding:3px 6px;background:#2a2a2e;border-radius:3px}
+
+/* end / starting screens */
+#screen{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:#0e0e10;z-index:50}
+#screen.show{display:flex}
+#screen .big{font-size:54px;font-weight:900;color:#a970ff;letter-spacing:2px;text-shadow:0 4px 22px rgba(169,112,255,.5)}
+#screen .sub{font-size:14px;color:#adadb8;margin-top:14px;letter-spacing:4px}
+#screen .cd{font-size:96px;font-weight:900;color:#fff;margin-top:18px;font-variant-numeric:tabular-nums}
+#screen .lo{position:absolute;top:30px;left:50%;transform:translateX(-50%);font-size:14px;color:#a970ff;letter-spacing:6px;font-weight:700}
+
+/* directors cut indicator */
+#camcut{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#ffce4a;padding:3px 10px;font-size:10px;letter-spacing:4px;border:1px solid rgba(255,206,74,.4);opacity:0;transition:opacity .25s;z-index:11}
+#camcut.show{opacity:1;top:48px}
+
+/* facecam zoom */
+#facecam.zoom{width:520px;height:380px;left:50%;bottom:50%;transform:translate(-50%,50%);border-color:#ffce4a;box-shadow:0 0 60px rgba(255,206,74,.4),0 8px 40px rgba(0,0,0,.85);transition:all .5s cubic-bezier(.2,.8,.2,1)}
+#facecam{transition:all .5s cubic-bezier(.2,.8,.2,1)}
+
+/* hate raid effect */
+#hateraid{position:absolute;inset:0;pointer-events:none;background:rgba(255,40,40,0);transition:background .4s;z-index:6}
+#hateraid.on{background:rgba(255,40,40,.08)}
+</style>
+</head>
+<body>
+<!-- ROUND14_LIVING v1 -->
+<div id="root">
+  <div id="topbar">
+    <div class="logo">Twitch</div>
+    <div class="crumb"><b id="tbName">ApexBob_TV</b> · <span id="tbCat">Apex Legends</span></div>
+    <div class="spacer"></div>
+    <div class="qual">
+      <span class="qbox" id="tbRes">1080p60</span>
+      <span class="bps" id="tbBps">6420 kbps</span>
+      <span>·</span>
+      <span id="tbLat">112ms</span>
+    </div>
+    <div class="song">♪ <span class="nt" id="tbSong">Aphex Twin — Xtal</span></div>
+  </div>
+
+  <div id="stage">
+    <div id="game"></div>
+    <div id="hateraid"></div>
+    <div id="gameui">
+      <div id="killfeed"></div>
+      <div id="killstreak"><div class="ks" id="ksTxt">0</div><div class="pl" id="plTxt">PLAYERS LEFT — 47</div></div>
+      <div id="minimap"><canvas id="mmCv" width="200" height="200"></canvas></div>
+      <div id="hpbar"><span class="lab">HP</span><i id="hpFill" style="width:100%"></i></div>
+      <div id="shieldbar"><i id="shFill" style="width:100%"></i></div>
+      <div id="ammo"><div class="n" id="amCur">28<small>/<span id="amMax">120</span></small></div><div class="gun" id="amGun">R-99 SMG</div></div>
+      <div id="crosshair"></div>
+      <div id="hitmark"></div>
+      <div id="dmgvignette"></div>
+      <div id="deathscreen"><div class="you">YOU DIED</div><div class="by" id="dsBy">eliminated by GhostMain42</div><div class="respawn" id="dsRe">RESPAWNING IN 5</div></div>
+    </div>
+    <div id="camcut">CAM · 1ST PERSON</div>
+    <div id="chinfo">
+      <div class="av" id="chAv">A</div>
+      <div>
+        <div class="nm"><span id="chNm">ApexBob_TV</span><span class="live">LIVE</span></div>
+        <div class="vw"><span id="chVw">18,452</span> viewers · <span id="chFol">142,330</span> followers</div>
+      </div>
+      <button class="fw" id="chFw">Follow</button>
+    </div>
+    <div id="title">
+      <div class="ti" id="ttTi">🔥 RANKED GRIND TO MASTER — !discord !sens</div>
+      <div class="tags"><span class="fav">FPS</span><span>Charity</span><span>English</span><span>!sens</span></div>
+    </div>
+    <div id="facecam">
+      <canvas id="fcCv" width="460" height="320"></canvas>
+      <div class="nm"><span id="fcNm">ApexBob_TV</span><span class="lvl" id="fcLvl"></span></div>
+    </div>
+    <div id="bubble"></div>
+    <div id="alert"></div>
+    <div id="subgoal"><span class="lab">SUB GOAL</span><div class="bar"><i id="sgFill" style="width:42%"></i></div><span class="num"><span id="sgCur">213</span><small>/<span id="sgMax">500</span> SUBS</small></span></div>
+    <div id="screen"><div class="lo">ApexBob_TV</div><div class="big" id="scTi">STREAM ENDED</div><div class="sub" id="scSb">THANKS FOR WATCHING ♥</div><div class="cd" id="scCd"></div></div>
+  </div>
+
+  <div id="chatcol">
+    <div id="chathead"><span class="ico">💬</span>STREAM CHAT<span class="right">⚙</span></div>
+    <div id="chatbox"><div id="chatlist"></div></div>
+    <div id="chatcompose">
+      <div class="input"><span class="ph">Send a message</span><span>😀</span></div>
+      <div class="row"><span class="em">Bits</span><span>!</span><span>/</span><button class="send">Chat</button></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+// ---------- RNG ----------
+let SEED = (Date.now()>>>0)^0x9e3779b9;
+function rand(){SEED=(SEED*1664525+1013904223)>>>0;return SEED/0xffffffff}
+function rint(a,b){return a+Math.floor(rand()*(b-a+1))}
+function pick(a){return a[Math.floor(rand()*a.length)]}
+function chance(p){return rand()<p}
+
+// ---------- DOM ----------
+const $=(id)=>document.getElementById(id);
+const gameEl=$('game'),fcCv=$('fcCv'),mmCv=$('mmCv');
+const chatList=$('chatlist'),chatBox=$('chatbox');
+
+// ---------- THREE scene ----------
+let renderer,scene,camera,clock;
+let world={},disposables=[];
+function makeRenderer(){
+  renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5));
+  resizeRenderer();
+  gameEl.appendChild(renderer.domElement);
+  window.addEventListener('resize',resizeRenderer);
+}
+function resizeRenderer(){
+  if(!renderer)return;
+  const r=gameEl.getBoundingClientRect();
+  renderer.setSize(r.width,r.height,false);
+  if(camera){camera.aspect=r.width/Math.max(1,r.height);camera.updateProjectionMatrix()}
+}
+function disposeAll(){
+  disposables.forEach(o=>{try{if(o.geometry)o.geometry.dispose();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}}catch(e){}});
+  disposables=[];
+  if(scene){scene.traverse(o=>{if(o.geometry)try{o.geometry.dispose()}catch(e){}if(o.material){try{(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose())}catch(e){}}});}
+  while(scene&&scene.children.length)scene.remove(scene.children[0]);
+}
+
+// ---------- Streamer state ----------
+let streamer={};
+const STREAMER_NAMES=['ApexBob_TV','NeonKaitoLive','PixelPanda99','VortexQueen_','GhostMain42','SunsetSenpai','BiscuitBlade','ZenoArrow','LunaShredsLive','TacticalTaco_TV','MidnightOwlGG','PandaSmackdown','VioletStrike','RogueChiliDog','RetroRavyn','HexenHaus','GamerGremlin','OdieOrbital','ChromaPanda','BluTheBard'];
+const GAMES=['Apex Legends','Valorant','Counter-Strike 2','Fortnite','Call of Duty: Warzone','Overwatch 2','PUBG','Rainbow Six Siege','Destiny 2','The Finals'];
+const TITLES=[
+  '🔥 RANKED GRIND TO MASTER — !discord !sens',
+  '🏆 CHARITY STREAM — DROPPING IN HOT!',
+  'CLUTCH OR KICK — vibing & winning',
+  '⚡ NEW SEASON GRIND // First time playing this map !drop',
+  '😤 1v1 ME COWARDS // sub goal so close',
+  '🌙 LATE NIGHT RANKED — chill chat & big plays',
+  '🎯 AIMLAB → RANKED → CRY (probably)',
+  'ROAD TO 500 SUBS — !goal !sens !merch',
+  '🎮 viewer games later — get in here !lobby',
+  'HUGE TOURNAMENT WARMUP — $10K on the line saturday'
+];
+const SONGS=[
+  'Aphex Twin — Xtal','Daft Punk — Veridis Quo','Tame Impala — Apocalypse Dreams','Kavinsky — Nightcall','Tycho — A Walk','Boards of Canada — Roygbiv','C418 — Sweden','Toby Fox — Hopes and Dreams','LCD Soundsystem — Dance Yrself Clean','Justice — D.A.N.C.E.','M83 — Outro','Disasterpeace — Headlock','MF DOOM — Beef Rapp','Madvillain — All Caps','Crystal Castles — Untrust Us','Toro y Moi — Talamak'
+];
+const TAGSPOOL=['FPS','Action','Charity','English','!sens','!discord','!drop','LFG','RANKED','High Skill','Educational','Funny','Variety'];
+
+// ---------- Chatter pool ----------
+const SYL_A=['xX','luna','panda','beetle','gigi','bee','ian','jenny','pog','milo','scampi','noodle','penny','stevie','kaito','ravyn','blade','salt','mango','bear','goose','toad','shadow','crystal','neon','snail','viper','quartz','onyx','solo','duke','flux','gizmo','rouge','nyx','plum','mocha'];
+const SYL_B=['gaming','420','tv','queen','king','bro','sis','420','99','77','_xx','dad','mom','baby','girl','boy','pog','main','uwu','lol','ftw','42','69','11','33','24','vibes','smash','nerd','rocks','rules','ftw','life','og','plays','lurks','lurker'];
+const NAME_PRESETS=[
+  'xX_purplehaze_Xx','mod_jenny92','BeatlejuiceFan','IanIanIan','gigi_gaming','SaltyShark','penny_2024','stevie420','KaitoChan_TV','GhostMain42','xX_clipper_Xx','ModJenny','GamerXX','shadowscamp1234','BobsUrUncle','queen_of_clutch','noodle_arms','quartz_sentry','milo_mainz','viper_VOD','lurkerguy','scampgod','DonutDragoon','crystalcube','vegan_lance','salami_main','og_ravager','uwu_4_u','Plum_Tactical','snek_bytes','BunnySlippers','TacoTuesday_','HoneyBadger99','NyxFortuna','solo_q_sad','mocha_mug','flux_fortune','gizmo_grins','rougeAtmos','onyx_owls','duke_of_decay','penny_pixel','blade_bee','beetlebrows','ravyn_radial','snailtrail42','goose_gambit','toad_tactic','bear_bones','mango_munch','salt_seas','crystal_bytes'
+];
+function makeName(){
+  if(chance(.45))return pick(NAME_PRESETS);
+  const a=pick(SYL_A),b=pick(SYL_B);
+  if(chance(.2))return 'xX_'+a+'_Xx';
+  if(chance(.3))return a+'_'+b;
+  if(chance(.2))return a+rint(10,9999);
+  return a+b;
+}
+function makeChatter(){
+  const r=rand();
+  let role='viewer',badges=[];
+  if(r<.04){role='mod';badges.push('mod')}
+  else if(r<.08){role='vip';badges.push('vip')}
+  if(chance(.45)){
+    const m=rand();
+    if(m<.35)badges.push('sub1');
+    else if(m<.7)badges.push('sub6');
+    else if(m<.92)badges.push('sub24');
+    else badges.push('fnd');
+  }
+  if(chance(.18))badges.push('bits');
+  return{name:makeName(),role,badges,color:chatColor()};
+}
+function chatColor(){
+  const cs=['#ff7878','#ffb56b','#ffd07a','#9eff7a','#7affff','#7aa6ff','#c47aff','#ff7ad9','#ff9ec7','#ffd97a','#a970ff','#ffce4a','#00d26a','#3a9cff','#ff3a85','#67c0ff'];
+  return pick(cs);
+}
+let chatters=[];
+function reseedChatters(n){chatters=[];for(let i=0;i<n;i++)chatters.push(makeChatter())}
+
+// ---------- Chat content ----------
+const EMOTES=['Kappa','PogChamp','LUL','KEKW','OMEGALUL','5Head','FeelsBadMan','FeelsGoodMan','widepeepoHappy','Pepega','EZ Clap','PepeLaugh','catJAM','Sadge','POGGERS','monkaS','HYPERS','TriHard','BibleThump','ResidentSleeper','BabyRage','SeemsGood','VoHiYo','PJSalt','ratJAM','PauseChamp'];
+const REACTIONS=[
+  'gg','ggwp','GG NO RE','💀','💀💀💀','LMAOOO','BRO','wtf was that','clean','CLEAN','that was so dirty','lets go','LETS GOOOO','sheesh','SHEEEESH','MY GOAT','ok bob','oh my god','no shot','NO SHOT','holy moly','insane','INSANE','stupid','stupid frags','goated','that was nasty','huh','HUH','what','WHAT','why','easy clap','EZ CLAP','ratio','clipped','CLIPPED','clip it','CLIP IT','OMG','OMG OMG','got him','got em','aim?','thats cap','no cap','copium','hopium','take it','take it','f','F','press F','rip','rip bozo','bozo','one shot','first try','choke','CHOKE','goddd','look at chat','i love this stream','best streamer fr'
+];
+const QUESTIONS=[
+  'whats your sensitivity?','dpi?','what monitor do you use?','first time watching!','have you tried the new gun?','do you stream daily?','where are you from?','wen merch?','wen sub goal hit?','are you smurfing rn?','what rank are u?','can you 1v1 me?','what fov?','what server?','controller or kbm?','whats your config?','headset rec?','aim training routine?','any tips for grinding?','whats ur fav weapon?','how long u been streaming?','do you collab?','schedule?','whats ur pc specs?','do you do clip reviews?'
+];
+const READS=[
+  'love the gameplay bro','keep grinding king','first donation hope it helps','for the new pc fund','lurking from work','can you say hi to my girlfriend?','for the charity!','please drop pleasant park','keep up the good work','your aim is insane','hi from germany!','hi from brazil!','from the philippines :)','met you at twitchcon, big fan','enjoy the dono!','dont spend it all in one place','can i get a shoutout?','marry me?','my moms birthday today, say hi pls','no message just love'
+];
+const SLURS_FILL=['XPMW LWQAR','ZZX FFFA','HJK LMNO','BLERGH','PQRT XYZD','MUCKA','SCRAMBLE','GORTLE','VEX VEX VEX','JANGOS','BLOOP','SQUEEK BOTS','RANDO RANT','GIBBLE','XXOO XXOO'];
+
+function emoteSpam(){
+  const e=pick(EMOTES);const n=rint(2,6);return Array(n).fill(e).join(' ')
+}
+function chatterColorForRole(c){return c.color}
+function makeMsg(special){
+  const c=pick(chatters);
+  return{c, kind:special||rollKind(c)};
+}
+function rollKind(c){
+  const r=rand();
+  if(r<.30)return 'emote';
+  if(r<.65)return 'react';
+  if(r<.78)return 'question';
+  if(r<.82)return 'short';
+  if(r<.86)return 'compliment';
+  return 'react';
+}
+
+function badgeHTML(b){
+  const map={mod:['mod','⚔'],vip:['vip','★'],sub1:['sub1','1'],sub6:['sub6','6'],sub24:['sub24','24'],fnd:['fnd','F'],bits:['bits','b']};
+  const m=map[b];return m?`<span class="b ${m[0]}" title="${b}">${m[1]}</span>`:'';
+}
+function emoteHTML(s){
+  return s.replace(/\b(Kappa|PogChamp|LUL|KEKW|OMEGALUL|5Head|FeelsBadMan|FeelsGoodMan|widepeepoHappy|Pepega|EZ Clap|PepeLaugh|catJAM|Sadge|POGGERS|monkaS|HYPERS|TriHard|BibleThump|ResidentSleeper|BabyRage|SeemsGood|VoHiYo|PJSalt|ratJAM|PauseChamp|F)\b/g,'<span class="em">$1</span>');
+}
+function pushChat(html,cls){
+  const d=document.createElement('div');
+  d.className='cm '+(cls||'');
+  d.innerHTML=html;
+  chatList.appendChild(d);
+  while(chatList.children.length>140)chatList.removeChild(chatList.firstChild);
+  // auto-scroll: keep bottom
+  chatBox.scrollTop=chatBox.scrollHeight;
+}
+function chatLine(c,text,extraCls){
+  const badges=c.badges.map(badgeHTML).join('');
+  pushChat(`${badges}<span class="u" style="color:${c.color}">${escHTML(c.name)}</span><span class="sep">:</span> <span class="t">${emoteHTML(escHTML(text))}</span>`,extraCls||'');
+}
+function escHTML(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'})[m])}
+
+// ---------- Scene build (FPS) ----------
+function buildScene(){
+  scene=new THREE.Scene();
+  scene.fog=new THREE.FogExp2(0x0a0e1a,0.012);
+  scene.background=new THREE.Color(0x0a0e1a);
+  const r=gameEl.getBoundingClientRect();
+  camera=new THREE.PerspectiveCamera(78,r.width/Math.max(1,r.height),0.1,300);
+  camera.position.set(0,1.7,0);
+  // lights
+  const sun=new THREE.DirectionalLight(0xfff0d0,0.85);sun.position.set(40,80,30);scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xa0c0ff,0x202830,.55));
+  // ground
+  const gg=new THREE.PlaneGeometry(220,220,40,40);
+  // bumpy
+  const pa=gg.attributes.position;
+  for(let i=0;i<pa.count;i++){pa.setZ(i,Math.sin(pa.getX(i)*.08)*.4+Math.cos(pa.getY(i)*.07)*.5+(Math.random()-.5)*.2)}
+  gg.computeVertexNormals();
+  const gm=new THREE.MeshLambertMaterial({color:0x2a3a28});
+  const gp=new THREE.Mesh(gg,gm);gp.rotation.x=-Math.PI/2;scene.add(gp);disposables.push(gp);
+  // distant mountains
+  for(let i=0;i<10;i++){
+    const h=18+rand()*30;
+    const cone=new THREE.ConeGeometry(14+rand()*10,h,5);
+    const m=new THREE.Mesh(cone,new THREE.MeshLambertMaterial({color:0x1a2230}));
+    const a=(i/10)*Math.PI*2,d=80+rand()*30;
+    m.position.set(Math.cos(a)*d,h/2-2,Math.sin(a)*d);
+    scene.add(m);disposables.push(m);
+  }
+  // structures: scattered crates and walls
+  world.crates=[];
+  for(let i=0;i<55;i++){
+    const w=1+rand()*2.4,h=1+rand()*2.2,d=1+rand()*2.4;
+    const g=new THREE.BoxGeometry(w,h,d);
+    const colors=[0x6a4a30,0x8a6a3a,0x4a4a4a,0x504030,0x707560];
+    const m=new THREE.Mesh(g,new THREE.MeshLambertMaterial({color:pick(colors)}));
+    const a=rand()*Math.PI*2,r2=8+rand()*45;
+    m.position.set(Math.cos(a)*r2,h/2,Math.sin(a)*r2);
+    m.rotation.y=rand()*Math.PI;
+    scene.add(m);disposables.push(m);world.crates.push(m);
+  }
+  // buildings (taller)
+  for(let i=0;i<8;i++){
+    const w=4+rand()*5,h=6+rand()*10,d=4+rand()*5;
+    const g=new THREE.BoxGeometry(w,h,d);
+    const m=new THREE.Mesh(g,new THREE.MeshLambertMaterial({color:0x3a3a44}));
+    const a=rand()*Math.PI*2,r2=20+rand()*35;
+    m.position.set(Math.cos(a)*r2,h/2,Math.sin(a)*r2);
+    scene.add(m);disposables.push(m);
+  }
+  // muzzle flash
+  const mf=new THREE.Mesh(new THREE.SphereGeometry(.3,8,8),new THREE.MeshBasicMaterial({color:0xffce4a,transparent:true,opacity:0}));
+  scene.add(mf);disposables.push(mf);world.muzzle=mf;
+  // tracers (lines reused)
+  world.tracers=[];
+  for(let i=0;i<6;i++){
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute([0,0,0,0,0,0],3));
+    const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xfff0aa,transparent:true,opacity:0}));
+    scene.add(l);disposables.push(l);world.tracers.push({line:l,age:99});
+  }
+  // enemies
+  world.bots=[];
+  for(let i=0;i<14;i++)spawnBot();
+  // weapon model — simple gun shape lower-right, attached to camera
+  const wp=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(.18,.18,.7),new THREE.MeshLambertMaterial({color:0x18181c}));
+  body.position.set(0,0,-.35);wp.add(body);
+  const grip=new THREE.Mesh(new THREE.BoxGeometry(.12,.34,.16),new THREE.MeshLambertMaterial({color:0x222226}));
+  grip.position.set(0,-.22,-.05);wp.add(grip);
+  const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.46,8),new THREE.MeshLambertMaterial({color:0x303034}));
+  barrel.rotation.x=Math.PI/2;barrel.position.set(0,.02,-.7);wp.add(barrel);
+  const sight=new THREE.Mesh(new THREE.BoxGeometry(.06,.06,.12),new THREE.MeshLambertMaterial({color:0x404048}));
+  sight.position.set(0,.13,-.3);wp.add(sight);
+  wp.position.set(.32,-.28,-.55);
+  camera.add(wp);
+  scene.add(camera);
+  world.weapon=wp;
+  // sky gradient via fog already handles
+}
+function spawnBot(){
+  const g=new THREE.Group();
+  const t=new THREE.Mesh(new THREE.CapsuleGeometry(.32,.9,4,8),new THREE.MeshLambertMaterial({color:pick([0x802020,0x205080,0x508020,0x806020])}));
+  t.position.y=.9;g.add(t);
+  const h=new THREE.Mesh(new THREE.SphereGeometry(.22,10,8),new THREE.MeshLambertMaterial({color:0xc89060}));
+  h.position.y=1.7;g.add(h);
+  const a=rand()*Math.PI*2,r=10+rand()*40;
+  g.position.set(Math.cos(a)*r,0,Math.sin(a)*r);
+  g.userData={hp:100,vx:0,vz:0,target:rand()*Math.PI*2,timer:0,name:makeName()};
+  scene.add(g);disposables.push(g);world.bots.push(g);
+  return g;
+}
+function killBot(b,byPlayer){
+  if(!b)return;
+  scene.remove(b);
+  const i=world.bots.indexOf(b);if(i>=0)world.bots.splice(i,1);
+  if(byPlayer){
+    state.kills++;state.streak++;state.totalKills++;
+    addKillFeed(streamer.name,b.userData.name,true);
+    streamer.mood='hype';streamer.moodTimer=2.5;
+    showHitmark();
+    if(state.streak>=3){
+      reactBubble(pick(['LET\'S GOOOO','3 PIECE EZ','SHEEEESH','POPPED OFF','GET CLIPPED']));
+    }else if(chance(.6)){
+      reactBubble(pick(['gotem','one tap','clean','too easy','EZ','say goodnight']));
+    }
+  }else{
+    addKillFeed(b.userData.name,'????',false);
+  }
+  setTimeout(()=>{if(world.bots.length<14)spawnBot()},rint(2000,5000));
+}
+function addKillFeed(killer,victim,you){
+  const kf=$('killfeed');
+  const d=document.createElement('div');
+  d.className='kf'+(you?' you':'');
+  d.innerHTML=`<b>${escHTML(killer)}</b><span class="vs"> ◀ </span><span class="vic">${escHTML(victim)}</span>`;
+  kf.appendChild(d);
+  while(kf.children.length>5)kf.removeChild(kf.firstChild);
+  setTimeout(()=>{if(d.parentNode)d.parentNode.removeChild(d)},6000);
+}
+function showHitmark(){
+  const h=$('hitmark');h.classList.add('show');
+  setTimeout(()=>h.classList.remove('show'),130);
+}
+
+// ---------- Player state ----------
+let state={
+  hp:100,shield:75,ammoCur:28,ammoMax:120,reloading:0,
+  kills:0,streak:0,totalKills:0,deaths:0,
+  posX:0,posZ:0,yaw:0,pitch:0,
+  walkPhase:0,recoil:0,fireCD:0,
+  isDead:false,respawn:0,
+  bots:[],
+  cam:'1ST',camTimer:0,camLockTime:0,
+  mood:'neutral',moodTimer:0,
+  game:'FPS'
+};
+const GUNS=[
+  {name:'R-99 SMG',mag:28,pool:120,rate:.08,dmg:14,recoil:.7,spread:.04},
+  {name:'R-301 AR',mag:30,pool:120,rate:.12,dmg:18,recoil:.5,spread:.025},
+  {name:'Wingman',mag:6,pool:36,rate:.36,dmg:46,recoil:1.4,spread:.012},
+  {name:'Peacekeeper',mag:6,pool:32,rate:.7,dmg:60,recoil:1.8,spread:.03},
+  {name:'Kraber .50',mag:4,pool:8,rate:1.4,dmg:140,recoil:2.4,spread:.004},
+  {name:'Volt SMG',mag:25,pool:120,rate:.09,dmg:15,recoil:.6,spread:.03},
+];
+let curGun=GUNS[0];
+function setGun(g){curGun=g;state.ammoCur=g.mag;state.ammoMax=g.pool;$('amGun').textContent=g.name;updateAmmo()}
+function updateAmmo(){$('amCur').textContent=state.ammoCur;$('amMax').textContent=state.ammoMax}
+function updateHP(){$('hpFill').style.width=state.hp+'%';$('shFill').style.width=state.shield+'%'}
+
+// ---------- Game logic ----------
+function gameTick(dt){
+  if(state.isDead){
+    state.respawn-=dt;
+    if(state.respawn<=0)respawn();
+    return;
+  }
+  state.walkPhase+=dt*4;
+  // bobbing & gentle look around (AI streamer aim)
+  // pick a target bot to track
+  let tgt=null,tdist=Infinity;
+  for(const b of world.bots){
+    const dx=b.position.x-state.posX,dz=b.position.z-state.posZ;
+    const d=Math.hypot(dx,dz);
+    const a=Math.atan2(-dx,-dz);
+    let da=Math.abs(((a-state.yaw+Math.PI*3)%(Math.PI*2))-Math.PI);
+    const score=d+da*8;
+    if(score<tdist){tdist=score;tgt=b;}
+  }
+  // movement
+  const wantedYaw=tgt?Math.atan2(tgt.position.x-state.posX,-(tgt.position.z-state.posZ)):state.yaw+Math.sin(performance.now()*.0003)*.4;
+  let dy=wantedYaw-state.yaw;while(dy>Math.PI)dy-=Math.PI*2;while(dy<-Math.PI)dy+=Math.PI*2;
+  state.yaw+=dy*Math.min(1,dt*4.5);
+  state.pitch+= (Math.sin(performance.now()*.0007)*.04 - state.pitch)*dt*2;
+  // strafe
+  const strafe=Math.sin(performance.now()*.0011)*.5+Math.sin(performance.now()*.0009+1)*.3;
+  const fwd=Math.sin(performance.now()*.0006)*.6+1.0;
+  const sx=Math.cos(state.yaw),sz=-Math.sin(state.yaw);
+  const fx=Math.sin(state.yaw),fz=-Math.cos(state.yaw);
+  let nx=state.posX + (fx*fwd+sx*strafe)*dt*4;
+  let nz=state.posZ + (fz*fwd+sz*strafe)*dt*4;
+  // soft bounds
+  const r=Math.hypot(nx,nz);
+  if(r>52){nx*=52/r;nz*=52/r}
+  state.posX=nx;state.posZ=nz;
+  camera.position.x=state.posX;
+  camera.position.z=state.posZ;
+  camera.position.y=1.7+Math.sin(state.walkPhase)*.05 - state.recoil*.6;
+  camera.rotation.set(state.pitch - state.recoil*.3,state.yaw,Math.sin(state.walkPhase*.5)*.01);
+  // recoil decay
+  state.recoil+= (0-state.recoil)*Math.min(1,dt*7);
+  // fire
+  state.fireCD-=dt;
+  state.reloading-=dt;
+  if(state.reloading<=0 && state.ammoCur===0 && state.ammoMax>0){
+    // reload
+    const need=Math.min(curGun.mag-state.ammoCur,state.ammoMax);
+    state.ammoCur+=need;state.ammoMax-=need;updateAmmo();
+  }
+  if(tgt && state.ammoCur>0 && state.fireCD<=0 && Math.abs(dy)<.16){
+    fireShot(tgt);
+  }
+  if(state.ammoCur===0 && state.reloading<=0){
+    state.reloading=1.6;
+  }
+  // bots tick
+  for(const b of world.bots){
+    b.userData.timer-=dt;
+    if(b.userData.timer<=0){
+      b.userData.target=rand()*Math.PI*2;
+      b.userData.timer=1+rand()*2;
+    }
+    const tx=Math.cos(b.userData.target),tz=Math.sin(b.userData.target);
+    b.position.x+=tx*dt*1.5;b.position.z+=tz*dt*1.5;
+    b.lookAt(camera.position.x,b.position.y+1,camera.position.z);
+    // bots shoot back occasionally
+    if(chance(dt*.25) && Math.hypot(b.position.x-state.posX,b.position.z-state.posZ)<25){
+      botShoot(b);
+    }
+  }
+  // tracer fade
+  for(const t of world.tracers){t.age+=dt; if(t.line.material.opacity>0)t.line.material.opacity=Math.max(0,1-t.age*4)}
+  // muzzle decay
+  if(world.muzzle.material.opacity>0)world.muzzle.material.opacity*=.7;
+  // killstreak
+  $('ksTxt').textContent=state.streak>0?(state.streak+'X STREAK'):state.kills+' KILLS';
+  $('plTxt').textContent='PLAYERS LEFT — '+(20+world.bots.length+rint(0,3));
+  // hp regen
+  if(state.shield<75 && state.hp>0)state.shield=Math.min(75,state.shield+dt*4);
+  updateHP();
+  // moods decay
+  state.moodTimer-=dt;if(state.moodTimer<=0)streamer.mood='neutral';
+}
+function fireShot(tgt){
+  state.ammoCur--;updateAmmo();
+  state.fireCD=curGun.rate;
+  state.recoil=Math.min(.9,state.recoil+curGun.recoil*.3);
+  // muzzle flash
+  const mf=world.muzzle;
+  mf.material.opacity=1;
+  const fx=Math.sin(state.yaw),fz=-Math.cos(state.yaw);
+  mf.position.set(state.posX+fx*1.4+Math.cos(state.yaw)*.5,1.55,state.posZ+fz*1.4-Math.sin(state.yaw)*.5);
+  // tracer
+  const t=world.tracers.find(x=>x.age>0.18);
+  if(t){
+    const a=t.line.geometry.attributes.position;
+    a.setXYZ(0,state.posX+fx*1,1.6,state.posZ+fz*1);
+    a.setXYZ(1,tgt.position.x,1.6,tgt.position.z);
+    a.needsUpdate=true;
+    t.line.material.opacity=1;t.age=0;
+  }
+  // hit
+  if(chance(.4)){
+    tgt.userData.hp-=curGun.dmg;
+    if(tgt.userData.hp<=0)killBot(tgt,true);
+    else showHitmark();
+  }
+}
+function botShoot(b){
+  if(state.isDead)return;
+  // tracer from b to player
+  const t=world.tracers.find(x=>x.age>0.18);
+  if(t){
+    const a=t.line.geometry.attributes.position;
+    a.setXYZ(0,b.position.x,1.5,b.position.z);
+    a.setXYZ(1,state.posX,1.55,state.posZ);
+    a.needsUpdate=true;
+    t.line.material.color.set(0xff5050);
+    t.line.material.opacity=1;t.age=0;
+  }
+  if(chance(.5)){
+    const dmg=rint(6,18);
+    if(state.shield>0){state.shield-=dmg;if(state.shield<0){state.hp+=state.shield;state.shield=0}}
+    else state.hp-=dmg;
+    flashDamage();
+    if(state.hp<=0){playerDeath(b)}
+  }
+}
+function flashDamage(){
+  const v=$('dmgvignette');v.classList.add('hit');setTimeout(()=>v.classList.remove('hit'),130);
+}
+function playerDeath(by){
+  state.isDead=true;state.deaths++;state.streak=0;state.respawn=5;
+  $('deathscreen').classList.add('show');
+  $('dsBy').textContent='eliminated by '+by.userData.name;
+  streamer.mood='death';streamer.moodTimer=4;
+  reactBubble(pick(['WHAT?? lag city','BRO HE WAS BEHIND','thats cap','no way','you serious','RIP','aimbot','f','my fps droppped','MAN'].concat(['nah this game...','servers cooked','i swear i hit those'])));
+  pushChat(`<b>${escHTML(streamer.name)}</b> died · <span style="color:${'#ff8a8a'}">${escHTML(by.userData.name)}</span> got the elim`,'system');
+  cutCam('DEATH CAM',2);
+  // schedule cuts
+  setTimeout(()=>cutCam('FACE-CAM ZOOM',2.2),1800);
+}
+function respawn(){
+  state.isDead=false;state.hp=100;state.shield=75;state.respawn=0;
+  state.posX=0;state.posZ=0;
+  $('deathscreen').classList.remove('show');
+  setGun(pick(GUNS));
+  cutCam('1ST PERSON',1);
+  reactBubble(pick(['ok ok ok we got this','reset','one more','locked in','focus mode','here we go','rotate rotate']));
+}
+function maybeUpdateDeathRespawn(){
+  if(state.isDead){$('dsRe').textContent='RESPAWNING IN '+Math.max(0,Math.ceil(state.respawn))}
+}
+
+// ---------- Director cams ----------
+function cutCam(name,duration){
+  state.cam=name;state.camTimer=duration;
+  const el=$('camcut');el.textContent='CAM · '+name;el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),Math.max(800,duration*900));
+  if(name==='FACE-CAM ZOOM'){$('facecam').classList.add('zoom')}
+  else{$('facecam').classList.remove('zoom')}
+  // adjust camera fov for some cuts
+  if(camera){
+    let fov=78;
+    if(name==='KILL CAM')fov=46;
+    else if(name==='3RD-PERSON CHASE')fov=64;
+    else if(name==='DEATH CAM')fov=58;
+    else if(name==='1ST PERSON')fov=78;
+    camera.fov=fov;camera.updateProjectionMatrix();
+  }
+}
+
+// ---------- FaceCam ----------
+const fcCtx=fcCv.getContext('2d');
+let face={blink:0,mouth:0,talkPhase:0,talking:false,tilt:0};
+function drawFaceCam(t){
+  const w=fcCv.width,h=fcCv.height;
+  // bg dim purple
+  const grad=fcCtx.createRadialGradient(w*.5,h*.55,30,w*.5,h*.55,Math.max(w,h));
+  grad.addColorStop(0,'#3a1a55');grad.addColorStop(.6,'#1a0e26');grad.addColorStop(1,'#0a0612');
+  fcCtx.fillStyle=grad;fcCtx.fillRect(0,0,w,h);
+  // RGB strip light behind (animated)
+  for(let i=0;i<6;i++){
+    const x=(t*.2+i*.18)%1;
+    fcCtx.fillStyle=`hsla(${(t*60+i*60)%360},80%,55%,0.25)`;
+    fcCtx.fillRect(x*w,0,2,12);
+  }
+  // bookshelf-ish silhouette
+  fcCtx.fillStyle='rgba(0,0,0,0.45)';
+  fcCtx.fillRect(0,h-40,w,40);
+  for(let i=0;i<6;i++){fcCtx.fillStyle=`rgba(${30+i*8},${20},${50+i*10},0.6)`;fcCtx.fillRect(20+i*60,h-90,40,50)}
+  // face position
+  const bob=Math.sin(t*1.2)*4 + (state.recoil>0?-state.recoil*8:0);
+  let cx=w*.5+Math.sin(t*.5)*6;
+  let cy=h*.46+bob;
+  // tilt for hype
+  let tilt=Math.sin(t*1.4)*.04;
+  if(streamer.mood==='hype')tilt=Math.sin(t*7)*.10;
+  if(streamer.mood==='death')tilt=-.18;
+  fcCtx.save();
+  fcCtx.translate(cx,cy);fcCtx.rotate(tilt);
+  // shoulders
+  fcCtx.fillStyle='#222230';fcCtx.beginPath();
+  fcCtx.ellipse(0,140,200,80,0,0,Math.PI*2);fcCtx.fill();
+  fcCtx.fillStyle='#a970ff';fcCtx.fillRect(-110,118,220,8); // hoodie strip
+  // neck
+  fcCtx.fillStyle='#d0a78a';fcCtx.fillRect(-22,38,44,40);
+  // head
+  fcCtx.fillStyle='#e8c2a0';
+  fcCtx.beginPath();fcCtx.ellipse(0,0,76,90,0,0,Math.PI*2);fcCtx.fill();
+  // hair
+  fcCtx.fillStyle=streamer.hairColor||'#3a2a20';
+  fcCtx.beginPath();fcCtx.arc(0,-30,76,Math.PI,Math.PI*2);fcCtx.fill();
+  fcCtx.fillRect(-76,-40,30,40);fcCtx.fillRect(48,-40,28,40);
+  // ear cup left/right (headset)
+  fcCtx.fillStyle='#1a1a22';
+  fcCtx.beginPath();fcCtx.ellipse(-78,18,18,28,0,0,Math.PI*2);fcCtx.fill();
+  fcCtx.beginPath();fcCtx.ellipse(78,18,18,28,0,0,Math.PI*2);fcCtx.fill();
+  // headset band
+  fcCtx.strokeStyle='#1a1a22';fcCtx.lineWidth=10;
+  fcCtx.beginPath();fcCtx.moveTo(-78,0);fcCtx.bezierCurveTo(-60,-90,60,-90,78,0);fcCtx.stroke();
+  // headset led
+  const ledOn=(Math.floor(t*1.5)%2===0);
+  fcCtx.fillStyle=ledOn?'#a970ff':'#5c2db8';
+  fcCtx.beginPath();fcCtx.arc(-86,18,4,0,Math.PI*2);fcCtx.fill();
+  // mic boom
+  fcCtx.strokeStyle='#1a1a22';fcCtx.lineWidth=4;
+  fcCtx.beginPath();fcCtx.moveTo(78,18);fcCtx.quadraticCurveTo(50,60,16,60);fcCtx.stroke();
+  fcCtx.fillStyle='#1a1a22';fcCtx.beginPath();fcCtx.arc(10,60,7,0,Math.PI*2);fcCtx.fill();
+  // glasses
+  fcCtx.strokeStyle='#222';fcCtx.lineWidth=4;
+  fcCtx.beginPath();fcCtx.arc(-26,-2,22,0,Math.PI*2);fcCtx.stroke();
+  fcCtx.beginPath();fcCtx.arc(26,-2,22,0,Math.PI*2);fcCtx.stroke();
+  fcCtx.beginPath();fcCtx.moveTo(-4,-2);fcCtx.lineTo(4,-2);fcCtx.stroke();
+  // glasses reflection
+  fcCtx.strokeStyle='rgba(169,112,255,.55)';fcCtx.lineWidth=3;
+  fcCtx.beginPath();fcCtx.arc(-26,-2,18,Math.PI*1.1,Math.PI*1.5);fcCtx.stroke();
+  fcCtx.beginPath();fcCtx.arc(26,-2,18,Math.PI*1.1,Math.PI*1.5);fcCtx.stroke();
+  // eyes
+  let blink=(face.blink>0)?1:0;
+  fcCtx.fillStyle='#fff';
+  if(!blink){
+    fcCtx.beginPath();fcCtx.ellipse(-26,-2,6,8,0,0,Math.PI*2);fcCtx.fill();
+    fcCtx.beginPath();fcCtx.ellipse(26,-2,6,8,0,0,Math.PI*2);fcCtx.fill();
+    fcCtx.fillStyle='#222';
+    let eyeOff=Math.sin(t*1.3)*2;
+    fcCtx.beginPath();fcCtx.arc(-26+eyeOff,-2,3,0,Math.PI*2);fcCtx.fill();
+    fcCtx.beginPath();fcCtx.arc(26+eyeOff,-2,3,0,Math.PI*2);fcCtx.fill();
+  }else{
+    fcCtx.strokeStyle='#222';fcCtx.lineWidth=2;
+    fcCtx.beginPath();fcCtx.moveTo(-32,-2);fcCtx.lineTo(-20,-2);fcCtx.stroke();
+    fcCtx.beginPath();fcCtx.moveTo(20,-2);fcCtx.lineTo(32,-2);fcCtx.stroke();
+  }
+  // brows for mood
+  fcCtx.strokeStyle='#3a2a20';fcCtx.lineWidth=3;
+  if(streamer.mood==='hype'){
+    fcCtx.beginPath();fcCtx.moveTo(-38,-26);fcCtx.lineTo(-14,-32);fcCtx.stroke();
+    fcCtx.beginPath();fcCtx.moveTo(14,-32);fcCtx.lineTo(38,-26);fcCtx.stroke();
+  }else if(streamer.mood==='death'){
+    fcCtx.beginPath();fcCtx.moveTo(-38,-30);fcCtx.lineTo(-14,-22);fcCtx.stroke();
+    fcCtx.beginPath();fcCtx.moveTo(14,-22);fcCtx.lineTo(38,-30);fcCtx.stroke();
+  }else{
+    fcCtx.beginPath();fcCtx.moveTo(-38,-26);fcCtx.lineTo(-14,-26);fcCtx.stroke();
+    fcCtx.beginPath();fcCtx.moveTo(14,-26);fcCtx.lineTo(38,-26);fcCtx.stroke();
+  }
+  // mouth
+  let mh=face.mouth;
+  if(face.talking){mh=Math.abs(Math.sin(face.talkPhase*8))*.9}
+  fcCtx.fillStyle='#5a1818';
+  if(streamer.mood==='hype'){
+    // open big
+    fcCtx.beginPath();fcCtx.ellipse(0,38,18,12+mh*16,0,0,Math.PI*2);fcCtx.fill();
+    fcCtx.fillStyle='#fff';fcCtx.fillRect(-16,32,32,3);
+  }else if(streamer.mood==='death'){
+    fcCtx.beginPath();fcCtx.ellipse(0,42,12,4,0,0,Math.PI*2);fcCtx.fill();
+  }else{
+    fcCtx.beginPath();fcCtx.ellipse(0,38,12,3+mh*8,0,0,Math.PI*2);fcCtx.fill();
+  }
+  fcCtx.restore();
+  // overlay scanlines slight
+  fcCtx.globalAlpha=.06;
+  for(let i=0;i<h;i+=3){fcCtx.fillStyle='#000';fcCtx.fillRect(0,i,w,1)}
+  fcCtx.globalAlpha=1;
+  // levels (audio bars at right of nm)
+  const lvls=$('fcLvl');
+  if(lvls){
+    if(!lvls.children.length){for(let i=0;i<6;i++)lvls.appendChild(document.createElement('i'));}
+    for(let i=0;i<6;i++){
+      const r2=Math.sin(t*8+i)*.5+.5;
+      const v=face.talking?(.4+r2*.6):(.05+r2*.25);
+      lvls.children[i].style.height=(v*10)+'px';
+      lvls.children[i].style.background=face.talking?'#00d26a':'#5c5c66';
+    }
+  }
+  // blink timer
+  face.blink=Math.max(0,face.blink-1);
+  if(face.blink<=0 && Math.random()<.012)face.blink=4;
+}
+
+// ---------- Mini-map ----------
+const mmCtx=mmCv.getContext('2d');
+function drawMinimap(t){
+  const w=mmCv.width,h=mmCv.height;
+  mmCtx.clearRect(0,0,w,h);
+  mmCtx.fillStyle='#0a1a14';mmCtx.fillRect(0,0,w,h);
+  // grid
+  mmCtx.strokeStyle='rgba(0,210,106,.18)';mmCtx.lineWidth=1;
+  for(let i=0;i<10;i++){mmCtx.beginPath();mmCtx.moveTo(i*20,0);mmCtx.lineTo(i*20,h);mmCtx.stroke();mmCtx.beginPath();mmCtx.moveTo(0,i*20);mmCtx.lineTo(w,i*20);mmCtx.stroke()}
+  // border
+  mmCtx.strokeStyle='rgba(0,210,106,.4)';mmCtx.lineWidth=2;mmCtx.strokeRect(0,0,w,h);
+  // ring (storm)
+  mmCtx.strokeStyle='rgba(255,160,80,.7)';mmCtx.lineWidth=2;
+  mmCtx.beginPath();mmCtx.arc(w*.5,h*.5,60+Math.sin(t*.3)*8,0,Math.PI*2);mmCtx.stroke();
+  // bots
+  for(const b of world.bots){
+    const x=w*.5+(b.position.x-state.posX)*1.6;
+    const y=h*.5+(b.position.z-state.posZ)*1.6;
+    if(x<0||y<0||x>w||y>h)continue;
+    mmCtx.fillStyle='#ff5050';mmCtx.fillRect(x-2,y-2,4,4);
+  }
+  // player
+  mmCtx.save();mmCtx.translate(w*.5,h*.5);mmCtx.rotate(state.yaw);
+  mmCtx.fillStyle='#a970ff';mmCtx.beginPath();mmCtx.moveTo(0,-7);mmCtx.lineTo(5,4);mmCtx.lineTo(-5,4);mmCtx.closePath();mmCtx.fill();
+  mmCtx.restore();
+}
+
+// ---------- Bubble / talking ----------
+function reactBubble(text){
+  const b=$('bubble');
+  b.textContent=text;
+  b.classList.add('show');
+  face.talking=true;
+  clearTimeout(b._t);
+  b._t=setTimeout(()=>{b.classList.remove('show');face.talking=false},2400);
+}
+
+// ---------- Alerts ----------
+function showAlert(cls,typ,ti,sb){
+  const a=$('alert');
+  a.className='';a.classList.add(cls);
+  a.innerHTML=`<div class="typ">${typ}</div><div class="ti">${ti}</div>${sb?`<div class="sb">${sb}</div>`:''}`;
+  a.classList.add('show');
+  clearTimeout(a._t);a._t=setTimeout(()=>a.classList.remove('show'),5500);
+}
+function showPoll(q,a,b){
+  const al=$('alert');
+  al.className='';al.classList.add('poll');
+  al.innerHTML=`<div class="typ">CHANNEL POLL</div><div class="ti">${q}</div>
+    <div class="row yes"><span>${a.label}</span><div class="bar"><i style="width:${a.pct}%"></i></div><span class="pct">${a.pct}%</span></div>
+    <div class="row no"><span>${b.label}</span><div class="bar"><i style="width:${b.pct}%"></i></div><span class="pct">${b.pct}%</span></div>`;
+  al.classList.add('show');
+  clearTimeout(al._t);al._t=setTimeout(()=>al.classList.remove('show'),7000);
+}
+
+// ---------- Stream events ----------
+const DON_NAMES=['Stevie420','Penny_2024','xX_clipper_Xx','GamerXX','shadowscamp1234','vegan_lance','BunnySlippers','TacoTuesday_','Penny_Pixel','milo_mainz','quartz_sentry','crystalcube','solo_q_sad','BobsUrUncle'];
+function evDonation(){
+  const who=pick(DON_NAMES),amt=pick([5,10,20,25,50,100,200,500]),msg=pick(READS);
+  showAlert('donation','NEW DONATION',`${escHTML(who)} just donated $${amt}!`, msg?`"${escHTML(msg)}"`:'');
+  pushChat(`<b style="color:#00d26a">${escHTML(who)}</b> donated <b>$${amt}</b> — "${escHTML(msg)}"`,'donread');
+  state.subgoalProgress=Math.min(state.subgoalMax, state.subgoalProgress+amt*.3);
+  reactBubble(`thank you ${who}!! omg`);
+  streamer.mood='hype';streamer.moodTimer=2.5;
+}
+function evSub(){
+  const who=makeName(),tier=pick(['Tier 1','Tier 1','Tier 2','Tier 3','Prime']),mo=rint(1,30);
+  showAlert('sub','NEW SUB',`${escHTML(who)} just subscribed at ${tier}!`,mo>1?`${mo} months in a row!`:'first time sub PogChamp');
+  pushChat(`<b style="color:#a970ff">${escHTML(who)}</b> subscribed (${tier}) ${mo>1?`· ${mo} months`:''}`,'system');
+  state.subgoalProgress=Math.min(state.subgoalMax,state.subgoalProgress+1);
+  reactBubble(pick([`welcome ${who}!`,`${who} thank u so much`,'NEW SUB LFG','sub hype!']));
+  streamer.mood='hype';streamer.moodTimer=2;
+}
+function evRaid(){
+  const from=pick(STREAMER_NAMES.filter(n=>n!==streamer.name));
+  const ct=rint(40,420);
+  showAlert('raid','RAID INCOMING',`Welcome ${ct} raiders from ${escHTML(from)}!`,'!raid !so');
+  pushChat(`<b>${escHTML(from)}</b> raided with ${ct} viewers — say hi!`,'system');
+  state.viewers+=ct;
+  // burst of new chatters
+  for(let i=0;i<8;i++){chatters.push(makeChatter())}
+  for(let i=0;i<5;i++){
+    const c=pick(chatters);
+    setTimeout(()=>chatLine(c,'raid raid raid raid!'),i*120);
+  }
+  reactBubble(pick([`yo ${from} thank u for the raid`,'WELCOME RAIDERS','say hi to the raid <3','THE BOYS ARE HERE']));
+  streamer.mood='hype';streamer.moodTimer=2.5;
+}
+function evHost(){
+  const from=pick(STREAMER_NAMES.filter(n=>n!==streamer.name));
+  showAlert('host','AUTO HOSTING',`${escHTML(from)} is hosting!`,'<3');
+  pushChat(`<b>${escHTML(from)}</b> is hosting · welcome to the host crew!`,'system');
+}
+function evBits(){
+  const who=pick(DON_NAMES),amt=pick([100,500,1000,5000,10000,25000]);
+  showAlert('bits','CHEER',`${escHTML(who)} cheered ${amt} bits!`,pick(['cheer cheer','for the play of the day','keep it up','LET\'S GO']));
+  pushChat(`<b style="color:#ffce4a">${escHTML(who)}</b> cheered ${amt} bits!`,'donread');
+  reactBubble(`${who} thank u for the bits!`);
+}
+function evClip(){
+  const who=pick(NAME_PRESETS);
+  showAlert('clip','STREAM CLIP',`Highlight clipped by ${escHTML(who)}`,'"that 1v3 was insane"');
+  pushChat(`<b>${escHTML(who)}</b> clipped: "<i>insane 1v3 clutch</i>"`,'system');
+}
+function evMilestone(){
+  const m=pick(['10K VIEWERS — LET\'S GOOO','LIFETIME GOAL HIT','5,000 FOLLOWERS','PARTNER ANNOUNCEMENT','100K WATCH HOURS THIS MONTH']);
+  showAlert('milestone','VIEWER MILESTONE',m,'thank u thank u thank u');
+  reactBubble('I LOVE YOU CHAT');streamer.mood='hype';streamer.moodTimer=4;
+}
+function evPoll(){
+  const polls=[
+    ['Should I drop into Pleasant Park?','YES','NO'],
+    ['New PC build — RGB or stealth black?','RGB','BLACK'],
+    ['Should we do a viewer game lobby?','YES PLZ','LATER'],
+    ['Switch to Valorant after this?','YES','NO']
+  ];
+  const p=pick(polls);
+  const a=rint(20,80);
+  showPoll(p[0],{label:p[1],pct:a},{label:p[2],pct:100-a});
+  pushChat(`<b>POLL:</b> ${escHTML(p[0])}`,'system');
+}
+function evHateRaid(){
+  $('hateraid').classList.add('on');
+  const burst=rint(8,16);
+  for(let i=0;i<burst;i++){
+    setTimeout(()=>{
+      const c=makeChatter();c.name='troll'+rint(1000,99999);
+      chatLine(c,emoteSpam()+' '+pick(SLURS_FILL));
+    },i*120);
+  }
+  // mod actions
+  setTimeout(()=>{
+    pushChat(`<b style="color:#00ad03">⚔ ModJenny</b> enabled <i>Followers-Only Mode</i>`,'modaction');
+  },800);
+  for(let i=0;i<burst-1;i++){
+    setTimeout(()=>{
+      pushChat(`<b style="color:#00ad03">⚔ ModJenny</b> banned @troll${rint(1000,99999)} · spam`,'modaction');
+    },1500+i*220);
+  }
+  setTimeout(()=>{
+    $('hateraid').classList.remove('on');
+    pushChat(`mods cleaned that up · subs only mode active`,'system');
+    reactBubble('shoutout to my mods, big thank you to ModJenny');
+  },5000);
+}
+
+// ---------- Tick ----------
+let chatTimer=0,chatBatch=0;
+let evtTimer=0;
+let titleTimer=0;
+let viewerTimer=0;
+let blinkTimer=0;
+let camCutTimer=0;
+function tick(dt){
+  if(state.phase==='live'){
+    gameTick(dt);
+    maybeUpdateDeathRespawn();
+    // chat firing very fast: 3-5 messages per second avg
+    chatTimer-=dt;
+    while(chatTimer<=0){
+      chatTimer+=0.18+rand()*.18;
+      fireChatMessage();
+    }
+    // events
+    evtTimer-=dt;
+    if(evtTimer<=0){
+      evtTimer=8+rand()*10;
+      const r=rand();
+      if(r<.18)evDonation();
+      else if(r<.35)evSub();
+      else if(r<.46)evBits();
+      else if(r<.56)evRaid();
+      else if(r<.62)evHost();
+      else if(r<.72)evClip();
+      else if(r<.80)evPoll();
+      else if(r<.88)evMilestone();
+      else if(r<.95)evHateRaid();
+      else evDonation();
+    }
+    // camera cuts
+    camCutTimer-=dt;
+    if(camCutTimer<=0 && !state.isDead){
+      camCutTimer=10+rand()*14;
+      const cuts=['1ST PERSON','1ST PERSON','1ST PERSON','3RD-PERSON CHASE','KILL CAM','FACE-CAM ZOOM'];
+      cutCam(pick(cuts),Math.random()*3+1.5);
+      if(state.cam==='FACE-CAM ZOOM')setTimeout(()=>cutCam('1ST PERSON',1),2400);
+    }
+    // viewer drift
+    viewerTimer-=dt;
+    if(viewerTimer<=0){
+      viewerTimer=.7+rand()*1.2;
+      const drift=rint(-30,80);
+      state.viewers=Math.max(800,Math.min(state.viewerCap,state.viewers+drift));
+      $('chVw').textContent=fmt(state.viewers);
+      if(rand()<.3){state.followers+=rint(1,6);$('chFol').textContent=fmt(state.followers);}
+    }
+    // title rotation
+    titleTimer-=dt;
+    if(titleTimer<=0){titleTimer=22+rand()*30;$('ttTi').textContent=pick(TITLES)}
+    // sub goal progress drips
+    if(rand()<.005)state.subgoalProgress=Math.min(state.subgoalMax,state.subgoalProgress+1);
+    $('sgFill').style.width=Math.min(100,(state.subgoalProgress/state.subgoalMax)*100)+'%';
+    $('sgCur').textContent=Math.floor(state.subgoalProgress);
+    // bitrate jitter
+    if(rand()<.1){
+      const b=5800+rint(-300,800);$('tbBps').textContent=b+' kbps';
+      $('tbLat').textContent=(80+rint(0,80))+'ms';
+    }
+    // stream length checking
+    state.elapsed+=dt;
+    if(state.elapsed>state.duration){
+      endStream();
+    }
+  }else if(state.phase==='ended'){
+    state.endT-=dt;
+    if(state.endT<=0){state.phase='starting';state.startT=10;showStarting()}
+  }else if(state.phase==='starting'){
+    state.startT-=dt;
+    $('scCd').textContent=Math.max(0,Math.ceil(state.startT));
+    if(state.startT<=0){beginStream()}
+  }
+}
+
+function fireChatMessage(){
+  if(chatters.length===0)return;
+  const m=makeMsg();
+  let text='';
+  switch(m.kind){
+    case 'emote':text=emoteSpam();break;
+    case 'react':text=pick(REACTIONS);if(chance(.4))text+=' '+pick(EMOTES);break;
+    case 'question':text=pick(QUESTIONS);break;
+    case 'short':text=pick(['?','??','???','...','lol','ok','POG','sheesh','ratio','+1','same','f','no']);break;
+    case 'compliment':text=pick(['gg streamer','best aim na','this dude smurfing','goated streamer','underrated streamer','followed','i love this stream','this fr is the best stream rn','pog stream','🔥🔥🔥','clean as always']);break;
+    default:text=pick(REACTIONS);
+  }
+  // sometimes mention streamer
+  if(chance(.07))text='@'+streamer.name+' '+text;
+  // sometimes mod posts !command
+  if(m.c.role==='mod' && chance(.5))text=pick(['!discord','!sens','!drop','!sub','!so','!vods','!youtube']);
+  // sometimes vip/sub posts long
+  if(chance(.04))text=pick(QUESTIONS)+' '+pick(EMOTES);
+  const cls=text.includes('@'+streamer.name)?'mention':'';
+  chatLine(m.c,text,cls);
+}
+
+// ---------- Stream lifecycle ----------
+function beginStream(){
+  // reset
+  $('screen').classList.remove('show');
+  state.phase='live';
+  state.elapsed=0;
+  state.duration=540+rand()*120; // ~9-11 min for testing
+  state.viewers=rint(800,3000);
+  state.viewerCap=rint(15000,28000);
+  state.followers=rint(40000,250000);
+  state.subgoalProgress=rint(60,300);
+  state.subgoalMax=500;
+  state.kills=0;state.streak=0;state.deaths=0;state.totalKills=0;
+  state.posX=0;state.posZ=0;state.yaw=0;state.pitch=0;state.hp=100;state.shield=75;
+  state.isDead=false;state.respawn=0;
+  state.cam='1ST PERSON';
+  // pick streamer
+  streamer.name=pick(STREAMER_NAMES);
+  streamer.hairColor=pick(['#3a2a20','#5a3a25','#8a4a25','#a55a25','#c2a05a','#5a4a40','#2a1a10','#6a4a8a','#4a2a8a']);
+  streamer.mood='neutral';streamer.moodTimer=0;
+  $('chNm').textContent=streamer.name;
+  $('tbName').textContent=streamer.name;
+  $('fcNm').textContent=streamer.name;
+  $('chAv').textContent=streamer.name[0];
+  $('tbCat').textContent=pick(GAMES);
+  $('tbSong').textContent=pick(SONGS);
+  $('chVw').textContent=fmt(state.viewers);
+  $('chFol').textContent=fmt(state.followers);
+  $('sgCur').textContent=Math.floor(state.subgoalProgress);
+  $('sgFill').style.width=(state.subgoalProgress/state.subgoalMax*100)+'%';
+  $('chFw').classList.remove('followed');$('chFw').textContent='Follow';
+  // tags rotate
+  const tg=$('title').querySelector('.tags');
+  tg.innerHTML='';
+  const tagsuse=Array.from({length:3+rint(0,2)},()=>pick(TAGSPOOL));
+  tagsuse.forEach((t,i)=>{const s=document.createElement('span');if(i===0)s.className='fav';s.textContent=t;tg.appendChild(s)});
+  // chatters
+  reseedChatters(70);
+  chatList.innerHTML='';
+  pushChat(`Welcome to <b>${escHTML(streamer.name)}</b>'s channel — be kind & have fun ♥`,'system');
+  // build scene
+  if(scene)disposeAll();
+  if(renderer && renderer.domElement && renderer.domElement.parentNode){renderer.domElement.parentNode.removeChild(renderer.domElement)}
+  if(renderer){try{renderer.dispose()}catch(e){}}
+  makeRenderer();
+  buildScene();
+  setGun(pick(GUNS));
+  // schedule auto follow
+  setTimeout(()=>{$('chFw').classList.add('followed');$('chFw').textContent='Following'},rint(8000,18000));
+  // initial chat burst
+  for(let i=0;i<14;i++){setTimeout(()=>fireChatMessage(),i*120);}
+  reactBubble(pick(['what is up gamers!','LFG let\'s drop in','chat we live!','yo yo yo what\'s up']));
+}
+
+function endStream(){
+  state.phase='ended';
+  state.endT=8;
+  $('scTi').textContent='STREAM ENDED';
+  $('scSb').textContent='THANKS FOR WATCHING ♥';
+  $('scCd').textContent='';
+  $('screen').classList.add('show');
+  pushChat(`<b>${escHTML(streamer.name)}</b> ended the stream · See you next time!`,'system');
+}
+function showStarting(){
+  $('scTi').textContent='STARTING SOON...';
+  $('scSb').textContent='REFRESHING LOBBY';
+  $('screen').classList.add('show');
+}
+
+function fmt(n){return n.toLocaleString('en-US')}
+
+// ---------- main loop ----------
+clock={prev:performance.now()};
+function loop(now){
+  const dt=Math.min(.1,(now-clock.prev)*.001);clock.prev=now;
+  if(state.phase==='live' && renderer && scene && camera){
+    renderer.render(scene,camera);
+  }
+  drawFaceCam(now*.001);
+  if(world.bots && world.bots.length)drawMinimap(now*.001);
+  tick(dt);
+  requestAnimationFrame(loop);
+}
+
+state.phase='starting';
+state.startT=3;
+$('scTi').textContent='STARTING SOON...';
+$('scSb').textContent='STREAM BEGINS IN';
+$('screen').classList.add('show');
+beginStream(); // immediately start the first stream too (we still show screen briefly)
+$('screen').classList.remove('show');
+requestAnimationFrame(loop);
+
+// follow click (cosmetic)
+$('chFw').addEventListener('click',()=>{
+  const f=$('chFw');
+  if(f.classList.contains('followed')){f.classList.remove('followed');f.textContent='Follow'}
+  else{f.classList.add('followed');f.textContent='Following';state.followers++;$('chFol').textContent=fmt(state.followers)}
+});
+
+})();
+</script>
+</body>
+</html>

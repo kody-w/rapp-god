@@ -1,0 +1,190 @@
+;; GOVERNOR v6.0 — Score-optimized with module building & CRI control
+;; Score = median_sols*100 + min_crew*500 + min(modules,8)*150 + survival*20000 - P75_CRI*10
+;; CRI ≈ 3 + (pwr<50→20, pwr<150→7, else 0) + events*5 + (o2<5d→17) + (h2o<5d→17) + (food<5d→17)
+;; Strategy: survive first, build 8 modules, keep CRI<15 via resource buffers ≥5d & power ≥150
+
+(begin
+
+  ;; ── THREAT ASSESSMENT ──
+  (define o2_emerg (< o2_days 3))
+  (define h2o_emerg (< h2o_days 3))
+  (define food_emerg (< food_days 4))
+  (define o2_crit (< o2_days 6))
+  (define h2o_crit (< h2o_days 6))
+  (define food_crit (< food_days 8))
+  (define o2_low (< o2_days 14))
+  (define h2o_low (< h2o_days 14))
+  (define food_low (< food_days 16))
+  (define pwr_crit (< power_kwh 50))
+  (define pwr_low (< power_kwh 150))
+  (define dust_high (> dust_tau 0.6))
+  (define hp_crisis (< crew_min_hp 35))
+  (define eff_bad (or (< isru_eff 0.6) (< greenhouse_eff 0.6)))
+
+  (define any_emerg (or o2_emerg h2o_emerg food_emerg))
+  (define any_crit (or o2_crit h2o_crit food_crit pwr_crit))
+  (define any_low (or o2_low h2o_low food_low))
+  (define stable (and (not any_emerg) (not any_crit)))
+  (define very_stable (and stable (not any_low) (not pwr_low) (> crew_min_hp 60)))
+
+  ;; ── MODULE BUILDING ──
+  ;; Build order: solar_farm → repair_bay → isru_plant → greenhouse_dome
+  ;;   → water_extractor → solar_farm → radiation_shelter → greenhouse_dome
+  ;; Only build when we have safety margin
+  (define safe_to_build (and (> o2_days 4) (> h2o_days 4) (> food_days 5) (> power_kwh 40) (not any_emerg)))
+
+  (if safe_to_build
+    (cond
+      ((< modules_built 1) (build-module solar_farm))
+      ((< modules_built 2) (build-module repair_bay))
+      ((< modules_built 3) (build-module isru_plant))
+      ((< modules_built 4) (build-module greenhouse_dome))
+      ((< modules_built 5) (build-module water_extractor))
+      ((< modules_built 6) (build-module solar_farm))
+      ((< modules_built 7) (build-module radiation_shelter))
+      ((< modules_built 8) (build-module greenhouse_dome))
+      (true 0)))
+
+  ;; ── ALLOCATION ENGINE (mutually exclusive modes) ──
+  (cond
+    ;; ═══ EMERGENCY: immediate survival threat ═══
+    (any_emerg
+      (cond
+        ;; O2 most lethal — max ISRU
+        ((and o2_emerg (or (not h2o_emerg) (<= o2_days h2o_days)))
+          (begin
+            (set! heating_alloc 0.04)
+            (set! isru_alloc 0.90)
+            (set! greenhouse_alloc 0.06)
+            (set! food_ration 0.18)
+            (set! repair_alloc 22.0)))
+        ;; H2O emergency — heavy ISRU
+        ((and h2o_emerg (or (not food_emerg) (<= h2o_days food_days)))
+          (begin
+            (set! heating_alloc 0.05)
+            (set! isru_alloc 0.87)
+            (set! greenhouse_alloc 0.08)
+            (set! food_ration 0.22)
+            (set! repair_alloc 20.0)))
+        ;; Food emergency — max greenhouse
+        (true
+          (begin
+            (set! heating_alloc 0.05)
+            (set! isru_alloc 0.13)
+            (set! greenhouse_alloc 0.82)
+            (set! food_ration 0.12)
+            (set! repair_alloc 20.0)))))
+
+    ;; ═══ POWER CRISIS: everything depends on power ═══
+    (pwr_crit
+      (begin
+        (set! heating_alloc 0.60)
+        (set! isru_alloc 0.25)
+        (set! greenhouse_alloc 0.15)
+        (set! food_ration 0.35)
+        (set! repair_alloc 15.0)))
+
+    ;; ═══ CRITICAL: prevent slide into emergency ═══
+    ((or o2_crit h2o_crit food_crit)
+      (cond
+        ((and o2_crit (<= o2_days (min h2o_days food_days)))
+          (begin
+            (set! heating_alloc 0.08)
+            (set! isru_alloc 0.76)
+            (set! greenhouse_alloc 0.16)
+            (set! food_ration 0.40)
+            (set! repair_alloc 12.0)))
+        ((and h2o_crit (<= h2o_days (min o2_days food_days)))
+          (begin
+            (set! heating_alloc 0.08)
+            (set! isru_alloc 0.74)
+            (set! greenhouse_alloc 0.18)
+            (set! food_ration 0.45)
+            (set! repair_alloc 12.0)))
+        (true
+          (begin
+            (set! heating_alloc 0.09)
+            (set! isru_alloc 0.22)
+            (set! greenhouse_alloc 0.69)
+            (set! food_ration 0.30)
+            (set! repair_alloc 12.0)))))
+
+    ;; ═══ LOW: preventive buffer building ═══
+    (any_low
+      (cond
+        ((and o2_low (<= o2_days (min h2o_days food_days)))
+          (begin
+            (set! heating_alloc 0.12)
+            (set! isru_alloc 0.63)
+            (set! greenhouse_alloc 0.25)
+            (set! food_ration 0.65)
+            (set! repair_alloc 6.0)))
+        ((and h2o_low (<= h2o_days (min o2_days food_days)))
+          (begin
+            (set! heating_alloc 0.12)
+            (set! isru_alloc 0.61)
+            (set! greenhouse_alloc 0.27)
+            (set! food_ration 0.65)
+            (set! repair_alloc 6.0)))
+        (true
+          (begin
+            (set! heating_alloc 0.13)
+            (set! isru_alloc 0.30)
+            (set! greenhouse_alloc 0.57)
+            (set! food_ration 0.55)
+            (set! repair_alloc 6.0)))))
+
+    ;; ═══ VERY STABLE: optimized cruise ═══
+    (very_stable
+      (begin
+        (set! heating_alloc 0.10)
+        (set! isru_alloc 0.50)
+        (set! greenhouse_alloc 0.40)
+        (set! food_ration 0.92)
+        (set! repair_alloc 2.5)))
+
+    ;; ═══ BALANCED: normal operations ═══
+    (true
+      (begin
+        (set! heating_alloc 0.13)
+        (set! isru_alloc 0.55)
+        (set! greenhouse_alloc 0.32)
+        (set! food_ration 0.75)
+        (set! repair_alloc 5.0))))
+
+  ;; ── ENVIRONMENTAL ADJUSTMENTS ──
+  (if dust_high
+    (begin
+      (set! heating_alloc (+ heating_alloc 0.04))
+      (set! repair_alloc (+ repair_alloc 3.0))))
+
+  (if (and pwr_low (not pwr_crit) (not any_emerg))
+    (set! heating_alloc (+ heating_alloc 0.03)))
+
+  (if hp_crisis
+    (begin
+      (set! heating_alloc (+ heating_alloc 0.02))
+      (set! food_ration (max food_ration 0.55))))
+
+  (if eff_bad
+    (set! repair_alloc (+ repair_alloc 4.0)))
+
+  (if (> cri 25)
+    (begin
+      (set! repair_alloc (+ repair_alloc 4.0))
+      (set! food_ration (max food_ration 0.50))))
+
+  ;; ── NORMALIZE ALLOCATIONS ──
+  (define total (+ heating_alloc isru_alloc greenhouse_alloc))
+  (set! heating_alloc (/ heating_alloc total))
+  (set! isru_alloc (/ isru_alloc total))
+  (set! greenhouse_alloc (/ greenhouse_alloc total))
+
+  ;; Clamp to safe ranges
+  (set! heating_alloc (max 0.02 (min 0.95 heating_alloc)))
+  (set! isru_alloc (max 0.02 (min 0.95 isru_alloc)))
+  (set! greenhouse_alloc (max 0.02 (min 0.95 greenhouse_alloc)))
+  (set! food_ration (max 0.08 (min 1.0 food_ration)))
+  (set! repair_alloc (max 0.5 (min 30.0 repair_alloc)))
+
+  (log (concat "Sol " (string sol) " CRI=" (string cri) " Pwr=" (string (round power_kwh)) " O2=" (string (round o2_days)) "d H2O=" (string (round h2o_days)) "d Food=" (string (round food_days)) "d Mod=" (string modules_built))))

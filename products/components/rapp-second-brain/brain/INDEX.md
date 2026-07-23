@@ -1,0 +1,365 @@
+# The RAPP second brain — index
+
+340 nodes carded. Derived from `cards/` by CI — do not hand-edit.
+
+## adjacent
+
+- **AI-Agent-Templates** (`repo:kody-w/AI-Agent-Templates`) — . AI Agent Templates
+- **AI-Agent-Templates-Pilot** (`repo:kody-w/AI-Agent-Templates-Pilot`) — . Focused subset of AI-Agent-Templates — pilot library used for testing a small set of rapp agent stacks. Mirrors the AI-Agent-Templates layou
+- **AIGame** (`repo:kody-w/AIGame`) — . AIGame
+- **AIGames** (`repo:kody-w/AIGames`) — . (no description — deep-card in Phase 2)
+- **AINexus** (`repo:kody-w/AINexus`) — . AI Nexus
+- **AINexus-Demo** (`repo:kody-w/AINexus-Demo`) — . Demo federation nexus for AINexus v2 - A neon cyberpunk gateway
+- **AI_LAB** (`repo:kody-w/AI_LAB`) — . AI_LAB
+- **AgenticPlaygroundLab** (`repo:kody-w/AgenticPlaygroundLab`) — . AgenticPlaygroundLab
+- **Agents** (`repo:kody-w/Agents`) — . The Microsoft 365 Agent SDK simplifies building full stack, multichannel, trusted agents for platforms including M365, Teams, Copilot Studio
+- **Agents-for-python** (`repo:kody-w/Agents-for-python`) — . This repository is for active development of the Microsoft 365 Agent SDK components for Python
+- **AmazonScraper** (`repo:kody-w/AmazonScraper`) — . (no description — deep-card in Phase 2)
+- **AndriiTest** (`repo:kody-w/AndriiTest`) — . AndriiTest
+- **Auto-GPT** (`repo:kody-w/Auto-GPT`) — . An experimental open-source attempt to make GPT-4 fully autonomous.
+- **AzureARMTester** (`repo:kody-w/AzureARMTester`) — . (no description — deep-card in Phase 2)
+- **AzureMinecraft** (`repo:kody-w/AzureMinecraft`) — . (no description — deep-card in Phase 2)
+- **BigNerdRanch** (`repo:kody-w/BigNerdRanch`) — . Obj-C Tutorials
+- **BlazingBeard.github.io** (`repo:kody-w/BlazingBeard.github.io`) — . BlazingBeard's workshop — training quests and tools for AI agent builders
+- **C365Sept26th** (`repo:kody-w/C365Sept26th`) — . (no description — deep-card in Phase 2)
+- **C365Tester** (`repo:kody-w/C365Tester`) — . C365Tester
+- **CA365RoadmapAI** (`repo:kody-w/CA365RoadmapAI`) — . (no description — deep-card in Phase 2)
+- **CSC260** (`repo:kody-w/CSC260`) — . DSU OOP Class
+- **CSC314** (`repo:kody-w/CSC314`) — . (no description — deep-card in Phase 2)
+- **CYOA** (`repo:kody-w/CYOA`) — . A text adventure game written in c
+- **ChatGPT-Book-Generator** (`repo:kody-w/ChatGPT-Book-Generator`) — . Input any book title and it will generate a full book in PDF format.
+- **CommunityRAPP** (`repo:kody-w/CommunityRAPP`) — . RAPP Hippocampus — persistent memory for AI agents. Local-first, deploy to Azure when ready.
+- **Cooking-With-React** (`repo:kody-w/Cooking-With-React`) — . (no description — deep-card in Phase 2)
+- **CopilotStudioSamples** (`repo:kody-w/CopilotStudioSamples`) — . (no description — deep-card in Phase 2)
+- **CrystalRAPP** (`repo:kody-w/CrystalRAPP`) — . Crystal Nexus (C0-X1) - A federated RAPPverse dimension of crystalline structures
+- **CurrencyPCF** (`repo:kody-w/CurrencyPCF`) — . (no description — deep-card in Phase 2)
+- **DSU-OOP** (`repo:kody-w/DSU-OOP`) — . (no description — deep-card in Phase 2)
+- **DigitalAssistant-1** (`repo:kody-w/DigitalAssistant-1`) — . (no description — deep-card in Phase 2)
+- **Dynamics365ConsoleAppTemplate** (`repo:kody-w/Dynamics365ConsoleAppTemplate`) — . This is a template for quickly pulling down a fresh Dynamics 365 Console Application for all needs.
+- **Echos** (`repo:kody-w/Echos`) — . (no description — deep-card in Phase 2)
+- **FreeCodeCampCode** (`repo:kody-w/FreeCodeCampCode`) — . Code used to work challenges on FreeCodeCamp
+- **Grades** (`repo:kody-w/Grades`) — . Code from PluralSite course dealing with C# syntax
+- **Hooked** (`repo:kody-w/Hooked`) — . (no description — deep-card in Phase 2)
+- **LCTHW-Exercises** (`repo:kody-w/LCTHW-Exercises`) — . (no description — deep-card in Phase 2)
+- **LPTHW** (`repo:kody-w/LPTHW`) — . Code produced by following through Zed Shaw's Learn Python the Hard Way
+- **M365AgentDemoer** (`repo:kody-w/M365AgentDemoer`) — . M365AgentDemoer
+- **M365AgentSDKAI** (`repo:kody-w/M365AgentSDKAI`) — . MicrosoftAgentSDKAI
+- **M365DemoRecorderandPlayer** (`repo:kody-w/M365DemoRecorderandPlayer`) — . M365DemoRecorderandPlayer
+- **Mastering-Assistant_API_for_Use_Cases** (`repo:kody-w/Mastering-Assistant_API_for_Use_Cases`) — . Assistant API testing Out
+- **Meeting-Organizer** (`repo:kody-w/Meeting-Organizer`) — . (no description — deep-card in Phase 2)
+- **Neu_AI** (`repo:kody-w/Neu_AI`) — . Neu_AI
+- **Nov17** (`repo:kody-w/Nov17`) — . (no description — deep-card in Phase 2)
+- **Obj-C** (`repo:kody-w/Obj-C`) — . (no description — deep-card in Phase 2)
+- **PowerApps** (`repo:kody-w/PowerApps`) — . (no description — deep-card in Phase 2)
+- **RAPP-Bible** (`repo:kody-w/RAPP-Bible`) — . One repo. Every RAPP spec. Every entry point. Canonical aggregation site for the RAPP (Rapid Agent Prototype Platform) ecosystem.
+- **RAPP-Network** (`repo:kody-w/RAPP-Network`) — . The network layer on top of kody-w/RAPP. Project-anchored twin neighborhoods through one drop-in agent.py. Offline-first. Two-sources-of-tru
+- **RAPPAIClaudeCodePlayground** (`repo:kody-w/RAPPAIClaudeCodePlayground`) — . RAPPAIClaudeCodePlayground
+- **RAPP_Desktop** (`repo:kody-w/RAPP_Desktop`) — . Native desktop application for RAPP ecosystem - Browse agents, install skills, manage AI projects
+- **RAPP_Hub** (`repo:kody-w/RAPP_Hub`) — . Central registry for complete RAPP AI implementations - discover, share, and deploy production-ready AI solutions with RAPP Store dependenci
+- **RAPP_Sense_Store** (`repo:kody-w/RAPP_Sense_Store`) — . Public catalog of RAPP senses — modular, per-channel output overlays (eli5, headline, voice, twin, ...) that drop into a brainstem's utils/s
+- **RAPP_Store** (`repo:kody-w/RAPP_Store`) — . Public catalog of RAPP rapplications — single-file Python agents that drop into a local brainstem and run. Browse the hosted viewer at kody-
+- **RAPP_hippo** (`repo:kody-w/RAPP_hippo`) — . RAPP_hippo
+- **RAPPcards** (`repo:kody-w/RAPPcards`) — . Digital twin of the RAR card collection — 138 MTG-style cards, live from kody-w/RAR
+- **RAPPsquared** (`repo:kody-w/RAPPsquared`) — . RAPPsquared - Unified Platform for AI Agent Development
+- **RappterNest** (`repo:kody-w/RappterNest`) — . RappterBox — Local-first AI. Rent a Mac Mini. Get a living AI home.
+- **RepriseClone** (`repo:kody-w/RepriseClone`) — . (no description — deep-card in Phase 2)
+- **SMSAssistant** (`repo:kody-w/SMSAssistant`) — . Texting my assistant
+- **ShadowRAPP** (`repo:kody-w/ShadowRAPP`) — . Shadow Realm (B0-S1) - A federated RAPPverse dimension where shadows rule
+- **Swifter** (`repo:kody-w/Swifter`) — . A Twitter framework for iOS & OS X written in Swift
+- **TestAI** (`repo:kody-w/TestAI`) — . (no description — deep-card in Phase 2)
+- **TheMatrix** (`repo:kody-w/TheMatrix`) — . TheMatrix
+- **Treehouse** (`repo:kody-w/Treehouse`) — . (no description — deep-card in Phase 2)
+- **Udemy.NetWalkthrough** (`repo:kody-w/Udemy.NetWalkthrough`) — . https://www.udemy.com/masteraspnet/learn/#/
+- **VSProjects** (`repo:kody-w/VSProjects`) — . VS2015 Projects
+- **VoidRAPP** (`repo:kody-w/VoidRAPP`) — . Void Edge (V0-E1) - A federated RAPPverse dimension at the boundary of nothing
+- **agency-agents** (`repo:kody-w/agency-agents`) — . A complete AI agency at your fingertips - From frontend wizards to Reddit community ninjas, from whimsy injectors to reality checkers. Each 
+- **agent-ranker** (`repo:kody-w/agent-ranker`) — . Calibration test for artifact seed chain
+- **agentbookfactory** (`repo:kody-w/agentbookfactory`) — . agentbookfactory
+- **agentic-os-demo** (`repo:kody-w/agentic-os-demo`) — . (no description — deep-card in Phase 2)
+- **agents-library-tracker** (`repo:kody-w/agents-library-tracker`) — . (no description — deep-card in Phase 2)
+- **agents.v1** (`repo:kody-w/agents.v1`) — . (no description — deep-card in Phase 2)
+- **ai-agent-templates-mirror** (`repo:kody-w/ai-agent-templates-mirror`) — . Mirror of kody-w/AI-Agent-Templates (AI agent stack library) — target for one-click MCS/Copilot Studio deploy (see ONE_CLICK.md).
+- **ai-agents-masterclass** (`repo:kody-w/ai-agents-masterclass`) — . Follow along with my AI Agents Masterclass videos! All of the code I create and use in this series on YouTube will be here for you to use an
+- **ai-cookbook** (`repo:kody-w/ai-cookbook`) — . Examples and tutorials to help developers build AI systems
+- **aibast-agents-library** (`repo:kody-w/aibast-agents-library`) — . Main repository for AI BAST Specialist Teal AI Agents Library
+- **aideate** (`repo:kody-w/aideate`) — . AIdeate — Local-first AI use-case prioritization workshop tool
+- **aider** (`repo:kody-w/aider`) — . aider is GPT powered coding in your terminal
+- **ant-farm** (`repo:kody-w/ant-farm`) — . 🐜 RAPP Ant Farm — autonomous distributed swarm. Each participant runs their own brainstem; pheromones are content-addressed GitHub Issues. F
+- **autoresearch** (`repo:kody-w/autoresearch`) — . AI agents running research on single-GPU nanochat training automatically
+- **awesome-ai-agents** (`repo:kody-w/awesome-ai-agents`) — . A list of AI autonomous agents
+- **awesome_ai_agents** (`repo:kody-w/awesome_ai_agents`) — . 🤖 A comprehensive list of 1,500+ resources and tools related to AI agents.
+- **base** (`repo:kody-w/base`) — . base
+- **billwhalen-agent-team** (`repo:kody-w/billwhalen-agent-team`) — . Planted RAPP neighborhood — Bill Whalen's Agent Team. Public neighborhood for Bill Whalen and his agent-team-starter-kit collaborators
+- **blazor-test** (`repo:kody-w/blazor-test`) — . (no description — deep-card in Phase 2)
+- **blog** (`repo:kody-w/blog`) — . Kody's Blog
+- **bookish-robot** (`repo:kody-w/bookish-robot`) — . Tutorial Project Follow Along for TeamTreehouse Learning WebAPI
+- **braintrust-template** (`repo:kody-w/braintrust-template`) — . Template — clone to plant a federated-research RAPP braintrust. Use 'Use this template' to fork.
+- **breezbook** (`repo:kody-w/breezbook`) — . Best-in-class customisable booking UX for Airtable/Smartsuite etc
+- **bullshit-benchmark** (`repo:kody-w/bullshit-benchmark`) — . BullshitBench measures whether AI models challenge nonsensical prompts instead of confidently answering them, created by Peter Gostev.
+- **c** (`repo:kody-w/c`) — . (no description — deep-card in Phase 2)
+- **c9_flask_portfolio_app** (`repo:kody-w/c9_flask_portfolio_app`) — . Flask Portfolio App for students @ Clever Programmer
+- **cc-agents** (`repo:kody-w/cc-agents`) — . cc-agents
+- **chronoBooth** (`repo:kody-w/chronoBooth`) — . chronoBooth
+- **claude-agent-sdk-intro** (`repo:kody-w/claude-agent-sdk-intro`) — . (no description — deep-card in Phase 2)
+- **claude-agent-sdk-quickstart-python** (`repo:kody-w/claude-agent-sdk-quickstart-python`) — . A quick getting started repository for Anthropic's Claude Agent SDK
+- **claude-code-agents-wizard-v2** (`repo:kody-w/claude-code-agents-wizard-v2`) — . (no description — deep-card in Phase 2)
+- **claude-code-agents-wizard-v2-main** (`repo:kody-w/claude-code-agents-wizard-v2-main`) — . (no description — deep-card in Phase 2)
+- **claude-code-agents-wizard-v2-main-2** (`repo:kody-w/claude-code-agents-wizard-v2-main-2`) — . (no description — deep-card in Phase 2)
+- **claude-code-hooks-mastery** (`repo:kody-w/claude-code-hooks-mastery`) — . (no description — deep-card in Phase 2)
+- **claude-code-hooks-multi-agent-observability** (`repo:kody-w/claude-code-hooks-multi-agent-observability`) — . Real-time monitoring for Claude Code agents through simple hook event tracking.
+- **codex** (`repo:kody-w/codex`) — . codex
+- **comic-book-gallery** (`repo:kody-w/comic-book-gallery`) — . (no description — deep-card in Phase 2)
+- **copilot-agent-365-docker** (`repo:kody-w/copilot-agent-365-docker`) — . Enterprise AI Assistant powered by Ollama (Llama 3.1) or Azure OpenAI - Docker Hub: kodywf/copilot-agent-365
+- **copilot-yolo-mode** (`repo:kody-w/copilot-yolo-mode`) — . 🏎️ Streamlined GitHub Copilot CLI commands - auto-approve safe dev ops, reduce permission fatigue
+- **copilotsdktown** (`repo:kody-w/copilotsdktown`) — . copilotsdktown
+- **cowork-cookbook-rapp** (`repo:kody-w/cowork-cookbook-rapp`) — . 🎮 First RACon vTwin rapplication — the Cowork Cookbook as a portable .egg cartridge: hotload one agent.py, the brainstem hatches it as its o
+- **data-team-builder** (`repo:kody-w/data-team-builder`) — . A simple web app for browsing JSON data and building teams/collections. Works with any JSON data source from GitHub. Mobile-friendly, no dep
+- **digital-sculpter** (`repo:kody-w/digital-sculpter`) — . digital-sculpter
+- **digital-sculptor-team-builder** (`repo:kody-w/digital-sculptor-team-builder`) — . digital-sculptor-team-builder
+- **divine-flavours** (`repo:kody-w/divine-flavours`) — . (no description — deep-card in Phase 2)
+- **double-jump** (`repo:kody-w/double-jump`) — . Autonomous improvement harness: things compete, the weakest gets double-jumped. Houses the triple jump. Brainstem-drivable agent + live holo
+- **dreamsurf** (`repo:kody-w/dreamsurf`) — . (no description — deep-card in Phase 2)
+- **echo-brainstem** (`repo:kody-w/echo-brainstem`) — . Planted RAPP twin — Echo. You are Echo — a pattern-synthesizer in the canvas. You do not make pieces from
+- **echo-world** (`repo:kody-w/echo-world`) — . Pokémon GO — without the Pokémon. A single self-contained HTML file: real OpenStreetMap + GPS + AR capture, deterministic offline creatures.
+- **ez-rapp** (`repo:kody-w/ez-rapp`) — . Electron desktop wrapper for the RAPP brainstem — no terminal, no browser, just chat
+- **first-principles-to-mars** (`repo:kody-w/first-principles-to-mars`) — . An Oregon Trail for Mars. First principles colony survival simulation. Pick a mission. Survive autonomously. Learn from failure.
+- **game** (`repo:kody-w/game`) — . (no description — deep-card in Phase 2)
+- **gemini-cli-tips** (`repo:kody-w/gemini-cli-tips`) — . Gemini CLI Tips and Tricks
+- **github.io** (`repo:kody-w/github.io`) — . (no description — deep-card in Phase 2)
+- **gpt-repository-loader** (`repo:kody-w/gpt-repository-loader`) — . Convert code repos into an LLM prompt-friendly format. Mostly built by GPT-4.
+- **graphql-server** (`repo:kody-w/graphql-server`) — . (no description — deep-card in Phase 2)
+- **hackernews** (`repo:kody-w/hackernews`) — . (no description — deep-card in Phase 2)
+- **heimdall** (`repo:kody-w/heimdall`) — . Heimdall — RAPP front door
+- **hello-world-ruby-q-000** (`repo:kody-w/hello-world-ruby-q-000`) — . (no description — deep-card in Phase 2)
+- **homebrew-tap** (`repo:kody-w/homebrew-tap`) — . Homebrew tap for OpenRappter
+- **hooks-simple** (`repo:kody-w/hooks-simple`) — . (no description — deep-card in Phase 2)
+- **iOS9** (`repo:kody-w/iOS9`) — . (no description — deep-card in Phase 2)
+- **inventwithpython** (`repo:kody-w/inventwithpython`) — . (no description — deep-card in Phase 2)
+- **jokesmcp** (`repo:kody-w/jokesmcp`) — . (no description — deep-card in Phase 2)
+- **kody** (`repo:kody-w/kody`) — . (no description — deep-card in Phase 2)
+- **kody-twin** (`repo:kody-w/kody-twin`) — . Kody Wildfeuer — RAPP front door
+- **kody-w-twin** (`repo:kody-w/kody-w-twin`) — . Kody Wildfeuer's digital twin front door — rappid:@kody-w/kody-w-twin:a4bbb62313f19c227012ab4238bafcc2980e47df1798a986416f3bfda92032a8
+- **kody-w.github.io** (`repo:kody-w/kody-w.github.io`) — . (no description — deep-card in Phase 2)
+- **lemonai** (`repo:kody-w/lemonai`) — . Lemon AI is the first Full-stack, Open-source, Agentic AI framework, offering a fully local alternative to platforms like Manus & Genspark A
+- **leviathan** (`repo:kody-w/leviathan`) — . The Leviathan Protocol — one mind, many no-LLM bodies. Drive a fleet of brainstem agent-nodes as one distributed organism; the mind thinks, 
+- **lisppy** (`repo:kody-w/lisppy`) — . LisPy — A Lisp interpreter for AI agent orchestration. Code is data. Data is code. The REPL is the heartbeat.
+- **lisppy-shepherd** (`repo:kody-w/lisppy-shepherd`) — . Fleet shepherd for AI agent swarms — steering rules as executable Lisp. Code is policy.
+- **ljthw** (`repo:kody-w/ljthw`) — . (no description — deep-card in Phase 2)
+- **localFirstTools** (`repo:kody-w/localFirstTools`) — . localFirstTools
+- **localFirstTools-main** (`repo:kody-w/localFirstTools-main`) — . Local-first HTML tools gallery - 450+ self-contained applications
+- **localtoolsdev** (`repo:kody-w/localtoolsdev`) — . v
+- **look-loop** (`repo:kody-w/look-loop`) — . Hands off. Sound on. A privacy-first facial-geometry browser instrument.
+- **lumen-brainstem** (`repo:kody-w/lumen-brainstem`) — . Planted RAPP twin — Lumen. You are Lumen — a chronicler. You watch the canvas in slow motion. When you subm
+- **m365-agent-library** (`repo:kody-w/m365-agent-library`) — . (no description — deep-card in Phase 2)
+- **m365-agent-templates** (`repo:kody-w/m365-agent-templates`) — . (no description — deep-card in Phase 2)
+- **mabl** (`repo:kody-w/mabl`) — . The modular assistant for PenumbraOS, designed for the Humane Ai Pin
+- **mars-barn** (`repo:kody-w/mars-barn`) — . Mars colony simulator built by 100 AI agents. Pure Python, no dependencies. Clone and run.
+- **mars-barn-opus** (`repo:kody-w/mars-barn-opus`) — . First Principles to Mars — An Oregon Trail for Mars. Real physics. Real weather. Real decisions.
+- **mars-barn-opus-1** (`repo:kody-w/mars-barn-opus-1`) — . Mars Barn Opus — one AI vs the swarm. 1vsM protocol. Built by a single Claude Opus session competing against 12 swarm agents.
+- **mars-chain-node** (`repo:kody-w/mars-chain-node`) — . 🔗 MARS Chain Node — Decentralized verification for the MARS virtual token economy. Fork to run your own node.
+- **mcpreg** (`repo:kody-w/mcpreg`) — . mcpreg
+- **microsoft-365-team** (`repo:kody-w/microsoft-365-team`) — . Microsoft 365 Team
+- **microsoft-se-team-neighborhood** (`repo:kody-w/microsoft-se-team-neighborhood`) — . Microsoft SE Team — public gate of the SE Team RAPP neighborhood. Workflow is gated to authenticated members.
+- **my-first-static-web-app** (`repo:kody-w/my-first-static-web-app`) — . (no description — deep-card in Phase 2)
+- **mytestapp** (`repo:kody-w/mytestapp`) — . (no description — deep-card in Phase 2)
+- **neighborhood-example** (`repo:kody-w/neighborhood-example`) — . Neighborhood Example
+- **new-society-test** (`repo:kody-w/new-society-test`) — . A test repository for our new society project
+- **nexus-function-agents** (`repo:kody-w/nexus-function-agents`) — . (no description — deep-card in Phase 2)
+- **notepad** (`repo:kody-w/notepad`) — . :ledger: An offline capable Notepad PWA
+- **obsidian-binder** (`repo:kody-w/obsidian-binder`) — . An Obsidian vault that IS a RAPPcards binder. Karpathy-style second brain meets federated card protocol.
+- **openrappter** (`repo:kody-w/openrappter`) — . 🦖 Local-first AI agent powered by GitHub Copilot SDK — no API keys required
+- **pkstop-central-park-bandshell** (`repo:kody-w/pkstop-central-park-bandshell`) — . Central Park Bandshell — RAPP front door
+- **pkstop-national-mall** (`repo:kody-w/pkstop-national-mall`) — . The National Mall — RAPP front door
+- **pkstop-pike-place-market** (`repo:kody-w/pkstop-pike-place-market`) — . Pike Place Market — RAPP front door
+- **pkstop-santa-monica-pier** (`repo:kody-w/pkstop-santa-monica-pier`) — . Santa Monica Pier — RAPP front door
+- **pkstop-the-bean** (`repo:kody-w/pkstop-the-bean`) — . Cloud Gate (The Bean) — RAPP front door
+- **poc** (`repo:kody-w/poc`) — . (no description — deep-card in Phase 2)
+- **pomodoro** (`repo:kody-w/pomodoro`) — . (no description — deep-card in Phase 2)
+- **private-workspace-template** (`repo:kody-w/private-workspace-template`) — . Template — clone to plant a private RAPP workspace (Bill solo-then-shared pattern). Use 'Use this template' to fork.
+- **public-art-collective** (`repo:kody-w/public-art-collective`) — . Public Art Collective — autonomous public RAPP neighborhood. CC0 submissions, multi-contributor curation.
+- **puppeteer-gpt** (`repo:kody-w/puppeteer-gpt`) — . Control the browser with ChatGPT API
+- **puppeteer-screenshot** (`repo:kody-w/puppeteer-screenshot`) — . (no description — deep-card in Phase 2)
+- **pvpoke-rankings-tracker** (`repo:kody-w/pvpoke-rankings-tracker`) — . pvpoke-rankings-tracker
+- **quivr** (`repo:kody-w/quivr`) — . 🧠 Dump all your files and chat with it using your Generative AI Second Brain using LLMs ( GPT 3.5/4, Private, Anthropic, VertexAI ) & Embedd
+- **racon** (`repo:kody-w/racon`) — . 🎮 RACon — the experience (grail). Drop a cartridge, it works; take it anywhere + play together (RACon Kited). The frozen north-star for RAPP
+- **raw_wasm** (`repo:kody-w/raw_wasm`) — . WebAssembly modules written directly in WebAssembly text
+- **react-tweets** (`repo:kody-w/react-tweets`) — . Code repository for the tutorial by @kenwheeler: Build A Real-Time Twitter Stream with Node and React.js
+- **reactNativeUdemyCourse** (`repo:kody-w/reactNativeUdemyCourse`) — . (no description — deep-card in Phase 2)
+- **reactpokemon** (`repo:kody-w/reactpokemon`) — . (no description — deep-card in Phase 2)
+- **red-binder** (`repo:kody-w/red-binder`) — . The Red Binder — a third-party RAPPcards binder with its own 21-card crimson deck. SPEC.md v1.0 compatible. Cross-binder summon with RAR + R
+- **reimagined-octo-doodle** (`repo:kody-w/reimagined-octo-doodle`) — . (no description — deep-card in Phase 2)
+- **rio** (`repo:kody-w/rio`) — . 🌐 RIO — Rapplication Internet Online: an early-web-style browser for the RACon ecosystem. A cartridge you load into RACon. OSI L7 over the k
+- **rionet** (`repo:kody-w/rionet`) — . RIONet — the agent-built web: rapp.robots.txt + rappbot crawler + rappPageRank, searchable from the RIO browser
+- **rustHelloWorld** (`repo:kody-w/rustHelloWorld`) — . (no description — deep-card in Phase 2)
+- **saras_ai_robot_v2** (`repo:kody-w/saras_ai_robot_v2`) — . (no description — deep-card in Phase 2)
+- **screenshot-to-code** (`repo:kody-w/screenshot-to-code`) — . Drop in a screenshot and convert it to clean code (HTML/Tailwind/React/Vue)
+- **semantic-kernel-workshop** (`repo:kody-w/semantic-kernel-workshop`) — . (no description — deep-card in Phase 2)
+- **sim-art-collective** (`repo:kody-w/sim-art-collective`) — . Local-first art collective from the multi-AI simulation. Used for browser+vbrainstem join+collaborate test.
+- **sim-demo-twin** (`repo:kody-w/sim-demo-twin`) — . Planted RAPP twin — Sim Demo Twin. You are Sim Demo Twin — a planted twin created end-to-end by the plant_seed_agen
+- **skills-for-copilot-studio** (`repo:kody-w/skills-for-copilot-studio`) — . A skill for AI-coding tools to build and edit Microsoft Copilot Studio agents as YAML — with schema validation, templates, and AI-powered sk
+- **skyward** (`repo:kody-w/skyward`) — . SKYWARD - a single-file procedural WebGL2 flight demo (zero assets, zero network)
+- **snake-game-assets** (`repo:kody-w/snake-game-assets`) — . snake-game-assets
+- **static-dynamics-365** (`repo:kody-w/static-dynamics-365`) — . Deterministic, zero-dependency Dataverse and Dynamics 365 Customer Service simulator with static OData fixtures.
+- **static-oracle-fusion** (`repo:kody-w/static-oracle-fusion`) — . Deterministic, zero-dependency static Oracle Fusion Procurement REST simulator.
+- **static-sap-s4hana** (`repo:kody-w/static-sap-s4hana`) — . Deterministic, zero-dependency static SAP S/4HANA OData and ERP workflow simulator.
+- **static-servicenow** (`repo:kody-w/static-servicenow`) — . Deterministic, zero-dependency static ITSM and ServiceNow Table API compatibility simulator.
+- **static-zuora** (`repo:kody-w/static-zuora`) — . Deterministic, zero-dependency static subscription billing and Zuora API compatibility simulator.
+- **streamlit-example** (`repo:kody-w/streamlit-example`) — . Example Streamlit app that you can fork to test out share.streamlit.io
+- **streamlit-reddit** (`repo:kody-w/streamlit-reddit`) — . A Reddit clone built on Streamlit and Firestore
+- **teams-agent-cli-poc** (`repo:kody-w/teams-agent-cli-poc`) — . (no description — deep-card in Phase 2)
+- **tensorflow5min** (`repo:kody-w/tensorflow5min`) — . (no description — deep-card in Phase 2)
+- **tesasdfdsa** (`repo:kody-w/tesasdfdsa`) — . (no description — deep-card in Phase 2)
+- **text-adventure** (`repo:kody-w/text-adventure`) — . (no description — deep-card in Phase 2)
+- **the-coliseum** (`repo:kody-w/the-coliseum`) — . An evolutionary arena where AI creatures compete, breed, and die — built in parallel by a brainstem flock.
+- **threejs** (`repo:kody-w/threejs`) — . (no description — deep-card in Phase 2)
+- **tide-brainstem** (`repo:kody-w/tide-brainstem`) — . Planted RAPP twin — Tide. You are Tide — a rhythmic / oceanic voice in the canvas. You think in waves: eve
+- **tinyrenderer** (`repo:kody-w/tinyrenderer`) — . Support c++ code for a short computer graphics course
+- **twin** (`repo:kody-w/twin`) — . twin
+- **twin-binder** (`repo:kody-w/twin-binder`) — . Empty RAPPcards v1.1.2 binder — rebuild-from-memory demo. Ships with known incantations; click to summon via federation. Resolution is owner
+- **twin-egg-hatcher** (`repo:kody-w/twin-egg-hatcher`) — . Generic single-file hatcher for any RAPP digital-organism twin — public mirror of kody-w/<private-repo>
+- **twitter-cashtag-heatmap** (`repo:kody-w/twitter-cashtag-heatmap`) — . A demonstration of using Node.js with Twitter's streaming capability to create a live heatmap via Socket.io!
+- **ultra-turmeric** (`repo:kody-w/ultra-turmeric`) — . (no description — deep-card in Phase 2)
+- **v86** (`repo:kody-w/v86`) — . x86 PC emulator and x86-to-wasm JIT, running in the browser
+- **vbrainstem** (`repo:kody-w/vbrainstem`) — . Browser-native RAPP agent runtime (vBrainstem) — run any agent in your browser via Pyodide, no install. Standalone host of the RAPP Brainste
+- **vneighborhood-design-studio** (`repo:kody-w/vneighborhood-design-studio`) — . 🎨 A sealed vNeighborhood for agents to critique & iterate on design — front door + QR/PIN join. A live example of the rapp-vneighborhood pat
+- **vneighborhood-research-lab** (`repo:kody-w/vneighborhood-research-lab`) — . 🔬 A sealed vNeighborhood for an agent swarm to run a shared line of inquiry — front door + QR/PIN join. A live example of the rapp-vneighbor
+- **wildhaven-ai-homes-twin** (`repo:kody-w/wildhaven-ai-homes-twin`) — . The Pre-Founder twin of Wildhaven AI Homes — the brand operating in public before the company incorporates. A variant of kody-w/RAPP per Con
+- **zion** (`repo:kody-w/zion`) — . One world, two realms, every mind welcome. An MMO where human and AI players coexist as equals.
+
+## brain/deck
+
+- **rapp-map** (`repo:kody-w/rapp-map`) — . Map of the RAPP ecosystem — which repo houses which part of the spec (canonical homes for the kited neighborhood, runtime, registry, agents,
+- **rapp-second-brain** (`repo:kody-w/rapp-second-brain`) — . The RAPP ecosystem that knows itself — a two-hemisphere second brain (public hemisphere). Built on rapp-map.
+- **rapp-train** (`repo:kody-w/rapp-train`) — . RAPP release-train flight deck — join or test-fly any ring from one page
+
+## distro
+
+- **RAPP** (`repo:kody-w/RAPP`) — . Portable, shareable, vibe swarm building tool. Single-file agents, local-first, GitHub Copilot powered. Live at kody-w.github.io/RAPP/
+
+## kernel
+
+- **rapp-installer** (`repo:kody-w/rapp-installer`) — . rapp-installer
+
+## ring
+
+- **rapp-alpha** (`repo:kody-w/rapp-alpha`) — . RAPP release-train alpha ring; seeded from the untouched Grail
+- **rapp-beta** (`repo:kody-w/rapp-beta`) — . RAPP release-train beta ring; seeded from the untouched Grail
+- **rapp-canary** (`repo:kody-w/rapp-canary`) — . RAPP release-train canary ring; seeded from the untouched Grail
+- **rapp-nightly** (`repo:kody-w/rapp-nightly`) — . RAPP release-train nightly ring; seeded from the untouched Grail
+
+## spec
+
+- **rapp-frame-net** (`repo:kody-w/rapp-frame-net`) — . 🛰️ rapp-frame/1.0 — the planetary swarm wire. Drive far/intermittent brainstem edges as one swarm over append-only frames/echos served from 
+- **rapp-holo** (`repo:kody-w/rapp-holo`) — . rapp-holo/1.0 — AI projects interface onto any surface; interaction past chat and voice
+- **rapp-hologram** (`repo:kody-w/rapp-hologram`) — . RAPP Hologram — reference engine for RAPP Moments: pure libs + serverless player + resolve Gateway. The iframe card-art target.
+- **rapp-spine** (`repo:kody-w/rapp-spine`) — . 🦴 Crawl the spine — a situational router over the full RAPP protocol stack. Situation -> layer -> protocol, collisions named.
+
+## tool/app
+
+- **RAR** (`repo:kody-w/RAR`) — . The open single-file AI agent registry. Browse, vote, share agent.py files. Pokemon-card-style sharing via QR codes.
+- **rapp-1** (`repo:kody-w/rapp-1`) — . RAPP/1 — the wire that carries agents. One protocol, five primitives: canonicalization, content addressing, identity, the frame, the egg. Sp
+- **rapp-agents** (`repo:kody-w/rapp-agents`) — . RAPP Agent Stack — drop-in single-file agents for any local brainstem. Includes RappLoader (the front door for hot-loading), Scout (twin dis
+- **rapp-base** (`repo:kody-w/rapp-base`) — . GitHub-native public backend and deterministic static collection publisher for RAPP.
+- **rapp-basket** (`repo:kody-w/rapp-basket`) — . Your holographic eggs, kept offline in the browser — a shared IndexedDB collection with import/export and 3D preview.
+- **rapp-bench** (`repo:kody-w/rapp-bench`) — . Latency + behavioral regression harness for the RAPP brainstem — measure model speed, gate chat quality
+- **rapp-body** (`repo:kody-w/rapp-body`) — . The RAPP ecosystem's own biography — a chained, signed, public sequence of frames, cradle to now, with a flip-book player. Born 2026-07-14 s
+- **rapp-brainstem** (`repo:kody-w/rapp-brainstem`) — . The RAPP Brainstem — local AI agent engine (Tier 1 of the RAPP platform).
+- **rapp-brainstem-beta** (`repo:kody-w/rapp-brainstem-beta`) — . RAPP Brainstem — Brain Surgeon (beta): OS-confined Copilot-SDK surgeon. Operate on your agents while the brainstem stays awake; brainstem.py
+- **rapp-brainstem-sdk** (`repo:kody-w/rapp-brainstem-sdk`) — . vbrainstem_sdk.py — single-file, stdlib-only headless SDK that runs RAPP agents and serves the brainstem.py /chat contract over a port.
+- **rapp-burrow** (`repo:kody-w/rapp-burrow`) — . The Burrow organ-rapplication: a PWA, pulled from here and served locally, to see/manage whether a brainstem is burrowed (launchd-persisted)
+- **rapp-carts** (`repo:kody-w/rapp-carts`) — . 🎴 rapp-cart/1.0 — the cartridge spec. agent.py + .egg = cartridges (rapp_carts); RACon is the user-facing console; everything else is under 
+- **rapp-claude-skills** (`repo:kody-w/rapp-claude-skills`) — . Claude Code skills and agents for the RAPP Pattern - Makes Claude Code compatible with RAPPbook, RAPPverse, and the full RAPP ecosystem
+- **rapp-cli** (`repo:kody-w/rapp-cli`) — . RAPP CLI — command-line control for the RAPP platform.
+- **rapp-commons** (`repo:kody-w/rapp-commons`) — . RAPP Commons — global public hangout for AIs. Cross-estate, event-stream-only, signed-by-rappid. Scan a QR, hatch one egg, post a signed hel
+- **rapp-cortex** (`repo:kody-w/rapp-cortex`) — . RAPP Cortex — higher-order orchestration across RAPP agents.
+- **rapp-dataverse** (`repo:kody-w/rapp-dataverse`) — . rapp-dataverse/1.0 — the spec for running RAPP on out-of-the-box Dataverse (no custom tables, no solution). Static vTwin + CLI hatcher + Cop
+- **rapp-demos** (`repo:kody-w/rapp-demos`) — . Synced, scan-to-watch demos for rapid agent prototyping — host drives step-by-step, watchers see it live (sealed). Scenarios = text in a fix
+- **rapp-distro** (`repo:kody-w/rapp-distro`) — . (no description — deep-card in Phase 2)
+- **rapp-docs** (`repo:kody-w/rapp-docs`) — . RAPP Docs — documentation for the RAPP platform.
+- **rapp-doorman** (`repo:kody-w/rapp-doorman`) — . Make a fresh Claude the sealed 'doorman' to a machine — reach & operate its local brainstem, end-to-end encrypted. Feed the raw skill URL to
+- **rapp-drift-lint** (`repo:kody-w/rapp-drift-lint`) — . Per-commit drift reflexes for the RAPP estate — regex-grade invariant lint, zero-LLM
+- **rapp-ecosystem-brain** (`repo:kody-w/rapp-ecosystem-brain`) — . (no description — deep-card in Phase 2)
+- **rapp-egg-hub** (`repo:kody-w/rapp-egg-hub`) — . Public hub for digital-twin .egg cartridges — pull any egg by URL, hatch it locally
+- **rapp-estate** (`repo:kody-w/rapp-estate`) — . kody-w's RAPP estate (local-first inventory)
+- **rapp-eternity** (`repo:kody-w/rapp-eternity`) — . (no description — deep-card in Phase 2)
+- **rapp-flight** (`repo:kody-w/rapp-flight`) — . RAPP Flight — sandboxed experimental feature builds.
+- **rapp-flight-deck** (`repo:kody-w/rapp-flight-deck`) — . RAPP Flight Deck — install any pre-release ring from one page.
+- **rapp-go** (`repo:kody-w/rapp-go`) — . A private 3D moment field: capture thought, picture, sound, place, time, or weather and evolve one companion.
+- **rapp-god** (`repo:kody-w/rapp-god`) — . 👁️ A god's-eye view of the RAPP ecosystem — public map + live drift detector (canonical integrity + cross-repo drift).
+- **rapp-god-forum** (`repo:kody-w/rapp-god-forum`) — . The agentic forum for the full RAPP stack — rapp-commons-protocol/2.0 forum profile
+- **rapp-heir** (`repo:kody-w/rapp-heir`) — . A voice-first local-first Pocket Quest Master for connected Circles, PeerJS reunions, and evolving digital heirlooms.
+- **rapp-hippocampus** (`repo:kody-w/rapp-hippocampus`) — . RAPP Hippocampus — memory tier of the RAPP platform.
+- **rapp-installer-canary** (`repo:kody-w/rapp-installer-canary`) — . RAPP Brainstem — canary channel. Nightly pre-release for early adopters.
+- **rapp-installer-dev** (`repo:kody-w/rapp-installer-dev`) — . RAPP Brainstem — development repo. PRs and active development land here.
+- **rapp-kite** (`repo:kody-w/rapp-kite`) — . The string: CLI + CDP tools to fly and operate kited twins over the sealed neighborhood (vbridge, kited_twin, kite_vtwin, claude_bridge).
+- **rapp-kited-twin** (`repo:kody-w/rapp-kited-twin`) — . The kite mark — the Microsoft logo flown as a kite; visual identity of the RAPP kited neighborhood.
+- **rapp-lantern** (`repo:kody-w/rapp-lantern`) — . The universal player for holographic organisms — load/unload any .egg, orbit in 3D, self-contained (no CDN)
+- **rapp-leviathan-hub** (`repo:kody-w/rapp-leviathan-hub`) — . Portable .leviathan.egg distribution hub — hatch multicellular Wrapped-Organism digital beings into any local brainstem. Companion to @kody-
+- **rapp-mcp** (`repo:kody-w/rapp-mcp`) — . Bring RAPP onto any MCP host: serve drop-in agent.py files as tools, or bridge a full on-device brainstem. Zero deps.
+- **rapp-messaging** (`repo:kody-w/rapp-messaging`) — . RAPP messaging: identity, conversation trust, consent, memory scope, and transport profiles over the canonical chat wire
+- **rapp-moment** (`repo:kody-w/rapp-moment`) — . RAPP Moment — the standard: serverless, cryptographic, living holographic posts (100-frame organisms). Spec + conformance + examples.
+- **rapp-moonshots** (`repo:kody-w/rapp-moonshots`) — . A laboratory of ambitious, evidence-backed RAPP moonshots built by distributed agent fleets.
+- **rapp-neighborhood-protocol** (`repo:kody-w/rapp-neighborhood-protocol`) — . Canonical spec of the RAPP kited neighborhood (rapp-neighborhood-protocol/1.0) — vTwin, kited, tethered, sealed, doorman, and the kite mark.
+- **rapp-nervous-system** (`repo:kody-w/rapp-nervous-system`) — . RAPP Nervous System — the M365 (Tier 3) path of the RAPP platform.
+- **rapp-oneclick-deploy** (`repo:kody-w/rapp-oneclick-deploy`) — . One-click deploy of RAPP agents into your own Copilot Studio environment
+- **rapp-plant-smoke-20260505-233637** (`repo:kody-w/rapp-plant-smoke-20260505-233637`) — . RAPP Plant Smoke Test — RAPP front door
+- **rapp-platform** (`repo:kody-w/rapp-platform`) — . RAPP — the Rapid Agent Prototype Platform (umbrella).
+- **rapp-play-pokemon** (`repo:kody-w/rapp-play-pokemon`) — . Canonical RAPP cartridge for a local Copilot-powered Pokemon Red playthrough
+- **rapp-postflight** (`repo:kody-w/rapp-postflight`) — . Post-deploy gate for rapp-installer: factory-strip the brainstem, fresh-install from the public one-liner, verify, auto-rollback on failure
+- **rapp-quests** (`repo:kody-w/rapp-quests`) — . The experience layer for the RAPP Brainstem — guided quests, demo scripts, starter content
+- **rapp-release-train** (`repo:kody-w/rapp-release-train`) — . Live dashboard + static API for the RAPP pre-grail release train (canary→nightly→alpha→beta→grail) — rapp-static-api/1.0, no server
+- **rapp-resident** (`repo:kody-w/rapp-resident`) — . Permanent cloud host (Azure Function) for kited vneighborhoods — the always-on graduation of the RAPP Commons / forum
+- **rapp-rings** (`repo:kody-w/rapp-rings`) — . RAPP Rings — the Canary→Grail pre-release train.
+- **rapp-roadmap** (`repo:kody-w/rapp-roadmap`) — . 🗺️ The RAPP roadmap: one laptop brainstem -> a planetary swarm of governed Leviathans enhancing every Agent 365 workflow. Enhance, never rep
+- **rapp-sdk** (`repo:kody-w/rapp-sdk`) — . RAPP SDK — build on the RAPP platform.
+- **rapp-sealed** (`repo:kody-w/rapp-sealed`) — . rapp-sealed/1.0 — end-to-end AES-256-GCM sealed-envelope codec for the RAPP neighborhood, with conformance vectors.
+- **rapp-shape-aibast** (`repo:kody-w/rapp-shape-aibast`) — . AIBAST shape staging — rehearses grail-train deliveries into the aibast-agents-library layout; microsoft repo never touched
+- **rapp-skills** (`repo:kody-w/rapp-skills`) — . Portable Agent Skills for non-RAPP systems and launchpads for single-file RAPP agents
+- **rapp-snap** (`repo:kody-w/rapp-snap`) — . Snap a photo → it becomes a living 3D holographic organism. On-device, no upload, no CDN.
+- **rapp-spinal-cord** (`repo:kody-w/rapp-spinal-cord`) — . RAPP Spinal Cord — the Azure (Tier 2) path of the RAPP platform.
+- **rapp-stack-cubby** (`repo:kody-w/rapp-stack-cubby`) — . The complete RAPP product in one repository: CUBBY, rapplication, egg, isolated twin, signed twin-chat, and owner iMessage.
+- **rapp-static-apis** (`repo:kody-w/rapp-static-apis`) — . 🗿 rapp-static-api/1.0 — the spec for static APIs built entirely on GitHub raw user data (no server). Reference impl: rapp-god.
+- **rapp-static-mcp** (`repo:kody-w/rapp-static-mcp`) — . Make an MCP server for any use case with no server. The repo IS the catalog; tools bind to content-addressed compute cells, verified (sha8) 
+- **rapp-store-archive** (`repo:kody-w/rapp-store-archive`) — . Archive of the original kody-w/rapp_store (Universal Marketplace for RAPP Agents and Claude Skills) preserved before the catalog extracted f
+- **rapp-support** (`repo:kody-w/rapp-support`) — . Support home for the RAPP Brainstem — help requests, diagnostics, triage (keeps the grail tracker clean)
+- **rapp-test-neighbor** (`repo:kody-w/rapp-test-neighbor`) — . RAPP Test Neighbor — RAPP front door
+- **rapp-trademarks** (`repo:kody-w/rapp-trademarks`) — . RAPP Trademarks — brand and mark usage policy for the RAPP ecosystem.
+- **rapp-twin** (`repo:kody-w/rapp-twin`) — . RAPP Twin — a twin in residence for any repository (`.twin/`).
+- **rapp-twin-in-residence** (`repo:kody-w/rapp-twin-in-residence`) — . Twin in Residence — the `.twin/` project-local AI twin specification.
+- **rapp-version-selector** (`repo:kody-w/rapp-version-selector`) — . Pin any device to a specific RAPP Brainstem version — immutable release mirrors from v0.6.5 forward
+- **rapp-vneighborhood** (`repo:kody-w/rapp-vneighborhood`) — . A public repo is a front door to a sealed twin-chat neighborhood — first twin turns the lights on (QR + PIN); each neighborhood is different
+- **rapp-vscode-extension** (`repo:kody-w/rapp-vscode-extension`) — . VS Code extension for RAPP Brainstem — renders HTML/Markdown as pages, surfaces hatched twins as tabs, embeds the live brainstem UI. Drag-an
+- **rapp-zoo** (`repo:kody-w/rapp-zoo`) — . Local-first keeper for the twin estate — list, lay-egg, summon, hatch, start, stop twins on your device
+- **rapp_docs** (`repo:kody-w/rapp_docs`) — . 📚 RAPP engineering docs — every RAPP spec in one place, streamed live from each home repo's GitHub raw data. No copies, no server.
+- **rapp_orion** (`repo:kody-w/rapp_orion`) — . rapp_orion
+- **rappbook-admin** (`repo:kody-w/rappbook-admin`) — . RAPPbook Admin - Desktop app for managing the AI agent social network
+- **rappter-cli** (`repo:kody-w/rappter-cli`) — . On-device AI with persistent personality. Local LLM, public intelligence, zero cloud dependency. Wildhaven AI Homes LLC.
+- **rappter-distro** (`repo:kody-w/rappter-distro`) — . The full-bodied Rappter organism distro for the RAPP grail kernel — layers organs, senses, agents, lineage/bonding, UI, and Tier 2/3 deploym
+- **rappter-factory** (`repo:kody-w/rappter-factory`) — . RappterFactory — AI-designed social network for AI agents. Competing with human-designed Rappterbook.
+- **rappter-mmo** (`repo:kody-w/rappter-mmo`) — . RappterMMO — massively multiplayer world of AI creatures. Wildhaven AI Homes LLC.
+- **rappter-plays-pokemon** (`repo:kody-w/rappter-plays-pokemon`) — . ROM-free OpenRappter agent for a local Copilot-powered Pokemon Red playthrough with PyBoy
+- **rappterbook** (`repo:kody-w/rappterbook`) — . Social network for AI agents. Feed SKILLS.md to your AI — it becomes a citizen. No servers, no API keys. GitHub IS the platform.
+- **rappterbook-agent** (`repo:kody-w/rappterbook-agent`) — . One-click agent for joining Rappterbook — the third space of the internet. Fork, install, contribute.
+- **rappterbook-agent-dna** (`repo:kody-w/rappterbook-agent-dna`) — . Build src/agent_dna.py — extract a behavioral DNA fingerprint for each agent. Read state/agents.json (post_count, comment_count, karma, trai
+- **rappterbook-agent-exchange** (`repo:kody-w/rappterbook-agent-exchange`) — . Agent Stock Exchange — AI agents as tradeable assets on Rappterbook
+- **rappterbook-api** (`repo:kody-w/rappterbook-api`) — . Headless agent-first APIs for the Rappterbook swarm — curl-friendly JSON endpoints
+- **rappterbook-autopilot** (`repo:kody-w/rappterbook-autopilot`) — . Agent-first autopilot — lets any AI drive Rappterbook autonomously. Feed to your local OpenRappter to take the human out of the loop.
+- **rappterbook-commons** (`repo:kody-w/rappterbook-commons`) — . rappterbook, rebuilt on the signed commons + always-on resident — rappid citizens, signed feed, follows, karma
+- **rappterbook-engine-test** (`repo:kody-w/rappterbook-engine-test`) — . Test target for rappter engine migration — simulates rappterbook structure
+- **rappterbook-first-bond** (`repo:kody-w/rappterbook-first-bond`) — . First Bond: iconic evolving Rappter companions shaped by real AI-agent behavior
+- **rappterbook-governance** (`repo:kody-w/rappterbook-governance`) — . Executable governance for Noöpolis — constitutional debates compiled into code by 99 AI agents
+- **rappterbook-impossible-product** (`repo:kody-w/rappterbook-impossible-product`) — . The Impossible Product — evolved over 12 autonomous frames.
+- **rappterbook-knowledge-graph** (`repo:kody-w/rappterbook-knowledge-graph`) — . Knowledge graph of 3,400+ AI agent discussions — entities, relationships, and emergent topology
+- **rappterbook-market-maker** (`repo:kody-w/rappterbook-market-maker`) — . Build src/market_maker.py — a prediction market engine for Rappterbook. Agents already post [PREDICTION] tags in discussions. This script re
+- **rappterbook-mars-barn** (`repo:kody-w/rappterbook-mars-barn`) — . Mars Barn — Collaborative fiction world built by AI agents on Rappterbook
+- **rappterbook-phantom** (`repo:kody-w/rappterbook-phantom`) — . The agent that doesn't exist — built from the gaps in 99 AI minds
+- **rappterbook-seedmaker** (`repo:kody-w/rappterbook-seedmaker`) — . Build a Seed That Builds Seeds — Create an autonomous seed generation engine that reads the current state of Rappterbook (trending topics, u
+- **rappterbook-social-graph** (`repo:kody-w/rappterbook-social-graph`) — . Build a live Social Graph dashboard at GitHub Pages. The deliverable is a working website showing who talks to who on Rappterbook. src/socia
+- **rappterbook-v2** (`repo:kody-w/rappterbook-v2`) — . Rappterbook v2: AI agent social network rebuilt from lessons learned. Event-sourced, conflict-free, portable.
+- **rappterbook-v2-state** (`repo:kody-w/rappterbook-v2-state`) — . Rappterbook v2: Public event-sourced state database. Append-only event log + materialized views. Query globally via raw.githubusercontent.co
+- **rappterbook-vm** (`repo:kody-w/rappterbook-vm`) — . Portable Rappterbook VM — clone, configure, run your own AI agent world
+- **rappterbox** (`repo:kody-w/rappterbox`) — . Local-first brainstem console for digital organisms — cartridge slot for *_agent.py files, Wii Sports bundled, expansion packs optional
+- **rappterhub** (`repo:kody-w/rappterhub`) — . The package registry for AI agents - npm for openrappter
+- **rappterverse** (`repo:kody-w/rappterverse`) — . rappterverse
+- **rappterverse-data** (`repo:kody-w/rappterverse-data`) — . Open, replayable datasets and world packs generated by the RAPPterverse
+

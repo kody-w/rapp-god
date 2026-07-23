@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>77 · Auto Adventurer · learnwithkody</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #04060c;
+    --panel: #0b0f1a;
+    --panel2: #06080f;
+    --border: #18203a;
+    --ink: #c8d2e8;
+    --dim: #5d6781;
+    --accent: #ffc870;
+    --hp: #ff5566;
+    --xp: #6affb4;
+    --info: #74c8ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    overflow: hidden;
+    user-select: none; -webkit-user-select: none;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 10px;
+    padding: 10px;
+    height: 100vh;
+  }
+  #stage {
+    position: relative;
+    background:
+      radial-gradient(ellipse at center, #0a0d18 0%, #02030a 65%, #000 100%);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: inset 0 0 120px rgba(0,0,0,.95), 0 0 30px rgba(255,200,112,.04);
+    border: 1px solid #141b2e;
+  }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+  #vignette {
+    pointer-events: none; position: absolute; inset: 0; z-index: 3;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.55) 100%);
+  }
+  #title {
+    position: absolute; top: 12px; left: 14px; z-index: 5;
+    font-size: 11px; letter-spacing: .18em; color: var(--dim); text-transform: uppercase;
+    pointer-events: none;
+    text-shadow: 0 0 12px rgba(0,0,0,.9);
+  }
+  #title b { color: var(--accent); font-weight: 700; letter-spacing: .12em; }
+  #depth {
+    position: absolute; top: 12px; right: 14px; z-index: 5;
+    font-size: 12px; letter-spacing: .18em; color: var(--accent); text-transform: uppercase;
+    text-shadow: 0 0 14px rgba(255,200,112,.4);
+  }
+  #floorFlash {
+    position: absolute; inset: 0; z-index: 4;
+    background: rgba(255,200,112,0); pointer-events: none;
+    transition: background .55s ease-out;
+  }
+  #side {
+    display: flex; flex-direction: column; gap: 10px; min-height: 0;
+  }
+  .panel {
+    background: linear-gradient(180deg, var(--panel), var(--panel2));
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 0 rgba(255,255,255,.02) inset, 0 0 22px rgba(0,0,0,.5);
+  }
+  .panel h3 {
+    font-size: 10px;
+    letter-spacing: .22em;
+    color: var(--accent);
+    margin-bottom: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-shadow: 0 0 8px rgba(255,200,112,.25);
+  }
+  .stat {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; padding: 2px 0;
+    color: var(--ink);
+  }
+  .stat .k { color: var(--dim); font-size: 11px; letter-spacing: .04em; }
+  .stat .v { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .stat .v.hi { color: var(--accent); }
+  .bar {
+    height: 6px; border-radius: 3px; background: #141a28; overflow: hidden; margin: 4px 0 8px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.03) inset;
+  }
+  .bar > div { height: 100%; transition: width .35s; }
+  #log {
+    flex: 1; min-height: 0;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  #logScroll {
+    flex: 1; overflow: hidden;
+    font-size: 11px; line-height: 1.55;
+    display: flex; flex-direction: column-reverse;
+    padding-top: 4px;
+    mask-image: linear-gradient(to top, black 78%, transparent);
+    -webkit-mask-image: linear-gradient(to top, black 78%, transparent);
+  }
+  .logEntry {
+    color: var(--ink);
+    padding: 1px 0;
+    white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
+    animation: fadeIn .4s ease-out;
+  }
+  .logEntry.system { color: var(--accent); }
+  .logEntry.combat { color: #ff8898; }
+  .logEntry.heal   { color: var(--xp); }
+  .logEntry.find   { color: var(--info); }
+  .logEntry.level  { color: #c898ff; font-weight: 600; letter-spacing: .03em; }
+  .logEntry.death  { color: #ff5566; font-weight: 600; }
+  .logEntry .who   { color: var(--accent); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+  .gold { color: #ffd966; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="vignette"></div>
+    <div id="floorFlash"></div>
+    <div id="title">vibe coding · <b>auto adventurer</b></div>
+    <div id="depth"></div>
+  </div>
+  <div id="side">
+    <div class="panel" id="bestPanel">
+      <h3>Best Run</h3>
+      <div class="stat"><span class="k">Deepest depth</span><span class="v hi" id="bestDepth">1</span></div>
+      <div class="stat"><span class="k">Total kills</span><span class="v" id="bestKills">0</span></div>
+      <div class="stat"><span class="k">Potions used</span><span class="v" id="bestPotions">0</span></div>
+      <div class="stat"><span class="k">Longest survival</span><span class="v" id="bestTurns">0</span></div>
+      <div class="stat"><span class="k">Runs</span><span class="v" id="bestRuns">1</span></div>
+    </div>
+    <div class="panel" id="curPanel">
+      <h3>Current Run · <span id="curClass" style="color:#ffc870">Warrior</span></h3>
+      <div class="stat"><span class="k">HP</span><span class="v" id="curHpText">30/30</span></div>
+      <div class="bar"><div id="hpBar" style="background:linear-gradient(90deg,#ff5566,#ff9aa6);width:100%"></div></div>
+      <div class="stat"><span class="k">Attack</span><span class="v" id="curAtk">5</span></div>
+      <div class="stat"><span class="k">Defense</span><span class="v" id="curDef">1</span></div>
+      <div class="stat"><span class="k">Level · XP</span><span class="v" id="curLvl">1 · 0/5</span></div>
+      <div class="stat"><span class="k">Depth</span><span class="v" id="curDepth">1</span></div>
+      <div class="stat"><span class="k">Turn</span><span class="v" id="curTurn">0</span></div>
+      <div class="stat"><span class="k">Kills</span><span class="v" id="curKills">0</span></div>
+      <div class="stat"><span class="k">Gold</span><span class="v gold" id="curGold">0</span></div>
+      <h3 style="margin-top:14px">Inventory</h3>
+      <div class="stat"><span class="k">Weapon</span><span class="v" id="invW">bare hands</span></div>
+      <div class="stat"><span class="k">Armor</span><span class="v" id="invA">tunic</span></div>
+      <div class="stat"><span class="k">Potions</span><span class="v" id="invP">0</span></div>
+      <div class="stat"><span class="k">Buff</span><span class="v" id="invB">—</span></div>
+      <div class="stat" style="margin-top:6px"><span class="k">Goal</span><span class="v" id="curGoal">explore</span></div>
+    </div>
+    <div class="panel" id="log">
+      <h3>Action Log</h3>
+      <div id="logScroll"></div>
+    </div>
+  </div>
+</div>
+<script>
+'use strict';
+
+/* ============================================================
+   Auto Adventurer — single-file infinite auto-roguelike.
+   BSP dungeons · L-corridors · recursive shadowcast FOV ·
+   goal-stack hero AI · A* pathing · 5 monster archetypes ·
+   6 item categories · auto-play forever.
+   ============================================================ */
+
+// ---------- Config ----------
+const W = 78, H = 46;          // map size in tiles
+const FOV_RADIUS = 9;
+const TURN_MS = 135;            // simulation tick
+const MOVE_LERP = 0.32;         // visual interpolation per frame
+
+const TILE = { WALL:0, FLOOR:1, STAIRS:2 };
+
+// ---------- Utilities ----------
+const rand = (a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+const choice = a => a[Math.floor(Math.random()*a.length)];
+const clamp = (v,lo,hi)=>v<lo?lo:(v>hi?hi:v);
+const inB = (x,y)=>x>=0&&y>=0&&x<W&&y<H;
+const dist = (a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+const dist2 = (ax,ay,bx,by)=>{const dx=ax-bx,dy=ay-by;return dx*dx+dy*dy;};
+
+// ---------- Items (scaling by tier) ----------
+const WEAPONS = [
+  { name:"rusty knife",     atk:2,  tier:1 },
+  { name:"shortsword",      atk:4,  tier:2 },
+  { name:"steel sabre",     atk:6,  tier:3 },
+  { name:"warhammer",       atk:9,  tier:4 },
+  { name:"runeblade",       atk:13, tier:5 },
+  { name:"sunsword",        atk:18, tier:6 },
+];
+const ARMORS = [
+  { name:"leather",         def:1,  tier:1 },
+  { name:"chainmail",       def:3,  tier:2 },
+  { name:"plate",           def:5,  tier:3 },
+  { name:"adamant",         def:8,  tier:4 },
+  { name:"dragonhide",      def:11, tier:5 },
+  { name:"aegis",           def:15, tier:6 },
+];
+
+// ---------- Monster archetypes ----------
+const MONSTERS = {
+  rat:    { ch:'r', color:'#a89888', name:"rat",         hp:4,  atk:2,  def:0, sight:6,  xp:1 },
+  kobold: { ch:'k', color:'#9bdc4a', name:"kobold",      hp:8,  atk:3,  def:1, sight:7,  xp:2, ranged:true },
+  troll:  { ch:'T', color:'#4ea860', name:"troll",       hp:22, atk:6,  def:2, sight:6,  xp:5, regen:1 },
+  dragon: { ch:'D', color:'#ff7a4a', name:"dragon",      hp:34, atk:9,  def:4, sight:8,  xp:9, breath:true },
+  lich:   { ch:'L', color:'#cf85ff', name:"lich",        hp:18, atk:5,  def:3, sight:9,  xp:7, summoner:true },
+};
+
+// ---------- Tile aesthetics ----------
+const TILE_GLYPH = {
+  [TILE.WALL]:  '#',
+  [TILE.FLOOR]: '·',
+  [TILE.STAIRS]:'>'
+};
+const TILE_COLOR = {
+  [TILE.WALL]:  '#3b4a6e',
+  [TILE.FLOOR]: '#252b3e',
+  [TILE.STAIRS]:'#7adbff'
+};
+
+// ---------- DOM ----------
+const cvs = document.getElementById('game');
+const ctx = cvs.getContext('2d');
+const $ = id => document.getElementById(id);
+const logEl = $('logScroll');
+const flashEl = $('floorFlash');
+
+// ---------- State ----------
+let state;
+let viewport = { tile:14, cols:0, rows:0, w:0, h:0 };
+let cam = { x:0, y:0 };
+let bestRun = { depth:1, kills:0, potions:0, turns:0, runs:1 };
+
+// ---------- Resize / canvas DPI ----------
+function fitCanvas(){
+  const stage = document.getElementById('stage');
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const w = stage.clientWidth, h = stage.clientHeight;
+  cvs.width = Math.floor(w*dpr);
+  cvs.height = Math.floor(h*dpr);
+  cvs.style.width = w+'px';
+  cvs.style.height = h+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  // pick tile size so we always see roughly 60–70 cols
+  const wantedCols = Math.min(W, 64);
+  const wantedRows = Math.min(H, 38);
+  const ts = Math.max(10, Math.min(Math.floor(w/wantedCols), Math.floor(h/wantedRows)));
+  viewport.tile = ts;
+  viewport.cols = Math.ceil(w/ts);
+  viewport.rows = Math.ceil(h/ts);
+  viewport.w = w; viewport.h = h;
+  glyphCache.clear();
+}
+window.addEventListener('resize', fitCanvas);
+
+// ---------- Glyph sprite cache (with glow) ----------
+const glyphCache = new Map();
+function getGlyph(ch, color, glow){
+  const key = ch+'|'+color+'|'+(glow?1:0)+'|'+viewport.tile;
+  let g = glyphCache.get(key);
+  if (g) return g;
+  const ts = viewport.tile;
+  const pad = Math.ceil(ts*0.6);
+  const sz = ts + pad*2;
+  const c = document.createElement('canvas');
+  c.width = sz; c.height = sz;
+  const cx = c.getContext('2d');
+  cx.font = `${Math.floor(ts*0.92)}px 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace`;
+  cx.textAlign = 'center';
+  cx.textBaseline = 'middle';
+  if (glow){
+    cx.shadowColor = color;
+    cx.shadowBlur = ts*0.85;
+    cx.fillStyle = color;
+    cx.fillText(ch, sz/2, sz/2);
+    cx.shadowBlur = ts*0.45;
+    cx.fillText(ch, sz/2, sz/2);
+  }
+  cx.shadowBlur = 0;
+  cx.fillStyle = color;
+  cx.fillText(ch, sz/2, sz/2);
+  const g2 = { canvas:c, pad };
+  glyphCache.set(key, g2);
+  return g2;
+}
+
+// ---------- BSP Dungeon Generation ----------
+function genDungeon(depth){
+  const map = Array.from({length:H},()=>new Uint8Array(W));
+  const rooms = [];
+  const minRoomW = 5, minRoomH = 4;
+  const minSplitW = minRoomW*2+2;
+  const minSplitH = minRoomH*2+2;
+
+  function carveRoom(x,y,w,h){
+    const rw = rand(minRoomW, Math.max(minRoomW, Math.min(w-2, 11)));
+    const rh = rand(minRoomH, Math.max(minRoomH, Math.min(h-2, 7)));
+    const rx = x + rand(1, Math.max(1, w-rw-1));
+    const ry = y + rand(1, Math.max(1, h-rh-1));
+    for (let i=ry;i<ry+rh;i++) for (let j=rx;j<rx+rw;j++) map[i][j]=TILE.FLOOR;
+    const room = { x:rx, y:ry, w:rw, h:rh, cx:rx+(rw>>1), cy:ry+(rh>>1), id:rooms.length };
+    rooms.push(room);
+    return room;
+  }
+  function bsp(x,y,w,h,depth){
+    const canSplitH = h >= minSplitH;
+    const canSplitW = w >= minSplitW;
+    const split = depth < 2 ? true : Math.random() < 0.78;
+    if (!split || (!canSplitH && !canSplitW)) return carveRoom(x,y,w,h);
+    let horiz;
+    if (canSplitH && canSplitW) horiz = w<h ? true : (h<w ? false : Math.random()<0.5);
+    else horiz = canSplitH;
+    if (horiz){
+      const sp = rand(Math.floor(h*0.4), Math.floor(h*0.6));
+      const a = bsp(x, y, w, sp, depth+1);
+      const b = bsp(x, y+sp, w, h-sp, depth+1);
+      connect(map, a, b);
+      return a;
+    } else {
+      const sp = rand(Math.floor(w*0.4), Math.floor(w*0.6));
+      const a = bsp(x, y, sp, h, depth+1);
+      const b = bsp(x+sp, y, w-sp, h, depth+1);
+      connect(map, a, b);
+      return a;
+    }
+  }
+  bsp(1, 1, W-2, H-2, 0);
+
+  // Place stairs in the room farthest from the first room
+  let stairsRoom = rooms[0];
+  let bestD = -1;
+  for (const r of rooms){
+    const d = dist2(rooms[0].cx,rooms[0].cy, r.cx,r.cy);
+    if (d > bestD){ bestD = d; stairsRoom = r; }
+  }
+  map[stairsRoom.cy][stairsRoom.cx] = TILE.STAIRS;
+
+  return { map, rooms, startRoom: rooms[0], stairsRoom, stairs:{x:stairsRoom.cx, y:stairsRoom.cy}, depth };
+}
+function connect(map, a, b){
+  let x1=a.cx, y1=a.cy, x2=b.cx, y2=b.cy;
+  if (Math.random()<0.5){
+    for (let x=Math.min(x1,x2); x<=Math.max(x1,x2); x++) map[y1][x] = map[y1][x]||TILE.FLOOR;
+    for (let y=Math.min(y1,y2); y<=Math.max(y1,y2); y++) map[y][x2] = map[y][x2]||TILE.FLOOR;
+  } else {
+    for (let y=Math.min(y1,y2); y<=Math.max(y1,y2); y++) map[y][x1] = map[y][x1]||TILE.FLOOR;
+    for (let x=Math.min(x1,x2); x<=Math.max(x1,x2); x++) map[y2][x] = map[y2][x]||TILE.FLOOR;
+  }
+}
+
+// ---------- Recursive shadowcasting FOV (8 octants) ----------
+const OCT = [
+  [ 1, 0, 0, 1],[ 0, 1, 1, 0],[ 0,-1, 1, 0],[-1, 0, 0, 1],
+  [-1, 0, 0,-1],[ 0,-1,-1, 0],[ 0, 1,-1, 0],[ 1, 0, 0,-1]
+];
+function castLight(map, vis, ox, oy, row, sStart, sEnd, radius, xx, xy, yx, yy){
+  if (sStart < sEnd) return;
+  let newStart = 0;
+  let blocked = false;
+  for (let d = row; d <= radius && !blocked; d++){
+    const dy = -d;
+    for (let dx = -d; dx <= 0; dx++){
+      const cx = ox + dx*xx + dy*xy;
+      const cy = oy + dx*yx + dy*yy;
+      const lSlope = (dx - 0.5)/(dy + 0.5);
+      const rSlope = (dx + 0.5)/(dy - 0.5);
+      if (sStart < rSlope) continue;
+      else if (sEnd > lSlope) break;
+      if (cx>=0 && cy>=0 && cx<W && cy<H){
+        if (dx*dx + dy*dy < radius*radius){
+          vis[cy][cx] = 1;
+        }
+        const blocks = map[cy][cx] === TILE.WALL;
+        if (blocked){
+          if (blocks){ newStart = rSlope; continue; }
+          else { blocked = false; sStart = newStart; }
+        } else {
+          if (blocks && d < radius){
+            blocked = true;
+            castLight(map, vis, ox, oy, d+1, sStart, lSlope, radius, xx, xy, yx, yy);
+            newStart = rSlope;
+          }
+        }
+      }
+    }
+  }
+}
+function computeFOV(map, ox, oy, radius){
+  const vis = Array.from({length:H},()=>new Uint8Array(W));
+  vis[oy][ox] = 1;
+  for (const [xx,xy,yx,yy] of OCT) castLight(map, vis, ox, oy, 1, 1.0, 0.0, radius, xx, xy, yx, yy);
+  return vis;
+}
+
+// ---------- A* pathfinding ----------
+function astar(sx, sy, tx, ty, passable){
+  if (sx===tx && sy===ty) return [];
+  const open = [{x:sx, y:sy, g:0, f:Math.abs(tx-sx)+Math.abs(ty-sy), p:null}];
+  const seen = new Map(); seen.set(sy*W+sx, 0);
+  let iters = 0;
+  while (open.length && iters++ < 4500){
+    let bi = 0;
+    for (let i=1;i<open.length;i++) if (open[i].f < open[bi].f) bi = i;
+    const cur = open[bi];
+    open[bi] = open[open.length-1]; open.pop();
+    if (cur.x===tx && cur.y===ty){
+      const path = [];
+      let n = cur;
+      while (n.p){ path.unshift({x:n.x,y:n.y}); n = n.p; }
+      return path;
+    }
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const [dx,dy] of dirs){
+      const nx = cur.x+dx, ny = cur.y+dy;
+      if (!inB(nx,ny) || !passable(nx,ny)) continue;
+      const ng = cur.g+1;
+      const k = ny*W+nx;
+      if (seen.has(k) && seen.get(k)<=ng) continue;
+      seen.set(k, ng);
+      open.push({x:nx,y:ny,g:ng,f:ng+Math.abs(tx-nx)+Math.abs(ty-ny), p:cur});
+    }
+  }
+  return null;
+}
+
+// ---------- Logging ----------
+function log(msg, cls=''){
+  const div = document.createElement('div');
+  div.className = 'logEntry'+(cls?(' '+cls):'');
+  div.innerHTML = msg;
+  logEl.insertBefore(div, logEl.firstChild);
+  while (logEl.children.length > 32) logEl.removeChild(logEl.lastChild);
+}
+
+// ---------- Game setup ----------
+function newRun(){
+  state = {
+    depth: 0,
+    turn: 0,
+    hero: {
+      x:0, y:0, vx:0, vy:0,
+      hp:30, maxHp:30,
+      baseAtk:5, baseDef:1,
+      level:1, xp:0,
+      gold:0, kills:0, potions:0, potionsUsed:0,
+      weapon:null, armor:null,
+      buffAtk:0, buffDef:0, buffTurns:0,
+      lastGoal:'explore',
+      hurtFlash:0,
+    },
+    monsters: [],
+    items: [],
+    map: null, rooms: [], stairs:null,
+    visible: null, explored: null,
+    lastFOV: null,
+    visitedRooms: new Set(),
+    floorFx: 0,
+    deathFade: 0,
+  };
+  enterDepth(1);
+  log("A new <span class='who'>warrior</span> descends into the dungeon.", 'system');
+}
+
+function enterDepth(d){
+  state.depth = d;
+  const dg = genDungeon(d);
+  state.map = dg.map;
+  state.rooms = dg.rooms;
+  state.stairs = dg.stairs;
+  state.explored = Array.from({length:H},()=>new Uint8Array(W));
+  state.visitedRooms = new Set();
+  state.monsters = [];
+  state.items = [];
+  // Hero starts in first room center
+  state.hero.x = dg.startRoom.cx;
+  state.hero.y = dg.startRoom.cy;
+  state.hero.vx = state.hero.x;
+  state.hero.vy = state.hero.y;
+  cam.x = state.hero.x;
+  cam.y = state.hero.y;
+
+  populate(d, dg);
+  computeAndStoreFOV();
+  $('depth').textContent = `Depth ${String(d).padStart(2,'0')}`;
+  flashEl.style.background = 'rgba(255,200,112,.18)';
+  setTimeout(()=>{ flashEl.style.background='rgba(255,200,112,0)'; }, 80);
+}
+
+function populate(d, dg){
+  // Choose monsters based on depth
+  const pool = [];
+  pool.push('rat','rat','rat');
+  if (d>=2) pool.push('kobold','kobold');
+  if (d>=4) pool.push('troll');
+  if (d>=6) pool.push('dragon');
+  if (d>=5) pool.push('lich');
+
+  const monsterCount = clamp(2 + Math.floor(d*1.3), 3, 14);
+  for (let i=0; i<monsterCount; i++){
+    // skip first room
+    const r = dg.rooms[rand(1, dg.rooms.length-1)];
+    if (!r) continue;
+    const x = rand(r.x, r.x+r.w-1);
+    const y = rand(r.y, r.y+r.h-1);
+    if (state.map[y][x] !== TILE.FLOOR) continue;
+    if (occupant(x,y)) continue;
+    const t = choice(pool);
+    const tpl = MONSTERS[t];
+    const lvlBonus = Math.floor(d/3);
+    state.monsters.push({
+      type:t, x, y, vx:x, vy:y,
+      hp: tpl.hp + lvlBonus*2,
+      maxHp: tpl.hp + lvlBonus*2,
+      atk: tpl.atk + lvlBonus,
+      def: tpl.def + Math.floor(lvlBonus/2),
+      sight: tpl.sight,
+      cooldown: 0,
+      breathCooldown: 0,
+      hurtFlash: 0,
+    });
+  }
+
+  // Items
+  const itemCount = clamp(2 + Math.floor(d/2) + rand(0,2), 2, 8);
+  for (let i=0; i<itemCount; i++){
+    const r = choice(dg.rooms);
+    const x = rand(r.x, r.x+r.w-1);
+    const y = rand(r.y, r.y+r.h-1);
+    if (state.map[y][x] !== TILE.FLOOR) continue;
+    state.items.push(makeItem(d, x, y));
+  }
+}
+
+function makeItem(d, x, y){
+  const r = Math.random();
+  // weighted: weapons 14, armors 14, potions 25, scrolls 10, gold 22, food 15
+  let kind;
+  const t = Math.random()*100;
+  if (t < 14) kind='weapon';
+  else if (t < 28) kind='armor';
+  else if (t < 53) kind='potion';
+  else if (t < 63) kind='scroll';
+  else if (t < 85) kind='gold';
+  else kind='food';
+
+  if (kind === 'weapon'){
+    const tier = clamp(Math.floor(d*0.6 + rand(0,1)), 1, WEAPONS.length);
+    const w = WEAPONS[tier-1];
+    return { kind, x, y, ch:'/', color:'#bcd1ff', name:w.name, atk:w.atk };
+  }
+  if (kind === 'armor'){
+    const tier = clamp(Math.floor(d*0.6 + rand(0,1)), 1, ARMORS.length);
+    const a = ARMORS[tier-1];
+    return { kind, x, y, ch:'[', color:'#7ec3ff', name:a.name, def:a.def };
+  }
+  if (kind === 'potion') return { kind, x, y, ch:'!', color:'#ff7088', name:'healing potion' };
+  if (kind === 'scroll') {
+    const which = Math.random()<0.5 ? 'might' : 'ward';
+    return { kind, x, y, ch:'?', color:'#caa8ff', name:'scroll of '+which, which };
+  }
+  if (kind === 'gold')   return { kind, x, y, ch:'$', color:'#ffd966', name:'gold pile', amount: rand(5, 15+d*3) };
+  return { kind, x, y, ch:'%', color:'#ffa860', name:'rations', heal:8 };
+}
+
+function occupant(x,y){
+  if (state.hero.x===x && state.hero.y===y) return state.hero;
+  for (const m of state.monsters) if (m.x===x && m.y===y) return m;
+  return null;
+}
+function itemAt(x,y){
+  return state.items.find(it=>it.x===x&&it.y===y) || null;
+}
+function passableForPath(x,y){
+  if (!inB(x,y)) return false;
+  const t = state.map[y][x];
+  return t === TILE.FLOOR || t === TILE.STAIRS;
+}
+function passableForHero(x,y){
+  if (!passableForPath(x,y)) return false;
+  for (const m of state.monsters) if (m.x===x && m.y===y) return false;
+  return true;
+}
+function passableForMonster(x,y, self){
+  if (!passableForPath(x,y)) return false;
+  if (state.hero.x===x && state.hero.y===y) return false;
+  for (const m of state.monsters) if (m!==self && m.x===x && m.y===y) return false;
+  return true;
+}
+
+// ---------- FOV ----------
+function computeAndStoreFOV(){
+  const vis = computeFOV(state.map, state.hero.x, state.hero.y, FOV_RADIUS);
+  state.visible = vis;
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    if (vis[y][x]) state.explored[y][x] = 1;
+  }
+  // Track visited rooms
+  for (const r of state.rooms){
+    if (state.visitedRooms.has(r.id)) continue;
+    if (vis[r.cy][r.cx] || (state.hero.x>=r.x && state.hero.x<r.x+r.w && state.hero.y>=r.y && state.hero.y<r.y+r.h)){
+      state.visitedRooms.add(r.id);
+    }
+  }
+}
+
+// ---------- Combat ----------
+function heroAtk(){ return state.hero.baseAtk + (state.hero.weapon?state.hero.weapon.atk:0) + state.hero.buffAtk; }
+function heroDef(){ return state.hero.baseDef + (state.hero.armor?state.hero.armor.def:0) + state.hero.buffDef; }
+function damageRoll(atk, def){
+  const base = Math.max(1, atk - def);
+  return rand(Math.max(1,Math.floor(base*0.7)), Math.ceil(base*1.2));
+}
+
+function heroAttack(target){
+  const dmg = damageRoll(heroAtk(), target.def);
+  target.hp -= dmg;
+  target.hurtFlash = 1;
+  log(`<span class='who'>Hero</span> strikes ${MONSTERS[target.type].name} for <b>${dmg}</b>`, 'combat');
+  if (target.hp <= 0){
+    log(`${MONSTERS[target.type].name} falls.`, 'combat');
+    state.hero.kills++;
+    state.hero.xp += MONSTERS[target.type].xp;
+    state.monsters = state.monsters.filter(m=>m!==target);
+    // chance to drop something
+    if (Math.random() < 0.35){
+      state.items.push(makeItem(state.depth, target.x, target.y));
+    }
+    checkLevelUp();
+  }
+}
+function checkLevelUp(){
+  const need = 5 + state.hero.level*3;
+  if (state.hero.xp >= need){
+    state.hero.xp -= need;
+    state.hero.level++;
+    state.hero.maxHp += 6;
+    state.hero.hp = clamp(state.hero.hp+6, 1, state.hero.maxHp);
+    state.hero.baseAtk += 1;
+    state.hero.baseDef += 1;
+    log(`Hero reaches level <b>${state.hero.level}</b>!`, 'level');
+  }
+}
+function monsterAttackHero(m, isRanged=false){
+  const dmg = damageRoll(m.atk, heroDef());
+  state.hero.hp -= dmg;
+  state.hero.hurtFlash = 1;
+  const verb = isRanged ? 'shoots at' : 'hits';
+  log(`${MONSTERS[m.type].name} ${verb} hero for <b>${dmg}</b>`, 'combat');
+}
+
+// ---------- Hero Goal Stack ----------
+function chooseHeroAction(){
+  const h = state.hero;
+  const vis = state.visible;
+  const visEnemies = state.monsters.filter(m=>vis[m.y][m.x]);
+  const adjEnemies = state.monsters.filter(m=>Math.abs(m.x-h.x)+Math.abs(m.y-h.y)===1);
+  const visItems = state.items.filter(it=>vis[it.y][it.x]);
+
+  // (1) Flee
+  if (h.hp/h.maxHp < 0.25 && h.potions===0 && adjEnemies.length>0){
+    h.lastGoal = 'flee';
+    // Find a target tile: nearest unexplored frontier OR away-from-enemies tile
+    const frontier = findFrontierTile();
+    const target = frontier || farFromEnemies(adjEnemies);
+    if (target){
+      const path = astar(h.x, h.y, target.x, target.y, (x,y)=>passableForHero(x,y));
+      if (path && path.length){ moveHeroTo(path[0].x, path[0].y); return; }
+    }
+    // last resort: step away from any adj enemy
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const [dx,dy] of dirs){
+      const nx=h.x+dx, ny=h.y+dy;
+      if (passableForHero(nx,ny) && !state.monsters.some(m=>m.x===nx&&m.y===ny)){
+        moveHeroTo(nx,ny); return;
+      }
+    }
+  }
+
+  // (2) Drink potion
+  if (h.hp/h.maxHp < 0.5 && h.potions>0){
+    h.lastGoal = 'drink';
+    h.potions--;
+    h.potionsUsed++;
+    const heal = Math.floor(h.maxHp*0.6);
+    h.hp = clamp(h.hp+heal, 0, h.maxHp);
+    log(`Hero drinks healing potion <b>+${heal}</b>`, 'heal');
+    return;
+  }
+
+  // (3) Pick up gear / supplies if better and visible
+  // First if standing on something good
+  const onItem = itemAt(h.x, h.y);
+  if (onItem){
+    if (handlePickup(onItem)) return;
+  }
+  // Otherwise plan path to a desirable visible item
+  if (visItems.length){
+    let best = null, bestScore = -1, bestPath=null;
+    for (const it of visItems){
+      const score = itemDesirability(it);
+      if (score <= 0) continue;
+      const path = astar(h.x,h.y, it.x,it.y, (x,y)=>passableForHero(x,y) || (x===it.x&&y===it.y));
+      if (!path) continue;
+      const adj = score - path.length*0.3;
+      if (adj > bestScore){ bestScore = adj; best = it; bestPath = path; }
+    }
+    if (best && bestPath && bestPath.length){
+      h.lastGoal = 'grab '+best.kind;
+      moveHeroTo(bestPath[0].x, bestPath[0].y);
+      return;
+    }
+  }
+
+  // (4) Attack adjacent enemy
+  if (adjEnemies.length>0){
+    h.lastGoal = 'fight';
+    adjEnemies.sort((a,b)=>a.hp-b.hp);
+    heroAttack(adjEnemies[0]);
+    return;
+  }
+
+  // (5) Move toward visible enemy if hero feels strong (range advantage analog)
+  if (visEnemies.length>0){
+    const myPower = heroAtk()+heroDef()+h.hp*0.3;
+    visEnemies.sort((a,b)=>dist(h,a)-dist(h,b));
+    const target = visEnemies[0];
+    const theirPower = target.atk+target.def+target.hp*0.5;
+    if (myPower >= theirPower*0.85 || h.hp/h.maxHp > 0.7){
+      const path = astar(h.x,h.y, target.x,target.y, (x,y)=>passableForHero(x,y) || (x===target.x&&y===target.y));
+      if (path && path.length>=1){
+        h.lastGoal = 'engage';
+        // step toward, but don't step ONTO the enemy unless adjacent
+        const step = path[0];
+        if (step.x===target.x && step.y===target.y) {
+          heroAttack(target); return;
+        }
+        moveHeroTo(step.x, step.y);
+        return;
+      }
+    }
+  }
+
+  // (6) Descend stairs if reachable & most rooms explored
+  const exploredFrac = state.visitedRooms.size / state.rooms.length;
+  if (exploredFrac >= 0.6 || (state.explored[state.stairs.y][state.stairs.x] && exploredFrac >= 0.45)){
+    if (h.x === state.stairs.x && h.y === state.stairs.y){
+      descend(); return;
+    }
+    if (state.explored[state.stairs.y][state.stairs.x]){
+      const path = astar(h.x,h.y, state.stairs.x, state.stairs.y, (x,y)=>passableForHero(x,y));
+      if (path && path.length){
+        h.lastGoal = 'descend';
+        moveHeroTo(path[0].x, path[0].y);
+        return;
+      }
+    }
+  }
+
+  // (7) Explore — A* to nearest unexplored frontier
+  h.lastGoal = 'explore';
+  const target = findFrontierTile();
+  if (target){
+    const path = astar(h.x,h.y, target.x, target.y, (x,y)=>passableForHero(x,y));
+    if (path && path.length){ moveHeroTo(path[0].x, path[0].y); return; }
+  }
+  // No frontier — head to stairs even if not explored fully
+  if (state.explored[state.stairs.y][state.stairs.x]){
+    const path = astar(h.x,h.y, state.stairs.x, state.stairs.y, (x,y)=>passableForHero(x,y));
+    if (path && path.length){ moveHeroTo(path[0].x, path[0].y); return; }
+  }
+  // Otherwise wander
+  wanderHero();
+}
+function farFromEnemies(enemies){
+  // Pick a passable tile within FOV that maximizes min-distance to enemies
+  let best=null, bestD=-1;
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    if (!state.visible[y][x]) continue;
+    if (!passableForHero(x,y)) continue;
+    let mn = 999;
+    for (const m of enemies) mn = Math.min(mn, Math.abs(m.x-x)+Math.abs(m.y-y));
+    if (mn > bestD){ bestD = mn; best = {x,y}; }
+  }
+  return best;
+}
+function findFrontierTile(){
+  // Frontier: explored floor tile adjacent to unexplored area; pick nearest by manhattan
+  const h = state.hero;
+  let best=null, bestD=Infinity;
+  for (let y=1;y<H-1;y++) for (let x=1;x<W-1;x++){
+    if (!state.explored[y][x]) continue;
+    if (state.map[y][x]===TILE.WALL) continue;
+    let frontier = false;
+    for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx=x+dx, ny=y+dy;
+      if (!inB(nx,ny)) continue;
+      if (!state.explored[ny][nx] && state.map[ny][nx]!==TILE.WALL){
+        frontier = true; break;
+      }
+    }
+    if (!frontier) continue;
+    const d = Math.abs(h.x-x)+Math.abs(h.y-y);
+    if (d < bestD){ bestD = d; best = {x,y}; }
+  }
+  return best;
+}
+function itemDesirability(it){
+  const h = state.hero;
+  if (it.kind==='weapon'){
+    const cur = h.weapon ? h.weapon.atk : 0;
+    return it.atk > cur ? 8 + (it.atk-cur) : 0;
+  }
+  if (it.kind==='armor'){
+    const cur = h.armor ? h.armor.def : 0;
+    return it.def > cur ? 8 + (it.def-cur) : 0;
+  }
+  if (it.kind==='potion'){
+    return h.potions < 3 ? 6 : 0;
+  }
+  if (it.kind==='scroll') return h.buffTurns<=0 ? 4 : 0;
+  if (it.kind==='gold') return 2;
+  if (it.kind==='food') return h.hp < h.maxHp ? 3 : 1;
+  return 0;
+}
+function handlePickup(it){
+  const h = state.hero;
+  if (it.kind==='weapon'){
+    if (!h.weapon || it.atk > h.weapon.atk){
+      h.weapon = {name:it.name, atk:it.atk};
+      log(`Hero equips <b>${it.name}</b> (+${it.atk} atk)`, 'find');
+    } else { /* skip leaving on floor */ }
+    state.items = state.items.filter(x=>x!==it);
+    return true;
+  }
+  if (it.kind==='armor'){
+    if (!h.armor || it.def > h.armor.def){
+      h.armor = {name:it.name, def:it.def};
+      log(`Hero dons <b>${it.name}</b> (+${it.def} def)`, 'find');
+    }
+    state.items = state.items.filter(x=>x!==it);
+    return true;
+  }
+  if (it.kind==='potion'){
+    h.potions++;
+    log(`Hero pockets a healing potion.`, 'find');
+    state.items = state.items.filter(x=>x!==it);
+    return true;
+  }
+  if (it.kind==='scroll'){
+    if (it.which==='might'){ h.buffAtk = 4; h.buffTurns = 30; log(`Hero reads scroll of might (+4 atk, 30t)`, 'level'); }
+    else { h.buffDef = 4; h.buffTurns = 30; log(`Hero reads scroll of ward (+4 def, 30t)`, 'level'); }
+    state.items = state.items.filter(x=>x!==it);
+    return true;
+  }
+  if (it.kind==='gold'){
+    h.gold += it.amount;
+    log(`Hero scoops up <b class='gold'>${it.amount}</b> gold.`, 'find');
+    state.items = state.items.filter(x=>x!==it);
+    return true;
+  }
+  if (it.kind==='food'){
+    h.hp = clamp(h.hp + it.heal, 0, h.maxHp);
+    log(`Hero eats rations (+${it.heal} hp)`, 'heal');
+    state.items = state.items.filter(x=>x!==it);
+    return true;
+  }
+  return false;
+}
+function moveHeroTo(x,y){
+  // step into target tile; if monster there, attack; if item, pick up after stepping
+  const occ = occupant(x,y);
+  if (occ && occ !== state.hero){
+    heroAttack(occ);
+    return;
+  }
+  state.hero.x = x; state.hero.y = y;
+  const it = itemAt(x,y);
+  if (it){
+    handlePickup(it);
+  }
+}
+function wanderHero(){
+  const h = state.hero;
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-0.5);
+  for (const [dx,dy] of dirs){
+    const nx=h.x+dx, ny=h.y+dy;
+    if (passableForHero(nx,ny)){ moveHeroTo(nx,ny); return; }
+  }
+}
+function descend(){
+  log(`Hero descends to <b>depth ${state.depth+1}</b>`, 'system');
+  enterDepth(state.depth+1);
+}
+
+// ---------- Monster AI ----------
+function lineClear(ax, ay, bx, by){
+  // Bresenham; obstructed by walls only
+  let x = ax, y = ay;
+  const dx = Math.abs(bx-ax), dy = Math.abs(by-ay);
+  const sx = ax<bx?1:-1, sy = ay<by?1:-1;
+  let err = dx - dy;
+  while (!(x===bx && y===by)){
+    const e2 = 2*err;
+    if (e2 > -dy){ err -= dy; x += sx; }
+    if (e2 <  dx){ err += dx; y += sy; }
+    if (x===bx && y===by) break;
+    if (state.map[y][x] === TILE.WALL) return false;
+  }
+  return true;
+}
+function monsterTurn(m){
+  const h = state.hero;
+  const tpl = MONSTERS[m.type];
+  const md = Math.abs(h.x-m.x)+Math.abs(h.y-m.y);
+  const sees = md <= m.sight && lineClear(m.x,m.y, h.x,h.y);
+  if (m.cooldown>0) m.cooldown--;
+  if (m.breathCooldown>0) m.breathCooldown--;
+  if (tpl.regen) m.hp = Math.min(m.maxHp, m.hp + tpl.regen);
+
+  if (!sees){
+    // Wander
+    if (Math.random() < 0.65){
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-0.5);
+      for (const [dx,dy] of dirs){
+        const nx=m.x+dx, ny=m.y+dy;
+        if (passableForMonster(nx,ny,m)){ m.x=nx; m.y=ny; break; }
+      }
+    }
+    return;
+  }
+
+  // Attack adjacent
+  if (md === 1){
+    monsterAttackHero(m, false);
+    return;
+  }
+
+  // Behavior by type
+  if (m.type === 'rat'){
+    stepToward(m, h);
+    return;
+  }
+  if (m.type === 'kobold'){
+    if (md <= 4 && md >= 2 && lineClear(m.x,m.y,h.x,h.y) && m.cooldown===0){
+      monsterAttackHero(m, true);
+      m.cooldown = 1;
+      return;
+    }
+    if (md < 2) stepAway(m, h);
+    else stepToward(m, h);
+    return;
+  }
+  if (m.type === 'troll'){
+    stepToward(m, h);
+    return;
+  }
+  if (m.type === 'dragon'){
+    // Cone breath if aligned and within 5
+    if (m.breathCooldown===0){
+      const dx = h.x - m.x, dy = h.y - m.y;
+      const aligned = (Math.abs(dx) <= 1 && Math.abs(dy) <= 5) || (Math.abs(dy) <= 1 && Math.abs(dx) <= 5);
+      if (aligned && lineClear(m.x,m.y, h.x,h.y) && md<=5){
+        const dmg = damageRoll(m.atk+3, heroDef());
+        state.hero.hp -= dmg;
+        state.hero.hurtFlash = 1;
+        log(`dragon breathes fire — <b>${dmg}</b> damage`, 'combat');
+        m.breathCooldown = 4;
+        // visual breath: spark trail (skipped, glow on hero)
+        return;
+      }
+    }
+    stepToward(m, h);
+    return;
+  }
+  if (m.type === 'lich'){
+    if (m.cooldown === 0){
+      // summon at adjacent open tile
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]].sort(()=>Math.random()-0.5);
+      for (const [dx,dy] of dirs){
+        const nx=m.x+dx, ny=m.y+dy;
+        if (passableForMonster(nx,ny,m) && (nx!==h.x||ny!==h.y)){
+          const t = Math.random()<0.6 ? 'rat' : 'kobold';
+          const tpl2 = MONSTERS[t];
+          const lvlBonus = Math.floor(state.depth/3);
+          state.monsters.push({
+            type:t, x:nx, y:ny, vx:nx, vy:ny,
+            hp:tpl2.hp+lvlBonus, maxHp:tpl2.hp+lvlBonus,
+            atk:tpl2.atk+lvlBonus, def:tpl2.def, sight:tpl2.sight,
+            cooldown:1, breathCooldown:0, hurtFlash:0
+          });
+          log(`lich summons a ${t}.`, 'combat');
+          m.cooldown = 8;
+          return;
+        }
+      }
+    }
+    if (md < 4) stepAway(m,h);
+    else stepToward(m,h);
+    return;
+  }
+}
+function stepToward(m, h){
+  // try a small A* (limited)
+  const path = astar(m.x,m.y, h.x,h.y, (x,y)=> passableForMonster(x,y,m) || (x===h.x&&y===h.y));
+  if (path && path.length){
+    const s = path[0];
+    if (s.x===h.x && s.y===h.y){
+      monsterAttackHero(m, false); return;
+    }
+    m.x = s.x; m.y = s.y;
+    return;
+  }
+  // greedy fallback
+  const dx = Math.sign(h.x - m.x), dy = Math.sign(h.y - m.y);
+  if (dx && passableForMonster(m.x+dx, m.y, m)) { m.x+=dx; return; }
+  if (dy && passableForMonster(m.x, m.y+dy, m)) { m.y+=dy; return; }
+}
+function stepAway(m, h){
+  const dx = -Math.sign(h.x - m.x);
+  const dy = -Math.sign(h.y - m.y);
+  if (dx && passableForMonster(m.x+dx, m.y, m)) { m.x+=dx; return; }
+  if (dy && passableForMonster(m.x, m.y+dy, m)) { m.y+=dy; return; }
+}
+
+// ---------- Per-turn ----------
+function tickTurn(){
+  if (state.deathFade > 0) return;
+  state.turn++;
+  state.hero.hurtFlash *= 0.5;
+
+  // Buff timer
+  if (state.hero.buffTurns > 0){
+    state.hero.buffTurns--;
+    if (state.hero.buffTurns === 0){
+      state.hero.buffAtk = 0; state.hero.buffDef = 0;
+      log(`Hero's buff fades.`, 'system');
+    }
+  }
+
+  // Hero acts
+  chooseHeroAction();
+
+  // FOV recompute
+  computeAndStoreFOV();
+
+  // Monsters act (only those reasonably near to keep responsive)
+  const order = state.monsters.slice();
+  for (const m of order){
+    if (!state.monsters.includes(m)) continue;
+    monsterTurn(m);
+    m.hurtFlash *= 0.5;
+    if (state.hero.hp <= 0) break;
+  }
+
+  computeAndStoreFOV();
+
+  // Check death
+  if (state.hero.hp <= 0){
+    log(`Hero falls at <b>depth ${state.depth}</b> · turn ${state.turn}.`, 'death');
+    // update best
+    bestRun.runs++;
+    bestRun.depth = Math.max(bestRun.depth, state.depth);
+    bestRun.kills = Math.max(bestRun.kills, state.hero.kills);
+    bestRun.potions = Math.max(bestRun.potions, state.hero.potionsUsed);
+    bestRun.turns = Math.max(bestRun.turns, state.turn);
+    state.deathFade = 1.0;
+    setTimeout(()=>{ newRun(); state.deathFade = 0; }, 1200);
+  }
+}
+let turnAcc = 0, lastT = performance.now();
+function update(now){
+  const dt = Math.min(80, now - lastT);
+  lastT = now;
+  turnAcc += dt;
+  while (state.deathFade<=0 && turnAcc >= TURN_MS){
+    tickTurn();
+    turnAcc -= TURN_MS;
+  }
+  if (state.deathFade > 0){
+    state.deathFade -= dt/1200;
+    if (state.deathFade < 0) state.deathFade = 0;
+  }
+  // smooth interpolation
+  state.hero.vx += (state.hero.x - state.hero.vx) * MOVE_LERP;
+  state.hero.vy += (state.hero.y - state.hero.vy) * MOVE_LERP;
+  for (const m of state.monsters){
+    m.vx += (m.x - m.vx) * MOVE_LERP;
+    m.vy += (m.y - m.vy) * MOVE_LERP;
+  }
+  // camera lerp
+  cam.x += (state.hero.vx - cam.x) * 0.08;
+  cam.y += (state.hero.vy - cam.y) * 0.08;
+  render(now);
+  updateUI();
+  requestAnimationFrame(update);
+}
+
+// ---------- Render ----------
+function render(now){
+  const ts = viewport.tile;
+  const w = viewport.w, h = viewport.h;
+  ctx.fillStyle = '#02030a';
+  ctx.fillRect(0,0,w,h);
+
+  // map area; camera tile -> screen px
+  const offX = w/2 - cam.x*ts - ts/2;
+  const offY = h/2 - cam.y*ts - ts/2;
+
+  // Determine tile range to render
+  const x0 = Math.max(0, Math.floor((-offX)/ts) - 1);
+  const x1 = Math.min(W, Math.ceil((w-offX)/ts) + 1);
+  const y0 = Math.max(0, Math.floor((-offY)/ts) - 1);
+  const y1 = Math.min(H, Math.ceil((h-offY)/ts) + 1);
+
+  // Tiles
+  for (let y=y0;y<y1;y++){
+    for (let x=x0;x<x1;x++){
+      const v = state.visible[y][x];
+      const e = state.explored[y][x];
+      if (!v && !e) continue;
+      const t = state.map[y][x];
+      const ch = TILE_GLYPH[t];
+      let color = TILE_COLOR[t];
+      if (v){
+        // brighten visible
+        if (t === TILE.FLOOR) color = '#3a4567';
+        else if (t === TILE.WALL) color = '#5a6f9c';
+      }
+      const sprite = getGlyph(ch, color, v && (t===TILE.STAIRS || t===TILE.WALL));
+      const sx = Math.round(offX + x*ts - sprite.pad);
+      const sy = Math.round(offY + y*ts - sprite.pad);
+      ctx.globalAlpha = v ? 1.0 : 0.32;
+      ctx.drawImage(sprite.canvas, sx, sy);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Items (only visible)
+  const pulse = 0.55 + 0.45*Math.sin(now*0.005);
+  for (const it of state.items){
+    if (!state.visible[it.y][it.x]) continue;
+    const sprite = getGlyph(it.ch, it.color, true);
+    const sx = Math.round(offX + it.x*ts - sprite.pad);
+    const sy = Math.round(offY + it.y*ts - sprite.pad);
+    ctx.globalAlpha = 0.7 + 0.3*pulse;
+    ctx.drawImage(sprite.canvas, sx, sy);
+  }
+  ctx.globalAlpha = 1;
+
+  // Monsters (only visible)
+  for (const m of state.monsters){
+    if (!state.visible[m.y][m.x]) continue;
+    const tpl = MONSTERS[m.type];
+    const color = tpl.color;
+    const sprite = getGlyph(tpl.ch, color, true);
+    const sx = Math.round(offX + m.vx*ts - sprite.pad);
+    const sy = Math.round(offY + m.vy*ts - sprite.pad);
+    if (m.hurtFlash > 0.05){
+      ctx.globalAlpha = 1;
+      const flash = getGlyph(tpl.ch, '#ffffff', true);
+      ctx.drawImage(flash.canvas, sx, sy);
+    } else {
+      ctx.drawImage(sprite.canvas, sx, sy);
+    }
+    // tiny HP pip if hurt
+    if (m.hp < m.maxHp){
+      const px = Math.round(offX + m.vx*ts);
+      const py = Math.round(offY + m.vy*ts - ts*0.45);
+      const pw = Math.max(8, ts*0.7);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(px-pw/2, py, pw, 2);
+      ctx.fillStyle = '#ff8898';
+      ctx.fillRect(px-pw/2, py, pw*(m.hp/m.maxHp), 2);
+    }
+  }
+
+  // Hero — extra glow
+  {
+    const h = state.hero;
+    const heroColor = '#ffd070';
+    const sprite = getGlyph('@', heroColor, true);
+    const sx = Math.round(offX + h.vx*ts - sprite.pad);
+    const sy = Math.round(offY + h.vy*ts - sprite.pad);
+    // outer aura
+    ctx.save();
+    const ax = offX + h.vx*ts;
+    const ay = offY + h.vy*ts;
+    const aurR = ts*2.2 + Math.sin(now*0.004)*ts*0.15;
+    const grad = ctx.createRadialGradient(ax, ay, 0, ax, ay, aurR);
+    grad.addColorStop(0, 'rgba(255,210,120,.22)');
+    grad.addColorStop(0.6, 'rgba(255,180,80,.05)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(ax-aurR, ay-aurR, aurR*2, aurR*2);
+    ctx.restore();
+    ctx.drawImage(sprite.canvas, sx, sy);
+    if (h.hurtFlash > 0.05){
+      ctx.globalAlpha = h.hurtFlash;
+      const fl = getGlyph('@', '#ff5566', true);
+      ctx.drawImage(fl.canvas, sx, sy);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Death fade
+  if (state.deathFade > 0){
+    ctx.fillStyle = `rgba(60,0,0,${0.5*state.deathFade})`;
+    ctx.fillRect(0,0,w,h);
+  }
+
+  // Subtle scanline / film grain
+  ctx.globalAlpha = 0.04;
+  ctx.fillStyle = '#fff';
+  for (let i=0;i<6;i++){
+    const y = Math.random()*h;
+    ctx.fillRect(0, y, w, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- UI updates ----------
+function updateUI(){
+  const h = state.hero;
+  $('curHpText').textContent = `${Math.max(0,h.hp)|0}/${h.maxHp}`;
+  $('hpBar').style.width = clamp(100*h.hp/h.maxHp,0,100)+'%';
+  $('curAtk').textContent = `${heroAtk()}${h.buffAtk?` (+${h.buffAtk})`:''}`;
+  $('curDef').textContent = `${heroDef()}${h.buffDef?` (+${h.buffDef})`:''}`;
+  $('curLvl').textContent = `${h.level} · ${h.xp}/${5+h.level*3}`;
+  $('curDepth').textContent = state.depth;
+  $('curTurn').textContent = state.turn;
+  $('curKills').textContent = h.kills;
+  $('curGold').textContent = h.gold;
+  $('invW').textContent = h.weapon ? `${h.weapon.name} +${h.weapon.atk}` : 'bare hands';
+  $('invA').textContent = h.armor ? `${h.armor.name} +${h.armor.def}` : 'tunic';
+  $('invP').textContent = h.potions;
+  $('invB').textContent = h.buffTurns>0 ? `${h.buffAtk?`+${h.buffAtk} atk `:''}${h.buffDef?`+${h.buffDef} def `:''}(${h.buffTurns}t)` : '—';
+  $('curGoal').textContent = h.lastGoal;
+
+  $('bestDepth').textContent = bestRun.depth;
+  $('bestKills').textContent = bestRun.kills;
+  $('bestPotions').textContent = bestRun.potions;
+  $('bestTurns').textContent = bestRun.turns;
+  $('bestRuns').textContent = bestRun.runs;
+}
+
+// ---------- Boot ----------
+fitCanvas();
+newRun();
+requestAnimationFrame(update);
+</script>
+</body>
+</html>

@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Beach — vibe coding</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #fff;
+  }
+  #app {
+    position: fixed;
+    inset: 0;
+  }
+  #hud {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    z-index: 10;
+    pointer-events: none;
+    user-select: none;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+  }
+  #hud .title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    opacity: 0.95;
+  }
+  #hud .sub {
+    opacity: 0.7;
+  }
+  #clock {
+    position: fixed;
+    top: 14px;
+    right: 16px;
+    z-index: 10;
+    pointer-events: none;
+    user-select: none;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-align: right;
+  }
+  #clock .time {
+    font-size: 18px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  #hint {
+    position: fixed;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    pointer-events: none;
+    user-select: none;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud">
+  <div class="title">THE BEACH</div>
+  <div class="sub">Gerstner waves &middot; procedural sky &middot; diurnal cycle</div>
+</div>
+<div id="clock">
+  <div>SIM TIME</div>
+  <div class="time" id="timeText">--:--</div>
+</div>
+<div id="hint">drag to look &middot; scroll to zoom &middot; 1 minute = 1 day</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- renderer ----------
+const container = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+
+// ---------- camera ----------
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 4000);
+camera.position.set(40, 12, 40);
+camera.lookAt(0, 0, 0);
+
+// camera state — auto orbit + simple drag
+const camState = {
+  azimuth: Math.PI * 0.25,
+  elevation: 0.22,
+  distance: 80,
+  autoOrbit: true,
+  target: new THREE.Vector3(0, 1.5, 0),
+};
+
+// ---------- shared sun direction ----------
+const sunDir = new THREE.Vector3(0, 1, 0);
+
+// ---------- SKY (huge sphere) ----------
+const skyGeom = new THREE.SphereGeometry(1500, 48, 32);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  uniforms: {
+    uSunDir: { value: sunDir },
+    uTimeOfDay: { value: 0.3 }, // 0..1
+  },
+  vertexShader: /* glsl */`
+    varying vec3 vWorldDir;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldDir = normalize(wp.xyz);
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec3 vWorldDir;
+    uniform vec3 uSunDir;
+    uniform float uTimeOfDay;
+
+    // Cheap Rayleigh-style approximation. Not physically accurate; tuned for vibes.
+    vec3 skyColor(vec3 dir, vec3 sunDir) {
+      float up = clamp(dir.y, -0.2, 1.0);
+      float sunAlt = clamp(sunDir.y, -0.3, 1.0);
+
+      // Daylight tint shifts with sun altitude.
+      float horizonMix = pow(1.0 - max(up, 0.0), 2.5);
+
+      // Base zenith blue darkens at night, lightens at day.
+      vec3 zenithDay   = vec3(0.18, 0.42, 0.78);
+      vec3 zenithNight = vec3(0.01, 0.02, 0.06);
+      vec3 zenith = mix(zenithNight, zenithDay, smoothstep(-0.05, 0.25, sunAlt));
+
+      // Horizon shifts toward warm orange around sunrise/sunset.
+      vec3 horizonDay   = vec3(0.72, 0.85, 1.0);
+      vec3 horizonDusk  = vec3(1.0, 0.55, 0.25);
+      vec3 horizonNight = vec3(0.05, 0.07, 0.14);
+      float duskFactor  = smoothstep(0.35, 0.0, abs(sunAlt));
+      vec3 horizon = mix(horizonNight, horizonDay, smoothstep(-0.05, 0.3, sunAlt));
+      horizon = mix(horizon, horizonDusk, duskFactor * 0.85);
+
+      vec3 col = mix(zenith, horizon, horizonMix);
+
+      // Sun disc.
+      float sunAngle = max(dot(normalize(dir), normalize(sunDir)), 0.0);
+      float sunDisc = smoothstep(0.9985, 0.9999, sunAngle);
+      vec3 sunCol = mix(vec3(1.0, 0.55, 0.2), vec3(1.0, 0.95, 0.85), smoothstep(0.0, 0.3, sunAlt));
+      col += sunCol * sunDisc * 8.0;
+
+      // Sun glow / halo.
+      float glow = pow(sunAngle, 64.0) * (0.5 + 0.5 * smoothstep(-0.1, 0.4, sunAlt));
+      col += sunCol * glow * 0.6;
+
+      // Subtle stars at night (hash by direction).
+      float night = smoothstep(0.1, -0.1, sunAlt);
+      vec3 d = normalize(dir);
+      float hash = fract(sin(dot(floor(d * 320.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+      float star = step(0.9985, hash) * smoothstep(0.0, 0.4, d.y);
+      col += vec3(0.9, 0.95, 1.0) * star * night;
+
+      // Ground darkening below horizon (in case we see it through gaps).
+      col = mix(col, vec3(0.03, 0.04, 0.06), smoothstep(0.0, -0.15, dir.y));
+
+      return col;
+    }
+
+    void main() {
+      vec3 col = skyColor(normalize(vWorldDir), normalize(uSunDir));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+});
+const sky = new THREE.Mesh(skyGeom, skyMat);
+sky.frustumCulled = false;
+scene.add(sky);
+
+// ---------- WAVES — Gerstner parameters (shared CPU<->GPU) ----------
+// 5 components, varied direction / wavelength / steepness / speed.
+const WAVES = [
+  // dir.x, dir.y (z in world), wavelength, steepness, speed
+  { dir: new THREE.Vector2(1.0,  0.15).normalize(), wavelength: 22.0, steepness: 0.18, speed: 1.0 },
+  { dir: new THREE.Vector2(0.85, 0.55).normalize(), wavelength: 14.0, steepness: 0.16, speed: 1.2 },
+  { dir: new THREE.Vector2(1.0, -0.30).normalize(), wavelength: 8.5,  steepness: 0.13, speed: 1.55 },
+  { dir: new THREE.Vector2(0.9,  0.4 ).normalize(), wavelength: 4.5,  steepness: 0.09, speed: 2.1 },
+  { dir: new THREE.Vector2(1.0, -0.05).normalize(), wavelength: 2.7,  steepness: 0.06, speed: 2.6 },
+];
+
+const waveDirs       = new Float32Array(WAVES.length * 2);
+const waveParams     = new Float32Array(WAVES.length * 3); // wavelength, steepness, speed
+for (let i = 0; i < WAVES.length; i++) {
+  waveDirs[i*2+0]   = WAVES[i].dir.x;
+  waveDirs[i*2+1]   = WAVES[i].dir.y;
+  waveParams[i*3+0] = WAVES[i].wavelength;
+  waveParams[i*3+1] = WAVES[i].steepness;
+  waveParams[i*3+2] = WAVES[i].speed;
+}
+
+// CPU-side wave evaluation (matches the shader exactly) for sand erosion sampling.
+function evalWaveHeight(x, z, t) {
+  let h = 0.0;
+  for (let i = 0; i < WAVES.length; i++) {
+    const w = WAVES[i];
+    const k = (Math.PI * 2.0) / w.wavelength;
+    const c = Math.sqrt(9.81 / k) * w.speed;
+    const a = w.steepness / k;
+    const phase = k * (w.dir.x * x + w.dir.y * z) - c * t;
+    h += a * Math.sin(phase);
+  }
+  return h;
+}
+
+// ---------- WATER ----------
+const WATER_SIZE = 200;
+const WATER_SEG  = 220; // ~48k verts. Plenty for crisp Gerstner detail.
+const waterGeom  = new THREE.PlaneGeometry(WATER_SIZE, WATER_SIZE, WATER_SEG, WATER_SEG);
+waterGeom.rotateX(-Math.PI / 2);
+
+const waterMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime:        { value: 0 },
+    uSunDir:      { value: sunDir },
+    uCameraPos:   { value: camera.position },
+    uWaveDirs:    { value: waveDirs },
+    uWaveParams:  { value: waveParams },
+    uShoreLine:   { value: 60.0 }, // x at which beach starts; updated below for nice composition
+  },
+  vertexShader: /* glsl */`
+    precision highp float;
+    uniform float uTime;
+    uniform vec2  uWaveDirs[5];
+    uniform vec3  uWaveParams[5]; // wavelength, steepness, speed
+
+    varying vec3 vWorldPos;
+    varying vec3 vNormal;
+    varying float vFoam;
+    varying float vDepth;
+
+    // Gerstner wave: returns offset (xyz) and accumulates partial derivatives for normal.
+    vec3 gerstner(vec2 xz, float t, vec2 dir, float wavelength, float steepness, float speed,
+                  inout vec3 tangent, inout vec3 binormal) {
+      float k = 6.28318530718 / wavelength;
+      float c = sqrt(9.81 / k) * speed;
+      float a = steepness / k;
+      float phase = k * dot(dir, xz) - c * t;
+      float s = sin(phase);
+      float co = cos(phase);
+
+      vec3 offset = vec3(
+        -dir.x * a * s,
+         a * co,
+        -dir.y * a * s
+      );
+
+      // Update tangent/binormal contributions (sum-of-derivatives trick).
+      tangent.x  += -dir.x * dir.x * a * k * co;
+      tangent.y  +=  dir.x        * a * k * -s;
+      tangent.z  += -dir.x * dir.y * a * k * co;
+
+      binormal.x += -dir.y * dir.x * a * k * co;
+      binormal.y +=  dir.y        * a * k * -s;
+      binormal.z += -dir.y * dir.y * a * k * co;
+
+      return offset;
+    }
+
+    void main() {
+      vec3 pos = position;
+      vec2 xz = pos.xz;
+
+      // Shore attenuation: waves shrink as they approach the beach (positive x).
+      float shoreEdge = 60.0;
+      float shoreFade = smoothstep(shoreEdge - 5.0, shoreEdge - 35.0, pos.x);
+      // shoreFade = 1 in deep water, 0 at the beach.
+
+      vec3 totalOffset = vec3(0.0);
+      vec3 tangent  = vec3(1.0, 0.0, 0.0);
+      vec3 binormal = vec3(0.0, 0.0, 1.0);
+
+      for (int i = 0; i < 5; i++) {
+        vec2 dir = uWaveDirs[i];
+        float wl = uWaveParams[i].x;
+        float st = uWaveParams[i].y * shoreFade;
+        float sp = uWaveParams[i].z;
+        totalOffset += gerstner(xz, uTime, dir, wl, st, sp, tangent, binormal);
+      }
+
+      pos += totalOffset;
+
+      vec3 N = normalize(cross(binormal, tangent));
+      // Flip if needed (geometry was rotated to face up).
+      if (N.y < 0.0) N = -N;
+
+      // Foam estimate: where waves get steep AND close to shore.
+      float steep = clamp(1.0 - N.y, 0.0, 1.0); // 0 flat, ~1 vertical
+      float shoreCloseness = 1.0 - shoreFade;
+      vFoam = smoothstep(0.18, 0.55, steep) * 0.6 + shoreCloseness * 0.6 * smoothstep(0.05, 0.35, steep);
+      vFoam = clamp(vFoam, 0.0, 1.2);
+
+      // "Depth" proxy — how far from beach.
+      vDepth = shoreFade;
+
+      vec4 wp = modelMatrix * vec4(pos, 1.0);
+      vWorldPos = wp.xyz;
+      vNormal = N;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec3 vWorldPos;
+    varying vec3 vNormal;
+    varying float vFoam;
+    varying float vDepth;
+
+    uniform vec3 uSunDir;
+    uniform vec3 uCameraPos;
+    uniform float uTime;
+
+    // Same sky function as the sky shader (so reflections match).
+    vec3 skyColor(vec3 dir, vec3 sunDir) {
+      float up = clamp(dir.y, -0.2, 1.0);
+      float sunAlt = clamp(sunDir.y, -0.3, 1.0);
+      float horizonMix = pow(1.0 - max(up, 0.0), 2.5);
+      vec3 zenithDay   = vec3(0.18, 0.42, 0.78);
+      vec3 zenithNight = vec3(0.01, 0.02, 0.06);
+      vec3 zenith = mix(zenithNight, zenithDay, smoothstep(-0.05, 0.25, sunAlt));
+      vec3 horizonDay   = vec3(0.72, 0.85, 1.0);
+      vec3 horizonDusk  = vec3(1.0, 0.55, 0.25);
+      vec3 horizonNight = vec3(0.05, 0.07, 0.14);
+      float duskFactor  = smoothstep(0.35, 0.0, abs(sunAlt));
+      vec3 horizon = mix(horizonNight, horizonDay, smoothstep(-0.05, 0.3, sunAlt));
+      horizon = mix(horizon, horizonDusk, duskFactor * 0.85);
+      vec3 col = mix(zenith, horizon, horizonMix);
+      float sunAngle = max(dot(normalize(dir), normalize(sunDir)), 0.0);
+      float glow = pow(sunAngle, 64.0) * (0.5 + 0.5 * smoothstep(-0.1, 0.4, sunAlt));
+      vec3 sunCol = mix(vec3(1.0, 0.55, 0.2), vec3(1.0, 0.95, 0.85), smoothstep(0.0, 0.3, sunAlt));
+      col += sunCol * glow * 0.6;
+      return col;
+    }
+
+    void main() {
+      vec3 N = normalize(vNormal);
+      vec3 V = normalize(uCameraPos - vWorldPos);
+      vec3 L = normalize(uSunDir);
+
+      // Fresnel — Schlick.
+      float NdotV = max(dot(N, V), 0.0);
+      float F0 = 0.02;
+      float fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
+
+      // Reflection from sky.
+      vec3 R = reflect(-V, N);
+      vec3 reflCol = skyColor(R, L);
+
+      // Deep water color shifts with sun altitude.
+      float sunAlt = clamp(L.y, -0.3, 1.0);
+      vec3 deep    = mix(vec3(0.005, 0.02, 0.04), vec3(0.02, 0.10, 0.16), smoothstep(-0.05, 0.4, sunAlt));
+      vec3 shallow = mix(vec3(0.02, 0.08, 0.10), vec3(0.10, 0.45, 0.55), smoothstep(-0.05, 0.4, sunAlt));
+      vec3 waterCol = mix(shallow, deep, vDepth);
+
+      // Specular highlight from sun.
+      vec3 H = normalize(L + V);
+      float spec = pow(max(dot(N, H), 0.0), 220.0);
+      vec3 sunCol = mix(vec3(1.0, 0.55, 0.25), vec3(1.0, 0.95, 0.85), smoothstep(0.0, 0.3, sunAlt));
+      vec3 specular = sunCol * spec * 2.5 * smoothstep(-0.05, 0.2, sunAlt);
+
+      vec3 col = mix(waterCol, reflCol, fresnel);
+      col += specular;
+
+      // Foam — bright white where waves break.
+      float foam = vFoam;
+      // Add a moving fine pattern to the foam so it doesn't look flat.
+      float n = sin(vWorldPos.x * 1.3 + uTime * 1.2) * cos(vWorldPos.z * 1.5 - uTime * 0.9);
+      float foamPattern = smoothstep(0.0, 1.0, foam + n * 0.15 * foam);
+      vec3 foamCol = mix(vec3(0.85, 0.92, 0.95), vec3(1.0), 0.5);
+      // Tint foam with current sky lighting so it works at sunrise/sunset.
+      foamCol *= mix(vec3(0.5, 0.55, 0.7), vec3(1.0), smoothstep(-0.05, 0.3, sunAlt));
+      col = mix(col, foamCol, clamp(foamPattern, 0.0, 0.95));
+
+      // Subtle exposure breathing.
+      col = pow(col, vec3(0.95));
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+});
+
+const water = new THREE.Mesh(waterGeom, waterMat);
+water.position.set(0, 0, 0);
+scene.add(water);
+
+// ---------- SAND (heightmap-based) ----------
+// The sand fills the +x side of the world. Beach line around x = 60.
+const SAND_SIZE = 200;
+const SAND_SEG  = 200;
+const sandGeom  = new THREE.PlaneGeometry(SAND_SIZE, SAND_SIZE, SAND_SEG, SAND_SEG);
+sandGeom.rotateX(-Math.PI / 2);
+
+// Build a base height for sand — sloping up away from the water, with dunes.
+const sandPositions = sandGeom.attributes.position;
+const sandBase = new Float32Array(sandPositions.count); // baseline height
+const sandErosion = new Float32Array(sandPositions.count); // dynamic offset (negative = eroded)
+const sandWet = new Float32Array(sandPositions.count); // 0..1 wetness from waves
+
+function hash2(x, y) {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+function smoothNoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi);
+  const b = hash2(xi + 1, yi);
+  const c = hash2(xi, yi + 1);
+  const d = hash2(xi + 1, yi + 1);
+  return (1 - v) * ((1 - u) * a + u * b) + v * ((1 - u) * c + u * d);
+}
+function fbm(x, y) {
+  let v = 0, amp = 0.5, f = 1;
+  for (let i = 0; i < 4; i++) {
+    v += amp * smoothNoise(x * f, y * f);
+    f *= 2.0;
+    amp *= 0.5;
+  }
+  return v;
+}
+
+// Place the beach so that the shoreline (water hits sand) is around x ~ 30 — beach extends toward +x.
+const SHORELINE_X = 30;
+for (let i = 0; i < sandPositions.count; i++) {
+  const x = sandPositions.getX(i);
+  const z = sandPositions.getZ(i);
+
+  // Distance into beach (0 at shoreline, positive going inland).
+  const intoBeach = x - SHORELINE_X;
+
+  // Water side (intoBeach < 0): floor goes down gently. Beach side: rises.
+  let h = 0;
+  if (intoBeach < 0) {
+    // Underwater sand floor — slopes downward.
+    h = -0.05 * Math.abs(intoBeach) - 0.5;
+    // Add gentle ripples on the sea floor.
+    h += 0.15 * fbm(x * 0.05, z * 0.05);
+  } else {
+    // Beach: rises gradually with dunes far back.
+    const slope = 0.05 * intoBeach;
+    const dunes = 1.8 * Math.pow(Math.max(0, (intoBeach - 25) / 60), 1.2)
+                 * (0.5 + 0.5 * fbm(x * 0.05, z * 0.05));
+    h = slope + dunes + 0.15 * fbm(x * 0.2, z * 0.2);
+  }
+
+  sandBase[i] = h;
+  sandPositions.setY(i, h);
+}
+sandGeom.computeVertexNormals();
+
+const sandMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uSunDir: { value: sunDir },
+    uTime:   { value: 0 },
+  },
+  vertexShader: /* glsl */`
+    attribute float aWet;
+    attribute float aErosion;
+    varying vec3 vWorldPos;
+    varying vec3 vNormal;
+    varying float vWet;
+    varying float vErosion;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      vNormal = normalize(normalMatrix * normal);
+      vWet = aWet;
+      vErosion = aErosion;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec3 vWorldPos;
+    varying vec3 vNormal;
+    varying float vWet;
+    varying float vErosion;
+    uniform vec3 uSunDir;
+    uniform float uTime;
+
+    // Procedural sand color — small grainy noise + dune-scale tint.
+    float hash(vec2 p) {
+      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    }
+    float noise2(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      float a = hash(i);
+      float b = hash(i + vec2(1.0, 0.0));
+      float c = hash(i + vec2(0.0, 1.0));
+      float d = hash(i + vec2(1.0, 1.0));
+      return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    }
+    float fbm(vec2 p) {
+      float v = 0.0, a = 0.5;
+      for (int i = 0; i < 5; i++) {
+        v += a * noise2(p);
+        p *= 2.0;
+        a *= 0.5;
+      }
+      return v;
+    }
+
+    void main() {
+      vec3 N = normalize(vNormal);
+      vec3 L = normalize(uSunDir);
+      float sunAlt = clamp(L.y, -0.3, 1.0);
+
+      // Base sand colors.
+      vec3 dryWarm  = vec3(0.92, 0.82, 0.62);
+      vec3 dryCool  = vec3(0.78, 0.70, 0.55);
+      vec3 wetCol   = vec3(0.42, 0.35, 0.26);
+
+      // Grainy small-scale variation.
+      float grain = fbm(vWorldPos.xz * 1.5);
+      float coarse = fbm(vWorldPos.xz * 0.15);
+      vec3 dry = mix(dryCool, dryWarm, grain);
+      dry = mix(dry, dry * 1.05, coarse);
+
+      // Tiny pebble specks.
+      float specks = step(0.985, hash(floor(vWorldPos.xz * 4.0)));
+      dry = mix(dry, vec3(0.5, 0.4, 0.32), specks * 0.6);
+
+      // Wet sand is darker and slightly more reflective.
+      vec3 base = mix(dry, wetCol, clamp(vWet, 0.0, 1.0));
+
+      // Erosion shows as slightly darker, smoother sand.
+      base *= mix(1.0, 0.78, clamp(vErosion, 0.0, 1.0));
+
+      // Lighting.
+      float diff = max(dot(N, L), 0.0);
+      vec3 ambient = vec3(0.18, 0.22, 0.32) * (0.4 + 0.6 * smoothstep(-0.2, 0.4, sunAlt));
+      vec3 sunCol = mix(vec3(1.0, 0.55, 0.25), vec3(1.0, 0.96, 0.88), smoothstep(0.0, 0.3, sunAlt));
+      sunCol *= smoothstep(-0.05, 0.15, sunAlt);
+
+      vec3 col = base * (ambient + sunCol * diff);
+
+      // A tiny specular bump for wet sand.
+      vec3 V = normalize(cameraPosition - vWorldPos);
+      vec3 H = normalize(L + V);
+      float spec = pow(max(dot(N, H), 0.0), 60.0) * vWet * 0.6;
+      col += sunCol * spec;
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+});
+
+// Per-vertex attributes for wet/eroded.
+const wetAttr = new THREE.BufferAttribute(sandWet, 1);
+wetAttr.setUsage(THREE.DynamicDrawUsage);
+sandGeom.setAttribute('aWet', wetAttr);
+
+const erosionAttr = new THREE.BufferAttribute(sandErosion, 1);
+erosionAttr.setUsage(THREE.DynamicDrawUsage);
+sandGeom.setAttribute('aErosion', erosionAttr);
+
+const sand = new THREE.Mesh(sandGeom, sandMat);
+sand.position.set(0, 0, 0);
+scene.add(sand);
+
+// Precompute vertex (x,z) arrays for fast erosion updates.
+const sandX = new Float32Array(sandPositions.count);
+const sandZ = new Float32Array(sandPositions.count);
+for (let i = 0; i < sandPositions.count; i++) {
+  sandX[i] = sandPositions.getX(i);
+  sandZ[i] = sandPositions.getZ(i);
+}
+
+// ---------- camera interaction (drag + scroll) ----------
+let dragging = false;
+let lastX = 0, lastY = 0;
+const dom = renderer.domElement;
+let lastInteract = -10;
+
+dom.addEventListener('pointerdown', e => {
+  dragging = true;
+  lastX = e.clientX; lastY = e.clientY;
+  camState.autoOrbit = false;
+  lastInteract = clockSeconds;
+  dom.setPointerCapture(e.pointerId);
+});
+dom.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX;
+  const dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  camState.azimuth   -= dx * 0.005;
+  camState.elevation += dy * 0.005;
+  camState.elevation = Math.max(0.02, Math.min(Math.PI / 2 - 0.05, camState.elevation));
+  lastInteract = clockSeconds;
+});
+dom.addEventListener('pointerup',   e => { dragging = false; });
+dom.addEventListener('pointercancel', () => { dragging = false; });
+dom.addEventListener('wheel', e => {
+  e.preventDefault();
+  camState.distance *= (1 + Math.sign(e.deltaY) * 0.08);
+  camState.distance = Math.max(15, Math.min(180, camState.distance));
+  lastInteract = clockSeconds;
+}, { passive: false });
+
+// resume autoOrbit after 6s of no interaction
+function maybeResumeAutoOrbit() {
+  if (!camState.autoOrbit && clockSeconds - lastInteract > 6) {
+    camState.autoOrbit = true;
+  }
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------- diurnal cycle ----------
+// 1 real minute = 1 in-sim day.
+const SECS_PER_DAY = 60.0;
+let clockSeconds = 0;
+
+function updateSun(t) {
+  // t in [0,1) = full day. 0 = midnight. 0.25 = sunrise. 0.5 = noon. 0.75 = sunset.
+  const angle = t * Math.PI * 2 - Math.PI / 2; // 0 -> -PI/2 (below), 0.25 -> 0 (horizon east), 0.5 -> PI/2 (zenith)
+  // Tilt the orbit a bit so it's not straight up/down.
+  const azim = Math.PI * 0.15;
+  const sx = Math.cos(angle) * Math.cos(azim);
+  const sy = Math.sin(angle);
+  const sz = Math.cos(angle) * Math.sin(azim);
+  sunDir.set(sx, sy, sz).normalize();
+}
+
+const timeText = document.getElementById('timeText');
+function formatSimTime(t) {
+  // t in [0,1)
+  const totalMin = t * 24 * 60;
+  const h = Math.floor(totalMin / 60);
+  const m = Math.floor(totalMin % 60);
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
+
+// ---------- erosion update ----------
+// Only update a slice of vertices each frame for perf.
+let erosionCursor = 0;
+const EROSION_PER_FRAME = 1400;
+
+function updateSandDynamic(t) {
+  const N = sandPositions.count;
+  for (let k = 0; k < EROSION_PER_FRAME; k++) {
+    const i = (erosionCursor + k) % N;
+    const x = sandX[i];
+    const z = sandZ[i];
+
+    // Underwater wave height at this x,z.
+    // Reduce shoreline-fade just like the shader does.
+    const shoreFade = Math.max(0, Math.min(1, ((SHORELINE_X + 30) - x) / 30));
+    let h = 0;
+    if (shoreFade > 0) {
+      // Re-implement a simplified Gerstner sum (height only).
+      for (let w = 0; w < WAVES.length; w++) {
+        const W = WAVES[w];
+        const k2 = (Math.PI * 2.0) / W.wavelength;
+        const c = Math.sqrt(9.81 / k2) * W.speed;
+        const a = (W.steepness * shoreFade) / k2;
+        const phase = k2 * (W.dir.x * x + W.dir.y * z) - c * t;
+        h += a * Math.sin(phase);
+      }
+    }
+
+    // Wave breaks where wave amplitude is large but water depth is shallow.
+    // Compute "depth above sand": waterSurface - sandHeight.
+    const waterY = h;
+    const sandY = sandBase[i] + sandErosion[i];
+    const depth = waterY - sandY;
+
+    // Wetness: smoothstep over depth.
+    let targetWet = 0;
+    if (sandBase[i] < 0) {
+      targetWet = 1.0; // always wet underwater
+    } else {
+      // Above original waterline — wet only when waves reach it.
+      const reach = Math.max(0, h - sandBase[i] + 0.2);
+      targetWet = Math.min(1.0, reach * 1.5);
+    }
+    // Slow drying.
+    sandWet[i] += (targetWet - sandWet[i]) * 0.06;
+
+    // Erosion at the breaker line: where waves are tall AND water is shallow over sand.
+    const isBreaker = (depth > 0 && depth < 0.6) && Math.abs(h) > 0.15;
+    if (isBreaker) {
+      sandErosion[i] -= 0.0009 * Math.abs(h);
+      // Clamp.
+      if (sandErosion[i] < -0.6) sandErosion[i] = -0.6;
+    } else {
+      // Tiny refill — wind/return flow recovers sand slowly.
+      sandErosion[i] += 0.00002;
+      if (sandErosion[i] > 0) sandErosion[i] = 0;
+    }
+
+    // Apply to geometry y.
+    sandPositions.setY(i, sandBase[i] + sandErosion[i]);
+  }
+
+  erosionCursor = (erosionCursor + EROSION_PER_FRAME) % N;
+
+  sandPositions.needsUpdate = true;
+  wetAttr.needsUpdate = true;
+  erosionAttr.needsUpdate = true;
+  // Skip recomputing normals every frame for perf — sand changes are subtle.
+}
+
+// ---------- main loop ----------
+const clock = new THREE.Clock();
+
+// Pre-warm: set initial sim time to mid-morning so the very first frame is gorgeous.
+const SIM_START_OFFSET = 0.32 * SECS_PER_DAY; // ~7:40am
+clockSeconds = SIM_START_OFFSET;
+
+function frame() {
+  const dt = Math.min(0.05, clock.getDelta());
+  clockSeconds += dt;
+
+  // Diurnal cycle: 1 minute = 1 day.
+  const tDay = (clockSeconds % SECS_PER_DAY) / SECS_PER_DAY;
+  updateSun(tDay);
+  skyMat.uniforms.uTimeOfDay.value = tDay;
+
+  // Animated wave time (real seconds).
+  const waveT = clockSeconds * 0.6;
+  waterMat.uniforms.uTime.value = waveT;
+  sandMat.uniforms.uTime.value  = waveT;
+
+  // Update camera (auto-orbit slowly).
+  maybeResumeAutoOrbit();
+  if (camState.autoOrbit) {
+    camState.azimuth += dt * 0.04;
+  }
+  const cx = camState.target.x + camState.distance * Math.cos(camState.elevation) * Math.sin(camState.azimuth);
+  const cy = camState.target.y + camState.distance * Math.sin(camState.elevation);
+  const cz = camState.target.z + camState.distance * Math.cos(camState.elevation) * Math.cos(camState.azimuth);
+  camera.position.set(cx, cy, cz);
+  camera.lookAt(camState.target);
+  waterMat.uniforms.uCameraPos.value.copy(camera.position);
+
+  // Tone-mapping exposure responds to sun altitude (slightly brighter at midday).
+  const sunAlt = sunDir.y;
+  renderer.toneMappingExposure = THREE.MathUtils.lerp(0.45, 1.15, THREE.MathUtils.smoothstep(sunAlt, -0.1, 0.6));
+
+  // Update sand erosion + wetness.
+  updateSandDynamic(waveT);
+
+  // Sim clock readout.
+  timeText.textContent = formatSimTime(tDay);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+// Render one frame immediately so the user sees something the moment it loads.
+updateSun(SIM_START_OFFSET / SECS_PER_DAY);
+waterMat.uniforms.uTime.value = clockSeconds * 0.6;
+sandMat.uniforms.uTime.value = clockSeconds * 0.6;
+renderer.render(scene, camera);
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Midnight Ramen — Tokyo Counter at 2AM</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; overflow: hidden;
+    background: #0a0608; color: #f0d9b5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    height: 100%; cursor: crosshair;
+  }
+  #c { display: block; width: 100vw; height: 100vh; }
+  .overlay {
+    position: fixed; top: 16px; left: 18px; pointer-events: none; z-index: 5;
+    text-shadow: 0 0 10px rgba(0,0,0,0.9); line-height: 1.4;
+  }
+  .overlay h1 {
+    margin: 0 0 4px 0; font-size: 13px; font-weight: 600;
+    letter-spacing: 0.18em; color: #ffb874; text-transform: uppercase;
+  }
+  .overlay p { margin: 0; font-size: 11px; opacity: 0.55; max-width: 320px; }
+  .hint {
+    position: fixed; bottom: 14px; right: 18px; font-size: 10px;
+    opacity: 0.45; pointer-events: none; text-shadow: 0 0 6px rgba(0,0,0,0.9);
+    letter-spacing: 0.12em;
+  }
+  .audio {
+    position: fixed; bottom: 14px; left: 18px; font-size: 10px;
+    opacity: 0.55; pointer-events: none; text-shadow: 0 0 6px rgba(0,0,0,0.9);
+    letter-spacing: 0.1em; color: #ffb874;
+  }
+  .vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.55) 100%);
+  }
+  .grain {
+    position: fixed; inset: 0; pointer-events: none; z-index: 3; opacity: 0.06;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.7'/></svg>");
+    mix-blend-mode: overlay;
+  }
+  .splash {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: #0a0608; color: #ffb874; font-size: 11px; letter-spacing: 0.3em;
+    z-index: 20; transition: opacity 0.8s ease; cursor: pointer;
+    flex-direction: column; gap: 12px;
+  }
+  .splash.hide { opacity: 0; pointer-events: none; }
+  .splash .title { font-size: 14px; letter-spacing: 0.4em; }
+  .splash .sub { font-size: 10px; opacity: 0.6; letter-spacing: 0.25em; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+<div class="grain"></div>
+<div class="overlay">
+  <h1>Midnight Ramen — 深夜のラーメン</h1>
+  <p>A small counter shop in a Tokyo alley. Rain on the window. Steam from the bowl. Lo-fi on the radio.</p>
+</div>
+<div class="hint">MOUSE pan · SPACE lift bowl · M mute</div>
+<div class="audio" id="audio">CLICK TO BEGIN</div>
+
+<div class="splash" id="splash">
+  <div class="title">深 夜 ラ ー メ ン</div>
+  <div class="sub">click to enter</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+// RENDERER + SCENE
+// ============================================================
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0608);
+scene.fog = new THREE.FogExp2(0x120a08, 0.035);
+
+const camera = new THREE.PerspectiveCamera(58, window.innerWidth/window.innerHeight, 0.05, 60);
+// Sit at the counter — just above bowl height, looking forward and slightly down
+const camBase = new THREE.Vector3(0, 1.25, 1.6);
+camera.position.copy(camBase);
+camera.lookAt(0, 1.05, 0.2);
+
+// ============================================================
+// LIGHTS — warm interior + cool exterior
+// ============================================================
+const amb = new THREE.AmbientLight(0x2a1810, 0.45);
+scene.add(amb);
+
+// Hanging warm bulbs above counter
+const bulbs = [];
+for (let i = -1; i <= 1; i++) {
+  const bulb = new THREE.PointLight(0xffb060, 1.3, 6, 1.7);
+  bulb.position.set(i * 1.2, 2.1, 0.3);
+  bulb.castShadow = true;
+  bulb.shadow.mapSize.set(512, 512);
+  scene.add(bulb);
+  bulbs.push(bulb);
+
+  // visible bulb mesh + cord
+  const bulbMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.05, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffd29a })
+  );
+  bulbMesh.position.copy(bulb.position);
+  scene.add(bulbMesh);
+  const shade = new THREE.Mesh(
+    new THREE.ConeGeometry(0.18, 0.16, 16, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x1a1410, side: THREE.DoubleSide, roughness: 0.85 })
+  );
+  shade.position.set(bulb.position.x, bulb.position.y + 0.1, bulb.position.z);
+  scene.add(shade);
+  const cord = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.005, 0.005, 0.7, 6),
+    new THREE.MeshBasicMaterial({ color: 0x0a0806 })
+  );
+  cord.position.set(bulb.position.x, bulb.position.y + 0.55, bulb.position.z);
+  scene.add(cord);
+}
+
+// Cool exterior light coming through window (left side)
+const windowLight = new THREE.DirectionalLight(0x6090c0, 0.55);
+windowLight.position.set(-4, 2.5, 0);
+windowLight.target.position.set(0, 1, 0);
+scene.add(windowLight);
+scene.add(windowLight.target);
+
+// Neon pink rim accent
+const neon = new THREE.PointLight(0xff4080, 0.7, 5, 2.0);
+neon.position.set(-2.4, 1.8, -0.2);
+scene.add(neon);
+
+// ============================================================
+// MATERIALS
+// ============================================================
+const woodMat = new THREE.MeshStandardMaterial({
+  color: 0x4a2a18, roughness: 0.55, metalness: 0.05
+});
+const darkWoodMat = new THREE.MeshStandardMaterial({
+  color: 0x261410, roughness: 0.7
+});
+const wallMat = new THREE.MeshStandardMaterial({
+  color: 0x2a1812, roughness: 0.9
+});
+
+// ============================================================
+// COUNTER + ROOM
+// ============================================================
+// Counter (the wooden bar in front of camera)
+const counter = new THREE.Mesh(
+  new THREE.BoxGeometry(5, 0.1, 1.5),
+  woodMat
+);
+counter.position.set(0, 1.0, 0.6);
+counter.receiveShadow = true;
+scene.add(counter);
+
+// Counter front panel
+const counterFront = new THREE.Mesh(
+  new THREE.BoxGeometry(5, 1.0, 0.05),
+  darkWoodMat
+);
+counterFront.position.set(0, 0.5, 1.32);
+scene.add(counterFront);
+
+// Floor behind counter (chef's side)
+const floorBack = new THREE.Mesh(
+  new THREE.PlaneGeometry(5, 3),
+  new THREE.MeshStandardMaterial({ color: 0x1a0c08, roughness: 0.95 })
+);
+floorBack.rotation.x = -Math.PI / 2;
+floorBack.position.set(0, 0, -1);
+floorBack.receiveShadow = true;
+scene.add(floorBack);
+
+// Back wall (behind chef)
+const backWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(5, 3),
+  wallMat
+);
+backWall.position.set(0, 1.5, -2.2);
+scene.add(backWall);
+
+// Right wall
+const rightWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(4, 3),
+  wallMat
+);
+rightWall.rotation.y = -Math.PI / 2;
+rightWall.position.set(2.5, 1.5, 0);
+scene.add(rightWall);
+
+// Ceiling (subtle)
+const ceiling = new THREE.Mesh(
+  new THREE.PlaneGeometry(5, 4),
+  new THREE.MeshStandardMaterial({ color: 0x180c08, roughness: 0.9 })
+);
+ceiling.rotation.x = Math.PI / 2;
+ceiling.position.set(0, 2.6, 0);
+scene.add(ceiling);
+
+// ============================================================
+// SHELVES + SAKE BOTTLES (behind counter)
+// ============================================================
+for (let s = 0; s < 3; s++) {
+  const shelf = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.04, 0.3),
+    darkWoodMat
+  );
+  shelf.position.set(0, 1.4 + s * 0.4, -2.05);
+  scene.add(shelf);
+  // bottles
+  const bottleColors = [0x2a4a2a, 0x4a2a2a, 0x2a2a4a, 0x3a3a2a, 0x4a3a2a];
+  for (let b = 0; b < 8; b++) {
+    const bColor = bottleColors[(b + s) % bottleColors.length];
+    const bottle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.07, 0.28, 10),
+      new THREE.MeshStandardMaterial({ color: bColor, roughness: 0.3, metalness: 0.4 })
+    );
+    bottle.position.set(-1.3 + b * 0.36, 1.56 + s * 0.4, -2.05);
+    scene.add(bottle);
+    const neck = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.03, 0.06, 8),
+      new THREE.MeshStandardMaterial({ color: bColor, roughness: 0.3 })
+    );
+    neck.position.set(bottle.position.x, bottle.position.y + 0.17, bottle.position.z);
+    scene.add(neck);
+  }
+}
+
+// Hanging utensils
+for (let i = 0; i < 6; i++) {
+  const ladle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, 0.35, 6),
+    new THREE.MeshStandardMaterial({ color: 0x88858a, metalness: 0.8, roughness: 0.3 })
+  );
+  ladle.position.set(-0.9 + i * 0.36, 2.3, -1.95);
+  scene.add(ladle);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.05, 10, 8, 0, Math.PI*2, 0, Math.PI/2),
+    new THREE.MeshStandardMaterial({ color: 0x88858a, metalness: 0.8, roughness: 0.3, side: THREE.DoubleSide })
+  );
+  head.rotation.x = Math.PI;
+  head.position.set(ladle.position.x, ladle.position.y - 0.18, ladle.position.z);
+  scene.add(head);
+}
+
+// Paper signs with kanji (canvas textures)
+function makeKanjiSign(text, w=512, h=192, bg='#f5e8c0', fg='#1a0a08') {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,w,h);
+  // worn edges
+  ctx.fillStyle = 'rgba(120,80,40,0.15)';
+  for (let i = 0; i < 80; i++) {
+    ctx.fillRect(Math.random()*w, Math.random()*h, Math.random()*40, Math.random()*8);
+  }
+  ctx.fillStyle = fg;
+  ctx.font = 'bold 130px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, w/2, h/2 + 8);
+  // border
+  ctx.strokeStyle = '#1a0a08';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(8, 8, w-16, h-16);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+const signs = [
+  { text: 'ラーメン', x: -1.6, y: 2.45, w: 0.8 },
+  { text: '味噌', x: 0.0, y: 2.5, w: 0.5 },
+  { text: '醤油', x: 1.1, y: 2.45, w: 0.5 },
+  { text: '営業中', x: 2.0, y: 2.4, w: 0.5 }
+];
+signs.forEach(s => {
+  const tex = makeKanjiSign(s.text);
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(s.w, s.w * 0.38),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true })
+  );
+  sign.position.set(s.x, s.y, -2.04);
+  scene.add(sign);
+});
+
+// ============================================================
+// CHEF (simple silhouette behind counter)
+// ============================================================
+const chefGroup = new THREE.Group();
+const chefMat = new THREE.MeshStandardMaterial({ color: 0x141014, roughness: 0.9 });
+const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.7, 12), chefMat);
+torso.position.y = 1.45;
+chefGroup.add(torso);
+const apron = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.6),
+  new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.8, side: THREE.DoubleSide }));
+apron.position.set(0, 1.4, 0.16);
+chefGroup.add(apron);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12),
+  new THREE.MeshStandardMaterial({ color: 0xc89a78, roughness: 0.7 }));
+head.position.y = 1.95;
+chefGroup.add(head);
+const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.12, 12),
+  new THREE.MeshStandardMaterial({ color: 0xf0e8d0, roughness: 0.8 }));
+hat.position.y = 2.1;
+chefGroup.add(hat);
+// arms
+const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8), chefMat);
+armL.position.set(-0.25, 1.55, 0.05);
+armL.rotation.z = 0.5;
+chefGroup.add(armL);
+const armR = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8), chefMat);
+armR.position.set(0.25, 1.55, 0.05);
+armR.rotation.z = -0.5;
+chefGroup.add(armR);
+
+chefGroup.position.set(0.4, 0, -1.0);
+scene.add(chefGroup);
+
+// ============================================================
+// THE BOWL — star of the show
+// ============================================================
+const bowlGroup = new THREE.Group();
+bowlGroup.position.set(0, 1.05, 0.55);
+scene.add(bowlGroup);
+
+// Bowl exterior (red/black ceramic)
+const bowlExt = new THREE.Mesh(
+  new THREE.LatheGeometry([
+    new THREE.Vector2(0.18, 0),
+    new THREE.Vector2(0.22, 0.02),
+    new THREE.Vector2(0.27, 0.06),
+    new THREE.Vector2(0.30, 0.12),
+    new THREE.Vector2(0.31, 0.16),
+  ], 32),
+  new THREE.MeshStandardMaterial({ color: 0x8a1a14, roughness: 0.4, metalness: 0.1 })
+);
+bowlExt.castShadow = true;
+bowlGroup.add(bowlExt);
+
+// Bowl interior (darker)
+const bowlInt = new THREE.Mesh(
+  new THREE.LatheGeometry([
+    new THREE.Vector2(0.0, 0.03),
+    new THREE.Vector2(0.16, 0.04),
+    new THREE.Vector2(0.22, 0.07),
+    new THREE.Vector2(0.27, 0.13),
+    new THREE.Vector2(0.30, 0.16),
+  ], 32),
+  new THREE.MeshStandardMaterial({ color: 0x2a0a06, roughness: 0.5, side: THREE.BackSide })
+);
+bowlGroup.add(bowlInt);
+
+// Broth surface (animated) — custom shader for ripples
+const brothUniforms = {
+  uTime: { value: 0 }
+};
+const brothMat = new THREE.ShaderMaterial({
+  uniforms: brothUniforms,
+  vertexShader: `
+    uniform float uTime;
+    varying vec2 vUv;
+    varying vec3 vWorldPos;
+    void main() {
+      vUv = uv;
+      vec3 p = position;
+      // Subtle ripples — tiny vertical displacement
+      float r = length(p.xy);
+      float ripple = sin(r * 30.0 - uTime * 2.0) * 0.0015 + sin(r * 18.0 + uTime * 1.3) * 0.001;
+      p.z += ripple;
+      vec4 wp = modelMatrix * vec4(p, 1.0);
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    varying vec2 vUv;
+    varying vec3 vWorldPos;
+    // simple hash noise
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      vec2 u = f*f*(3.0-2.0*f);
+      return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                 mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+    }
+    void main() {
+      vec2 c = vUv - 0.5;
+      float r = length(c);
+      // broth color — rich tonkotsu brown with golden oil spots
+      vec3 base = vec3(0.62, 0.38, 0.18);
+      vec3 dark = vec3(0.32, 0.18, 0.08);
+      float n1 = noise(vUv * 8.0 + uTime * 0.2);
+      float n2 = noise(vUv * 24.0 - uTime * 0.15);
+      vec3 col = mix(dark, base, n1 * 0.7 + 0.3);
+      // golden oil droplets on surface
+      float oil = smoothstep(0.55, 0.85, noise(vUv * 12.0 + uTime * 0.05));
+      col += vec3(0.6, 0.45, 0.15) * oil * 0.45;
+      // highlight ring near center from light reflection
+      float spec = pow(max(0.0, 1.0 - r * 2.5), 8.0);
+      col += vec3(1.0, 0.85, 0.55) * spec * 0.4;
+      // edge darken
+      col *= smoothstep(0.5, 0.2, r);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+const brothSurf = new THREE.Mesh(new THREE.CircleGeometry(0.27, 48), brothMat);
+brothSurf.rotation.x = -Math.PI/2;
+brothSurf.position.y = 0.135;
+bowlGroup.add(brothSurf);
+
+// NOODLES — animated vertex displacement
+const noodleUniforms = {
+  uTime: { value: 0 }
+};
+const noodleMat = new THREE.ShaderMaterial({
+  uniforms: noodleUniforms,
+  vertexShader: `
+    uniform float uTime;
+    varying vec3 vNormal;
+    varying float vY;
+    void main() {
+      vec3 p = position;
+      // gentle wobble to suggest noodles in broth
+      float w = sin(p.x * 8.0 + uTime * 1.5 + p.z * 5.0) * 0.004;
+      p.y += w;
+      vNormal = normalize(normalMatrix * normal);
+      vY = p.y;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vNormal;
+    varying float vY;
+    void main() {
+      vec3 lightDir = normalize(vec3(0.3, 1.0, 0.2));
+      float d = max(0.0, dot(vNormal, lightDir));
+      vec3 noodleCol = vec3(0.95, 0.85, 0.55);
+      vec3 col = noodleCol * (0.4 + d * 0.7);
+      // subtle wet sheen
+      col += vec3(0.2, 0.18, 0.12) * pow(d, 6.0);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+
+// generate a tangle of curved noodle strands
+const noodleStrands = new THREE.Group();
+for (let i = 0; i < 14; i++) {
+  const points = [];
+  const cx = (Math.random() - 0.5) * 0.18;
+  const cz = (Math.random() - 0.5) * 0.18;
+  const phase = Math.random() * Math.PI * 2;
+  for (let t = 0; t <= 30; t++) {
+    const u = t / 30;
+    const angle = phase + u * Math.PI * 4;
+    const r = 0.05 + u * 0.12 + Math.sin(u * 6) * 0.02;
+    const x = cx + Math.cos(angle) * r * (1 - u * 0.3);
+    const z = cz + Math.sin(angle) * r * (1 - u * 0.3);
+    const y = 0.12 + Math.sin(u * Math.PI) * 0.04 - u * 0.02;
+    points.push(new THREE.Vector3(x, y, z));
+  }
+  const curve = new THREE.CatmullRomCurve3(points);
+  const tube = new THREE.TubeGeometry(curve, 30, 0.005, 6, false);
+  const mesh = new THREE.Mesh(tube, noodleMat);
+  noodleStrands.add(mesh);
+}
+bowlGroup.add(noodleStrands);
+
+// SOFT-BOILED EGG (ajitsuke tamago) — half egg with orange yolk
+const eggGroup = new THREE.Group();
+const eggWhite = new THREE.Mesh(
+  new THREE.SphereGeometry(0.055, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: 0xe8d8b0, roughness: 0.6 })
+);
+eggWhite.rotation.x = Math.PI;
+eggGroup.add(eggWhite);
+const yolk = new THREE.Mesh(
+  new THREE.SphereGeometry(0.028, 12, 10),
+  new THREE.MeshStandardMaterial({ color: 0xff8030, roughness: 0.4, emissive: 0x442010, emissiveIntensity: 0.3 })
+);
+yolk.position.y = -0.005;
+eggGroup.add(yolk);
+eggGroup.position.set(-0.10, 0.13, 0.05);
+bowlGroup.add(eggGroup);
+
+// CHASHU pork slices
+for (let i = 0; i < 2; i++) {
+  const chashu = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 0.012, 16),
+    new THREE.MeshStandardMaterial({ color: 0xc8805a, roughness: 0.65 })
+  );
+  // pink center stripe via emissive layer (just use a darker disc on top)
+  chashu.position.set(0.08 + i*0.02, 0.135, -0.04 + i*0.05);
+  chashu.rotation.x = 0.12;
+  bowlGroup.add(chashu);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.045, 0.06, 20),
+    new THREE.MeshStandardMaterial({ color: 0x8a3a28, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI/2;
+  ring.position.set(chashu.position.x, 0.142, chashu.position.z);
+  bowlGroup.add(ring);
+}
+
+// SCALLIONS — green ring slices floating
+for (let i = 0; i < 16; i++) {
+  const scallion = new THREE.Mesh(
+    new THREE.RingGeometry(0.005, 0.012, 8),
+    new THREE.MeshStandardMaterial({ color: 0x60c040, side: THREE.DoubleSide })
+  );
+  scallion.rotation.x = -Math.PI/2;
+  const r = Math.random() * 0.22;
+  const a = Math.random() * Math.PI * 2;
+  scallion.position.set(Math.cos(a)*r, 0.138 + Math.random()*0.002, Math.sin(a)*r);
+  bowlGroup.add(scallion);
+}
+
+// Nori sheet (seaweed)
+const nori = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.07, 0.10),
+  new THREE.MeshStandardMaterial({ color: 0x101810, roughness: 0.9, side: THREE.DoubleSide })
+);
+nori.position.set(0.05, 0.16, 0.10);
+nori.rotation.set(-0.3, 0.5, 0.3);
+bowlGroup.add(nori);
+
+// Chopsticks resting on bowl
+const sticksMat = new THREE.MeshStandardMaterial({ color: 0xd4a070, roughness: 0.6 });
+for (let i = 0; i < 2; i++) {
+  const stick = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.005, 0.004, 0.34, 6),
+    sticksMat
+  );
+  stick.rotation.z = Math.PI / 2;
+  stick.rotation.y = -0.15;
+  stick.position.set(0.05 + i*0.02, 0.165, 0.18);
+  bowlGroup.add(stick);
+}
+
+// ============================================================
+// VOLUMETRIC STEAM — stacked transparent quads with noise shader
+// ============================================================
+const steamUniforms = {
+  uTime: { value: 0 },
+  uOpacity: { value: 1.0 }
+};
+const steamMat = new THREE.ShaderMaterial({
+  uniforms: steamUniforms,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.NormalBlending,
+  side: THREE.DoubleSide,
+  vertexShader: `
+    varying vec2 vUv;
+    varying float vLayer;
+    attribute float aLayer;
+    uniform float uTime;
+    void main() {
+      vUv = uv;
+      vLayer = aLayer;
+      vec3 p = position;
+      // gentle horizontal drift per layer
+      float drift = sin(uTime * 0.4 + aLayer * 2.3) * 0.05 * aLayer;
+      p.x += drift;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    uniform float uOpacity;
+    varying vec2 vUv;
+    varying float vLayer;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      vec2 u = f*f*(3.0-2.0*f);
+      return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                 mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+    }
+    float fbm(vec2 p) {
+      float v = 0.0; float a = 0.5;
+      for (int i = 0; i < 5; i++) {
+        v += a * noise(p);
+        p *= 2.0; a *= 0.5;
+      }
+      return v;
+    }
+    void main() {
+      vec2 uv = vUv;
+      // animate noise upward and sideways
+      vec2 nuv = uv * 3.0;
+      nuv.y -= uTime * 0.3 + vLayer * 0.4;
+      nuv.x += sin(uTime * 0.2 + vLayer) * 0.3;
+      float n = fbm(nuv);
+      // soft circular falloff (steam cloud silhouette)
+      vec2 c = uv - 0.5;
+      float r = length(c) * 2.0;
+      float fall = smoothstep(1.0, 0.2, r);
+      // bottom should fade to transparent (steam emerges from bowl), top fade out
+      float vert = smoothstep(0.0, 0.3, uv.y) * smoothstep(1.0, 0.5, uv.y);
+      float a = n * fall * vert * uOpacity * 0.55;
+      // warm tint on lower steam, cooler on top
+      vec3 warmCol = vec3(1.0, 0.85, 0.65);
+      vec3 coolCol = vec3(0.85, 0.9, 1.0);
+      vec3 col = mix(warmCol, coolCol, uv.y * 0.7);
+      gl_FragColor = vec4(col, a);
+    }
+  `
+});
+
+// stacked steam quads (billboarded toward camera each frame)
+const steamQuads = [];
+const STEAM_LAYERS = 8;
+for (let i = 0; i < STEAM_LAYERS; i++) {
+  const geo = new THREE.PlaneGeometry(0.7, 1.1);
+  // attribute uniform per quad
+  const layerArr = new Float32Array(geo.attributes.position.count).fill(i / STEAM_LAYERS);
+  geo.setAttribute('aLayer', new THREE.BufferAttribute(layerArr, 1));
+  const q = new THREE.Mesh(geo, steamMat);
+  q.position.set(0, 1.4 + i * 0.05, 0.55);
+  q.renderOrder = 100 + i;
+  scene.add(q);
+  steamQuads.push(q);
+}
+
+// ============================================================
+// WINDOW with rain (left side)
+// ============================================================
+// Wall-with-window: build as 3 plane pieces with a rectangular hole
+// (top, bottom, left strip; right is open to where the window glass sits)
+const windowFrame = new THREE.Group();
+windowFrame.position.set(-2.4, 0, 0);
+scene.add(windowFrame);
+
+// surrounding wall pieces
+const wallPieces = [
+  { w: 0.1, h: 3, x: 0, y: 1.5, z: 1.5 },   // bottom strip facing in
+  { w: 0.1, h: 3, x: 0, y: 1.5, z: -1.5 },
+  { w: 0.1, h: 0.6, x: 0, y: 2.3, z: 0 },   // top
+  { w: 0.1, h: 0.6, x: 0, y: 0.3, z: 0 },   // bottom
+];
+wallPieces.forEach(p => {
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(p.w, p.h, p.z !== 0 ? 1.5 : 2),
+    wallMat
+  );
+  m.position.set(p.x, p.y, p.z);
+  windowFrame.add(m);
+});
+
+// Window glass with rain shader
+const rainUniforms = {
+  uTime: { value: 0 },
+  uResolution: { value: new THREE.Vector2(1, 1) }
+};
+const rainMat = new THREE.ShaderMaterial({
+  uniforms: rainUniforms,
+  transparent: true,
+  side: THREE.DoubleSide,
+  vertexShader: `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    varying vec2 vUv;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      vec2 u = f*f*(3.0-2.0*f);
+      return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                 mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+    }
+
+    // raindrop trails — vertical streaks falling down
+    float rainStreak(vec2 uv, float seed) {
+      float col = floor(uv.x * 30.0);
+      float xRand = hash(vec2(col, seed));
+      float speed = 0.6 + xRand * 0.8;
+      float yOff = fract(uv.y - uTime * speed - xRand);
+      // sharp trail
+      float drop = smoothstep(0.95, 1.0, 1.0 - yOff) * smoothstep(0.0, 0.1, yOff);
+      // tail
+      float tail = smoothstep(0.0, 0.4, yOff) * smoothstep(1.0, 0.9, yOff) * 0.3;
+      return (drop + tail) * 0.5;
+    }
+
+    // distant alley scene "behind" the window
+    vec3 alleyScene(vec2 uv) {
+      // dark blue night sky
+      vec3 sky = vec3(0.06, 0.09, 0.16);
+      vec3 col = sky;
+      // building silhouettes (horizontal stacked rectangles)
+      float buildings = step(uv.y, 0.55 + sin(uv.x * 12.0) * 0.05 + sin(uv.x * 4.0) * 0.08);
+      col = mix(col, vec3(0.04, 0.04, 0.07), buildings);
+      // distant warm window squares
+      float wx = floor(uv.x * 16.0);
+      float wy = floor(uv.y * 12.0);
+      float winSeed = hash(vec2(wx, wy));
+      float winLit = step(0.85, winSeed) * step(uv.y, 0.55) * step(0.1, uv.y);
+      vec3 winCol = mix(vec3(1.0, 0.7, 0.3), vec3(1.0, 0.3, 0.4), hash(vec2(wx+1.0, wy+1.0)));
+      col = mix(col, winCol * 0.7, winLit * 0.6);
+      // wet ground reflection (lower portion gets streaks of warm light)
+      float ground = smoothstep(0.0, 0.18, uv.y);
+      col += vec3(0.4, 0.2, 0.3) * (1.0 - ground) * (0.4 + 0.6 * noise(vec2(uv.x * 8.0, uTime * 0.3)));
+      // neon sign glow (pink/red)
+      float neonY = smoothstep(0.35, 0.50, uv.y) * smoothstep(0.65, 0.50, uv.y);
+      float neonX = smoothstep(0.25, 0.55, uv.x) * smoothstep(0.85, 0.55, uv.x);
+      col += vec3(1.0, 0.2, 0.4) * neonY * neonX * (0.3 + 0.1 * sin(uTime * 8.0));
+      // mist
+      col += vec3(0.1, 0.12, 0.18) * (0.3 + 0.4 * noise(uv * 3.0 + uTime * 0.05));
+      return col;
+    }
+
+    void main() {
+      vec2 uv = vUv;
+      // base alley behind glass
+      vec3 alley = alleyScene(uv);
+
+      // condensation/blur effect — distort uv slightly
+      vec2 distort = vec2(
+        noise(uv * 8.0 + uTime * 0.1) - 0.5,
+        noise(uv * 8.0 + 100.0 + uTime * 0.1) - 0.5
+      ) * 0.015;
+      vec3 alley2 = alleyScene(uv + distort);
+      alley = mix(alley, alley2, 0.6);
+
+      // condensation overlay
+      float cond = smoothstep(0.4, 0.8, noise(uv * 12.0));
+      alley = mix(alley, alley * 0.8 + vec3(0.05, 0.08, 0.1), cond * 0.4);
+
+      // rain droplets falling down the glass
+      float r1 = rainStreak(uv, 1.0);
+      float r2 = rainStreak(uv * vec2(1.7, 1.0) + vec2(0.3, 0), 2.0);
+      float rain = max(r1, r2);
+      vec3 col = alley + vec3(0.5, 0.6, 0.8) * rain * 0.5;
+
+      // distort behind drops a bit (fake refraction)
+      float dropMask = rain;
+      vec2 refr = uv + vec2(0.0, dropMask * 0.05);
+      vec3 refrCol = alleyScene(refr);
+      col = mix(col, refrCol * 1.4, dropMask * 0.5);
+
+      // occasional silhouette walking past (computed from a moving rectangle)
+      float t = mod(uTime * 0.04, 4.0);
+      float personX = t - 0.5; // sweeps from -0.5 to 3.5
+      if (personX > 0.0 && personX < 1.0) {
+        float dx = abs(uv.x - personX);
+        float silhouette = smoothstep(0.06, 0.0, dx) *
+                           smoothstep(0.05, 0.30, uv.y) *
+                           smoothstep(0.55, 0.40, uv.y);
+        col = mix(col, vec3(0.02, 0.02, 0.04), silhouette * 0.85);
+      }
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+const windowGlass = new THREE.Mesh(
+  new THREE.PlaneGeometry(2.4, 1.6),
+  rainMat
+);
+windowGlass.position.set(0, 1.3, 0);
+windowGlass.rotation.y = Math.PI / 2;
+windowFrame.add(windowGlass);
+
+// Window cross frame (wood)
+const fH = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 2.4),
+  new THREE.MeshStandardMaterial({ color: 0x1a0c08 }));
+fH.position.set(0.03, 1.3, 0);
+windowFrame.add(fH);
+const fV = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.6, 0.04),
+  new THREE.MeshStandardMaterial({ color: 0x1a0c08 }));
+fV.position.set(0.03, 1.3, 0);
+windowFrame.add(fV);
+
+// ============================================================
+// PAPER LANTERNS swaying in wind (visible "outside" — placed in front of window glass)
+// We render them as small glowing spheres just inside the alley side
+// ============================================================
+const lanterns = [];
+for (let i = 0; i < 3; i++) {
+  const lg = new THREE.Group();
+  const lantern = new THREE.Mesh(
+    new THREE.SphereGeometry(0.10, 16, 12),
+    new THREE.MeshStandardMaterial({
+      color: 0xff5030,
+      emissive: 0xff4020,
+      emissiveIntensity: 0.8,
+      roughness: 0.8
+    })
+  );
+  lg.add(lantern);
+  // tiny line for cord
+  const cord = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.002, 0.002, 0.4, 4),
+    new THREE.MeshBasicMaterial({ color: 0x000000 })
+  );
+  cord.position.y = 0.2;
+  lg.add(cord);
+  // place them just past window plane
+  lg.position.set(-2.5, 1.7, -1.0 + i * 1.0);
+  lg.userData = {
+    baseX: lg.position.x,
+    baseZ: lg.position.z,
+    phase: Math.random() * Math.PI * 2,
+    velX: 0,
+    posX: 0
+  };
+  scene.add(lg);
+  // small light accompanying
+  const ll = new THREE.PointLight(0xff5020, 0.4, 1.5, 2);
+  ll.position.copy(lg.position);
+  scene.add(ll);
+  lanterns.push({ group: lg, light: ll });
+}
+
+// ============================================================
+// STOOLS for atmosphere
+// ============================================================
+for (let i = -2; i <= 2; i++) {
+  if (i === 0) continue;
+  const stool = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.18, 0.05, 16),
+    new THREE.MeshStandardMaterial({ color: 0x3a2010, roughness: 0.7 })
+  );
+  stool.position.set(i * 0.7, 0.65, 1.7);
+  scene.add(stool);
+  for (let l = 0; l < 4; l++) {
+    const angle = (l / 4) * Math.PI * 2;
+    const leg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.015, 0.015, 0.6, 6),
+      new THREE.MeshStandardMaterial({ color: 0x2a1408 })
+    );
+    leg.position.set(stool.position.x + Math.cos(angle)*0.13, 0.35, stool.position.z + Math.sin(angle)*0.13);
+    scene.add(leg);
+  }
+}
+
+// ============================================================
+// AUDIO — Web Audio: rain + lo-fi loop + occasional clinks
+// ============================================================
+let audioCtx = null;
+let masterGain = null;
+let musicGain = null;
+let muted = false;
+let audioStarted = false;
+
+function startAudio() {
+  if (audioStarted) return;
+  audioStarted = true;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.7;
+  masterGain.connect(audioCtx.destination);
+
+  musicGain = audioCtx.createGain();
+  musicGain.gain.value = 0.5;
+  musicGain.connect(masterGain);
+
+  // ---------- RAIN: filtered pink noise ----------
+  const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 4, audioCtx.sampleRate);
+  const nd = noiseBuf.getChannelData(0);
+  let lastOut = 0;
+  for (let i = 0; i < nd.length; i++) {
+    const white = Math.random() * 2 - 1;
+    // simple pink-ish filter
+    nd[i] = (lastOut + 0.05 * white) / 1.05;
+    lastOut = nd[i];
+    nd[i] *= 0.6;
+  }
+  const noiseSrc = audioCtx.createBufferSource();
+  noiseSrc.buffer = noiseBuf;
+  noiseSrc.loop = true;
+  const rainFilter = audioCtx.createBiquadFilter();
+  rainFilter.type = 'lowpass';
+  rainFilter.frequency.value = 1800;
+  rainFilter.Q.value = 0.5;
+  const rainHi = audioCtx.createBiquadFilter();
+  rainHi.type = 'highpass';
+  rainHi.frequency.value = 200;
+  const rainGain = audioCtx.createGain();
+  rainGain.gain.value = 0.18;
+  noiseSrc.connect(rainFilter).connect(rainHi).connect(rainGain).connect(masterGain);
+  noiseSrc.start();
+
+  // gentle rain LFO for "wind gusts"
+  const rainLfo = audioCtx.createOscillator();
+  rainLfo.frequency.value = 0.07;
+  const rainLfoGain = audioCtx.createGain();
+  rainLfoGain.gain.value = 0.06;
+  rainLfo.connect(rainLfoGain);
+  rainLfoGain.connect(rainGain.gain);
+  rainLfo.start();
+
+  // ---------- LO-FI LOOP ----------
+  // Tempo
+  const bpm = 72;
+  const beat = 60 / bpm; // sec per beat
+  const bar = beat * 4;
+  // Scale: D minor pentatonic-ish (chillhop)
+  // Chord progression: Dm9 — Fmaj7 — Am7 — Gm7  (4 bars)
+  // Use frequencies (A4=440)
+  const f = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
+  // midi notes
+  const N = { D2:38, F2:41, G2:43, A2:45, C3:48, D3:50, E3:52, F3:53, G3:55, A3:57, C4:60, D4:62, E4:64, F4:65, G4:67, A4:69, C5:72, D5:74, F5:77 };
+
+  // Scheduler — lookahead
+  let nextNoteTime = audioCtx.currentTime + 0.1;
+  let bar16 = 0; // 16th step within a 4-bar loop (0..63)
+
+  // Bass: walking root + 5
+  const bassSchedule = [
+    // 16 16th-notes per bar; play half-notes / quarter notes
+    // bar 0: Dm — D2 . . . D2 . . . A2 . . . F2 . . .
+    [N.D2, N.D2, N.A2, N.F2],
+    // bar 1: Fmaj — F2 . . . F2 . . . C3 . . . A2 . . .
+    [N.F2, N.F2, N.C3, N.A2],
+    // bar 2: Am — A2 . . . A2 . . . E3 . . . C3 . . .
+    [N.A2, N.A2, N.E3, N.C3],
+    // bar 3: Gm — G2 . . . G2 . . . D3 . . . F3 . . .
+    [N.G2, N.G2, N.D3, N.F3],
+  ];
+
+  // Pad chord notes per bar (3 voices)
+  const chords = [
+    [N.D3, N.F3, N.A3, N.C4], // Dm9 (drop the 9 sometimes)
+    [N.F3, N.A3, N.C4, N.E4], // Fmaj7
+    [N.A3, N.C4, N.E4, N.G4], // Am7
+    [N.G3, N.A3, N.D4, N.F4], // Gm7
+  ];
+
+  // Sax-like FM lead — simple melodic phrase across 4 bars (16 quarter beats)
+  // Use rests with -1
+  const leadMelody = [
+    // bar 0
+    N.A4, -1, N.F4, N.A4, N.D5, -1, N.A4, N.F4,
+    // bar 1
+    N.A4, -1, -1, N.C5, N.D5, N.F5, N.D5, N.C5,
+    // bar 2
+    N.E4, N.A4, -1, N.C5, N.A4, N.G4, -1, N.E4,
+    // bar 3
+    N.D4, N.F4, N.G4, -1, N.A4, N.G4, N.F4, N.D4,
+  ];
+
+  // ---- Synth helpers ----
+  function playBass(freq, t, dur) {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    const sub = audioCtx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = freq / 2;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.45, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 380;
+    osc.connect(g);
+    sub.connect(g);
+    g.connect(lp).connect(musicGain);
+    osc.start(t); sub.start(t);
+    osc.stop(t + dur + 0.1); sub.stop(t + dur + 0.1);
+  }
+
+  function playPad(notes, t, dur) {
+    notes.forEach((n, i) => {
+      const osc = audioCtx.createOscillator();
+      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.value = f(n);
+      const detune = audioCtx.createOscillator();
+      detune.type = 'sine';
+      detune.frequency.value = f(n) * 1.005;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.04, t + 0.4);
+      g.gain.linearRampToValueAtTime(0.03, t + dur - 0.5);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      const lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1100;
+      lp.Q.value = 0.5;
+      osc.connect(g);
+      detune.connect(g);
+      g.connect(lp).connect(musicGain);
+      osc.start(t); detune.start(t);
+      osc.stop(t + dur + 0.1); detune.stop(t + dur + 0.1);
+    });
+  }
+
+  // FM "sax" lead — carrier with FM modulator
+  function playLead(freq, t, dur) {
+    const carrier = audioCtx.createOscillator();
+    carrier.type = 'sine';
+    carrier.frequency.value = freq;
+    const modulator = audioCtx.createOscillator();
+    modulator.type = 'sine';
+    modulator.frequency.value = freq * 2.0; // 2:1 ratio, sax-ish
+    const modGain = audioCtx.createGain();
+    modGain.gain.setValueAtTime(freq * 1.5, t);
+    modGain.gain.linearRampToValueAtTime(freq * 0.4, t + dur);
+    modulator.connect(modGain).connect(carrier.frequency);
+    // amp envelope — soft attack, slight tail
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.18, t + 0.06);
+    g.gain.linearRampToValueAtTime(0.13, t + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    // gentle tone-shaping
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2400;
+    // light reverb (delay feedback)
+    const delay = audioCtx.createDelay();
+    delay.delayTime.value = 0.28;
+    const fb = audioCtx.createGain();
+    fb.gain.value = 0.32;
+    const wet = audioCtx.createGain();
+    wet.gain.value = 0.25;
+    carrier.connect(g);
+    g.connect(lp);
+    lp.connect(musicGain);
+    lp.connect(delay);
+    delay.connect(fb);
+    fb.connect(delay);
+    delay.connect(wet).connect(musicGain);
+    // pitch wobble for character
+    const vib = audioCtx.createOscillator();
+    vib.type = 'sine';
+    vib.frequency.value = 5.5;
+    const vibG = audioCtx.createGain();
+    vibG.gain.value = freq * 0.005;
+    vib.connect(vibG).connect(carrier.frequency);
+    carrier.start(t); modulator.start(t); vib.start(t);
+    carrier.stop(t + dur + 0.5);
+    modulator.stop(t + dur + 0.1);
+    vib.stop(t + dur + 0.5);
+  }
+
+  // Hi-hat: noise burst, short
+  function playHat(t, vol = 0.05) {
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const hp = audioCtx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 6000;
+    const g = audioCtx.createGain();
+    g.gain.value = vol;
+    src.connect(hp).connect(g).connect(musicGain);
+    src.start(t);
+  }
+
+  // Soft kick
+  function playKick(t) {
+    const osc = audioCtx.createOscillator();
+    osc.frequency.setValueAtTime(110, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    osc.connect(g).connect(musicGain);
+    osc.start(t); osc.stop(t + 0.3);
+  }
+
+  // Soft snare (rim-tap-ish)
+  function playSnare(t) {
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.15, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.04));
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1500;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.12;
+    src.connect(bp).connect(g).connect(musicGain);
+    src.start(t);
+  }
+
+  // Vinyl crackle layer
+  const crackleBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+  const cd = crackleBuf.getChannelData(0);
+  for (let i = 0; i < cd.length; i++) {
+    cd[i] = (Math.random() < 0.0008) ? (Math.random() * 2 - 1) * 0.6 : 0;
+    cd[i] += (Math.random() * 2 - 1) * 0.02;
+  }
+  const crackleSrc = audioCtx.createBufferSource();
+  crackleSrc.buffer = crackleBuf;
+  crackleSrc.loop = true;
+  const crackleHP = audioCtx.createBiquadFilter();
+  crackleHP.type = 'highpass';
+  crackleHP.frequency.value = 2000;
+  const crackleGain = audioCtx.createGain();
+  crackleGain.gain.value = 0.18;
+  crackleSrc.connect(crackleHP).connect(crackleGain).connect(musicGain);
+  crackleSrc.start();
+
+  // ---- Scheduler ----
+  function scheduler() {
+    while (nextNoteTime < audioCtx.currentTime + 0.2) {
+      const stepIn16th = bar16 % 16; // step within a bar
+      const barIndex = Math.floor(bar16 / 16) % 4;
+      const step8th = stepIn16th / 2;
+      const beatIndex = Math.floor(stepIn16th / 4); // 0..3 beats in bar
+
+      // Bass on beats 1 and 3 (i.e. step 0 and 8) and a couple walks
+      if (stepIn16th === 0) playBass(f(bassSchedule[barIndex][0]), nextNoteTime, beat * 1.8);
+      if (stepIn16th === 4) playBass(f(bassSchedule[barIndex][1]), nextNoteTime, beat * 1.8);
+      if (stepIn16th === 8) playBass(f(bassSchedule[barIndex][2]), nextNoteTime, beat * 1.6);
+      if (stepIn16th === 12) playBass(f(bassSchedule[barIndex][3]), nextNoteTime, beat * 1.6);
+
+      // Pad once per bar (sustained)
+      if (stepIn16th === 0) playPad(chords[barIndex], nextNoteTime, bar);
+
+      // Lead: one note per quarter note (16/4 = 4 quarters per bar). leadMelody indexed by quarter through 4 bars (16 quarters total).
+      if (stepIn16th % 4 === 0) {
+        const quarterIdx = barIndex * 4 + beatIndex;
+        const note = leadMelody[quarterIdx];
+        if (note > 0) {
+          // skip occasional notes for breath
+          if (Math.random() > 0.05) playLead(f(note), nextNoteTime, beat * 1.4);
+        }
+      }
+
+      // Hat: 8th-note swing — play on every 16th step that lands on an 8th
+      if (stepIn16th % 2 === 0) {
+        // swing offset on the offbeat
+        playHat(nextNoteTime, 0.04);
+      }
+      if (stepIn16th % 2 === 1 && Math.random() > 0.4) {
+        playHat(nextNoteTime + 0.02, 0.025);
+      }
+
+      // Kick: 1 and 3 with a soft ghost
+      if (stepIn16th === 0 || stepIn16th === 8) playKick(nextNoteTime);
+      if (stepIn16th === 6 && Math.random() > 0.7) playKick(nextNoteTime);
+
+      // Snare on 2 and 4 (steps 4, 12)
+      if (stepIn16th === 4 || stepIn16th === 12) playSnare(nextNoteTime);
+
+      nextNoteTime += beat / 4; // 16th-note step
+      bar16 = (bar16 + 1) % 64;
+    }
+    setTimeout(scheduler, 25);
+  }
+  scheduler();
+
+  // ---- Occasional clinks of dishes ----
+  function clink() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const o1 = audioCtx.createOscillator();
+    const o2 = audioCtx.createOscillator();
+    o1.type = 'sine'; o2.type = 'sine';
+    o1.frequency.value = 1800 + Math.random() * 800;
+    o2.frequency.value = o1.frequency.value * 1.5;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0, t);
+    g.gain.linearRampToValueAtTime(0.08, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    o1.connect(g); o2.connect(g);
+    g.connect(masterGain);
+    o1.start(t); o2.start(t);
+    o1.stop(t + 0.5); o2.stop(t + 0.5);
+    setTimeout(clink, 8000 + Math.random() * 16000);
+  }
+  setTimeout(clink, 6000);
+
+  // ---- Faint chatter (bandpassed noise burst) ----
+  function chatter() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const dur = 0.2 + Math.random() * 0.4;
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.sin(i / d.length * Math.PI) * 0.5;
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 600 + Math.random() * 400;
+    bp.Q.value = 4;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.02;
+    src.connect(bp).connect(g).connect(masterGain);
+    src.start(t);
+    setTimeout(chatter, 12000 + Math.random() * 25000);
+  }
+  setTimeout(chatter, 10000);
+
+  document.getElementById('audio').textContent = 'M to mute · lo-fi · rain';
+}
+
+// ============================================================
+// CONTROLS — mouse pan with inertia, spacebar lift, M mute
+// ============================================================
+const target = { yaw: 0, pitch: 0, tiltY: 0 };
+const current = { yaw: 0, pitch: 0, tiltY: 0 };
+let mouseX = 0.5, mouseY = 0.5;
+let liftMode = false;
+
+window.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX / window.innerWidth;
+  mouseY = e.clientY / window.innerHeight;
+  target.yaw = (mouseX - 0.5) * 0.8;   // limited pan range
+  target.pitch = (mouseY - 0.5) * 0.4;
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    liftMode = true;
+  }
+  if (e.key === 'm' || e.key === 'M') {
+    muted = !muted;
+    if (masterGain) masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.7, audioCtx.currentTime + 0.2);
+    document.getElementById('audio').textContent = muted ? 'MUTED · M to unmute' : 'M to mute · lo-fi · rain';
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') liftMode = false;
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Splash to start audio (browsers require gesture)
+const splash = document.getElementById('splash');
+splash.addEventListener('click', () => {
+  splash.classList.add('hide');
+  startAudio();
+});
+
+// ============================================================
+// ANIMATE
+// ============================================================
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // shader uniforms
+  brothUniforms.uTime.value = t;
+  noodleUniforms.uTime.value = t;
+  steamUniforms.uTime.value = t;
+  rainUniforms.uTime.value = t;
+
+  // bulb subtle flicker
+  bulbs.forEach((b, i) => {
+    b.intensity = 1.3 + Math.sin(t * 1.3 + i * 1.7) * 0.05 + (Math.random() < 0.005 ? -0.3 : 0);
+  });
+  neon.intensity = 0.65 + Math.sin(t * 4.1) * 0.08 + (Math.random() < 0.01 ? 0.4 : 0);
+
+  // chef subtle motion (stirring)
+  chefGroup.children[4].rotation.z = 0.5 + Math.sin(t * 3) * 0.15;
+  chefGroup.children[5].rotation.z = -0.5 + Math.sin(t * 3 + Math.PI) * 0.15;
+  chefGroup.position.x = 0.4 + Math.sin(t * 0.5) * 0.05;
+
+  // lanterns sway via wind-driven spring physics
+  const wind = Math.sin(t * 0.7) * 0.4 + Math.sin(t * 1.7) * 0.15 + Math.sin(t * 0.3) * 0.6;
+  lanterns.forEach((l, i) => {
+    const u = l.group.userData;
+    const force = wind * 0.05 + Math.sin(t * 1.3 + u.phase) * 0.02;
+    const spring = -u.posX * 0.05;
+    const damp = -u.velX * 0.06;
+    u.velX += force + spring + damp;
+    u.posX += u.velX;
+    l.group.position.x = u.baseX + u.posX;
+    l.group.rotation.z = u.posX * 1.5; // hangs from a fixed pivot
+    l.group.position.y = 1.7 - Math.abs(u.posX * 0.05);
+  });
+
+  // billboard steam quads toward camera
+  steamQuads.forEach(q => {
+    q.lookAt(camera.position.x, q.position.y, camera.position.z);
+  });
+
+  // Camera control: smooth toward target + space lift
+  const targetTiltY = liftMode ? -0.18 : 0;
+  target.tiltY = targetTiltY;
+
+  current.yaw += (target.yaw - current.yaw) * 0.04;
+  current.pitch += (target.pitch - current.pitch) * 0.04;
+  current.tiltY += (target.tiltY - current.tiltY) * 0.06;
+
+  // base position (with slight breath)
+  const breath = Math.sin(t * 0.7) * 0.005;
+  camera.position.set(
+    camBase.x + Math.sin(current.yaw) * 0.12,
+    camBase.y + breath + (liftMode ? -0.04 : 0),
+    camBase.z
+  );
+  // look target moves with mouse + tilt down for lift
+  const lookAt = new THREE.Vector3(
+    -Math.sin(current.yaw) * 1.5,
+    1.05 + current.tiltY - current.pitch * 0.3,
+    -0.3 + Math.cos(current.yaw) * 0.5
+  );
+  // when lifting, look directly at bowl
+  if (liftMode) lookAt.set(0, 1.1, 0.55);
+  camera.lookAt(lookAt);
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// Allow start without splash click (in case user is impatient — scene still renders)
+// Audio waits for click per browser policy.
+</script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+name: World Heartbeat 💓
+
+on:
+  # schedule:
+  #   - cron: '0 */4 * * *'     # DISABLED — now runs locally via scripts/local_platform.sh
+  workflow_dispatch:
+    inputs:
+      force_spawn:
+        description: 'Force spawn N new agents (0 = use growth curve)'
+        required: false
+        default: '0'
+      dry_run:
+        description: 'Dry run (no state changes)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: state-writer
+  cancel-in-progress: false
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run growth simulation
+        id: growth
+        continue-on-error: true
+        run: |
+          cp -r state/ .state-snapshot-growth/
+          ARGS="--no-push"
+          FORCE="${{ github.event.inputs.force_spawn || '0' }}"
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+          if [ "$FORCE" != "0" ]; then
+            ARGS="$ARGS --force-spawn $FORCE"
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python scripts/world_growth.py $ARGS
+
+      - name: Rollback growth on failure
+        if: steps.growth.outcome == 'failure'
+        run: |
+          echo "⚠️ Growth simulation failed — rolling back state changes"
+          cp -r .state-snapshot-growth/* state/
+          rm -rf .state-snapshot-growth/
+
+      - name: Cleanup growth snapshot
+        if: steps.growth.outcome == 'success'
+        run: rm -rf .state-snapshot-growth/
+
+      - name: Run interaction engine
+        id: interaction
+        continue-on-error: true
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          cp -r state/ .state-snapshot-interaction/
+          python scripts/interaction_engine.py --no-push
+
+      - name: Rollback interaction on failure
+        if: steps.interaction.outcome == 'failure'
+        run: |
+          echo "⚠️ Interaction engine failed — rolling back state changes"
+          cp -r .state-snapshot-interaction/* state/
+          rm -rf .state-snapshot-interaction/
+
+      - name: Cleanup interaction snapshot
+        if: steps.interaction.outcome == 'success'
+        run: rm -rf .state-snapshot-interaction/
+
+      - name: Run RAPPter Academy
+        id: academy
+        continue-on-error: true
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          cp -r state/ .state-snapshot-academy/
+          python scripts/academy_engine.py --no-push
+
+      - name: Rollback academy on failure
+        if: steps.academy.outcome == 'failure'
+        run: |
+          echo "⚠️ Academy engine failed — rolling back state changes"
+          cp -r .state-snapshot-academy/* state/
+          rm -rf .state-snapshot-academy/
+
+      - name: Cleanup academy snapshot
+        if: steps.academy.outcome == 'success'
+        run: rm -rf .state-snapshot-academy/
+
+      - name: Run RAPPterCoin economy engine
+        id: economy
+        continue-on-error: true
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          cp -r state/ .state-snapshot-economy/
+          python scripts/economy_engine.py --no-push
+
+      - name: Rollback economy on failure
+        if: steps.economy.outcome == 'failure'
+        run: |
+          echo "⚠️ Economy engine failed — rolling back state changes"
+          cp -r .state-snapshot-economy/* state/
+          rm -rf .state-snapshot-economy/
+
+      - name: Cleanup economy snapshot
+        if: steps.economy.outcome == 'success'
+        run: rm -rf .state-snapshot-economy/
+
+      - name: Run RappterZoo heartbeat
+        id: zoo
+        continue-on-error: true
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          cp -r state/ .state-snapshot-zoo/
+          python scripts/zoo_heartbeat.py --no-push
+
+      - name: Rollback zoo on failure
+        if: steps.zoo.outcome == 'failure'
+        run: |
+          echo "⚠️ Zoo heartbeat failed — rolling back state changes"
+          cp -r .state-snapshot-zoo/* state/
+          rm -rf .state-snapshot-zoo/
+
+      - name: Cleanup zoo snapshot
+        if: steps.zoo.outcome == 'success'
+        run: rm -rf .state-snapshot-zoo/
+
+      - name: Validate state
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        continue-on-error: true
+        run: python scripts/validate_action.py --audit
+
+      - name: PII scan
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: python scripts/pii_scan.py --paths state feed
+
+      - name: Create PR if state changed
+        id: create_pr
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git diff --quiet -- state/ worlds/ feed/ && echo "No state changes to commit" && exit 0
+
+          BRANCH="auto/heartbeat-$(date -u '+%Y%m%d-%H%M%S')"
+          git config --local user.email "action@github.com"
+          git config --local user.name "RAPPverse Heartbeat 💓"
+          git checkout -b "$BRANCH"
+          git add state/ worlds/ feed/
+          git commit -m "[heartbeat] World pulse — $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push --set-upstream origin "$BRANCH"
+          PR_URL=$(gh pr create \
+            --title "[heartbeat] World pulse" \
+            --body "Automated world heartbeat." \
+            --base main \
+            --head "$BRANCH")
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$(echo $PR_URL | grep -o '[0-9]*$')" >> "$GITHUB_OUTPUT"
+          echo "has_pr=true" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wake durable state queue
+        if: steps.create_pr.outputs.has_pr == 'true'
+        run: gh workflow run state-drain.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

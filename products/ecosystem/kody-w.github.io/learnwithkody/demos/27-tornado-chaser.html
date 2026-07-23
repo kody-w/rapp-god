@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TORNADO CHASER — Kansas Run</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#000;color:#e8e2c8;font:12px/1.4 'SF Mono',Menlo,Consolas,monospace;overflow:hidden;-webkit-user-select:none;user-select:none}
+  #stage{position:fixed;inset:0}
+  canvas{display:block}
+  /* HUD */
+  #hud{position:fixed;inset:0;pointer-events:none;mix-blend-mode:screen}
+  .panel{position:absolute;background:rgba(8,6,2,.55);backdrop-filter:blur(6px);border:1px solid rgba(255,200,80,.18);border-radius:6px;padding:8px 12px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#ffd690;text-shadow:0 0 8px rgba(255,180,40,.4)}
+  #tl{top:14px;left:14px;min-width:200px}
+  #tr{top:14px;right:14px;min-width:170px;text-align:right}
+  #bl{bottom:14px;left:14px}
+  #br{bottom:14px;right:14px;text-align:right;font-size:10px;color:#9b8c5e;letter-spacing:2px}
+  .row{display:flex;justify-content:space-between;gap:14px;padding:2px 0}
+  .row b{color:#fff;font-weight:600;font-variant-numeric:tabular-nums;text-shadow:0 0 6px rgba(255,200,100,.6)}
+  .danger{color:#ff5040 !important;text-shadow:0 0 12px rgba(255,80,40,.9) !important;animation:flash .35s infinite alternate}
+  @keyframes flash{from{opacity:.6}to{opacity:1}}
+  #title{position:fixed;top:8px;left:50%;transform:translateX(-50%);font-size:10px;letter-spacing:8px;color:rgba(255,210,140,.5);pointer-events:none;text-shadow:0 0 8px rgba(255,180,40,.4)}
+  #compass{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:36px;height:36px;border:1px solid rgba(255,180,40,.4);border-radius:50%;pointer-events:none;opacity:.5}
+  #compass:after{content:'';position:absolute;top:-3px;left:50%;width:1px;height:6px;background:#ffaa30;transform:translateX(-50%)}
+  /* big alert */
+  #alert{position:fixed;top:30%;left:50%;transform:translateX(-50%);font-size:32px;letter-spacing:14px;color:#ff5040;text-shadow:0 0 24px #ff2010;opacity:0;transition:opacity .2s;pointer-events:none}
+  #alert.on{opacity:1;animation:flash .25s infinite alternate}
+  /* gameover */
+  #over{position:fixed;inset:0;background:radial-gradient(circle at 50% 50%, rgba(40,10,5,.4), rgba(0,0,0,.95));display:none;align-items:center;justify-content:center;flex-direction:column;text-align:center;color:#ffeac0;pointer-events:auto}
+  #over.on{display:flex}
+  #over h1{font-size:48px;letter-spacing:18px;color:#ff4030;text-shadow:0 0 30px #ff1000;margin-bottom:10px;font-weight:300}
+  #over p{font-size:13px;letter-spacing:3px;color:#caa770;margin-bottom:24px}
+  #over .score{font-size:38px;color:#fff;font-weight:300;margin:6px 0 24px;text-shadow:0 0 18px #ffb840;font-variant-numeric:tabular-nums}
+  #restart{cursor:pointer;background:rgba(80,30,10,.7);color:#fff;border:1px solid #ff8030;padding:14px 38px;font:14px monospace;letter-spacing:6px;border-radius:4px;text-transform:uppercase;transition:.2s}
+  #restart:hover{background:#ff5020;color:#000;box-shadow:0 0 24px #ff5020}
+  /* start screen */
+  #start{position:fixed;inset:0;background:linear-gradient(180deg,#1a1810,#0a0805);display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;color:#ffeac0;z-index:5}
+  #start h1{font-size:60px;letter-spacing:18px;color:#ffaa30;text-shadow:0 0 40px #ff7020;margin-bottom:6px;font-weight:300}
+  #start h2{font-size:14px;letter-spacing:8px;color:#a08760;margin-bottom:36px}
+  #start .key{display:inline-block;background:rgba(255,180,60,.15);border:1px solid #ffaa30;padding:4px 9px;margin:2px;border-radius:4px;color:#fff;font-weight:600;min-width:24px}
+  #start p{font-size:11px;letter-spacing:2px;color:#caa770;margin:6px 0;max-width:520px}
+  #go{cursor:pointer;background:transparent;color:#fff;border:2px solid #ffaa30;padding:18px 50px;font:16px monospace;letter-spacing:8px;border-radius:4px;text-transform:uppercase;transition:.2s;margin-top:30px}
+  #go:hover{background:#ffaa30;color:#000;box-shadow:0 0 30px #ffaa30}
+  /* speed lines / shake handled by transform on stage */
+  #vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 60%, transparent 30%, rgba(0,0,0,.45) 70%, rgba(0,0,0,.85) 100%);mix-blend-mode:multiply}
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="vignette"></div>
+<div id="flash"></div>
+
+<div id="hud">
+  <div id="title">TORNADO CHASER · KANSAS RUN</div>
+  <div id="compass"></div>
+  <div id="tl" class="panel">
+    <div class="row"><span>Distance</span><b id="dist">— m</b></div>
+    <div class="row"><span>Wind</span><b id="wind">— mph</b></div>
+    <div class="row"><span>Heading</span><b id="head">— °</b></div>
+  </div>
+  <div id="tr" class="panel">
+    <div class="row"><span>Score</span><b id="score">0</b></div>
+    <div class="row"><span>Mult</span><b id="mult">×1.0</b></div>
+    <div class="row"><span>Best</span><b id="best">0</b></div>
+  </div>
+  <div id="bl" class="panel">
+    <div class="row"><span>Speed</span><b id="spd">0 mph</b></div>
+    <div class="row"><span>Fuji Scale</span><b id="ef">EF—</b></div>
+  </div>
+  <div id="br">W·THROTTLE  S·BRAKE  A·D·STEER  R·RESTART</div>
+</div>
+
+<div id="alert"></div>
+
+<div id="over">
+  <h1>DESTROYED</h1>
+  <p>You got too close to the vortex</p>
+  <div class="score" id="finalscore">0</div>
+  <button id="restart">RESTART</button>
+</div>
+
+<div id="start">
+  <h1>TORNADO CHASER</h1>
+  <h2>KANSAS · MAY 2026</h2>
+  <p>A wedge tornado is on the ground. Storm scale is rising. Get close — but not too close.</p>
+  <p style="margin-top:16px"><span class="key">W</span> throttle &nbsp; <span class="key">S</span> brake &nbsp; <span class="key">A</span> <span class="key">D</span> steer</p>
+  <p style="margin-top:6px;color:#ff8030">WARNING: Audio plays on start.</p>
+  <button id="go">CHASE</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ---------- Boot & Scene ---------- */
+const stage = document.getElementById('stage');
+const W = () => window.innerWidth;
+const H = () => window.innerHeight;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x6a5a30); // ominous yellow-green base
+scene.fog = new THREE.FogExp2(0x6a5a30, 0.0028);
+
+const camera = new THREE.PerspectiveCamera(70, W()/H(), 0.5, 2200);
+camera.position.set(0, 1.7, 0);
+
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
+renderer.setSize(W(), H());
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+stage.appendChild(renderer.domElement);
+
+window.addEventListener('resize', () => {
+  camera.aspect = W()/H();
+  camera.updateProjectionMatrix();
+  renderer.setSize(W(), H());
+});
+
+/* ---------- Lighting (storm-mood) ---------- */
+const sun = new THREE.DirectionalLight(0xffc070, 0.55); // sickly amber light through clouds
+sun.position.set(60, 80, -40);
+scene.add(sun);
+const ambient = new THREE.HemisphereLight(0x6a5a30, 0x2a2410, 0.85);
+scene.add(ambient);
+const flashLight = new THREE.PointLight(0xc0d8ff, 0, 800, 2.0);
+flashLight.position.set(0, 250, -400);
+scene.add(flashLight);
+
+/* ---------- Sky dome (gradient w/ greenish supercell side) ---------- */
+const skyGeo = new THREE.SphereGeometry(1500, 32, 16);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    uTop:    {value: new THREE.Color(0x222018)},   // dark gray-brown overhead
+    uMid:    {value: new THREE.Color(0x8a7a3a)},   // sickly yellow-green
+    uBottom: {value: new THREE.Color(0x4a3a18)},   // brown horizon
+    uTorn:   {value: new THREE.Vector3(0,0,-700)},
+    uTime:   {value: 0}
+  },
+  vertexShader: `
+    varying vec3 vWorld;
+    void main(){
+      vWorld = (modelMatrix * vec4(position,1.0)).xyz;
+      gl_Position = projectionMatrix * viewMatrix * vec4(vWorld,1.0);
+    }`,
+  fragmentShader: `
+    varying vec3 vWorld;
+    uniform vec3 uTop, uMid, uBottom, uTorn;
+    uniform float uTime;
+    void main(){
+      vec3 d = normalize(vWorld);
+      float h = clamp(d.y*0.5 + 0.5, 0.0, 1.0);
+      vec3 col = mix(uBottom, uMid, smoothstep(0.0, 0.55, h));
+      col = mix(col, uTop, smoothstep(0.55, 1.0, h));
+      // green-yellow glow toward the supercell direction
+      vec3 toStorm = normalize(uTorn - vec3(0.0, 0.0, 0.0));
+      float dot1 = max(dot(d.xz, toStorm.xz), 0.0);
+      float storm = pow(dot1, 1.4) * (1.0 - h*0.4);
+      col += vec3(0.18, 0.25, 0.05) * storm * (0.6 + 0.4*sin(uTime*0.4));
+      // darker base under cloud
+      float overhead = smoothstep(0.6, 1.0, h);
+      col = mix(col, vec3(0.06,0.05,0.04), overhead*0.5);
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+/* ---------- Procedural ground (fbm noise) ---------- */
+const GROUND_SIZE = 1800;
+const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, 220, 220);
+groundGeo.rotateX(-Math.PI/2);
+// Displace with fbm
+function hash2(x,y){ const s = Math.sin(x*127.1 + y*311.7)*43758.5453; return s - Math.floor(s); }
+function vnoise(x,y){
+  const xi=Math.floor(x), yi=Math.floor(y);
+  const xf=x-xi, yf=y-yi;
+  const a=hash2(xi,yi), b=hash2(xi+1,yi), c=hash2(xi,yi+1), d=hash2(xi+1,yi+1);
+  const ux=xf*xf*(3-2*xf), uy=yf*yf*(3-2*yf);
+  return a*(1-ux)*(1-uy) + b*ux*(1-uy) + c*(1-ux)*uy + d*ux*uy;
+}
+function fbm(x,y){
+  let s=0, a=1, f=1;
+  for (let i=0;i<4;i++){ s += a*vnoise(x*f,y*f); f*=2; a*=0.5; }
+  return s/1.875;
+}
+const gPos = groundGeo.attributes.position;
+const gColors = new Float32Array(gPos.count*3);
+for (let i=0;i<gPos.count;i++){
+  const x = gPos.getX(i), z = gPos.getZ(i);
+  const h = (fbm(x*0.012, z*0.012)-0.5)*5.0 + (fbm(x*0.05,z*0.05)-0.5)*0.6;
+  gPos.setY(i, h);
+  // mix grass / dirt
+  const g = fbm(x*0.04, z*0.04);
+  const grass = new THREE.Color(0x6e7028);
+  const dirt  = new THREE.Color(0x5a3e1e);
+  const c = grass.clone().lerp(dirt, Math.pow(g, 1.8));
+  // darken near tornado path later — leave color base
+  gColors[i*3]=c.r; gColors[i*3+1]=c.g; gColors[i*3+2]=c.b;
+}
+groundGeo.setAttribute('color', new THREE.BufferAttribute(gColors, 3));
+groundGeo.computeVertexNormals();
+const groundMat = new THREE.MeshStandardMaterial({vertexColors:true, roughness:0.96, metalness:0.0, flatShading:false});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.position.y = -1.0;
+scene.add(ground);
+
+/* ---------- Distant horizon ring (very flat, far) ---------- */
+const horizonGeo = new THREE.RingGeometry(800, 1500, 64, 1);
+horizonGeo.rotateX(-Math.PI/2);
+const horizonMat = new THREE.MeshBasicMaterial({color:0x4a3818, side:THREE.DoubleSide, fog:true});
+const horizon = new THREE.Mesh(horizonGeo, horizonMat);
+horizon.position.y = -1.2;
+scene.add(horizon);
+
+/* ---------- Grass blades (instanced) ---------- */
+const grassCount = 4500;
+const bladeGeo = new THREE.PlaneGeometry(0.06, 0.55, 1, 2);
+bladeGeo.translate(0, 0.275, 0);
+const grassMat = new THREE.MeshStandardMaterial({color:0x6c7530, roughness:1, side:THREE.DoubleSide});
+const grass = new THREE.InstancedMesh(bladeGeo, grassMat, grassCount);
+const dummy = new THREE.Object3D();
+for (let i=0;i<grassCount;i++){
+  const a = Math.random()*Math.PI*2;
+  const r = 8 + Math.random()*180;
+  const x = Math.cos(a)*r, z = Math.sin(a)*r;
+  dummy.position.set(x, -1.0 + (fbm(x*0.012,z*0.012)-0.5)*5.0, z);
+  dummy.rotation.y = Math.random()*Math.PI*2;
+  const s = 0.6+Math.random()*1.5;
+  dummy.scale.set(s,s,s);
+  dummy.updateMatrix();
+  grass.setMatrixAt(i, dummy.matrix);
+}
+grass.instanceMatrix.needsUpdate = true;
+scene.add(grass);
+
+/* ---------- Tumbleweeds (billboards) ---------- */
+const tumbleweeds = [];
+const tweedTex = (() => {
+  const c = document.createElement('canvas'); c.width=c.height=64;
+  const ctx = c.getContext('2d');
+  ctx.strokeStyle = '#7a5a28'; ctx.lineWidth=1.5;
+  for (let i=0;i<28;i++){
+    ctx.beginPath();
+    const a = Math.random()*Math.PI*2;
+    const r1 = 6+Math.random()*20, r2 = 6+Math.random()*22;
+    const a2 = a + (Math.random()-0.5)*1.4;
+    ctx.moveTo(32+Math.cos(a)*r1, 32+Math.sin(a)*r1);
+    ctx.bezierCurveTo(32+(Math.random()-.5)*40, 32+(Math.random()-.5)*40, 32, 32, 32+Math.cos(a2)*r2, 32+Math.sin(a2)*r2);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const tweedMat = new THREE.SpriteMaterial({map:tweedTex, color:0xa07c40, transparent:true, opacity:0.9, depthWrite:false});
+for (let i=0;i<35;i++){
+  const s = new THREE.Sprite(tweedMat);
+  const a = Math.random()*Math.PI*2;
+  const r = 30 + Math.random()*340;
+  s.position.set(Math.cos(a)*r, -0.5, Math.sin(a)*r);
+  const sz = 0.8 + Math.random()*1.4;
+  s.scale.set(sz,sz,sz);
+  s.userData.vel = new THREE.Vector3((Math.random()-0.5)*0.5, 0, (Math.random()-0.5)*0.5);
+  s.userData.spin = (Math.random()-0.5)*4;
+  s.userData.rot = 0;
+  scene.add(s);
+  tumbleweeds.push(s);
+}
+
+/* ---------- Farmhouses (procedural boxes far on the plains) ---------- */
+const farmGroup = new THREE.Group();
+const houseMat = new THREE.MeshStandardMaterial({color:0x3c2418, roughness:0.95});
+const roofMat = new THREE.MeshStandardMaterial({color:0x1a0e08, roughness:1.0});
+for (let i=0;i<14;i++){
+  const a = Math.random()*Math.PI*2;
+  const r = 200 + Math.random()*500;
+  const px = Math.cos(a)*r, pz = Math.sin(a)*r;
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(8,5,8), houseMat);
+  body.position.y = 1.5;
+  g.add(body);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(6.5, 4, 4), roofMat);
+  roof.rotation.y = Math.PI/4;
+  roof.position.y = 6;
+  g.add(roof);
+  // silo sometimes
+  if (Math.random()<0.4){
+    const silo = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,7,12), new THREE.MeshStandardMaterial({color:0x6a5028,roughness:0.8}));
+    silo.position.set(7, 2.5, 0);
+    g.add(silo);
+  }
+  g.position.set(px, -1.0 + (fbm(px*0.012,pz*0.012)-0.5)*5.0, pz);
+  g.rotation.y = Math.random()*Math.PI*2;
+  farmGroup.add(g);
+}
+scene.add(farmGroup);
+
+/* ---------- Power lines (rows of poles + strung lines) ---------- */
+function makePowerLine(x0, z0, dir, count){
+  const g = new THREE.Group();
+  const poleGeo = new THREE.CylinderGeometry(0.18, 0.22, 7, 6);
+  const poleMat = new THREE.MeshStandardMaterial({color:0x2a1810, roughness:1.0});
+  const armGeo = new THREE.BoxGeometry(2.4, 0.15, 0.15);
+  const lineMat = new THREE.LineBasicMaterial({color:0x000000, transparent:true, opacity:0.7});
+  const dx = Math.cos(dir), dz = Math.sin(dir);
+  const pts = [[],[],[]];
+  for (let i=0;i<count;i++){
+    const x = x0 + dx*i*30, z = z0 + dz*i*30;
+    const y = -1.0 + (fbm(x*0.012,z*0.012)-0.5)*5.0;
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.set(x, y+3.5, z);
+    g.add(pole);
+    const arm = new THREE.Mesh(armGeo, poleMat);
+    arm.position.set(x, y+6.6, z);
+    arm.rotation.y = dir + Math.PI/2;
+    g.add(arm);
+    pts[0].push(new THREE.Vector3(x + Math.cos(dir+Math.PI/2)*1.1, y+6.55, z + Math.sin(dir+Math.PI/2)*1.1));
+    pts[1].push(new THREE.Vector3(x, y+6.7, z));
+    pts[2].push(new THREE.Vector3(x - Math.cos(dir+Math.PI/2)*1.1, y+6.55, z - Math.sin(dir+Math.PI/2)*1.1));
+  }
+  for (const p of pts){
+    const lg = new THREE.BufferGeometry().setFromPoints(p);
+    g.add(new THREE.Line(lg, lineMat));
+  }
+  scene.add(g);
+}
+makePowerLine(-220, -300, 0.2, 18);
+makePowerLine(120, 200, 1.4, 14);
+makePowerLine(-80, 80, -0.8, 16);
+
+/* ---------- Supercell cloud (stacked billboard quads w/ noise shader) ---------- */
+const cloudGroup = new THREE.Group();
+const cloudShader = {
+  uniforms: {
+    uTime:{value:0}, uFlash:{value:0}, uTint:{value:new THREE.Color(0x807040)},
+    uOpacityScale:{value:1.0}
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    varying vec3 vWorld;
+    void main(){
+      vUv = uv;
+      vWorld = (modelMatrix * vec4(position,1.0)).xyz;
+      gl_Position = projectionMatrix * viewMatrix * vec4(vWorld,1.0);
+    }`,
+  fragmentShader: `
+    precision highp float;
+    varying vec2 vUv;
+    varying vec3 vWorld;
+    uniform float uTime, uFlash, uOpacityScale;
+    uniform vec3 uTint;
+    float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+    float vn(vec2 p){
+      vec2 i=floor(p), f=fract(p);
+      float a=h21(i), b=h21(i+vec2(1,0)), c=h21(i+vec2(0,1)), d=h21(i+vec2(1,1));
+      vec2 u=f*f*(3.0-2.0*f);
+      return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;
+    }
+    float fbm(vec2 p){
+      float s=0.0, a=0.5;
+      for(int i=0;i<6;i++){ s += a*vn(p); p = p*2.03 + 7.7; a *= 0.5; }
+      return s;
+    }
+    void main(){
+      vec2 uv = vUv;
+      vec2 p = uv*4.0 + vec2(uTime*0.04, -uTime*0.02);
+      float n = fbm(p);
+      n = smoothstep(0.35, 0.95, n);
+      // fade edges (soft billboard)
+      float edge = smoothstep(0.0, 0.18, uv.x) * smoothstep(0.0, 0.18, 1.0-uv.x) *
+                   smoothstep(0.0, 0.18, uv.y) * smoothstep(0.0, 0.18, 1.0-uv.y);
+      float a = n * edge * uOpacityScale;
+      // base tint: dark olive/grey w/ flash
+      vec3 col = mix(uTint*0.4, uTint*1.4, n);
+      col += vec3(0.7, 0.85, 1.0) * uFlash * (0.6+0.4*n);
+      // darken bottom (mesocyclone underside)
+      col *= mix(0.35, 1.0, uv.y);
+      gl_FragColor = vec4(col, a);
+    }`
+};
+const cloudMats = [];
+function makeCloudLayer(w, h, y, opacity, tint){
+  const m = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.clone(cloudShader.uniforms),
+    vertexShader: cloudShader.vertexShader,
+    fragmentShader: cloudShader.fragmentShader,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide
+  });
+  m.uniforms.uOpacityScale.value = opacity;
+  m.uniforms.uTint.value = tint;
+  cloudMats.push(m);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
+  mesh.position.y = y;
+  cloudGroup.add(mesh);
+  return mesh;
+}
+// Stack from low (mesocyclone base) up to anvil
+const cloudLayers = [];
+cloudLayers.push(makeCloudLayer(420, 130, 80,  1.0, new THREE.Color(0x1a1a16))); // dark base wall cloud
+cloudLayers.push(makeCloudLayer(440, 160, 130, 0.95, new THREE.Color(0x2a261c)));
+cloudLayers.push(makeCloudLayer(460, 180, 180, 0.9, new THREE.Color(0x3a3424)));
+cloudLayers.push(makeCloudLayer(490, 210, 240, 0.85, new THREE.Color(0x4a4028)));
+cloudLayers.push(makeCloudLayer(540, 240, 310, 0.8, new THREE.Color(0x5a5030)));
+cloudLayers.push(makeCloudLayer(620, 280, 390, 0.75, new THREE.Color(0x6a6038)));
+cloudLayers.push(makeCloudLayer(720, 320, 470, 0.7, new THREE.Color(0x807040))); // anvil
+cloudLayers.push(makeCloudLayer(820, 280, 540, 0.6, new THREE.Color(0x8a7a44))); // anvil spread
+cloudGroup.position.set(0, 0, -700);
+scene.add(cloudGroup);
+
+/* ---------- Tornado (vortex particles) ---------- */
+const TORNADO_PARTICLES = 2000;
+const tornadoGeo = new THREE.BufferGeometry();
+const tPos = new Float32Array(TORNADO_PARTICLES*3);
+const tCol = new Float32Array(TORNADO_PARTICLES*3);
+const tParticles = []; // logical
+for (let i=0;i<TORNADO_PARTICLES;i++){
+  const u = Math.random();
+  const v = Math.random();
+  const y = Math.pow(v, 0.55) * 110; // most particles low/middle
+  const radius = 1.2 + y*0.18 + Math.random()*1.8; // taper - wider at top, narrow at base
+  const baseRadius = 4 + Math.pow(1-v, 2)*3;
+  const r = Math.max(2, radius * (0.5 + Math.random()*0.7) + baseRadius*0.3);
+  const angle = Math.random()*Math.PI*2;
+  tParticles.push({r, angle, y, speed: 1.8 + Math.random()*1.6, lift: 0.08+Math.random()*0.15, life: Math.random()});
+  tPos[i*3]=0; tPos[i*3+1]=0; tPos[i*3+2]=0;
+  // dust color
+  const c = new THREE.Color().setHSL(0.07 + Math.random()*0.06, 0.45, 0.32 + Math.random()*0.18);
+  tCol[i*3]=c.r; tCol[i*3+1]=c.g; tCol[i*3+2]=c.b;
+}
+tornadoGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
+tornadoGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
+const tornadoMat = new THREE.PointsMaterial({size:1.6, vertexColors:true, transparent:true, opacity:0.92, depthWrite:false, sizeAttenuation:true});
+const tornadoPoints = new THREE.Points(tornadoGeo, tornadoMat);
+scene.add(tornadoPoints);
+
+// Funnel cone mesh (semi-transparent core, gives the wedge body)
+const funnelGeo = new THREE.CylinderGeometry(8, 4.5, 110, 24, 8, true);
+funnelGeo.translate(0, 55, 0);
+// Distort for organic look
+const fp = funnelGeo.attributes.position;
+for (let i=0;i<fp.count;i++){
+  const x = fp.getX(i), y = fp.getY(i), z = fp.getZ(i);
+  const wob = (vnoise(y*0.04, Math.atan2(z,x)*1.5))*1.2;
+  fp.setX(i, x + wob*0.6);
+  fp.setZ(i, z + wob*0.6);
+}
+funnelGeo.computeVertexNormals();
+const funnelMat = new THREE.MeshBasicMaterial({color:0x18130c, transparent:true, opacity:0.78, depthWrite:false, side:THREE.DoubleSide, fog:true});
+const funnel = new THREE.Mesh(funnelGeo, funnelMat);
+scene.add(funnel);
+
+// Debris cloud at base
+const baseDebrisGeo = new THREE.BufferGeometry();
+const BASE_PARTS = 350;
+const bPos = new Float32Array(BASE_PARTS*3);
+const bCol = new Float32Array(BASE_PARTS*3);
+const baseParts = [];
+for (let i=0;i<BASE_PARTS;i++){
+  const r = 6 + Math.random()*16;
+  const a = Math.random()*Math.PI*2;
+  baseParts.push({r, a, y:Math.random()*4, speed: 2.2+Math.random()*1.6, life:Math.random()});
+  bPos[i*3]=0; bPos[i*3+1]=0; bPos[i*3+2]=0;
+  const c = new THREE.Color().setHSL(0.08, 0.4, 0.18 + Math.random()*0.16);
+  bCol[i*3]=c.r; bCol[i*3+1]=c.g; bCol[i*3+2]=c.b;
+}
+baseDebrisGeo.setAttribute('position', new THREE.BufferAttribute(bPos, 3));
+baseDebrisGeo.setAttribute('color', new THREE.BufferAttribute(bCol, 3));
+const baseDebrisMat = new THREE.PointsMaterial({size:2.4, vertexColors:true, transparent:true, opacity:0.85, depthWrite:false});
+const baseDebris = new THREE.Points(baseDebrisGeo, baseDebrisMat);
+scene.add(baseDebris);
+
+/* ---------- Tornado state & path ---------- */
+const tornado = {
+  pos: new THREE.Vector3(0, -1, -700),
+  vel: new THREE.Vector3(0.6, 0, 1.8), // drifting NE relative to start; truck starts looking -Z, so this is "across"
+  intensity: 1.0
+};
+
+/* ---------- Truck cab interior (camera child) ---------- */
+const cab = new THREE.Group();
+camera.add(cab);
+scene.add(camera);
+
+// Dashboard
+const dashGeo = new THREE.BoxGeometry(2.6, 0.5, 0.4);
+const dashMat = new THREE.MeshStandardMaterial({color:0x10110d, roughness:0.7, metalness:0.1});
+const dash = new THREE.Mesh(dashGeo, dashMat);
+dash.position.set(0, -0.55, -0.85);
+cab.add(dash);
+// Windshield frame top
+const frameTopGeo = new THREE.BoxGeometry(2.6, 0.18, 0.1);
+const frameMat = new THREE.MeshStandardMaterial({color:0x18170f, roughness:0.6});
+const frameTop = new THREE.Mesh(frameTopGeo, frameMat);
+frameTop.position.set(0, 0.45, -0.92);
+cab.add(frameTop);
+// A-pillars
+const pillarGeo = new THREE.BoxGeometry(0.18, 1.1, 0.1);
+const pL = new THREE.Mesh(pillarGeo, frameMat); pL.position.set(-1.3, -0.05, -0.9);
+const pR = new THREE.Mesh(pillarGeo, frameMat); pR.position.set( 1.3, -0.05, -0.9);
+cab.add(pL); cab.add(pR);
+// Steering wheel (partial)
+const wheelGroup = new THREE.Group();
+const wheelTorus = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.035, 12, 32), new THREE.MeshStandardMaterial({color:0x202020, roughness:0.8}));
+wheelGroup.add(wheelTorus);
+const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, 0.04), new THREE.MeshStandardMaterial({color:0x202020}));
+wheelGroup.add(spoke);
+const spoke2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.32, 0.04), new THREE.MeshStandardMaterial({color:0x202020}));
+spoke2.position.y = -0.16;
+wheelGroup.add(spoke2);
+const center = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.06,16), new THREE.MeshStandardMaterial({color:0x303030}));
+center.rotation.x = Math.PI/2;
+wheelGroup.add(center);
+wheelGroup.position.set(-0.55, -0.45, -0.7);
+wheelGroup.rotation.x = -0.8;
+cab.add(wheelGroup);
+// Hood (looks out at front)
+const hood = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.06, 1.3), new THREE.MeshStandardMaterial({color:0x4a2a18, roughness:0.7, metalness:0.2}));
+hood.position.set(0, -0.85, -1.7);
+cab.add(hood);
+// Mirror
+const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.18, 0.05), new THREE.MeshStandardMaterial({color:0x4a2a18, roughness:0.4, metalness:0.5}));
+mirror.position.set(-1.35, 0.18, -0.95);
+cab.add(mirror);
+
+/* ---------- Truck physics ---------- */
+const truck = {
+  pos: new THREE.Vector3(0, 0, 100),
+  heading: Math.PI, // facing -Z (toward storm)
+  speed: 0,
+  steer: 0,
+  alive: true,
+  dragX: 0,
+  shake: 0,
+  pulled: 0
+};
+
+/* ---------- Input ---------- */
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key.toLowerCase()==='r') restart(); });
+window.addEventListener('keyup',   e => { keys[e.key.toLowerCase()] = false; });
+
+/* ---------- Audio ---------- */
+let audio = {ctx:null, windGain:null, windFilter:null, windSrc:null, engineOsc:null, engineGain:null, started:false, masterGain:null};
+function initAudio(){
+  if (audio.started) return;
+  const ctx = new (window.AudioContext||window.webkitAudioContext)();
+  audio.ctx = ctx;
+  // Master
+  const master = ctx.createGain(); master.gain.value = 0.7; master.connect(ctx.destination);
+  audio.masterGain = master;
+  // Wind: looped white noise -> low pass
+  const buf = ctx.createBuffer(1, ctx.sampleRate*2, ctx.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i=0;i<ch.length;i++) ch[i] = (Math.random()*2-1) * 0.6;
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const filter = ctx.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=400; filter.Q.value=0.7;
+  const gain = ctx.createGain(); gain.gain.value = 0.05;
+  src.connect(filter); filter.connect(gain); gain.connect(master);
+  src.start();
+  audio.windSrc = src; audio.windFilter = filter; audio.windGain = gain;
+  // Engine: sawtooth + low filter
+  const eOsc = ctx.createOscillator(); eOsc.type='sawtooth'; eOsc.frequency.value=60;
+  const eGain = ctx.createGain(); eGain.gain.value=0.0;
+  const eFilt = ctx.createBiquadFilter(); eFilt.type='lowpass'; eFilt.frequency.value=350;
+  eOsc.connect(eFilt); eFilt.connect(eGain); eGain.connect(master);
+  eOsc.start();
+  audio.engineOsc = eOsc; audio.engineGain = eGain;
+  audio.started = true;
+}
+function playThunder(loud){
+  if (!audio.started) return;
+  const ctx = audio.ctx;
+  const buf = ctx.createBuffer(1, ctx.sampleRate*2.2, ctx.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i=0;i<ch.length;i++){
+    const t = i/ctx.sampleRate;
+    const env = Math.exp(-t*0.9) * (1 - Math.exp(-t*8));
+    ch[i] = (Math.random()*2-1) * env;
+  }
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=120 + Math.random()*60;
+  const g = ctx.createGain(); g.gain.value = loud * 0.5;
+  src.connect(f); f.connect(g); g.connect(audio.masterGain);
+  src.start();
+  src.stop(ctx.currentTime + 2.2);
+}
+function playRumble(intensity){
+  if (!audio.started) return;
+  const ctx = audio.ctx;
+  const buf = ctx.createBuffer(1, ctx.sampleRate*1.2, ctx.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i=0;i<ch.length;i++){
+    const t = i/ctx.sampleRate;
+    const env = Math.exp(-t*1.4);
+    ch[i] = (Math.random()*2-1) * env * 0.7;
+  }
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=80;
+  const g = ctx.createGain(); g.gain.value = intensity*0.3;
+  src.connect(f); f.connect(g); g.connect(audio.masterGain);
+  src.start();
+}
+
+/* ---------- Lightning system ---------- */
+let lightningTimer = 1.5;
+const flashEl = document.getElementById('flash');
+const pendingThunder = []; // {atTime, loudness}
+function triggerLightning(){
+  const intensity = 0.6 + Math.random()*0.4;
+  // illuminate cloud
+  flashLight.intensity = 8 * intensity;
+  cloudMats.forEach(m => m.uniforms.uFlash.value = 1.0 * intensity);
+  // screen flicker
+  flashEl.style.opacity = 0.18 * intensity;
+  setTimeout(()=>{ flashEl.style.opacity = 0; }, 80 + Math.random()*80);
+  // schedule thunder based on distance (speed of sound ~ 340 m/s, scene units roughly meters)
+  const dist = camera.position.distanceTo(new THREE.Vector3(tornado.pos.x, 200, tornado.pos.z));
+  const delay = dist / 340;
+  pendingThunder.push({at: performance.now()/1000 + delay, loud: intensity});
+  // sometimes play a soft rumble immediately for closer flashes
+  if (dist < 400) playRumble(intensity * 0.6);
+}
+
+/* ---------- HUD elements ---------- */
+const distEl = document.getElementById('dist');
+const windEl = document.getElementById('wind');
+const headEl = document.getElementById('head');
+const scoreEl = document.getElementById('score');
+const multEl = document.getElementById('mult');
+const bestEl = document.getElementById('best');
+const spdEl = document.getElementById('spd');
+const efEl = document.getElementById('ef');
+const alertEl = document.getElementById('alert');
+const overEl = document.getElementById('over');
+const finalScoreEl = document.getElementById('finalscore');
+
+let score = 0;
+let bestScore = parseInt(localStorage.getItem('tornado-best')||'0');
+bestEl.textContent = bestScore;
+
+/* ---------- Restart ---------- */
+function restart(){
+  truck.pos.set(0, 0, 100);
+  truck.heading = Math.PI;
+  truck.speed = 0;
+  truck.dragX = 0;
+  truck.alive = true;
+  truck.shake = 0;
+  truck.pulled = 0;
+  tornado.pos.set(0, -1, -700);
+  tornado.vel.set(0.6, 0, 1.8);
+  score = 0;
+  overEl.classList.remove('on');
+}
+
+document.getElementById('restart').addEventListener('click', restart);
+document.getElementById('go').addEventListener('click', () => {
+  document.getElementById('start').style.display = 'none';
+  initAudio();
+});
+
+/* ---------- Main loop ---------- */
+let lastT = performance.now();
+const stageEl = document.getElementById('stage');
+function loop(){
+  const now = performance.now();
+  let dt = (now - lastT)/1000;
+  if (dt > 0.05) dt = 0.05;
+  lastT = now;
+  const t = now * 0.001;
+
+  /* --- Truck physics --- */
+  if (truck.alive){
+    const throttle = keys['w'] ? 1 : 0;
+    const brake    = keys['s'] ? 1 : 0;
+    const steerL   = keys['a'] ? 1 : 0;
+    const steerR   = keys['d'] ? 1 : 0;
+
+    const targetSteer = (steerR - steerL) * 0.7;
+    truck.steer += (targetSteer - truck.steer) * 6 * dt;
+
+    const accel = throttle*16 - brake*22 - 1.2; // light drag
+    truck.speed += accel * dt;
+    truck.speed = Math.max(0, Math.min(truck.speed, 38)); // ~85 mph cap
+
+    // steering effective only at speed
+    truck.heading += truck.steer * (truck.speed*0.06) * dt * 1.6;
+
+    // Forward motion
+    const fwd = new THREE.Vector3(Math.sin(truck.heading), 0, Math.cos(truck.heading));
+    truck.pos.addScaledVector(fwd, truck.speed * dt);
+
+    // Wind drag from tornado
+    const dx = truck.pos.x - tornado.pos.x;
+    const dz = truck.pos.z - tornado.pos.z;
+    const distToTorn = Math.hypot(dx, dz);
+    const tornStrength = 1.0 / Math.max(distToTorn, 1);
+    // Wind pushes perpendicular (counter-clockwise vortex)
+    const windDirX = -dz / Math.max(distToTorn,0.001);
+    const windDirZ =  dx / Math.max(distToTorn,0.001);
+    const windMag = Math.max(0, 1500 / (distToTorn*distToTorn) ); // inverse-square swirl
+    truck.pos.x += windDirX * windMag * dt;
+    truck.pos.z += windDirZ * windMag * dt;
+    // Pull-in (radial)
+    const pullStrength = Math.max(0, (200 - distToTorn)) / 200;
+    if (distToTorn < 200){
+      const pullX = -dx / distToTorn;
+      const pullZ = -dz / distToTorn;
+      const pullForce = Math.pow(pullStrength, 2) * 35;
+      truck.pos.x += pullX * pullForce * dt;
+      truck.pos.z += pullZ * pullForce * dt;
+      truck.pulled = pullForce;
+    } else {
+      truck.pulled = 0;
+    }
+
+    // Camera shake near tornado
+    truck.shake = Math.min(1, Math.max(0, (180 - distToTorn) / 120) + truck.pulled*0.04);
+
+    // Death check
+    if (distToTorn < 28){
+      truck.alive = false;
+      truck.shake = 1;
+      finalScoreEl.textContent = Math.floor(score);
+      if (score > bestScore){ bestScore = Math.floor(score); localStorage.setItem('tornado-best', String(bestScore)); bestEl.textContent = bestScore; }
+      setTimeout(() => overEl.classList.add('on'), 800);
+    }
+
+    // Score: rises with proximity, multiplier for staying close
+    const proxMult = Math.max(1, (300 - Math.min(distToTorn, 300)) / 60);
+    score += dt * 8 * proxMult;
+  }
+
+  /* --- Camera placement (cab POV) --- */
+  camera.position.x = truck.pos.x;
+  camera.position.z = truck.pos.z;
+  camera.position.y = 1.7 + Math.sin(t*38)*0.025*Math.min(truck.speed/20,1) + (Math.random()-0.5)*0.04*truck.shake;
+  // Camera shake offset
+  if (truck.shake > 0){
+    camera.position.x += (Math.random()-0.5)*0.12*truck.shake;
+    camera.position.z += (Math.random()-0.5)*0.12*truck.shake;
+  }
+  camera.rotation.set(0, truck.heading + Math.PI, 0);
+  // Roll camera slightly with steering
+  camera.rotation.z = -truck.steer * 0.04;
+
+  // Steering wheel rotation
+  wheelGroup.rotation.z = -truck.steer * 1.2;
+
+  /* --- Tornado update --- */
+  // Path drift with subtle wobble
+  const wob = Math.sin(t*0.4)*0.6;
+  const tornFwd = new THREE.Vector3(tornado.vel.x + wob*0.2, 0, tornado.vel.z);
+  tornado.pos.addScaledVector(tornFwd, dt);
+  // Snap to terrain
+  tornado.pos.y = -1.0 + (fbm(tornado.pos.x*0.012, tornado.pos.z*0.012)-0.5)*5.0;
+
+  // Reposition cloud over tornado (with offset)
+  cloudGroup.position.x = tornado.pos.x;
+  cloudGroup.position.z = tornado.pos.z + 30; // anvil leans slightly downstream
+  // Update sky shader storm vector
+  skyMat.uniforms.uTorn.value.set(tornado.pos.x - camera.position.x, 0, tornado.pos.z - camera.position.z);
+  skyMat.uniforms.uTime.value = t;
+
+  // Funnel mesh follows
+  funnel.position.set(tornado.pos.x, tornado.pos.y, tornado.pos.z);
+  funnel.rotation.y = t*0.6;
+  // Wobble funnel
+  funnel.scale.set(1 + Math.sin(t*1.7)*0.06, 1, 1 + Math.cos(t*1.3)*0.06);
+
+  /* --- Tornado particles update --- */
+  const tArr = tornadoGeo.attributes.position.array;
+  for (let i=0;i<TORNADO_PARTICLES;i++){
+    const p = tParticles[i];
+    p.angle += p.speed * dt * (1.6 + 1.0/(1+p.y*0.04));
+    p.y += p.lift * dt * 60 * 0.4;
+    p.life += dt * 0.18;
+    if (p.y > 110 || p.life > 1.2){
+      // recycle at base
+      p.y = Math.random()*4;
+      p.angle = Math.random()*Math.PI*2;
+      p.r = 1.2 + Math.random()*4;
+      p.life = 0;
+    }
+    // radius: narrower at base, wider at top, pinch around middle
+    const taper = 1.0 + p.y*0.025 + Math.sin(p.y*0.12 + t*1.5)*0.6;
+    const r = p.r * taper;
+    const x = tornado.pos.x + Math.cos(p.angle) * r;
+    const z = tornado.pos.z + Math.sin(p.angle) * r;
+    const y = tornado.pos.y + p.y;
+    tArr[i*3]   = x;
+    tArr[i*3+1] = y;
+    tArr[i*3+2] = z;
+  }
+  tornadoGeo.attributes.position.needsUpdate = true;
+
+  // Base debris
+  const bArr = baseDebrisGeo.attributes.position.array;
+  for (let i=0;i<BASE_PARTS;i++){
+    const p = baseParts[i];
+    p.a += p.speed * dt * 1.4;
+    p.life += dt * 0.4;
+    if (p.life > 1){
+      p.life = 0;
+      p.r = 6 + Math.random()*16;
+      p.y = Math.random()*4;
+    }
+    const x = tornado.pos.x + Math.cos(p.a) * p.r * (1 - p.life*0.4);
+    const z = tornado.pos.z + Math.sin(p.a) * p.r * (1 - p.life*0.4);
+    const y = tornado.pos.y + p.y;
+    bArr[i*3]=x; bArr[i*3+1]=y; bArr[i*3+2]=z;
+  }
+  baseDebrisGeo.attributes.position.needsUpdate = true;
+
+  /* --- Cloud animation --- */
+  for (const m of cloudMats){
+    m.uniforms.uTime.value = t;
+    // decay flash
+    m.uniforms.uFlash.value *= 0.92;
+  }
+  flashLight.intensity *= 0.93;
+
+  // Slowly rotate cloud layers for slow churning
+  cloudGroup.children.forEach((c, i) => {
+    c.rotation.z = Math.sin(t*0.05 + i)*0.05;
+    // Billboard toward camera
+    c.lookAt(camera.position.x, c.position.y, camera.position.z);
+  });
+
+  /* --- Lightning --- */
+  lightningTimer -= dt;
+  if (lightningTimer <= 0){
+    triggerLightning();
+    lightningTimer = 2.5 + Math.random()*5;
+  }
+  // process pending thunder
+  const nowSec = performance.now()/1000;
+  for (let i = pendingThunder.length-1; i>=0; i--){
+    if (pendingThunder[i].at <= nowSec){
+      playThunder(pendingThunder[i].loud);
+      pendingThunder.splice(i,1);
+    }
+  }
+
+  /* --- Tumbleweeds drift toward tornado --- */
+  for (const tw of tumbleweeds){
+    const dxw = tw.position.x - tornado.pos.x;
+    const dzw = tw.position.z - tornado.pos.z;
+    const dd = Math.hypot(dxw, dzw);
+    const m = Math.max(0, 1 - dd/350) * 4;
+    tw.position.x += -dxw/Math.max(dd,1) * m * dt + tw.userData.vel.x * dt;
+    tw.position.z += -dzw/Math.max(dd,1) * m * dt + tw.userData.vel.z * dt;
+    tw.userData.rot += tw.userData.spin * dt * (1+m);
+    tw.material.rotation = tw.userData.rot;
+    if (dd < 30){
+      // sucked away — respawn far
+      const a = Math.random()*Math.PI*2;
+      const r = 200 + Math.random()*200;
+      tw.position.x = tornado.pos.x + Math.cos(a)*r;
+      tw.position.z = tornado.pos.z + Math.sin(a)*r;
+    }
+  }
+
+  /* --- Audio --- */
+  if (audio.started){
+    const distToTornAudio = Math.hypot(truck.pos.x - tornado.pos.x, truck.pos.z - tornado.pos.z);
+    const proxN = Math.max(0, Math.min(1, (600 - distToTornAudio)/600));
+    audio.windGain.gain.value = 0.04 + proxN * 0.55;
+    audio.windFilter.frequency.value = 200 + proxN * 1800;
+    // engine
+    const norm = truck.speed/38;
+    audio.engineOsc.frequency.value = 50 + norm * 110 + Math.sin(t*8)*2;
+    audio.engineGain.gain.value = 0.05 + norm * 0.10;
+  }
+
+  /* --- HUD --- */
+  const distToTornHud = Math.hypot(truck.pos.x - tornado.pos.x, truck.pos.z - tornado.pos.z);
+  distEl.textContent = Math.floor(distToTornHud) + ' m';
+  // Wind speed proxy
+  const windMph = Math.floor( Math.min(280, 18000 / Math.max(distToTornHud, 30)) );
+  windEl.textContent = windMph + ' mph';
+  if (windMph > 110) windEl.classList.add('danger'); else windEl.classList.remove('danger');
+  headEl.textContent = Math.floor((truck.heading * 180/Math.PI) % 360) + '°';
+  scoreEl.textContent = Math.floor(score);
+  const proxMult = Math.max(1, (300 - Math.min(distToTornHud, 300)) / 60);
+  multEl.textContent = '×' + proxMult.toFixed(1);
+  spdEl.textContent = Math.floor(truck.speed * 2.237) + ' mph';
+  // EF scale
+  const ef = windMph > 200 ? 5 : windMph > 165 ? 4 : windMph > 135 ? 3 : windMph > 110 ? 2 : windMph > 85 ? 1 : 0;
+  efEl.textContent = 'EF' + ef;
+
+  // Alert
+  if (distToTornHud < 90 && truck.alive){
+    alertEl.classList.add('on');
+    alertEl.textContent = distToTornHud < 50 ? 'TAKE COVER' : 'TOO CLOSE';
+  } else {
+    alertEl.classList.remove('on');
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

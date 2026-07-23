@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mandelbrot Infinity — Deep Zoom Explorer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #e8e8f0; font-family: 'SF Mono', Menlo, Consolas, monospace; }
+  #stage { position: fixed; inset: 0; cursor: crosshair; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: auto; }
+  #ui {
+    position: fixed; top: 12px; left: 12px; z-index: 10;
+    background: rgba(8, 10, 22, 0.78); backdrop-filter: blur(10px);
+    border: 1px solid rgba(120, 130, 200, 0.25);
+    border-radius: 10px; padding: 12px 14px; font-size: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    max-width: 360px;
+  }
+  #ui h1 {
+    font-size: 13px; font-weight: 600; margin-bottom: 8px;
+    background: linear-gradient(90deg, #ff8a3d, #ff3d8b, #8b3dff, #3dffea);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    letter-spacing: 0.5px;
+  }
+  .row { display: flex; gap: 6px; margin: 4px 0; align-items: center; flex-wrap: wrap; }
+  .lbl { color: #8a90b8; font-size: 11px; min-width: 52px; }
+  .val { color: #d8e0ff; font-size: 11px; word-break: break-all; }
+  button, input[type="text"] {
+    font-family: inherit; font-size: 11px;
+    background: rgba(40, 48, 80, 0.6); color: #e8e8f0;
+    border: 1px solid rgba(120, 130, 200, 0.35);
+    padding: 5px 9px; border-radius: 6px; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  button:hover { background: rgba(80, 90, 160, 0.7); border-color: rgba(180, 190, 240, 0.5); }
+  button:active { transform: scale(0.97); }
+  input[type="text"] { cursor: text; flex: 1; min-width: 200px; font-size: 10px; }
+  input[type="text"]:focus { outline: none; border-color: #ff8a3d; }
+  select {
+    font-family: inherit; font-size: 11px;
+    background: rgba(40, 48, 80, 0.6); color: #e8e8f0;
+    border: 1px solid rgba(120, 130, 200, 0.35);
+    padding: 4px 6px; border-radius: 6px;
+  }
+  #inset {
+    position: fixed; bottom: 12px; right: 12px; z-index: 10;
+    width: 160px; height: 120px;
+    background: rgba(8, 10, 22, 0.78); backdrop-filter: blur(10px);
+    border: 1px solid rgba(120, 130, 200, 0.25);
+    border-radius: 10px; overflow: hidden;
+  }
+  #inset canvas { display: block; width: 100%; height: 100%; }
+  #status {
+    position: fixed; bottom: 12px; left: 12px; z-index: 10;
+    background: rgba(8, 10, 22, 0.78); backdrop-filter: blur(10px);
+    border: 1px solid rgba(120, 130, 200, 0.25);
+    border-radius: 8px; padding: 6px 10px; font-size: 10px; color: #8a90b8;
+  }
+  #status .mode { color: #3dffea; font-weight: 600; }
+  #status .mode.bigint { color: #ff8a3d; }
+  #toast {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(8, 10, 22, 0.95); color: #3dffea;
+    border: 1px solid #3dffea; padding: 12px 20px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    z-index: 100;
+  }
+  #toast.show { opacity: 1; }
+  .help {
+    position: fixed; top: 12px; right: 12px; z-index: 10;
+    background: rgba(8, 10, 22, 0.78); backdrop-filter: blur(10px);
+    border: 1px solid rgba(120, 130, 200, 0.25);
+    border-radius: 8px; padding: 8px 12px; font-size: 10px; color: #8a90b8;
+    max-width: 220px; line-height: 1.6;
+  }
+  .help b { color: #d8e0ff; }
+  @media (max-width: 600px) {
+    #ui { max-width: calc(100vw - 24px); font-size: 11px; }
+    .help { display: none; }
+    #inset { width: 100px; height: 75px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+</div>
+
+<div id="ui">
+  <h1>MANDELBROT INFINITY</h1>
+  <div class="row"><span class="lbl">Zoom:</span><span class="val" id="zoomVal">10^0.0</span></div>
+  <div class="row"><span class="lbl">Re:</span><span class="val" id="reVal">-0.5</span></div>
+  <div class="row"><span class="lbl">Im:</span><span class="val" id="imVal">0.0</span></div>
+  <div class="row"><span class="lbl">Iter:</span><span class="val" id="iterVal">200</span></div>
+  <div class="row">
+    <button id="btnReset">Reset</button>
+    <button id="btnShare">Share View</button>
+    <button id="btnZoomIn">Zoom In</button>
+    <button id="btnZoomOut">Zoom Out</button>
+  </div>
+  <div class="row">
+    <span class="lbl">Palette:</span>
+    <select id="paletteSel">
+      <option value="fire">Fire</option>
+      <option value="twilight" selected>Twilight</option>
+      <option value="electric">Electric</option>
+      <option value="aurora">Aurora</option>
+      <option value="ember">Ember</option>
+    </select>
+  </div>
+  <div class="row">
+    <input type="text" id="coordInput" placeholder="Paste: re,im,zoomLog10 e.g. -0.745,0.113,15">
+    <button id="btnGoto">Go</button>
+  </div>
+</div>
+
+<div class="help">
+  <b>Click</b> to recenter and zoom in<br>
+  <b>Wheel</b> to zoom around cursor<br>
+  <b>Drag</b> to pan<br>
+  <b>Shift+Wheel</b> for fast zoom
+</div>
+
+<div id="status">
+  Mode: <span class="mode" id="modeVal">DOUBLE</span> · <span id="renderTime">0ms</span>
+</div>
+
+<div id="inset">
+  <canvas id="insetCv" width="160" height="120"></canvas>
+</div>
+
+<div id="toast">URL copied to clipboard!</div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   MANDELBROT INFINITY — Deep Zoom Explorer
+   - Double-precision path for shallow zoom (fast)
+   - BigInt fixed-point arithmetic for deep zoom (sharp beyond 10^14)
+   - Smooth continuous coloring
+   - Adaptive iteration count
+   - Progressive rendering at deep zoom
+   ========================================================================= */
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d', { alpha: false });
+const insetCv = document.getElementById('insetCv');
+const insetCtx = insetCv.getContext('2d');
+
+// -------------------- View State --------------------
+const DEFAULT_VIEW = {
+  re: -0.5,        // center real coordinate (string for precision)
+  im: 0.0,         // center imag coordinate
+  zoom: 1.0,       // half-width of viewport in complex plane
+  // zoom semantics: complex_x = re + (px/W - 0.5) * 2 * zoom
+};
+
+let view = {
+  reStr: '-0.5',
+  imStr: '0.0',
+  zoomLog10: 0.0,  // log10 of the inverse zoom (depth)
+};
+
+let W = 0, H = 0, DPR = 1;
+let renderToken = 0;
+let isRendering = false;
+let palette = 'twilight';
+let drag = null;
+
+// -------------------- Sizing --------------------
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = Math.floor(window.innerWidth * DPR);
+  H = Math.floor(window.innerHeight * DPR);
+  cv.width = W; cv.height = H;
+  cv.style.width = window.innerWidth + 'px';
+  cv.style.height = window.innerHeight + 'px';
+  scheduleRender();
+}
+
+window.addEventListener('resize', resize);
+
+// -------------------- Palette --------------------
+function buildPalette(name, size) {
+  const lut = new Uint8ClampedArray(size * 4);
+  for (let i = 0; i < size; i++) {
+    const t = i / size;
+    let r = 0, g = 0, b = 0;
+    switch (name) {
+      case 'fire': {
+        // black -> red -> orange -> yellow -> white
+        const x = t;
+        r = Math.min(255, Math.pow(x, 0.5) * 320);
+        g = Math.min(255, Math.pow(Math.max(0, x - 0.25), 0.7) * 360);
+        b = Math.min(255, Math.pow(Math.max(0, x - 0.7), 1.3) * 600);
+        break;
+      }
+      case 'twilight': {
+        // deep purple -> magenta -> teal -> cream
+        const a = t * Math.PI * 2;
+        r = 128 + 127 * Math.sin(a + 0);
+        g = 128 + 127 * Math.sin(a + Math.PI * 0.66);
+        b = 128 + 127 * Math.sin(a + Math.PI * 1.33);
+        // brighten
+        const lift = 0.85 + 0.15 * Math.sin(t * Math.PI);
+        r *= lift; g *= lift; b *= lift;
+        break;
+      }
+      case 'electric': {
+        // black -> blue -> cyan -> white -> magenta
+        r = Math.min(255, Math.pow(t, 1.5) * 320 + 80 * Math.sin(t * Math.PI * 4));
+        g = Math.min(255, Math.pow(t, 0.8) * 280);
+        b = Math.min(255, 200 + 80 * Math.sin(t * Math.PI * 3));
+        break;
+      }
+      case 'aurora': {
+        // green -> teal -> blue -> violet
+        r = 60 + 80 * Math.sin(t * Math.PI * 2.5);
+        g = 200 + 55 * Math.sin(t * Math.PI * 1.5);
+        b = 150 + 105 * Math.sin(t * Math.PI * 2 + 1.0);
+        break;
+      }
+      case 'ember': {
+        // dark crimson -> orange -> gold
+        r = Math.min(255, 30 + Math.pow(t, 0.6) * 300);
+        g = Math.min(255, Math.pow(t, 1.4) * 280);
+        b = Math.min(255, Math.pow(t, 3.5) * 200 + 20 * Math.sin(t * Math.PI * 6));
+        break;
+      }
+    }
+    lut[i*4]   = Math.max(0, Math.min(255, r));
+    lut[i*4+1] = Math.max(0, Math.min(255, g));
+    lut[i*4+2] = Math.max(0, Math.min(255, b));
+    lut[i*4+3] = 255;
+  }
+  return lut;
+}
+
+let paletteLUT = buildPalette('twilight', 2048);
+
+function colorize(out, ofs, smooth, maxIter) {
+  if (smooth >= maxIter) {
+    out[ofs] = 0; out[ofs+1] = 0; out[ofs+2] = 0; out[ofs+3] = 255;
+    return;
+  }
+  // log mapping for smoother gradient
+  const t = Math.log(smooth + 1) / Math.log(maxIter + 1);
+  const idx = Math.floor(t * (paletteLUT.length / 4 - 1)) * 4;
+  out[ofs]   = paletteLUT[idx];
+  out[ofs+1] = paletteLUT[idx+1];
+  out[ofs+2] = paletteLUT[idx+2];
+  out[ofs+3] = 255;
+}
+
+// -------------------- Iteration helpers --------------------
+function adaptiveIter() {
+  // 200 baseline, scaling with zoom depth, capped reasonably for performance
+  const z = view.zoomLog10;
+  if (z < 2) return 200;
+  if (z < 6) return Math.floor(200 + 80 * z);
+  if (z < 14) return Math.floor(400 + 200 * z);
+  return Math.floor(1500 + 250 * z); // deep zoom needs many iters
+}
+
+// -------------------- Double precision renderer --------------------
+function mandelDouble(cre, cim, maxIter) {
+  // Cardioid/period-2 bulb shortcut for shallow zoom
+  if (view.zoomLog10 < 4) {
+    const q = (cre - 0.25) * (cre - 0.25) + cim * cim;
+    if (q * (q + (cre - 0.25)) <= 0.25 * cim * cim) return maxIter;
+    if ((cre + 1) * (cre + 1) + cim * cim <= 0.0625) return maxIter;
+  }
+
+  let zr = 0, zi = 0;
+  let zr2 = 0, zi2 = 0;
+  const ER2 = 1 << 16; // big bailout for smoother coloring
+  let i = 0;
+  while (i < maxIter && zr2 + zi2 < ER2) {
+    zi = 2 * zr * zi + cim;
+    zr = zr2 - zi2 + cre;
+    zr2 = zr * zr;
+    zi2 = zi * zi;
+    i++;
+  }
+  if (i >= maxIter) return maxIter;
+  // continuous (smooth) escape time
+  const log_zn = Math.log(zr2 + zi2) / 2;
+  const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+  return i + 1 - nu;
+}
+
+// -------------------- BigInt fixed-point arithmetic --------------------
+// We use a Q.SCALE_BITS fixed point representation: real value = bigInt / 2^SCALE_BITS
+// 384 bits gives ~115 decimal digits of fractional precision — comfortably beyond 10^50 zoom.
+const SCALE_BITS = 384n;
+const ONE = 1n << SCALE_BITS;
+const HALF = ONE >> 1n;
+const ER2_FX = (1n << 16n) << SCALE_BITS; // escape radius squared = 2^16
+
+function fxFromNumber(x) {
+  // Convert a JS number (or string) to fixed-point BigInt.
+  if (typeof x === 'string') return fxFromString(x);
+  if (x === 0) return 0n;
+  const neg = x < 0;
+  if (neg) x = -x;
+  // split into integer and fractional
+  const intPart = Math.floor(x);
+  const fracPart = x - intPart;
+  let result = BigInt(intPart) << SCALE_BITS;
+  // accumulate fraction with limited precision (we'll compose remainder from string for full precision)
+  let frac = fracPart;
+  let frBI = 0n;
+  // 64 bits of fractional info from JS number
+  for (let i = 0; i < 64; i++) {
+    frac *= 2;
+    if (frac >= 1) { frBI = (frBI << 1n) | 1n; frac -= 1; }
+    else { frBI = frBI << 1n; }
+  }
+  result += frBI << (SCALE_BITS - 64n);
+  return neg ? -result : result;
+}
+
+function fxFromString(s) {
+  // Parse a decimal string into fixed-point BigInt with full precision.
+  s = String(s).trim();
+  let neg = false;
+  if (s[0] === '-') { neg = true; s = s.slice(1); }
+  else if (s[0] === '+') { s = s.slice(1); }
+  let dot = s.indexOf('.');
+  let intPart, fracStr;
+  if (dot < 0) { intPart = s; fracStr = ''; }
+  else { intPart = s.slice(0, dot); fracStr = s.slice(dot + 1); }
+  if (intPart === '') intPart = '0';
+  // Scale: result = (intPart * 10^len(frac) + frac) * 2^SCALE_BITS / 10^len(frac)
+  const fracLen = fracStr.length;
+  const numerator = BigInt(intPart + fracStr || '0');
+  const denominator = 10n ** BigInt(fracLen);
+  // result = numerator * 2^SCALE / denominator
+  const scaled = (numerator << SCALE_BITS) / denominator;
+  return neg ? -scaled : scaled;
+}
+
+function fxToString(x, digits = 60) {
+  // Convert fixed-point BigInt back to decimal string with `digits` decimal places.
+  let neg = false;
+  if (x < 0n) { neg = true; x = -x; }
+  const intPart = x >> SCALE_BITS;
+  let frac = x & (ONE - 1n);
+  // multiply frac by 10^digits and divide by 2^SCALE_BITS
+  const mult = 10n ** BigInt(digits);
+  const fracDec = (frac * mult) >> SCALE_BITS;
+  let fracStr = fracDec.toString().padStart(digits, '0');
+  // trim trailing zeros for display, but keep at least 1 digit
+  fracStr = fracStr.replace(/0+$/, '');
+  if (fracStr === '') fracStr = '0';
+  return (neg ? '-' : '') + intPart.toString() + '.' + fracStr;
+}
+
+function fxMul(a, b) { return (a * b) >> SCALE_BITS; }
+
+function mandelBigInt(cre_fx, cim_fx, maxIter) {
+  let zr = 0n, zi = 0n;
+  let zr2 = 0n, zi2 = 0n;
+  let i = 0;
+  while (i < maxIter) {
+    const sum = zr2 + zi2;
+    if (sum >= ER2_FX) break;
+    // zi = 2 * zr * zi + cim
+    const newZi = ((zr * zi) >> (SCALE_BITS - 1n)) + cim_fx;
+    // zr = zr2 - zi2 + cre
+    const newZr = zr2 - zi2 + cre_fx;
+    zr = newZr; zi = newZi;
+    zr2 = (zr * zr) >> SCALE_BITS;
+    zi2 = (zi * zi) >> SCALE_BITS;
+    i++;
+  }
+  if (i >= maxIter) return maxIter;
+  // smooth coloring: convert to doubles for log
+  const sumFx = zr2 + zi2;
+  // Convert to a manageable double - take top bits
+  const bitLen = sumFx === 0n ? 0 : sumFx.toString(2).length;
+  const shift = Math.max(0, bitLen - 53);
+  const mantissa = Number(sumFx >> BigInt(shift));
+  const sumDouble = mantissa * Math.pow(2, shift - Number(SCALE_BITS));
+  const log_zn = Math.log(sumDouble) / 2;
+  const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+  return i + 1 - nu;
+}
+
+// -------------------- Renderer --------------------
+function getPixelSizeDouble() {
+  // half-width in complex plane = 10^(-zoomLog10) * defaultHalf (default = 1.5 for re axis)
+  // We'll define: pixelSize = 2 * halfWidth / W, where halfWidth = 1.5 * 10^(-zoomLog10)
+  return (3.0 * Math.pow(10, -view.zoomLog10)) / W;
+}
+
+function getCenterDouble() {
+  return { re: parseFloat(view.reStr), im: parseFloat(view.imStr) };
+}
+
+function getCenterBigInt() {
+  return { re: fxFromString(view.reStr), im: fxFromString(view.imStr) };
+}
+
+function getPixelSizeBigInt() {
+  // pixelSize = 3 * 10^-zoom / W, in BigInt fixed point.
+  // Decompose zoom into integer and fractional parts:
+  //   10^-zoom = 10^-zoomInt * 10^-zoomFrac
+  // 10^-zoomFrac is in [0.1, 1.0], representable in a double.
+  // pixelSize_fx = (3 * 10^-zoomFrac / W) * 2^SCALE_BITS / 10^zoomInt
+  //
+  // We represent the multiplier (3 * 10^-zoomFrac / W) * 2^SCALE_BITS as a BigInt
+  // by first scaling it up by 10^PREC (extra decimal precision), then dividing by 10^(zoomInt+PREC).
+  const PREC = 30; // extra decimal digits of precision
+  const zInt = Math.floor(view.zoomLog10);
+  const zFrac = view.zoomLog10 - zInt; // in [0, 1)
+  const fracMult = Math.pow(10, -zFrac); // in (0.1, 1]
+  // Build numerator: floor(3 * fracMult * 10^PREC * 2^SCALE_BITS / W)
+  // The double `3 * fracMult / W * 10^PREC` might be huge — but PREC=30 keeps it ~10^28 (fits in BigInt via toFixed).
+  // Use string-builder to avoid scientific notation: shift via BigInt math.
+  // Step 1: numerator_double = 3 * fracMult * 10^PREC  (in [3e29, 3e30] roughly)
+  // We want this as a BigInt. Build it via toFixed (no exponent in the [10^29..10^30] range).
+  const baseNum = 3 * fracMult * Math.pow(10, PREC); // ~ 10^29..10^30, safely in double range
+  // Convert to BigInt via toFixed(0). For numbers up to ~10^21 toFixed works directly.
+  // For larger: split into two doubles. baseNum ~ 10^30, so we split.
+  const numBI = doubleToBigInt(baseNum);
+  // numerator_fx = numBI * 2^SCALE_BITS / W
+  const numerator = (numBI << SCALE_BITS) / BigInt(W);
+  // denominator: 10^(zInt + PREC)
+  const denomExp = zInt + PREC;
+  const denominator = 10n ** BigInt(Math.max(0, denomExp));
+  return numerator / denominator;
+}
+
+// Convert a positive finite double to BigInt (floor). Handles values larger than 2^53 by
+// reconstructing from its mantissa/exponent.
+function doubleToBigInt(x) {
+  if (x < 0) return -doubleToBigInt(-x);
+  if (x === 0) return 0n;
+  if (x < 9007199254740992) return BigInt(Math.floor(x)); // 2^53
+  // Use IEEE-754 decomposition
+  const buf = new ArrayBuffer(8);
+  const f = new Float64Array(buf);
+  const u = new Uint32Array(buf);
+  f[0] = x;
+  const hi = u[1], lo = u[0];
+  const expRaw = (hi >>> 20) & 0x7ff;
+  const mantHi = hi & 0xfffff;
+  // Mantissa is 52 bits: (1 << 52) | (mantHi << 32) | lo  (for normal numbers)
+  if (expRaw === 0) return 0n; // denormal — shouldn't happen for big numbers
+  const mant = (1n << 52n) | (BigInt(mantHi) << 32n) | BigInt(lo);
+  const exp = expRaw - 1023 - 52; // shift on the integer mantissa
+  if (exp >= 0) return mant << BigInt(exp);
+  return mant >> BigInt(-exp);
+}
+
+function shouldUseBigInt() {
+  // Switch when double precision starts losing pixels of detail.
+  // Pixel size in double = 3 * 10^-zoom / W. JS doubles have ~15-16 digits.
+  // So at zoom > ~13, we lose subpixel precision.
+  return view.zoomLog10 > 13;
+}
+
+function scheduleRender() {
+  renderToken++;
+  const myToken = renderToken;
+  // Cancel any in-flight by checking token in chunks.
+  requestAnimationFrame(() => render(myToken));
+}
+
+let lastImageData = null;
+
+function render(token) {
+  if (token !== renderToken) return;
+  isRendering = true;
+  const startTime = performance.now();
+  const useBig = shouldUseBigInt();
+  const maxIter = adaptiveIter();
+
+  document.getElementById('iterVal').textContent = maxIter;
+  document.getElementById('zoomVal').textContent = '10^' + view.zoomLog10.toFixed(2);
+  document.getElementById('reVal').textContent = formatCoord(view.reStr);
+  document.getElementById('imVal').textContent = formatCoord(view.imStr);
+  const modeEl = document.getElementById('modeVal');
+  modeEl.textContent = useBig ? 'BIGINT-256' : 'DOUBLE';
+  modeEl.className = useBig ? 'mode bigint' : 'mode';
+
+  if (useBig) {
+    renderBigIntProgressive(token, maxIter, startTime);
+  } else {
+    renderDouble(token, maxIter, startTime);
+  }
+}
+
+function renderDouble(token, maxIter, startTime) {
+  const center = getCenterDouble();
+  const pxSize = getPixelSizeDouble();
+  const halfW = W / 2, halfH = H / 2;
+
+  // Use progressive rendering: start at low res, then refine
+  const stages = [8, 4, 2, 1]; // pixel block sizes
+  let stageIdx = 0;
+  const img = ctx.createImageData(W, H);
+  const data = img.data;
+
+  function renderStage() {
+    if (token !== renderToken) return;
+    const block = stages[stageIdx];
+    for (let py = 0; py < H; py += block) {
+      for (let px = 0; px < W; px += block) {
+        const cre = center.re + (px - halfW) * pxSize;
+        const cim = center.im + (py - halfH) * pxSize;
+        const smooth = mandelDouble(cre, cim, maxIter);
+        // fill block
+        const rgba = new Uint8ClampedArray(4);
+        colorize(rgba, 0, smooth, maxIter);
+        const r = rgba[0], g = rgba[1], b = rgba[2];
+        const yMax = Math.min(py + block, H);
+        const xMax = Math.min(px + block, W);
+        for (let y = py; y < yMax; y++) {
+          let off = (y * W + px) * 4;
+          for (let x = px; x < xMax; x++) {
+            data[off++] = r; data[off++] = g; data[off++] = b; data[off++] = 255;
+          }
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    stageIdx++;
+    if (stageIdx < stages.length) {
+      // Skip refinement at shallow zoom for speed (it's already fast enough)
+      if (view.zoomLog10 < 2 && stageIdx > 1) {
+        finishRender(startTime);
+        return;
+      }
+      setTimeout(renderStage, 0);
+    } else {
+      finishRender(startTime);
+    }
+  }
+  renderStage();
+}
+
+function renderBigIntProgressive(token, maxIter, startTime) {
+  const center = getCenterBigInt();
+  const pxSize_fx = getPixelSizeBigInt();
+  const halfW_BI = BigInt(W >> 1);
+  const halfH_BI = BigInt(H >> 1);
+
+  // Progressive stages — BigInt is slow, so start very coarse
+  const stages = [16, 8, 4, 2];
+  let stageIdx = 0;
+  const img = ctx.createImageData(W, H);
+  const data = img.data;
+
+  function renderStage() {
+    if (token !== renderToken) return;
+    const block = stages[stageIdx];
+    let pixelsDone = 0;
+    const startStage = performance.now();
+
+    for (let py = 0; py < H; py += block) {
+      for (let px = 0; px < W; px += block) {
+        const cre_fx = center.re + (BigInt(px) - halfW_BI) * pxSize_fx;
+        const cim_fx = center.im + (BigInt(py) - halfH_BI) * pxSize_fx;
+        const smooth = mandelBigInt(cre_fx, cim_fx, maxIter);
+        const rgba = new Uint8ClampedArray(4);
+        colorize(rgba, 0, smooth, maxIter);
+        const r = rgba[0], g = rgba[1], b = rgba[2];
+        const yMax = Math.min(py + block, H);
+        const xMax = Math.min(px + block, W);
+        for (let y = py; y < yMax; y++) {
+          let off = (y * W + px) * 4;
+          for (let x = px; x < xMax; x++) {
+            data[off++] = r; data[off++] = g; data[off++] = b; data[off++] = 255;
+          }
+        }
+        pixelsDone++;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    stageIdx++;
+    if (stageIdx < stages.length && token === renderToken) {
+      setTimeout(renderStage, 10);
+    } else {
+      finishRender(startTime);
+    }
+  }
+  renderStage();
+}
+
+function finishRender(startTime) {
+  isRendering = false;
+  const ms = Math.round(performance.now() - startTime);
+  document.getElementById('renderTime').textContent = ms + 'ms';
+  drawInset();
+}
+
+function formatCoord(s) {
+  // Trim long decimals for display
+  if (s.length > 30) return s.slice(0, 28) + '…';
+  return s;
+}
+
+// -------------------- Inset --------------------
+let insetCachedZoom = -1;
+let insetImg = null;
+function drawInset() {
+  const iw = insetCv.width, ih = insetCv.height;
+  if (!insetImg) {
+    // Pre-render the full Mandelbrot once
+    insetImg = insetCtx.createImageData(iw, ih);
+    const d = insetImg.data;
+    const halfW = iw / 2, halfH = ih / 2;
+    const cx = -0.5, halfCw = 1.5;
+    const px = halfCw * 2 / iw;
+    const py = (halfCw * 2 * ih / iw) / ih;
+    for (let y = 0; y < ih; y++) {
+      for (let x = 0; x < iw; x++) {
+        const cre = cx + (x - halfW) * px;
+        const cim = (y - halfH) * py;
+        let zr = 0, zi = 0, zr2 = 0, zi2 = 0, i = 0;
+        const maxI = 60;
+        while (i < maxI && zr2 + zi2 < 4) {
+          zi = 2 * zr * zi + cim;
+          zr = zr2 - zi2 + cre;
+          zr2 = zr * zr; zi2 = zi * zi;
+          i++;
+        }
+        const off = (y * iw + x) * 4;
+        if (i >= maxI) {
+          d[off] = 0; d[off+1] = 0; d[off+2] = 0; d[off+3] = 255;
+        } else {
+          const t = i / maxI;
+          d[off] = Math.floor(40 + t * 100);
+          d[off+1] = Math.floor(60 + t * 80);
+          d[off+2] = Math.floor(120 + t * 100);
+          d[off+3] = 255;
+        }
+      }
+    }
+  }
+  insetCtx.putImageData(insetImg, 0, 0);
+  // Draw marker
+  const re = parseFloat(view.reStr);
+  const im = parseFloat(view.imStr);
+  const cx = -0.5, halfCw = 1.5;
+  const mapW = iw, mapH = ih;
+  const px = (re - cx) / (2 * halfCw) * mapW + mapW / 2;
+  const py = im / (2 * halfCw * ih / iw) * mapH + mapH / 2;
+  insetCtx.strokeStyle = '#ff3d8b';
+  insetCtx.lineWidth = 1.5;
+  insetCtx.beginPath();
+  insetCtx.arc(px, py, 4, 0, Math.PI * 2);
+  insetCtx.stroke();
+  insetCtx.strokeStyle = 'rgba(255, 61, 139, 0.4)';
+  insetCtx.beginPath();
+  insetCtx.moveTo(px - 8, py); insetCtx.lineTo(px - 5, py);
+  insetCtx.moveTo(px + 5, py); insetCtx.lineTo(px + 8, py);
+  insetCtx.moveTo(px, py - 8); insetCtx.lineTo(px, py - 5);
+  insetCtx.moveTo(px, py + 5); insetCtx.lineTo(px, py + 8);
+  insetCtx.stroke();
+}
+
+// -------------------- Coordinate manipulation in BigInt-precision strings --------------------
+function panViewByPixelsPrecise(dx, dy) {
+  // dx, dy in canvas pixels. Convert to complex plane offset.
+  const useBig = shouldUseBigInt();
+  if (useBig) {
+    const pxSize_fx = getPixelSizeBigInt();
+    const dre_fx = BigInt(Math.round(dx)) * pxSize_fx;
+    const dim_fx = BigInt(Math.round(dy)) * pxSize_fx;
+    const center = getCenterBigInt();
+    const newRe_fx = center.re + dre_fx;
+    const newIm_fx = center.im + dim_fx;
+    view.reStr = fxToString(newRe_fx, Math.max(20, Math.ceil(view.zoomLog10) + 8));
+    view.imStr = fxToString(newIm_fx, Math.max(20, Math.ceil(view.zoomLog10) + 8));
+  } else {
+    const pxSize = getPixelSizeDouble();
+    const newRe = parseFloat(view.reStr) + dx * pxSize;
+    const newIm = parseFloat(view.imStr) + dy * pxSize;
+    view.reStr = String(newRe);
+    view.imStr = String(newIm);
+  }
+}
+
+function zoomAtPixel(px, py, zoomDelta) {
+  // Zoom around pixel (px, py): keep that point's complex coordinate fixed.
+  const useBig = shouldUseBigInt();
+  // Compute current world-coord of pixel
+  const halfW = W / 2, halfH = H / 2;
+  if (useBig) {
+    const pxSize_fx = getPixelSizeBigInt();
+    const center = getCenterBigInt();
+    const targetRe_fx = center.re + (BigInt(Math.round(px)) - BigInt(Math.round(halfW))) * pxSize_fx;
+    const targetIm_fx = center.im + (BigInt(Math.round(py)) - BigInt(Math.round(halfH))) * pxSize_fx;
+    // Adjust zoom
+    view.zoomLog10 += zoomDelta;
+    // New pixel size
+    const newPxSize_fx = getPixelSizeBigInt();
+    // New center = target - (px - halfW) * newPxSize
+    const newCenterRe_fx = targetRe_fx - (BigInt(Math.round(px)) - BigInt(Math.round(halfW))) * newPxSize_fx;
+    const newCenterIm_fx = targetIm_fx - (BigInt(Math.round(py)) - BigInt(Math.round(halfH))) * newPxSize_fx;
+    const digits = Math.max(20, Math.ceil(view.zoomLog10) + 8);
+    view.reStr = fxToString(newCenterRe_fx, digits);
+    view.imStr = fxToString(newCenterIm_fx, digits);
+  } else {
+    const pxSize = getPixelSizeDouble();
+    const center = getCenterDouble();
+    const targetRe = center.re + (px - halfW) * pxSize;
+    const targetIm = center.im + (py - halfH) * pxSize;
+    view.zoomLog10 += zoomDelta;
+    if (shouldUseBigInt()) {
+      // Crossed threshold: re-cast as BigInt
+      const targetRe_fx = fxFromString(String(targetRe));
+      const targetIm_fx = fxFromString(String(targetIm));
+      const newPxSize_fx = getPixelSizeBigInt();
+      const newCenterRe_fx = targetRe_fx - (BigInt(Math.round(px)) - BigInt(Math.round(halfW))) * newPxSize_fx;
+      const newCenterIm_fx = targetIm_fx - (BigInt(Math.round(py)) - BigInt(Math.round(halfH))) * newPxSize_fx;
+      const digits = Math.max(20, Math.ceil(view.zoomLog10) + 8);
+      view.reStr = fxToString(newCenterRe_fx, digits);
+      view.imStr = fxToString(newCenterIm_fx, digits);
+    } else {
+      const newPxSize = getPixelSizeDouble();
+      const newCenterRe = targetRe - (px - halfW) * newPxSize;
+      const newCenterIm = targetIm - (py - halfH) * newPxSize;
+      view.reStr = String(newCenterRe);
+      view.imStr = String(newCenterIm);
+    }
+  }
+}
+
+// -------------------- Interaction --------------------
+cv.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = cv.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * DPR;
+  const py = (e.clientY - rect.top) * DPR;
+  const fast = e.shiftKey ? 3 : 1;
+  const delta = (e.deltaY < 0 ? 0.15 : -0.15) * fast;
+  zoomAtPixel(px, py, delta);
+  if (view.zoomLog10 < 0) view.zoomLog10 = 0;
+  scheduleRender();
+}, { passive: false });
+
+cv.addEventListener('mousedown', (e) => {
+  drag = { x: e.clientX, y: e.clientY, moved: false };
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x;
+  const dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  if (drag.moved) {
+    panViewByPixelsPrecise(-dx * DPR, -dy * DPR);
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    scheduleRender();
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (drag && !drag.moved) {
+    // Treat as click: recenter and zoom in
+    const rect = cv.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * DPR;
+    const py = (e.clientY - rect.top) * DPR;
+    animateZoomToPixel(px, py, 0.5);
+  }
+  drag = null;
+});
+
+// Touch support (basic)
+let touchState = null;
+cv.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    touchState = { x: e.touches[0].clientX, y: e.touches[0].clientY, type: 'pan', moved: false };
+  } else if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    touchState = { dist: Math.sqrt(dx*dx + dy*dy), type: 'pinch',
+      cx: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+      cy: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
+  }
+}, { passive: true });
+
+cv.addEventListener('touchmove', (e) => {
+  if (!touchState) return;
+  e.preventDefault();
+  if (touchState.type === 'pan' && e.touches.length === 1) {
+    const dx = e.touches[0].clientX - touchState.x;
+    const dy = e.touches[0].clientY - touchState.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) touchState.moved = true;
+    panViewByPixelsPrecise(-dx * DPR, -dy * DPR);
+    touchState.x = e.touches[0].clientX;
+    touchState.y = e.touches[0].clientY;
+    scheduleRender();
+  } else if (touchState.type === 'pinch' && e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const newDist = Math.sqrt(dx*dx + dy*dy);
+    const ratio = newDist / touchState.dist;
+    const rect = cv.getBoundingClientRect();
+    zoomAtPixel((touchState.cx - rect.left) * DPR, (touchState.cy - rect.top) * DPR, Math.log10(ratio));
+    touchState.dist = newDist;
+    scheduleRender();
+  }
+}, { passive: false });
+
+cv.addEventListener('touchend', () => { touchState = null; }, { passive: true });
+
+// -------------------- Animated zoom on click --------------------
+function animateZoomToPixel(px, py, totalZoom, steps = 18) {
+  let i = 0;
+  const stepZoom = totalZoom / steps;
+  function tick() {
+    if (i >= steps) { scheduleRender(); return; }
+    zoomAtPixel(px, py, stepZoom);
+    i++;
+    if (i % 4 === 0) scheduleRender();
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+// -------------------- Buttons --------------------
+document.getElementById('btnReset').addEventListener('click', () => {
+  view = { reStr: '-0.5', imStr: '0.0', zoomLog10: 0.0 };
+  scheduleRender();
+});
+
+document.getElementById('btnZoomIn').addEventListener('click', () => {
+  zoomAtPixel(W / 2, H / 2, 0.5);
+  scheduleRender();
+});
+
+document.getElementById('btnZoomOut').addEventListener('click', () => {
+  zoomAtPixel(W / 2, H / 2, -0.5);
+  if (view.zoomLog10 < 0) view.zoomLog10 = 0;
+  scheduleRender();
+});
+
+document.getElementById('btnShare').addEventListener('click', () => {
+  const url = new URL(window.location.href);
+  url.searchParams.set('re', view.reStr);
+  url.searchParams.set('im', view.imStr);
+  url.searchParams.set('z', view.zoomLog10.toFixed(4));
+  url.searchParams.set('p', palette);
+  const finalUrl = url.toString();
+  // Copy to clipboard
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(finalUrl).then(showToast).catch(() => {
+      window.prompt('Copy URL:', finalUrl);
+    });
+  } else {
+    window.prompt('Copy URL:', finalUrl);
+  }
+  // Update URL bar without reloading
+  window.history.replaceState({}, '', finalUrl);
+});
+
+document.getElementById('btnGoto').addEventListener('click', () => {
+  const txt = document.getElementById('coordInput').value.trim();
+  if (!txt) return;
+  const parts = txt.split(',').map(s => s.trim());
+  if (parts.length < 3) { showToast('Format: re,im,zoom'); return; }
+  const re = parts[0];
+  const im = parts[1];
+  const z = parseFloat(parts[2]);
+  if (isNaN(z)) { showToast('Invalid zoom'); return; }
+  view.reStr = re;
+  view.imStr = im;
+  view.zoomLog10 = Math.max(0, z);
+  scheduleRender();
+});
+
+document.getElementById('paletteSel').addEventListener('change', (e) => {
+  palette = e.target.value;
+  paletteLUT = buildPalette(palette, 2048);
+  scheduleRender();
+});
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  if (msg) el.textContent = msg;
+  else el.textContent = 'URL copied to clipboard!';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1500);
+}
+
+// -------------------- URL Loading --------------------
+function loadFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const re = params.get('re');
+  const im = params.get('im');
+  const z = params.get('z');
+  const p = params.get('p');
+  if (re && im && z) {
+    view.reStr = re;
+    view.imStr = im;
+    view.zoomLog10 = parseFloat(z);
+  }
+  if (p) {
+    palette = p;
+    paletteLUT = buildPalette(palette, 2048);
+    document.getElementById('paletteSel').value = p;
+  }
+}
+
+// -------------------- Init --------------------
+loadFromURL();
+resize();
+
+// Show interesting tour spots in placeholder
+const interestingSpots = [
+  { name: 'Seahorse Valley', re: '-0.745428', im: '0.113009', z: 6 },
+  { name: 'Mini-brot', re: '-1.7497219', im: '0', z: 7 },
+  { name: 'Spiral', re: '-0.7269', im: '0.1889', z: 4 },
+];
+// Auto-suggest as placeholder tip
+let placeholderRotation = 0;
+setInterval(() => {
+  const inp = document.getElementById('coordInput');
+  if (inp !== document.activeElement && !inp.value) {
+    const s = interestingSpots[placeholderRotation % interestingSpots.length];
+    inp.placeholder = `Try: ${s.re},${s.im},${s.z}  (${s.name})`;
+    placeholderRotation++;
+  }
+}, 3500);
+
+</script>
+</body>
+</html>

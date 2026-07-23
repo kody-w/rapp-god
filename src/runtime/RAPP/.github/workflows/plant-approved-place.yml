@@ -1,0 +1,62 @@
+name: Plant approved place
+
+# Planting is intentionally blocked. The legacy planter is a 410 containment
+# marker and no authenticated RAPP/1 planter currently emits a structured
+# result. A replacement must emit one strict machine-readable result containing
+# an exact section 6.1 rappid and URL; this workflow must consume that object
+# directly, never scrape human logs.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  plant:
+    if: >-
+      github.event.label.name == 'approved' &&
+      contains(github.event.issue.labels.*.name, 'place-submission')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout RAPP
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate issue body before side effects
+        id: parse
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${ISSUE_BODY:-}" |
+            python3 .github/scripts/parse_place_issue.py >> "$GITHUB_OUTPUT"
+
+      - name: Fail closed before planting
+        shell: bash
+        run: |
+          echo "::error::Place planting is retired until an authenticated RAPP/1 planter emits a strict structured result."
+          echo "::error::No repository, identity, signature, registry entry, or page was created."
+          echo "::error::See RAPP1_STATUS.md."
+          exit 78
+
+      - name: Comment on authenticated-planter blocker
+        if: failure() && steps.parse.outputs.ok == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          gh issue comment "$ISSUE_NUM" --repo "$REPO" --body "⚠️ **Planting is fail-closed.**
+
+          The submission passed strict input validation, but this repository has no authenticated RAPP/1 place planter or structured plant-result producer. The retired planter was not invoked and no repository, rappid, registry entry, or page was created. See \`RAPP1_STATUS.md\`."

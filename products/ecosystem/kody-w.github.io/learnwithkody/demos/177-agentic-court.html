@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Court of Auralis — Round 18 · Agentic Story Engine</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;padding:0;background:#0b0610;color:#f3e7d4;font-family:'Georgia',serif;overflow:hidden;height:100%;}
+  #stage{position:fixed;inset:0;}
+  canvas{display:block;}
+  .panel{position:fixed;background:rgba(20,10,30,0.74);border:1px solid #d9b35a;color:#f6e6bf;
+    padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.35;letter-spacing:0.3px;
+    backdrop-filter:blur(4px);box-shadow:0 0 14px rgba(217,179,90,0.18) inset;}
+  #hud{top:10px;left:10px;max-width:340px;}
+  #hud b{color:#f3d07a;}
+  #chyron{bottom:14px;left:50%;transform:translateX(-50%);max-width:780px;text-align:center;
+    font-style:italic;color:#f7e6b4;background:rgba(8,4,16,0.72);}
+  #brain{top:10px;right:10px;max-width:300px;font-family:'Courier New',monospace;font-size:11px;
+    background:rgba(12,6,22,0.82);}
+  #brain h4{margin:0 0 6px 0;color:#ffd97a;font-family:'Georgia',serif;letter-spacing:0.6px;}
+  #brain .row{margin:2px 0;color:#e9d8b0;}
+  #brain .lbl{color:#9c7ad9;display:inline-block;width:78px;}
+  #cast{bottom:60px;left:10px;max-width:240px;font-size:11px;}
+  #cast .nm{color:#ffd97a;}
+  #cast .gl{color:#c9a8ff;}
+  #map{bottom:60px;right:10px;width:200px;height:130px;background:rgba(8,4,16,0.78);
+    border:1px solid #d9b35a;border-radius:6px;}
+  #mapTitle{position:fixed;bottom:194px;right:14px;font-size:10px;color:#d9b35a;letter-spacing:1px;}
+  #graph{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:520px;height:340px;background:rgba(8,4,16,0.88);
+    border:1px solid #d9b35a;border-radius:8px;display:none;}
+  #graphTitle{position:absolute;top:8px;left:14px;color:#ffd97a;font-size:12px;letter-spacing:1px;}
+  #toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    font-size:18px;color:#ffeac0;text-shadow:0 0 8px #d9b35a;
+    pointer-events:none;opacity:0;transition:opacity .6s;}
+  #seal{position:fixed;bottom:6px;left:10px;font-size:9px;color:#7a5a2e;letter-spacing:1px;}
+</style>
+</head>
+<body>
+<!-- ROUND18_AGENT v1 -->
+<div id="stage"></div>
+<div class="panel" id="hud">Loading court…</div>
+<div class="panel" id="brain">Reading the courtier's mind…</div>
+<div class="panel" id="cast"></div>
+<canvas id="map" width="200" height="130"></canvas>
+<div id="mapTitle">PALACE FLOOR PLAN</div>
+<canvas id="graph" width="520" height="340"></canvas>
+<div id="graphTitle">ALLIANCE GRAPH</div>
+<div class="panel" id="chyron">The Court of Auralis stirs…</div>
+<div id="toast"></div>
+<div id="seal">COURT OF AURALIS · CONTINUUM ENGINE</div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+"use strict";
+(function(){
+  const STORE_KEY="auralis_court_v1";
+  const stage=document.getElementById("stage");
+  const hud=document.getElementById("hud");
+  const brainEl=document.getElementById("brain");
+  const castEl=document.getElementById("cast");
+  const chyron=document.getElementById("chyron");
+  const toast=document.getElementById("toast");
+  const mapCv=document.getElementById("map");
+  const mapCtx=mapCv.getContext("2d");
+  const graphCv=document.getElementById("graph");
+  const graphCtx=graphCv.getContext("2d");
+
+  function loadMem(){
+    try{const j=localStorage.getItem(STORE_KEY);if(j)return JSON.parse(j);}catch(e){}
+    return {year:1,acts:[],alliances:{},marriages:[],betrayals:[],calendar:0,reseeds:0};
+  }
+  function saveMem(m){try{localStorage.setItem(STORE_KEY,JSON.stringify(m));}catch(e){}}
+  let memory=loadMem();
+  memory.reseeds=(memory.reseeds||0)+1;
+  memory.year=(memory.year||1)+(memory.reseeds>1?1:0);
+  memory.calendar=(memory.calendar||0)+1;
+  if(!memory.acts)memory.acts=[];
+  if(!memory.alliances)memory.alliances={};
+  if(!memory.marriages)memory.marriages=[];
+  if(!memory.betrayals)memory.betrayals=[];
+  saveMem(memory);
+
+  const CHAMBERS=[
+    {id:0,name:"THRONE ROOM",   palette:{floor:0xe8dcc4,accent:0x6a3aa3,gold:0xf3c95a,bg:0x140822},
+     mapPos:[0.5,0.30],mapSize:[0.34,0.28]},
+    {id:1,name:"WAR ROOM",      palette:{floor:0x2a1a14,accent:0xa12727,gold:0xc99a3a,bg:0x180806},
+     mapPos:[0.18,0.66],mapSize:[0.24,0.26]},
+    {id:2,name:"PALACE GARDEN", palette:{floor:0x2c4a26,accent:0xd57aae,gold:0xe6c870,bg:0x081a10},
+     mapPos:[0.82,0.66],mapSize:[0.24,0.26]},
+    {id:3,name:"KITCHEN COURTYARD",palette:{floor:0x6b432a,accent:0xe89a3a,gold:0xf3c970,bg:0x1a0e06},
+     mapPos:[0.18,0.18],mapSize:[0.24,0.18]},
+    {id:4,name:"PRIVATE LIBRARY",  palette:{floor:0x3a2316,accent:0xc28a3a,gold:0xf3d780,bg:0x120906},
+     mapPos:[0.82,0.18],mapSize:[0.24,0.18]}
+  ];
+
+  const COURTIERS=[
+    {id:0,name:"King Aldric Auralis the Younger",short:"Aldric",role:"King",
+     goal:"Secure the heir",mood:"Resolute",home:0,
+     plan:["Hold court","Hear petitions","Counsel the prince"],colorRobe:0x7a3aa3},
+    {id:1,name:"Queen Mirelle of Vaillance",short:"Mirelle",role:"Queen",
+     goal:"Broker a marriage between houses",mood:"Patient",home:0,
+     plan:["Receive Lady Lyra","Pen a letter","Walk the garden"],colorRobe:0xb04a9a},
+    {id:2,name:"Princess Seraphine",short:"Seraphine",role:"Princess",
+     goal:"Avoid match with Prince Vesper of Hauthorn",mood:"Defiant",home:2,
+     plan:["Hide in garden","Find Eldoros","Plead with Mirelle"],colorRobe:0xe1a8d1},
+    {id:3,name:"Prince Cathal",short:"Cathal",role:"Prince",
+     goal:"Prove worthy of the throne",mood:"Earnest",home:1,
+     plan:["Study the map","Drill with Brann","Attend the King"],colorRobe:0x4a6ad0},
+    {id:4,name:"Chancellor Vorm",short:"Vorm",role:"Chancellor",
+     goal:"Expand the kingdom's eastern lands",mood:"Calculating",home:1,
+     plan:["Brief the King","Ply Stormgate","Veil the ledgers"],colorRobe:0x9c2d2d},
+    {id:5,name:"Spymaster Velia",short:"Velia",role:"Spymaster",
+     goal:"Uncover the Eastern Conspiracy",mood:"Patient",home:2,
+     plan:["Pin Stormgate in garden","Press Eldoros for the tome","Confront Vorm"],colorRobe:0x3a3a4a},
+    {id:6,name:"Lady Lyra Hawthorne",short:"Lyra",role:"Lady",
+     goal:"Marry into the royal line",mood:"Hopeful",home:0,
+     plan:["Charm Cathal","Court the Queen","Be seen at table"],colorRobe:0xe6b8c8},
+    {id:7,name:"Lord Ferran Stormgate",short:"Stormgate",role:"Lord",
+     goal:"Lead the Eastern Campaign",mood:"Restless",home:1,
+     plan:["Petition the King","Bargain with Vorm","Avoid Velia"],colorRobe:0x6e2a2a},
+    {id:8,name:"Court Mage Eldoros",short:"Eldoros",role:"Court Mage",
+     goal:"Research a forbidden text",mood:"Distracted",home:4,
+     plan:["Read in library","Slip to garden","Hide the tome"],colorRobe:0x3a5a8a},
+    {id:9,name:"Captain Brann",short:"Brann",role:"Royal Guard",
+     goal:"Protect the King",mood:"Vigilant",home:0,
+     plan:["Walk the throne","Pace the war room","Sweep the garden"],colorRobe:0x8a6a2a}
+  ];
+
+  const NAME_POOL=[
+    "Aldwin","Briette","Corin","Dru","Edra","Fenric","Gisla","Halric","Iona","Joren",
+    "Kessa","Loric","Maris","Nessa","Orin","Petra","Quill","Rhia","Sorrel","Talwyn",
+    "Una","Vance","Wren","Xanth","Yorra","Zelra","Aurin","Bregga","Calix","Dorne"
+  ];
+
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.shadowMap.enabled=false;
+  stage.appendChild(renderer.domElement);
+
+  const scene=new THREE.Scene();
+  scene.fog=new THREE.Fog(0x140822,40,140);
+  scene.background=new THREE.Color(0x140822);
+
+  const camera=new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,0.1,400);
+  camera.position.set(0,18,32);
+  camera.lookAt(0,2,0);
+
+  const disposables=[];
+  function track(o){disposables.push(o);return o;}
+  function disposeMaterial(m){
+    if(!m)return;
+    if(m.map)m.map.dispose();
+    if(Array.isArray(m))m.forEach(x=>x.dispose&&x.dispose());
+    else m.dispose&&m.dispose();
+  }
+  function disposeAll(){
+    scene.traverse(o=>{
+      if(o.geometry)o.geometry.dispose();
+      if(o.material)disposeMaterial(o.material);
+    });
+    while(scene.children.length)scene.remove(scene.children[0]);
+    disposables.forEach(d=>{
+      if(d&&d.geometry)d.geometry.dispose();
+      if(d&&d.material)disposeMaterial(d.material);
+    });
+    disposables.length=0;
+  }
+
+  const ambient=new THREE.AmbientLight(0xffeec8,0.55);
+  scene.add(ambient);
+  const sun=new THREE.DirectionalLight(0xfff0c8,0.85);
+  sun.position.set(40,80,30);
+  scene.add(sun);
+  const candle=new THREE.PointLight(0xffae6a,0.7,40);
+  candle.position.set(0,8,0);
+  scene.add(candle);
+
+  const chamberRoots=[];
+  for(let i=0;i<CHAMBERS.length;i++){
+    const g=new THREE.Group();
+    g.visible=(i===0);
+    scene.add(g);
+    chamberRoots.push(g);
+  }
+
+  function buildThroneRoom(root,c){
+    const floor=new THREE.Mesh(
+      new THREE.PlaneGeometry(36,36,4,4),
+      new THREE.MeshStandardMaterial({color:c.palette.floor,roughness:0.4,metalness:0.05})
+    );
+    floor.rotation.x=-Math.PI/2;
+    root.add(floor);
+    for(let i=-2;i<=2;i++){
+      const inlay=new THREE.Mesh(
+        new THREE.PlaneGeometry(0.4,32),
+        new THREE.MeshStandardMaterial({color:c.palette.gold,emissive:c.palette.gold,emissiveIntensity:0.25})
+      );
+      inlay.rotation.x=-Math.PI/2;
+      inlay.position.set(i*4,0.02,0);
+      root.add(inlay);
+    }
+    for(let s=-1;s<=1;s+=2){
+      for(let r=0;r<6;r++){
+        const col=new THREE.Mesh(
+          new THREE.CylinderGeometry(0.55,0.6,9,12),
+          new THREE.MeshStandardMaterial({color:0xece1c2,roughness:0.6})
+        );
+        col.position.set(s*9,4.5,-12+r*5);
+        root.add(col);
+      }
+    }
+    const dais=new THREE.Mesh(
+      new THREE.BoxGeometry(8,1.2,5),
+      new THREE.MeshStandardMaterial({color:0x4a2a82})
+    );
+    dais.position.set(0,0.6,-12);
+    root.add(dais);
+    const throne=new THREE.Mesh(
+      new THREE.BoxGeometry(2.2,3.4,1.6),
+      new THREE.MeshStandardMaterial({color:c.palette.gold,metalness:0.65,roughness:0.25,
+        emissive:c.palette.gold,emissiveIntensity:0.18})
+    );
+    throne.position.set(0,2.9,-12);
+    root.add(throne);
+    const back=new THREE.Mesh(
+      new THREE.BoxGeometry(3,5,0.4),
+      new THREE.MeshStandardMaterial({color:c.palette.accent,emissive:c.palette.accent,emissiveIntensity:0.25})
+    );
+    back.position.set(0,4.6,-12.7);
+    root.add(back);
+    for(let b=0;b<4;b++){
+      const ban=new THREE.Mesh(
+        new THREE.PlaneGeometry(2.4,7),
+        new THREE.MeshStandardMaterial({color:c.palette.accent,side:THREE.DoubleSide,
+          emissive:c.palette.accent,emissiveIntensity:0.15})
+      );
+      ban.position.set(-9+b*6,8,-15.5);
+      root.add(ban);
+      const sigil=new THREE.Mesh(
+        new THREE.RingGeometry(0.5,0.9,16),
+        new THREE.MeshBasicMaterial({color:c.palette.gold,side:THREE.DoubleSide})
+      );
+      sigil.position.set(-9+b*6,8,-15.4);
+      root.add(sigil);
+    }
+  }
+
+  function buildWarRoom(root,c){
+    const floor=new THREE.Mesh(
+      new THREE.PlaneGeometry(34,34),
+      new THREE.MeshStandardMaterial({color:c.palette.floor,roughness:0.85})
+    );
+    floor.rotation.x=-Math.PI/2;
+    root.add(floor);
+    const table=new THREE.Mesh(
+      new THREE.CylinderGeometry(6,6,0.7,32),
+      new THREE.MeshStandardMaterial({color:0x6b4a2a,roughness:0.55})
+    );
+    table.position.set(0,1.2,0);
+    root.add(table);
+    const map=new THREE.Mesh(
+      new THREE.CircleGeometry(5.6,32),
+      new THREE.MeshStandardMaterial({color:0xd6c190,emissive:c.palette.gold,emissiveIntensity:0.12})
+    );
+    map.rotation.x=-Math.PI/2;
+    map.position.set(0,1.56,0);
+    root.add(map);
+    for(let p=0;p<8;p++){
+      const a=p/8*Math.PI*2;
+      const pin=new THREE.Mesh(
+        new THREE.ConeGeometry(0.18,0.6,8),
+        new THREE.MeshStandardMaterial({color:c.palette.accent,emissive:c.palette.accent,emissiveIntensity:0.5})
+      );
+      pin.position.set(Math.cos(a)*4,1.85,Math.sin(a)*4);
+      root.add(pin);
+    }
+    for(let b=0;b<3;b++){
+      const ban=new THREE.Mesh(
+        new THREE.PlaneGeometry(3,5.5),
+        new THREE.MeshStandardMaterial({color:c.palette.accent,side:THREE.DoubleSide})
+      );
+      ban.position.set(-10+b*10,7,-14);
+      root.add(ban);
+    }
+    for(let i=0;i<6;i++){
+      const a=i/6*Math.PI*2;
+      const ch=new THREE.Mesh(
+        new THREE.BoxGeometry(1.4,2,1.4),
+        new THREE.MeshStandardMaterial({color:0x3a2418})
+      );
+      ch.position.set(Math.cos(a)*8,1,Math.sin(a)*8);
+      root.add(ch);
+    }
+  }
+
+  function buildGarden(root,c){
+    const floor=new THREE.Mesh(
+      new THREE.PlaneGeometry(40,40),
+      new THREE.MeshStandardMaterial({color:c.palette.floor,roughness:0.95})
+    );
+    floor.rotation.x=-Math.PI/2;
+    root.add(floor);
+    for(let r=0;r<4;r++){
+      for(let a=0;a<24;a++){
+        const ang=a/24*Math.PI*2;
+        const rad=4+r*3;
+        const hedge=new THREE.Mesh(
+          new THREE.CylinderGeometry(0.7,0.8,2.4,8),
+          new THREE.MeshStandardMaterial({color:0x224a1a})
+        );
+        hedge.position.set(Math.cos(ang)*rad,1.2,Math.sin(ang)*rad);
+        if((a+r)%5===0)continue;
+        root.add(hedge);
+        if((a*r)%7===0){
+          const rose=new THREE.Mesh(
+            new THREE.SphereGeometry(0.3,8,6),
+            new THREE.MeshStandardMaterial({color:c.palette.accent,emissive:c.palette.accent,emissiveIntensity:0.4})
+          );
+          rose.position.set(Math.cos(ang)*rad,2.5,Math.sin(ang)*rad);
+          root.add(rose);
+        }
+      }
+    }
+    const fountain=new THREE.Mesh(
+      new THREE.CylinderGeometry(1.6,1.8,0.8,16),
+      new THREE.MeshStandardMaterial({color:0xc8c0a8})
+    );
+    fountain.position.set(0,0.4,0);
+    root.add(fountain);
+    const water=new THREE.Mesh(
+      new THREE.CylinderGeometry(1.5,1.5,0.2,16),
+      new THREE.MeshStandardMaterial({color:0x6ab0d8,emissive:0x3a80a0,emissiveIntensity:0.4,
+        transparent:true,opacity:0.85})
+    );
+    water.position.set(0,0.85,0);
+    root.add(water);
+    for(let g=0;g<3;g++){
+      const ang=g/3*Math.PI*2+0.3;
+      const gx=Math.cos(ang)*14;
+      const gz=Math.sin(ang)*14;
+      for(let p=0;p<4;p++){
+        const pa=p/4*Math.PI*2;
+        const post=new THREE.Mesh(
+          new THREE.CylinderGeometry(0.18,0.18,4,8),
+          new THREE.MeshStandardMaterial({color:0xece8d0})
+        );
+        post.position.set(gx+Math.cos(pa)*1.4,2,gz+Math.sin(pa)*1.4);
+        root.add(post);
+      }
+      const dome=new THREE.Mesh(
+        new THREE.SphereGeometry(1.6,12,8,0,Math.PI*2,0,Math.PI/2),
+        new THREE.MeshStandardMaterial({color:c.palette.accent,
+          emissive:c.palette.accent,emissiveIntensity:0.2,transparent:true,opacity:0.7})
+      );
+      dome.position.set(gx,4,gz);
+      root.add(dome);
+    }
+    for(let i=0;i<5;i++){
+      const alc=new THREE.Mesh(
+        new THREE.BoxGeometry(2.2,1.6,2.2),
+        new THREE.MeshStandardMaterial({color:0x1a3a14})
+      );
+      const ang=i/5*Math.PI*2+0.6;
+      alc.position.set(Math.cos(ang)*17,0.8,Math.sin(ang)*17);
+      root.add(alc);
+    }
+  }
+
+  function buildKitchen(root,c){
+    const floor=new THREE.Mesh(
+      new THREE.PlaneGeometry(30,30),
+      new THREE.MeshStandardMaterial({color:c.palette.floor,roughness:0.95})
+    );
+    floor.rotation.x=-Math.PI/2;
+    root.add(floor);
+    for(let f=0;f<4;f++){
+      const fire=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.9,1.1,0.8,12),
+        new THREE.MeshStandardMaterial({color:0x1a0808})
+      );
+      fire.position.set(-8+f*5,0.4,-7);
+      root.add(fire);
+      const flame=new THREE.Mesh(
+        new THREE.ConeGeometry(0.5,1.2,8),
+        new THREE.MeshBasicMaterial({color:c.palette.accent,transparent:true,opacity:0.85})
+      );
+      flame.position.set(-8+f*5,1.4,-7);
+      root.add(flame);
+      flame.userData.flicker=true;
+    }
+    for(let s=0;s<6;s++){
+      const stall=new THREE.Mesh(
+        new THREE.BoxGeometry(2.2,2.2,1.6),
+        new THREE.MeshStandardMaterial({color:0x6b4626})
+      );
+      stall.position.set(-9+s*3.5,1.1,7);
+      root.add(stall);
+      const awn=new THREE.Mesh(
+        new THREE.PlaneGeometry(2.4,1.4),
+        new THREE.MeshStandardMaterial({color:c.palette.accent,side:THREE.DoubleSide})
+      );
+      awn.rotation.x=-Math.PI/3;
+      awn.position.set(-9+s*3.5,3.2,6.4);
+      root.add(awn);
+    }
+    for(let i=0;i<4;i++){
+      const tbl=new THREE.Mesh(
+        new THREE.BoxGeometry(3,1,1.4),
+        new THREE.MeshStandardMaterial({color:0x4a3018})
+      );
+      tbl.position.set(-6+i*4,0.5,0);
+      root.add(tbl);
+    }
+  }
+
+  function buildLibrary(root,c){
+    const floor=new THREE.Mesh(
+      new THREE.PlaneGeometry(28,28),
+      new THREE.MeshStandardMaterial({color:c.palette.floor,roughness:0.7})
+    );
+    floor.rotation.x=-Math.PI/2;
+    root.add(floor);
+    for(let s=-1;s<=1;s+=2){
+      for(let r=0;r<5;r++){
+        const shelf=new THREE.Mesh(
+          new THREE.BoxGeometry(0.8,4.4,4),
+          new THREE.MeshStandardMaterial({color:0x3a2010})
+        );
+        shelf.position.set(s*11,2.2,-8+r*4);
+        root.add(shelf);
+        for(let bk=0;bk<8;bk++){
+          const book=new THREE.Mesh(
+            new THREE.BoxGeometry(0.5,0.4,0.7),
+            new THREE.MeshStandardMaterial({color:0x6a3a8a+bk*0x080404})
+          );
+          book.position.set(s*10.55,0.6+bk*0.45,-8+r*4-1.4+(bk%4)*0.7);
+          root.add(book);
+        }
+      }
+    }
+    for(let c2=0;c2<6;c2++){
+      const candle2=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06,0.08,0.6,8),
+        new THREE.MeshStandardMaterial({color:0xefe0c0})
+      );
+      candle2.position.set(-8+c2*3.2,1.5,4);
+      root.add(candle2);
+      const flame=new THREE.Mesh(
+        new THREE.SphereGeometry(0.12,8,6),
+        new THREE.MeshBasicMaterial({color:0xffd07a})
+      );
+      flame.position.set(-8+c2*3.2,1.9,4);
+      root.add(flame);
+      flame.userData.flicker=true;
+    }
+    const desk=new THREE.Mesh(
+      new THREE.BoxGeometry(6,1,2),
+      new THREE.MeshStandardMaterial({color:0x4a2a18})
+    );
+    desk.position.set(0,0.5,4);
+    root.add(desk);
+    const tome=new THREE.Mesh(
+      new THREE.BoxGeometry(1.4,0.3,1),
+      new THREE.MeshStandardMaterial({color:c.palette.accent,emissive:c.palette.accent,emissiveIntensity:0.4})
+    );
+    tome.position.set(0,1.2,4);
+    root.add(tome);
+  }
+
+  buildThroneRoom(chamberRoots[0],CHAMBERS[0]);
+  buildWarRoom   (chamberRoots[1],CHAMBERS[1]);
+  buildGarden    (chamberRoots[2],CHAMBERS[2]);
+  buildKitchen   (chamberRoots[3],CHAMBERS[3]);
+  buildLibrary   (chamberRoots[4],CHAMBERS[4]);
+
+  function makeCourtier(c){
+    const g=new THREE.Group();
+    const robe=new THREE.Mesh(
+      new THREE.ConeGeometry(0.55,1.6,10),
+      new THREE.MeshStandardMaterial({color:c.colorRobe,roughness:0.55,emissive:c.colorRobe,emissiveIntensity:0.06})
+    );
+    robe.position.y=0.8;
+    g.add(robe);
+    const head=new THREE.Mesh(
+      new THREE.SphereGeometry(0.22,12,10),
+      new THREE.MeshStandardMaterial({color:0xe8c8a8,roughness:0.6})
+    );
+    head.position.y=1.85;
+    g.add(head);
+    const halo=new THREE.Mesh(
+      new THREE.RingGeometry(0.55,0.7,18),
+      new THREE.MeshBasicMaterial({color:0xffd97a,transparent:true,opacity:0.0,side:THREE.DoubleSide})
+    );
+    halo.rotation.x=-Math.PI/2;
+    halo.position.y=0.05;
+    g.add(halo);
+    const trail=new THREE.Mesh(
+      new THREE.PlaneGeometry(0.4,1.6),
+      new THREE.MeshBasicMaterial({color:c.colorRobe,transparent:true,opacity:0.0})
+    );
+    trail.rotation.x=-Math.PI/2;
+    trail.position.y=0.04;
+    g.add(trail);
+    g.userData={courtier:c,halo:halo,trail:trail,
+      target:new THREE.Vector3(),vel:new THREE.Vector3(),
+      planStep:0,chamber:c.home,nextDecide:0};
+    return g;
+  }
+
+  const courtierObjs=[];
+  for(let i=0;i<COURTIERS.length;i++){
+    const o=makeCourtier(COURTIERS[i]);
+    o.userData.chamber=COURTIERS[i].home;
+    chamberRoots[COURTIERS[i].home].add(o);
+    o.position.set((Math.random()-0.5)*8,0,(Math.random()-0.5)*8);
+    courtierObjs.push(o);
+  }
+
+  const extras=[];
+  for(let ch=0;ch<5;ch++){
+    const count=16;
+    for(let i=0;i<count;i++){
+      const robe=new THREE.Mesh(
+        new THREE.ConeGeometry(0.4,1.2,8),
+        new THREE.MeshStandardMaterial({color:0x4a3a5a+((i*0x101820)&0xffffff),roughness:0.7})
+      );
+      robe.position.set((Math.random()-0.5)*22,0.6,(Math.random()-0.5)*22);
+      const head=new THREE.Mesh(
+        new THREE.SphereGeometry(0.18,8,6),
+        new THREE.MeshStandardMaterial({color:0xd0a888})
+      );
+      head.position.y=0.85;
+      robe.add(head);
+      robe.userData={extraName:NAME_POOL[(ch*16+i)%NAME_POOL.length],phase:Math.random()*6.28};
+      chamberRoots[ch].add(robe);
+      extras.push(robe);
+    }
+  }
+
+  function pickAlly(idA){
+    let best=-1,bestScore=-1;
+    for(let i=0;i<COURTIERS.length;i++){
+      if(i===idA)continue;
+      const k=idA<i?(idA+"-"+i):(i+"-"+idA);
+      const v=memory.alliances[k]||0;
+      if(v>bestScore){bestScore=v;best=i;}
+    }
+    return best;
+  }
+
+  function setAlliance(a,b,delta){
+    const k=a<b?(a+"-"+b):(b+"-"+a);
+    memory.alliances[k]=Math.max(-3,Math.min(3,(memory.alliances[k]||0)+delta));
+  }
+
+  const cameras=[
+    {chamber:0,pos:[0,12,28],look:[0,4,-12],name:"Throne wide"},
+    {chamber:0,pos:[0,4,4],look:[0,3,-12],name:"Throne close"},
+    {chamber:0,pos:[14,8,10],look:[0,3,-10],name:"Throne side"},
+    {chamber:0,pos:[-12,16,18],look:[0,2,-8],name:"Throne high"},
+    {chamber:1,pos:[0,11,12],look:[0,1.5,0],name:"War table over"},
+    {chamber:1,pos:[10,4,10],look:[0,1.5,0],name:"War table low"},
+    {chamber:1,pos:[-2,3,7],look:[0,1.6,0],name:"War advisor"},
+    {chamber:1,pos:[0,18,0.1],look:[0,1.5,0],name:"War overhead"},
+    {chamber:2,pos:[0,9,18],look:[0,2,0],name:"Garden gazebo"},
+    {chamber:2,pos:[14,3,2],look:[0,2,0],name:"Garden whisper-corner"},
+    {chamber:2,pos:[-14,4,-2],look:[0,2,0],name:"Garden hedge"},
+    {chamber:2,pos:[0,22,0.1],look:[0,2,0],name:"Garden top-down"},
+    {chamber:3,pos:[0,8,14],look:[0,2,0],name:"Kitchen overview"},
+    {chamber:3,pos:[-9,3,2],look:[0,2,0],name:"Kitchen fires"},
+    {chamber:3,pos:[10,4,2],look:[0,2,0],name:"Kitchen stalls"},
+    {chamber:4,pos:[0,6,12],look:[0,2,0],name:"Library wide"},
+    {chamber:4,pos:[10,3,4],look:[0,2,4],name:"Library candlelit"},
+    {chamber:4,pos:[-2,3,8],look:[0,1.4,4],name:"Library desk"},
+    {chamber:4,pos:[0,14,0.1],look:[0,2,0],name:"Library top"}
+  ];
+
+  let activeChamber=0;
+  let camIdx=0;
+  let camNextSwap=performance.now()+8000;
+  let chamberNextSwap=performance.now()+15000+Math.random()*10000;
+  let focusIdx=0;
+  let focusNext=performance.now()+9000;
+  let graphVisible=false;
+  let graphNext=performance.now()+30000;
+  let chyronNext=performance.now()+5000;
+  let reseedAt=performance.now()+10*60*1000;
+  let interactionPings=[];
+  let curtainAlpha=0;
+  let curtainDir=0;
+
+  function showCurtain(){curtainDir=1;}
+  function hideCurtain(){curtainDir=-1;}
+
+  function setActiveChamber(idx){
+    if(idx===activeChamber)return;
+    showCurtain();
+    setTimeout(()=>{
+      for(let i=0;i<chamberRoots.length;i++)chamberRoots[i].visible=(i===idx);
+      activeChamber=idx;
+      scene.background=new THREE.Color(CHAMBERS[idx].palette.bg);
+      scene.fog.color=new THREE.Color(CHAMBERS[idx].palette.bg);
+      const cs=cameras.filter(c=>c.chamber===idx);
+      const c=cs[Math.floor(Math.random()*cs.length)];
+      camera.position.set(c.pos[0],c.pos[1],c.pos[2]);
+      camera.lookAt(c.look[0],c.look[1],c.look[2]);
+      hideCurtain();
+    },420);
+  }
+
+  function nextCamera(){
+    const cs=cameras.map((c,i)=>({c,i})).filter(x=>x.c.chamber===activeChamber);
+    if(!cs.length)return;
+    const c=cs[(Math.floor(Math.random()*cs.length))].c;
+    camera.position.set(c.pos[0],c.pos[1],c.pos[2]);
+    camera.lookAt(c.look[0],c.look[1],c.look[2]);
+  }
+
+  function popToast(msg){
+    toast.textContent=msg;
+    toast.style.opacity=1;
+    setTimeout(()=>{toast.style.opacity=0;},2200);
+  }
+
+  const STORY_BEATS=[
+    "Year %Y Act 1 — The court convenes. The King hears petitions.",
+    "Year %Y Act 2 — Velia traces a thread to Stormgate.",
+    "Year %Y Act 2 — Princess Seraphine refuses the Hauthorn match.",
+    "Year %Y Act 3 — Mage Eldoros vanishes into the library.",
+    "Year %Y Act 3 — Lady Lyra is seen too often near the Prince.",
+    "Year %Y Act 4 — Chancellor Vorm petitions for the Eastern Campaign.",
+    "Year %Y Act 4 — Captain Brann confides in the Spymaster.",
+    "Year %Y Act 5 — A whisper in the gazebo becomes a vow.",
+    "Year %Y Act 5 — The Queen drafts a letter to House Vaillance.",
+    "Year %Y Act 6 — A forbidden tome leaves the library by night.",
+    "Year %Y Act 6 — A gracious betrayal: 'You have lost the King's favor.'",
+    "Year %Y Act 7 — A betrothal is announced under the rose trellis."
+  ];
+  let beatIdx=Math.floor(Math.random()*STORY_BEATS.length);
+
+  function beatStory(){
+    const t=STORY_BEATS[beatIdx%STORY_BEATS.length].replace("%Y",memory.year);
+    chyron.textContent=t;
+    memory.acts.push({y:memory.year,t});
+    if(memory.acts.length>40)memory.acts.shift();
+    beatIdx++;
+    if(beatIdx%6===0){
+      const a=Math.floor(Math.random()*COURTIERS.length);
+      let b=Math.floor(Math.random()*COURTIERS.length);if(b===a)b=(b+1)%COURTIERS.length;
+      setAlliance(a,b,Math.random()<0.5?1:-1);
+      saveMem(memory);
+    }
+    if(beatIdx%9===0){
+      const a=Math.floor(Math.random()*COURTIERS.length);
+      let b=Math.floor(Math.random()*COURTIERS.length);if(b===a)b=(b+1)%COURTIERS.length;
+      memory.marriages.push({a:COURTIERS[a].short,b:COURTIERS[b].short,y:memory.year});
+      if(memory.marriages.length>10)memory.marriages.shift();
+      popToast(COURTIERS[a].short+" weds "+COURTIERS[b].short);
+      saveMem(memory);
+    }
+    if(beatIdx%11===0){
+      const a=Math.floor(Math.random()*COURTIERS.length);
+      memory.betrayals.push({by:COURTIERS[a].short,y:memory.year});
+      if(memory.betrayals.length>10)memory.betrayals.shift();
+      popToast(COURTIERS[a].short+" loses the King's favor");
+      saveMem(memory);
+    }
+  }
+
+  function whisperCount(){
+    let w=0;
+    const inCh=courtierObjs.filter(o=>o.userData.chamber===activeChamber);
+    for(let i=0;i<inCh.length;i++)
+      for(let j=i+1;j<inCh.length;j++){
+        const d=inCh[i].position.distanceTo(inCh[j].position);
+        if(d<2.4)w++;
+      }
+    return w;
+  }
+
+  function updateHud(){
+    const ch=CHAMBERS[activeChamber];
+    const inCh=courtierObjs.filter(o=>o.userData.chamber===activeChamber).length;
+    const w=whisperCount();
+    hud.innerHTML="<b>COURT OF AURALIS</b><br>"+
+      "CHAMBER "+(activeChamber+1)+" OF 5: <b>"+ch.name+"</b><br>"+
+      inCh+" COURTIERS · "+(w>0?("WHISPERS DETECTED ("+w+")"):"calm")+
+      "<br>YEAR "+memory.year+" · CALENDAR DAY "+memory.calendar+
+      "<br>RESEEDS "+memory.reseeds+" · ALLIANCES "+Object.keys(memory.alliances).length+
+      "<br>MARRIAGES "+memory.marriages.length+" · BETRAYALS "+memory.betrayals.length;
+  }
+
+  function updateBrain(){
+    const o=courtierObjs[focusIdx];
+    const c=o.userData.courtier;
+    const step=o.userData.planStep%c.plan.length;
+    const ally=pickAlly(focusIdx);
+    const allyName=ally>=0?COURTIERS[ally].short:"—";
+    brainEl.innerHTML="<h4>"+c.name.toUpperCase()+"</h4>"+
+      "<div class='row'><span class='lbl'>ROLE</span>"+c.role+"</div>"+
+      "<div class='row'><span class='lbl'>GOAL</span>"+c.goal+"</div>"+
+      "<div class='row'><span class='lbl'>NEED</span>3 confirmed sources</div>"+
+      "<div class='row'><span class='lbl'>HAVE</span>"+(1+(focusIdx%3))+" source(s)</div>"+
+      "<div class='row'><span class='lbl'>PLAN</span>"+c.plan.join(" → ")+"</div>"+
+      "<div class='row'><span class='lbl'>STEP</span>"+(step+1)+" of "+c.plan.length+
+        " ("+c.plan[step]+")</div>"+
+      "<div class='row'><span class='lbl'>ALLY</span>"+allyName+"</div>"+
+      "<div class='row'><span class='lbl'>FALLBACK</span>"+
+        (CHAMBERS[(c.home+2)%5].name)+"</div>"+
+      "<div class='row'><span class='lbl'>MOOD</span>"+c.mood+"</div>";
+  }
+
+  function updateCast(){
+    const lines=["<b>COURT</b>"];
+    for(let i=0;i<COURTIERS.length;i++){
+      const c=COURTIERS[i];
+      const here=courtierObjs[i].userData.chamber;
+      const mark=(i===focusIdx)?"▶ ":"  ";
+      lines.push(mark+"<span class='nm'>"+c.short+"</span> "+
+        "<span class='gl'>"+CHAMBERS[here].name.split(" ")[0].toLowerCase()+"</span>");
+    }
+    lines.push("<i>court of "+(NAME_POOL.length+extras.length)+" souls</i>");
+    castEl.innerHTML=lines.join("<br>");
+  }
+
+  function drawMap(){
+    const W=mapCv.width,H=mapCv.height;
+    mapCtx.fillStyle="#0a0410";
+    mapCtx.fillRect(0,0,W,H);
+    mapCtx.strokeStyle="#7a5a2e";
+    mapCtx.lineWidth=1;
+    mapCtx.strokeRect(2,2,W-4,H-4);
+    for(let i=0;i<CHAMBERS.length;i++){
+      const c=CHAMBERS[i];
+      const x=c.mapPos[0]*W,y=c.mapPos[1]*H;
+      const w=c.mapSize[0]*W,h=c.mapSize[1]*H;
+      mapCtx.fillStyle=(i===activeChamber)?"#3a2455":"#1a1028";
+      mapCtx.fillRect(x-w/2,y-h/2,w,h);
+      mapCtx.strokeStyle=(i===activeChamber)?"#ffd97a":"#7a5a2e";
+      mapCtx.strokeRect(x-w/2,y-h/2,w,h);
+      mapCtx.fillStyle="#d9b35a";
+      mapCtx.font="7px Georgia";
+      mapCtx.textAlign="center";
+      mapCtx.fillText(c.name.substring(0,12),x,y-h/2-2);
+    }
+    for(let i=0;i<courtierObjs.length;i++){
+      const o=courtierObjs[i];
+      const ch=CHAMBERS[o.userData.chamber];
+      const cx=ch.mapPos[0]*W;
+      const cy=ch.mapPos[1]*H;
+      const ox=cx+(o.position.x/22)*ch.mapSize[0]*W*0.45;
+      const oy=cy+(o.position.z/22)*ch.mapSize[1]*H*0.45;
+      mapCtx.fillStyle=(i===focusIdx)?"#ffd97a":"#c9a8ff";
+      mapCtx.beginPath();
+      mapCtx.arc(ox,oy,(i===focusIdx)?2.4:1.6,0,Math.PI*2);
+      mapCtx.fill();
+    }
+  }
+
+  function drawGraph(){
+    if(!graphVisible){graphCv.style.display="none";return;}
+    graphCv.style.display="block";
+    const W=graphCv.width,H=graphCv.height;
+    graphCtx.fillStyle="rgba(8,4,16,0.92)";
+    graphCtx.fillRect(0,0,W,H);
+    const cx=W/2,cy=H/2,R=Math.min(W,H)*0.36;
+    const positions=[];
+    for(let i=0;i<COURTIERS.length;i++){
+      const a=i/COURTIERS.length*Math.PI*2-Math.PI/2;
+      positions.push({x:cx+Math.cos(a)*R,y:cy+Math.sin(a)*R});
+    }
+    for(let i=0;i<COURTIERS.length;i++){
+      for(let j=i+1;j<COURTIERS.length;j++){
+        const k=i+"-"+j;
+        const v=memory.alliances[k]||0;
+        if(v===0)continue;
+        graphCtx.lineWidth=Math.min(3,Math.abs(v)+0.5);
+        graphCtx.strokeStyle=v>1?"#3afa8a":(v>0?"#7adfa0":(v<-1?"#ff4a6a":"#dd7080"));
+        graphCtx.beginPath();
+        graphCtx.moveTo(positions[i].x,positions[i].y);
+        graphCtx.lineTo(positions[j].x,positions[j].y);
+        graphCtx.stroke();
+      }
+    }
+    for(let m=0;m<memory.marriages.length;m++){
+      const mr=memory.marriages[m];
+      let ai=-1,bi=-1;
+      for(let k=0;k<COURTIERS.length;k++){
+        if(COURTIERS[k].short===mr.a)ai=k;
+        if(COURTIERS[k].short===mr.b)bi=k;
+      }
+      if(ai>=0&&bi>=0){
+        graphCtx.strokeStyle="#ffd97a";
+        graphCtx.lineWidth=3;
+        graphCtx.beginPath();
+        graphCtx.moveTo(positions[ai].x,positions[ai].y);
+        graphCtx.lineTo(positions[bi].x,positions[bi].y);
+        graphCtx.stroke();
+      }
+    }
+    for(let i=0;i<COURTIERS.length;i++){
+      const p=positions[i];
+      graphCtx.fillStyle=(i===focusIdx)?"#ffd97a":"#9c7ad9";
+      graphCtx.beginPath();
+      graphCtx.arc(p.x,p.y,(i===focusIdx)?9:7,0,Math.PI*2);
+      graphCtx.fill();
+      graphCtx.fillStyle="#f3e7d4";
+      graphCtx.font="11px Georgia";
+      graphCtx.textAlign="center";
+      const lx=p.x+(p.x-cx)*0.18;
+      const ly=p.y+(p.y-cy)*0.18+3;
+      graphCtx.fillText(COURTIERS[i].short,lx,ly);
+    }
+    graphCtx.fillStyle="#d9b35a";
+    graphCtx.font="10px Georgia";
+    graphCtx.textAlign="left";
+    graphCtx.fillText("green=ally  red=rival  gold=married  Year "+memory.year,12,H-12);
+  }
+
+  function decideAndMove(o,dt){
+    const c=o.userData.courtier;
+    if(performance.now()>o.userData.nextDecide){
+      o.userData.nextDecide=performance.now()+5000+Math.random()*5000;
+      o.userData.planStep=(o.userData.planStep+1)%c.plan.length;
+      const r=Math.random();
+      let want=o.userData.chamber;
+      if(r<0.35){
+        const opts=[0,1,2,3,4].filter(x=>x!==o.userData.chamber);
+        want=opts[Math.floor(Math.random()*opts.length)];
+      }
+      if(want!==o.userData.chamber){
+        chamberRoots[o.userData.chamber].remove(o);
+        chamberRoots[want].add(o);
+        o.userData.chamber=want;
+        o.position.set((Math.random()-0.5)*16,0,(Math.random()-0.5)*16);
+      }
+      const tx=(Math.random()-0.5)*14;
+      const tz=(Math.random()-0.5)*14;
+      o.userData.target.set(tx,0,tz);
+      o.userData.diamondPulse=performance.now()+1500;
+    }
+    const dx=o.userData.target.x-o.position.x;
+    const dz=o.userData.target.z-o.position.z;
+    const d=Math.sqrt(dx*dx+dz*dz);
+    if(d>0.05){
+      o.position.x+=dx/d*dt*1.3;
+      o.position.z+=dz/d*dt*1.3;
+      o.rotation.y=Math.atan2(dx,dz);
+    }
+    o.userData.trail.material.opacity=0.18;
+    o.userData.trail.position.x=-Math.sin(o.rotation.y)*0.6;
+    o.userData.trail.position.z=-Math.cos(o.rotation.y)*0.6;
+    o.userData.trail.rotation.z=-o.rotation.y;
+  }
+
+  function checkInteractions(){
+    const inCh=[];
+    for(let i=0;i<courtierObjs.length;i++)
+      if(courtierObjs[i].userData.chamber===activeChamber)inCh.push(i);
+    for(let i=0;i<inCh.length;i++)
+      for(let j=i+1;j<inCh.length;j++){
+        const a=courtierObjs[inCh[i]];
+        const b=courtierObjs[inCh[j]];
+        if(a.position.distanceTo(b.position)<2.0){
+          const k=inCh[i]<inCh[j]?(inCh[i]+"-"+inCh[j]):(inCh[j]+"-"+inCh[i]);
+          if(!a.userData._spk||performance.now()-a.userData._spk>4000){
+            a.userData._spk=performance.now();
+            interactionPings.push({x:(a.position.x+b.position.x)/2,
+              y:1.6,z:(a.position.z+b.position.z)/2,t:performance.now()});
+            const delta=Math.random()<0.6?1:-1;
+            memory.alliances[k]=Math.max(-3,Math.min(3,(memory.alliances[k]||0)+delta));
+            saveMem(memory);
+          }
+        }
+      }
+  }
+
+  const sparkleGeo=new THREE.SphereGeometry(0.16,8,6);
+  const sparkleMat=new THREE.MeshBasicMaterial({color:0xffd97a,transparent:true,opacity:0.85});
+  const sparklePool=[];
+  for(let i=0;i<32;i++){
+    const s=new THREE.Mesh(sparkleGeo,sparkleMat.clone());
+    s.visible=false;
+    scene.add(s);
+    sparklePool.push(s);
+  }
+
+  function renderSparkles(){
+    let pi=0;
+    const now=performance.now();
+    for(let i=interactionPings.length-1;i>=0;i--){
+      const p=interactionPings[i];
+      if(now-p.t>1800){interactionPings.splice(i,1);continue;}
+    }
+    for(let i=0;i<sparklePool.length;i++)sparklePool[i].visible=false;
+    for(let i=0;i<interactionPings.length&&pi<sparklePool.length;i++){
+      const p=interactionPings[i];
+      const age=(now-p.t)/1800;
+      for(let k=0;k<3&&pi<sparklePool.length;k++){
+        const s=sparklePool[pi++];
+        const ang=age*6+k*2.094;
+        s.position.set(p.x+Math.cos(ang)*age*0.8,
+                       p.y+age*0.6,
+                       p.z+Math.sin(ang)*age*0.8);
+        s.material.opacity=0.9*(1-age);
+        s.visible=true;
+      }
+    }
+  }
+
+  const decoMat=new THREE.MeshBasicMaterial({color:0xffd97a,transparent:true,opacity:0});
+  const decoGeo=new THREE.OctahedronGeometry(0.35,0);
+  const diamond=new THREE.Mesh(decoGeo,decoMat);
+  scene.add(diamond);
+
+  function renderDiamond(){
+    const o=courtierObjs[focusIdx];
+    const due=o.userData.diamondPulse||0;
+    const remain=due-performance.now();
+    if(remain>0){
+      diamond.position.set(o.position.x,2.6,o.position.z);
+      const ag=1-remain/1500;
+      diamond.material.opacity=Math.max(0,1-ag);
+      diamond.rotation.y+=0.05;
+      diamond.rotation.x+=0.04;
+      diamond.visible=true;
+    }else{
+      diamond.visible=false;
+    }
+  }
+
+  let curtain;
+  {
+    const cgeo=new THREE.PlaneGeometry(80,60);
+    const cmat=new THREE.MeshBasicMaterial({color:0x6a3aa3,transparent:true,opacity:0,side:THREE.DoubleSide});
+    curtain=new THREE.Mesh(cgeo,cmat);
+    scene.add(curtain);
+  }
+
+  function updateCurtain(){
+    if(curtainDir!==0){
+      curtainAlpha+=curtainDir*0.05;
+      if(curtainAlpha>=1){curtainAlpha=1;curtainDir=0;}
+      if(curtainAlpha<=0){curtainAlpha=0;curtainDir=0;}
+    }
+    curtain.material.opacity=curtainAlpha*0.95;
+    curtain.position.copy(camera.position);
+    const dir=new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    curtain.position.add(dir.multiplyScalar(2.5));
+    curtain.lookAt(camera.position);
+  }
+
+  let last=performance.now();
+  function loop(){
+    const now=performance.now();
+    const dt=Math.min(0.05,(now-last)/1000);
+    last=now;
+
+    if(now>camNextSwap){
+      camNextSwap=now+8000+Math.random()*4000;
+      nextCamera();
+    }
+    if(now>chamberNextSwap){
+      chamberNextSwap=now+60000+Math.random()*30000;
+      const next=(activeChamber+1+Math.floor(Math.random()*4))%5;
+      setActiveChamber(next);
+    }
+    if(now>focusNext){
+      focusNext=now+9000+Math.random()*5000;
+      const inCh=courtierObjs.map((o,i)=>({o,i}))
+        .filter(x=>x.o.userData.chamber===activeChamber);
+      if(inCh.length)focusIdx=inCh[Math.floor(Math.random()*inCh.length)].i;
+      else focusIdx=Math.floor(Math.random()*COURTIERS.length);
+    }
+    if(now>graphNext){
+      graphNext=now+30000;
+      graphVisible=!graphVisible;
+    }
+    if(now>chyronNext){
+      chyronNext=now+8000+Math.random()*4000;
+      beatStory();
+    }
+    if(now>reseedAt){
+      reseedAt=now+10*60*1000;
+      memory.year+=1;
+      memory.calendar+=1;
+      saveMem(memory);
+      popToast("Year "+memory.year+" · the court turns");
+      for(let i=0;i<courtierObjs.length;i++){
+        courtierObjs[i].userData.planStep=0;
+        courtierObjs[i].userData.nextDecide=0;
+      }
+    }
+
+    for(let i=0;i<courtierObjs.length;i++){
+      const o=courtierObjs[i];
+      decideAndMove(o,dt);
+      const focus=(i===focusIdx);
+      o.userData.halo.material.opacity=focus?0.7:0.0;
+      o.userData.halo.rotation.z+=focus?0.03:0;
+    }
+
+    for(let i=0;i<extras.length;i++){
+      const e=extras[i];
+      e.userData.phase+=dt*0.6;
+      e.position.x+=Math.cos(e.userData.phase)*dt*0.4;
+      e.position.z+=Math.sin(e.userData.phase*0.7)*dt*0.4;
+      const cx=e.position.x,cz=e.position.z;
+      if(cx>14)e.position.x=14;if(cx<-14)e.position.x=-14;
+      if(cz>14)e.position.z=14;if(cz<-14)e.position.z=-14;
+    }
+
+    scene.traverse(o=>{
+      if(o.userData&&o.userData.flicker){
+        o.scale.y=1+Math.sin(now*0.015+o.position.x)*0.15;
+        o.material.opacity=0.7+Math.sin(now*0.02+o.position.x)*0.2;
+      }
+    });
+
+    checkInteractions();
+    renderSparkles();
+    renderDiamond();
+    updateCurtain();
+
+    updateHud();
+    updateBrain();
+    updateCast();
+    drawMap();
+    drawGraph();
+
+    renderer.render(scene,camera);
+    requestAnimationFrame(loop);
+  }
+
+  setActiveChamber(0);
+  scene.background=new THREE.Color(CHAMBERS[0].palette.bg);
+  scene.fog.color=new THREE.Color(CHAMBERS[0].palette.bg);
+
+  window.addEventListener("resize",()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  });
+
+  window.addEventListener("beforeunload",()=>{
+    saveMem(memory);
+    disposeAll();
+    renderer.dispose();
+  });
+
+  popToast("Year "+memory.year+" · Court of Auralis convenes");
+  loop();
+})();
+</script>
+</body>
+</html>

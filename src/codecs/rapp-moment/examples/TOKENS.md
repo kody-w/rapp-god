@@ -1,0 +1,30 @@
+# Example Moment tokens
+
+Each token is `base64url(JSON.stringify(moment))` (padding stripped) — the canonical share token (`encode()` in the reference engine). Paste into any conformant player as `?m=<token>`.
+
+## Still Savanna  (`examples/still-savanna.json`, 2 keyframes)
+
+```
+eyJ2IjoxLCJ0IjoiU3RpbGwgU2F2YW5uYSIsImEiOiJAZXhhbXBsZSIsImIiOiJzYXZhbm5hIiwiayI6W3siYXQiOjAsInMiOjAuMywibCI6MC4zLCJwIjowLjEsImciOjAuMiwiaCI6NDAsIngiOjAsInoiOjB9LHsiYXQiOjk5LCJzIjowLjQsImwiOjAuMzUsInAiOjAuMSwiZyI6MC4zLCJoIjo2MCwieCI6MCwieiI6MC4xfV19
+```
+
+Play: `https://kody-w.github.io/rapp-hologram/?m=eyJ2IjoxLCJ0IjoiU3RpbGwgU2F2YW5uYSIsImEiOiJAZXhhbXBsZSIsImIiOiJzYXZhbm5hIiwiayI6W3siYXQiOjAsInMiOjAuMywibCI6MC4zLCJwIjowLjEsImciOjAuMiwiaCI6NDAsIngiOjAsInoiOjB9LHsiYXQiOjk5LCJzIjowLjQsImwiOjAuMzUsInAiOjAuMSwiZyI6MC4zLCJoIjo2MCwieCI6MCwieiI6MC4xfV19`
+
+## Frenzy Void  (`examples/frenzy-void.json`, 4 keyframes)
+
+```
+eyJ2IjoxLCJ0IjoiRnJlbnp5IFZvaWQiLCJhIjoiQGV4YW1wbGUiLCJiIjoidm9pZCIsImsiOlt7ImF0IjowLCJzIjowLjUsImwiOjAuMiwicCI6MC42LCJnIjowLjQsImgiOjI4MCwieCI6MC42LCJ6IjotMC42fSx7ImF0IjozMywicyI6MC4yLCJsIjowLjUsInAiOjAuOSwiZyI6MC43LCJoIjoxMjAsIngiOi0wLjQsInoiOjAuNX0seyJhdCI6NjYsInMiOjAuNywibCI6MC4zLCJwIjowLjMsImciOjAuOSwiaCI6MjAwLCJ4IjowLjMsInoiOjAuNH0seyJhdCI6OTksInMiOjAuOSwibCI6MC42LCJwIjowLjEsImciOjAuNSwiaCI6NDAsIngiOi0wLjcsInoiOi0wLjJ9XX0
+```
+
+Play: `https://kody-w.github.io/rapp-hologram/?m=eyJ2IjoxLCJ0IjoiRnJlbnp5IFZvaWQiLCJhIjoiQGV4YW1wbGUiLCJiIjoidm9pZCIsImsiOlt7ImF0IjowLCJzIjowLjUsImwiOjAuMiwicCI6MC42LCJnIjowLjQsImgiOjI4MCwieCI6MC42LCJ6IjotMC42fSx7ImF0IjozMywicyI6MC4yLCJsIjowLjUsInAiOjAuOSwiZyI6MC43LCJoIjoxMjAsIngiOi0wLjQsInoiOjAuNX0seyJhdCI6NjYsInMiOjAuNywibCI6MC4zLCJwIjowLjMsImciOjAuOSwiaCI6MjAwLCJ4IjowLjMsInoiOjAuNH0seyJhdCI6OTksInMiOjAuOSwibCI6MC42LCJwIjowLjEsImciOjAuNSwiaCI6NDAsIngiOi0wLjcsInoiOi0wLjJ9XX0`
+
+## Nested Fractal  (`examples/nested-fractal.json`, has an `embed`)
+
+A Moment whose record carries an `embed` (a child Moment's token) — §11⅞. A standard player ignores the field and plays the outer organism; a fractal-aware player nests the child in-world. The whole tree rides inside the one token.
+
+```
+eyJ2IjoxLCJ0IjoiTmVzdGVkIEZyYWN0YWwiLCJhIjoiQGV4YW1wbGUiLCJiIjoidm9pZCIsImsiOlt7ImF0IjowLCJzIjowLjM1LCJsIjowLjQsInAiOjAuMiwiZyI6MC40LCJoIjoyODAsIngiOjAsInoiOjB9LHsiYXQiOjUwLCJzIjowLjcsImwiOjAuNjUsInAiOjAuNiwiZyI6MC44LCJoIjo0MCwieCI6MCwieiI6MC40fSx7ImF0Ijo5OSwicyI6MC41LCJsIjowLjYsInAiOjAuNCwiZyI6MC45NSwiaCI6MTgwLCJ4IjowLCJ6IjowfV0sImVtYmVkIjoiZXlKMklqb3hMQ0owSWpvaVNXNXVaWElnVTJWbFpDSXNJbUVpT2lKQVpYaGhiWEJzWlNJc0ltSWlPaUptYjNKbGMzUWlMQ0pySWpwYmV5SmhkQ0k2TUN3aWN5STZNQzR6TENKc0lqb3dMalExTENKd0lqb3dMaklzSW1jaU9qQXVNeXdpYUNJNk1USXdMQ0o0SWpvd0xDSjZJam90TUM0eGZTeDdJbUYwSWpvNU9Td2ljeUk2TUM0ME5Td2liQ0k2TUM0MUxDSndJam93TGpJMUxDSm5Jam93TGpZc0ltZ2lPakl3TUN3aWVDSTZNQ3dpZWlJNk1DNHlmVjE5In0
+```
+
+Play flat (any conformant player): prepend `https://kody-w.github.io/rapp-hologram/?m=`. Play nested: open `fractal.html?m=<token>` (reference engine surface, §13).
+

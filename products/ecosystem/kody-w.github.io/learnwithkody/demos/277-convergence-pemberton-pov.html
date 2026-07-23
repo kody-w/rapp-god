@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Brimsworth Convergence — POV 8/12: Mrs Pemberton (99, bakery elder)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  html,body{margin:0;padding:0;background:#0b0a0c;color:#f3ecdc;font-family:Georgia,'Times New Roman',serif;overflow:hidden;height:100%}
+  #c{position:fixed;inset:0;display:block}
+  .ui{position:fixed;pointer-events:none;font-feature-settings:"smcp" on,"onum" on}
+  #title{top:14px;left:14px;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:#e8d9b3;text-shadow:0 1px 2px #000;max-width:62%}
+  #title b{color:#fff7e0}
+  #title small{display:block;letter-spacing:.06em;font-size:10px;color:#bda884;text-transform:none;margin-top:2px;font-style:italic}
+  #clock{top:14px;right:14px;text-align:right;font-size:11px;color:#d9c79a;text-shadow:0 1px 2px #000}
+  #clock b{color:#fff;font-size:14px;letter-spacing:.1em}
+  #chyron{left:50%;bottom:36px;transform:translateX(-50%);background:rgba(20,16,10,.78);border:1px solid #6e5a36;padding:10px 22px;font-size:14px;color:#fdeec3;letter-spacing:.04em;border-radius:2px;max-width:80%;text-align:center;backdrop-filter:blur(2px);box-shadow:0 4px 18px rgba(0,0,0,.5);transition:opacity .9s ease}
+  #chyron.h{opacity:0}
+  #chyron i{color:#f6d27a;font-style:italic}
+  #pov{left:14px;bottom:14px;font-size:10px;color:#9c8866;line-height:1.45;max-width:240px;text-shadow:0 1px 2px #000}
+  #pov b{color:#e8d9b3}
+  #ticker{right:14px;bottom:14px;font-size:10px;color:#9c8866;line-height:1.5;max-width:280px;text-align:right;text-shadow:0 1px 2px #000}
+  #ticker b{color:#e8d9b3}
+  #ticker .tab{display:inline-block;margin-left:8px;padding:1px 6px;border:1px solid #5a4a30;border-radius:2px;color:#cdb98a}
+  #ticker .tab.live{color:#fff;border-color:#a88a4f;background:rgba(120,90,40,.25)}
+  #vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.55) 100%)}
+  #frame{position:fixed;inset:0;pointer-events:none;border:14px solid #0b0a0c;box-shadow:inset 0 0 60px rgba(0,0,0,.55)}
+  #grain{position:fixed;inset:0;pointer-events:none;opacity:.06;mix-blend-mode:overlay;background-image:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px)}
+  .flash{position:fixed;inset:0;background:#fff;pointer-events:none;opacity:0}
+  #blink{position:fixed;inset:0;background:#000;pointer-events:none;opacity:0}
+  #seal{position:fixed;left:14px;top:50%;transform:translateY(-50%);font-size:9px;color:#7a6a48;letter-spacing:.16em;writing-mode:vertical-rl;text-orientation:mixed;opacity:.65}
+  @media (max-width:560px){#title{font-size:11px;max-width:55%}#chyron{font-size:12px;padding:8px 14px}}
+</style>
+</head>
+<body>
+<!-- ROUND26_CONVERGENCE v1 -->
+<canvas id="c"></canvas>
+<div id="vignette" class="ui"></div>
+<div id="grain" class="ui"></div>
+<div id="frame" class="ui"></div>
+<div class="flash ui" id="flash"></div>
+<div id="blink" class="ui"></div>
+<div id="seal" class="ui">BRIMSWORTH · CONVERGENCE · POV 8 / 12</div>
+<div id="title" class="ui"><b>Mrs Pemberton</b> — 99, baker, elder of Brimsworth<small>R21 WEDDING · first-person · the chair by the chestnut · cane in hand</small></div>
+<div id="clock" class="ui"><b id="t">00:00</b><br/>master clock · ch:brimsworth_convergence</div>
+<div id="chyron" class="ui h">…</div>
+<div id="pov" class="ui"><b>POV 8 / 12 · pemberton</b><br/>eye 1.55m · slow turn · she has seen four generations marry under this chestnut.</div>
+<div id="ticker" class="ui"><b>twin-tab POV ticker</b><br/><span id="tabs"></span></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<script>
+"use strict";
+(function(){
+  // ============================================================
+  // BRIMSWORTH CONVERGENCE — POV 8 / 12 : MRS PEMBERTON (99)
+  // R26 retains R16-R25. R21 wedding reprise. master clock sync.
+  // All fictional.
+  // ============================================================
+
+  var POV_ID  = "pemberton";
+  var POV_NUM = 8;
+  var POV_TOTAL = 12;
+  var RESEED_INTERVAL = 600; // seconds — reseed every 600s
+  var CONVERGENCE_T   = 540; // seconds — the moment
+
+  // ---------- localStorage helpers ----------
+  function lsGet(k,d){ try{var v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;} }
+  function lsSet(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
+
+  // ---------- cross-read prior ledgers (read-only, defensive) ----------
+  var WORLDS    = lsGet("brimsworth_worlds_v1",    {entries:[]});
+  var MULTI     = lsGet("brimsworth_multiverse_v1",{entries:[]});
+  var CENTURY   = lsGet("brimsworth_century_v1",   {entries:[]});
+  var LIFETIME  = lsGet("brimsworth_lifetime_v1",  {entries:[]});
+  var CAST      = lsGet("recurring_cast_v1",       {cast:[]});
+
+  // ---------- canonical convergence ledger ----------
+  var LEDGER_KEY = "brimsworth_convergence_v1";
+  var ledger = lsGet(LEDGER_KEY, { entries:[], pov_count:0, started_at:Date.now() });
+  if(!Array.isArray(ledger.entries)) ledger.entries=[];
+
+  var MASTER_CLOCK_AT_JOIN = Math.floor(performance.now()/1000);
+  var JOIN_WALL = Date.now();
+  var convergenceFiredAt = null;
+
+  function appendLedger(extra){
+    var rec = Object.assign({
+      pov_id: POV_ID,
+      master_clock_at_join: MASTER_CLOCK_AT_JOIN,
+      convergence_at: convergenceFiredAt,
+      wall_time: Date.now(),
+      pov_num: POV_NUM,
+      pov_total: POV_TOTAL
+    }, extra||{});
+    ledger.entries.push(rec);
+    ledger.pov_count = (ledger.pov_count|0) + 1;
+    lsSet(LEDGER_KEY, ledger);
+    return rec;
+  }
+  // initial join entry
+  appendLedger({event:"join", note:"mrs pemberton arrives at the chestnut court"});
+
+  // ---------- BroadcastChannel master sync ----------
+  var bc = null;
+  try{ bc = new BroadcastChannel("brimsworth_convergence"); }catch(e){ bc=null; }
+  var liveTabs = {}; // pov_id -> { last_seen, master_clock }
+  liveTabs[POV_ID] = { last_seen: Date.now(), master_clock: 0, self:true };
+
+  function bcSend(type, payload){
+    if(!bc) return;
+    try{ bc.postMessage(Object.assign({type:type, pov_id:POV_ID, t:Date.now()}, payload||{})); }catch(e){}
+  }
+  if(bc){
+    bc.onmessage = function(ev){
+      var d = ev.data||{};
+      if(!d || !d.pov_id) return;
+      liveTabs[d.pov_id] = liveTabs[d.pov_id] || {};
+      liveTabs[d.pov_id].last_seen   = Date.now();
+      liveTabs[d.pov_id].master_clock= d.master_clock || liveTabs[d.pov_id].master_clock || 0;
+      liveTabs[d.pov_id].label       = d.label || liveTabs[d.pov_id].label;
+      if(d.type === "convergence"){
+        liveTabs[d.pov_id].convergence_at = d.convergence_at;
+      }
+      renderTicker();
+    };
+    bcSend("hello", {label:"pemberton · 99 · baker", master_clock:0});
+  }
+
+  // ---------- DOM refs ----------
+  var canvas  = document.getElementById("c");
+  var elT     = document.getElementById("t");
+  var elChy   = document.getElementById("chyron");
+  var elTabs  = document.getElementById("tabs");
+  var elBlink = document.getElementById("blink");
+  var elFlash = document.getElementById("flash");
+
+  var POV_LABELS = {
+    pemberton:  "8 · pemberton (99, baker)",
+    lily:       "1 · lily (bride)",
+    arthur:     "2 · arthur (groom)",
+    rev_hollow: "3 · rev. hollow",
+    nan_briar:  "4 · nan briar",
+    fiddler:    "5 · fiddler tom",
+    photog:     "6 · willa (photog)",
+    flower_kid: "7 · little ned",
+    publican:   "9 · jem (the swan)",
+    bell_ringer:"10 · old saul",
+    constable:  "11 · constable rook",
+    stranger:   "12 · the stranger"
+  };
+
+  function renderTicker(){
+    var rows = [];
+    rows.push("master clock · " + fmtClock(masterClock) );
+    rows.push("ledger entries · " + (ledger.entries.length|0));
+    var ids = Object.keys(liveTabs).sort(function(a,b){
+      var na = (POV_LABELS[a]||a).match(/^(\d+)/);
+      var nb = (POV_LABELS[b]||b).match(/^(\d+)/);
+      return (na?+na[1]:99) - (nb?+nb[1]:99);
+    });
+    var line = "";
+    for(var i=0;i<ids.length;i++){
+      var id = ids[i], info = liveTabs[id]||{};
+      var live = (Date.now() - (info.last_seen||0)) < 6000;
+      var lab = POV_LABELS[id] || id;
+      line += '<span class="tab '+(live?"live":"")+'">'+lab+(info.convergence_at?' ✦':'')+'</span>';
+    }
+    elTabs.innerHTML = rows.join("<br/>") + "<br/>" + line;
+  }
+
+  function fmtClock(s){
+    s = Math.max(0, s|0);
+    var m = (s/60)|0, ss = s%60;
+    return (m<10?"0":"")+m+":"+(ss<10?"0":"")+ss;
+  }
+
+  // ---------- chyron ----------
+  var chyronUntil = 0;
+  function chy(html, dur){
+    elChy.innerHTML = html;
+    elChy.classList.remove("h");
+    chyronUntil = performance.now() + (dur||4500);
+  }
+
+  // ---------- seeded RNG ----------
+  function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function newSeed(){ return ((Date.now()/1000/RESEED_INTERVAL)|0) ^ 0x9E3779B1; }
+  var seed = newSeed();
+  var rng  = mulberry32(seed);
+  var lastReseedAt = 0;
+
+  function maybeReseed(elapsed){
+    if(elapsed - lastReseedAt >= RESEED_INTERVAL){
+      lastReseedAt = elapsed;
+      seed = newSeed() + ((elapsed/RESEED_INTERVAL)|0);
+      rng  = mulberry32(seed);
+      appendLedger({event:"reseed", seed:seed, at:elapsed});
+      chy('a fresh dawn over Brimsworth · <i>reseed</i>', 3500);
+    }
+  }
+
+  // ============================================================
+  // THREE.JS SCENE
+  // ============================================================
+  var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, powerPreference:"high-performance"});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.setClearColor(0x0b0a0c, 1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  var scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0xc8b994, 0.022);
+
+  // Pemberton's eye-level camera (~1.55m). She's small, slightly stooped.
+  var camera = new THREE.PerspectiveCamera(56, window.innerWidth/window.innerHeight, 0.05, 220);
+  // Her seat-of-honour position: under chestnut, facing aisle.
+  var SEAT_POS = new THREE.Vector3(-2.6, 1.05, 1.4);  // seated, eye 1.05 above seat (≈ floor 0)
+  var STAND_EYE = 1.55;
+  var SEAT_EYE  = 1.30; // when seated, her crown is lower
+  camera.position.copy(SEAT_POS);
+  camera.lookAt(0, 1.5, -3);
+
+  // Lights — golden afternoon, low angle
+  var ambient = new THREE.HemisphereLight(0xfff1cc, 0x4a3a26, 0.65);
+  scene.add(ambient);
+  var sun = new THREE.DirectionalLight(0xffd58a, 1.05);
+  sun.position.set(-7, 10, 4);
+  scene.add(sun);
+  var lant = new THREE.PointLight(0xffaa55, 0.6, 14, 1.6);
+  lant.position.set(0,3.4,-1.2);
+  scene.add(lant);
+
+  // ---------- Ground (village green) ----------
+  (function(){
+    var g = new THREE.PlaneGeometry(80,80,1,1);
+    var m = new THREE.MeshStandardMaterial({color:0x6b7a3a, roughness:1, metalness:0});
+    var mesh = new THREE.Mesh(g,m); mesh.rotation.x = -Math.PI/2; mesh.position.y = 0;
+    scene.add(mesh);
+    // stone path
+    var p = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 26), new THREE.MeshStandardMaterial({color:0xb8ad8e, roughness:.95}));
+    p.rotation.x = -Math.PI/2; p.position.set(0,0.005,-2);
+    scene.add(p);
+  })();
+
+  // ---------- Chestnut tree (canopy of POV 8's seat-of-honour) ----------
+  var chestnut = new THREE.Group();
+  (function(){
+    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.42,3.4,10),
+      new THREE.MeshStandardMaterial({color:0x4a3520, roughness:1}));
+    trunk.position.y = 1.7;
+    chestnut.add(trunk);
+    // canopy: cluster of green spheres
+    for(var i=0;i<7;i++){
+      var s = new THREE.Mesh(new THREE.SphereGeometry(1.1+Math.random()*0.55, 10, 8),
+        new THREE.MeshStandardMaterial({color: new THREE.Color().setHSL(0.28+Math.random()*0.05, 0.55, 0.32+Math.random()*0.08), roughness:1}));
+      s.position.set((Math.random()-0.5)*1.6, 3.4+Math.random()*0.9, (Math.random()-0.5)*1.6);
+      chestnut.add(s);
+    }
+    chestnut.position.set(-3.5, 0, 1.4);
+    scene.add(chestnut);
+  })();
+
+  // ---------- Stone chapel (background, behind altar) ----------
+  (function(){
+    var grp = new THREE.Group();
+    var body = new THREE.Mesh(new THREE.BoxGeometry(7,5,5),
+      new THREE.MeshStandardMaterial({color:0xc6b89a, roughness:.95}));
+    body.position.y = 2.5; grp.add(body);
+    var roof = new THREE.Mesh(new THREE.ConeGeometry(4.4, 2.3, 4),
+      new THREE.MeshStandardMaterial({color:0x4a3a2a, roughness:.95}));
+    roof.position.y = 6.1; roof.rotation.y = Math.PI/4; grp.add(roof);
+    // tower
+    var tow = new THREE.Mesh(new THREE.BoxGeometry(1.6,4.2,1.6),
+      new THREE.MeshStandardMaterial({color:0xc6b89a, roughness:.95}));
+    tow.position.set(2.6, 3.6, -0.4); grp.add(tow);
+    var spire = new THREE.Mesh(new THREE.ConeGeometry(1.0, 2.4, 4),
+      new THREE.MeshStandardMaterial({color:0x4a3a2a}));
+    spire.position.set(2.6, 6.6, -0.4); spire.rotation.y = Math.PI/4; grp.add(spire);
+    // arched door
+    var door = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 2.4),
+      new THREE.MeshStandardMaterial({color:0x2a1a0e, roughness:1, side:THREE.DoubleSide}));
+    door.position.set(0, 1.4, 2.51); grp.add(door);
+    grp.position.set(0, 0, -10);
+    scene.add(grp);
+  })();
+
+  // ---------- Cottages (skyline, suggesting village) ----------
+  (function(){
+    var coords = [[-12,-6],[-10,-12],[-6,-15],[6,-14],[10,-9],[12,-3],[11,5],[-12,3],[-13,-1]];
+    for(var i=0;i<coords.length;i++){
+      var grp = new THREE.Group();
+      var w=2+Math.random()*1.2, h=1.6+Math.random()*0.8, d=2+Math.random()*1.2;
+      var bod = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
+        new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.08+Math.random()*0.06, 0.25, 0.55+Math.random()*0.12), roughness:.95}));
+      bod.position.y = h/2; grp.add(bod);
+      var rf = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.78, 1.0, 4),
+        new THREE.MeshStandardMaterial({color:0x5a3a26}));
+      rf.position.y = h+0.5; rf.rotation.y = Math.PI/4; grp.add(rf);
+      grp.position.set(coords[i][0], 0, coords[i][1]);
+      scene.add(grp);
+    }
+  })();
+
+  // ---------- Aisle: bench rows ----------
+  (function(){
+    var benchMat = new THREE.MeshStandardMaterial({color:0x6e4a2a, roughness:.9});
+    for(var r=0;r<6;r++){
+      for(var s=-1;s<=1;s+=2){
+        var b = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.42, 0.5), benchMat);
+        b.position.set(s*1.9, 0.42, -2 - r*1.4);
+        scene.add(b);
+        var bk = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.7, 0.07), benchMat);
+        bk.position.set(s*1.9, 0.78, -2.18 - r*1.4);
+        scene.add(bk);
+        // legs
+        for(var lx=-1;lx<=1;lx+=2){
+          var lg = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.42,0.42), benchMat);
+          lg.position.set(s*1.9+lx*1.0, 0.21, -2 - r*1.4); scene.add(lg);
+        }
+      }
+    }
+  })();
+
+  // ---------- Mrs Pemberton's seat-of-honour (the chair by the chestnut) ----------
+  var seatGrp = new THREE.Group();
+  (function(){
+    var matW = new THREE.MeshStandardMaterial({color:0x4a2e1a, roughness:.85});
+    var s = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.08,0.7), matW); s.position.y=0.55; seatGrp.add(s);
+    var bk = new THREE.Mesh(new THREE.BoxGeometry(0.7,1.0,0.06), matW); bk.position.set(0,1.05,-0.32); seatGrp.add(bk);
+    for(var i=0;i<4;i++){
+      var lg = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.55,0.07), matW);
+      lg.position.set((i%2?1:-1)*0.3, 0.27, (i<2?1:-1)*0.3); seatGrp.add(lg);
+    }
+    // shawl draped on back
+    var sh = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5),
+      new THREE.MeshStandardMaterial({color:0x6a2a3a, roughness:1, side:THREE.DoubleSide}));
+    sh.position.set(0,1.0,-0.28); seatGrp.add(sh);
+    seatGrp.position.set(-2.6, 0, 1.4);
+    seatGrp.rotation.y = -0.35;
+    scene.add(seatGrp);
+  })();
+
+  // ---------- The cane (Pemberton holds it; lives in front of camera) ----------
+  var cane = new THREE.Group();
+  (function(){
+    var staff = new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.022,1.0,8),
+      new THREE.MeshStandardMaterial({color:0x2a1a10, roughness:.7}));
+    staff.position.y = -0.5; cane.add(staff);
+    var hook = new THREE.Mesh(new THREE.TorusGeometry(0.06,0.018,6,10, Math.PI),
+      new THREE.MeshStandardMaterial({color:0xb89860, roughness:.4, metalness:.6}));
+    hook.position.y = 0.04; hook.rotation.z = Math.PI/2; cane.add(hook);
+    // her hand on it (a knobbly little fist)
+    var hand = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8),
+      new THREE.MeshStandardMaterial({color:0xe6c8a8, roughness:.9}));
+    hand.position.set(0.02, -0.05, 0); cane.add(hand);
+    var sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.085,0.18,8),
+      new THREE.MeshStandardMaterial({color:0x3a2a4a, roughness:1}));
+    sleeve.position.set(0.02, -0.18, 0); cane.add(sleeve);
+    cane.position.set(0.34, -0.45, -0.55);
+    cane.rotation.z = -0.18;
+    camera.add(cane);
+    scene.add(camera);
+  })();
+
+  // ---------- Wedding cake (the cake SHE baked — tiered, white, with sugar roses) ----------
+  var cakeGrp = new THREE.Group();
+  (function(){
+    var white = new THREE.MeshStandardMaterial({color:0xfff7e6, roughness:.65});
+    var t1 = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.32,28), white); t1.position.y=0.16; cakeGrp.add(t1);
+    var t2 = new THREE.Mesh(new THREE.CylinderGeometry(0.38,0.38,0.28,24), white); t2.position.y=0.46; cakeGrp.add(t2);
+    var t3 = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.24,20), white); t3.position.y=0.72; cakeGrp.add(t3);
+    // sugar roses (pink dots)
+    var rose = new THREE.MeshStandardMaterial({color:0xe89bb0, roughness:.7});
+    for(var i=0;i<14;i++){
+      var a = i/14*Math.PI*2;
+      var r = 0.55, y=0.32;
+      var b = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), rose);
+      b.position.set(Math.cos(a)*r, y, Math.sin(a)*r); cakeGrp.add(b);
+    }
+    for(var j=0;j<10;j++){
+      var a2 = j/10*Math.PI*2;
+      var b2 = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), rose);
+      b2.position.set(Math.cos(a2)*0.38, 0.60, Math.sin(a2)*0.38); cakeGrp.add(b2);
+    }
+    // little bride/groom topper
+    var topB = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.05,0.12,8),
+      new THREE.MeshStandardMaterial({color:0xffffff, roughness:.7}));
+    topB.position.set(-0.04, 0.9, 0); cakeGrp.add(topB);
+    var topG = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.05,0.12,8),
+      new THREE.MeshStandardMaterial({color:0x222233, roughness:.7}));
+    topG.position.set(0.04, 0.9, 0); cakeGrp.add(topG);
+    // cake table
+    var tblTop = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 1.2),
+      new THREE.MeshStandardMaterial({color:0xffffff, roughness:.6}));
+    tblTop.position.y = -0.03; cakeGrp.add(tblTop);
+    for(var k=0;k<4;k++){
+      var lg = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.86,0.06),
+        new THREE.MeshStandardMaterial({color:0x6a4a2a}));
+      lg.position.set((k%2?1:-1)*0.7, -0.5, (k<2?1:-1)*0.5);
+      cakeGrp.add(lg);
+    }
+    cakeGrp.position.set(0, 0.86, 5.5); // reception table behind camera initially (inside chapel-yard)
+    cakeGrp.visible = false; // appears at reception
+    scene.add(cakeGrp);
+  })();
+
+  // ---------- Altar / arch ----------
+  var arch = new THREE.Group();
+  (function(){
+    var post = new THREE.MeshStandardMaterial({color:0xd2c08f, roughness:.85});
+    var l = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,2.6,10), post);
+    l.position.set(-1.0, 1.3, -5.2); arch.add(l);
+    var r = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,2.6,10), post);
+    r.position.set( 1.0, 1.3, -5.2); arch.add(r);
+    var top = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.06, 8, 18, Math.PI), post);
+    top.position.set(0, 2.6, -5.2); arch.add(top);
+    // florals
+    for(var i=0;i<22;i++){
+      var ang = (i/22)*Math.PI;
+      var x = Math.cos(Math.PI - ang)*1.0;
+      var y = Math.sin(ang)*1.0 + 1.6;
+      var hue = 0.95 + Math.random()*0.1;
+      var f = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6),
+        new THREE.MeshStandardMaterial({color: new THREE.Color().setHSL(hue%1, 0.5, 0.7+Math.random()*0.1), roughness:.8}));
+      f.position.set(x, y, -5.2);
+      arch.add(f);
+    }
+    scene.add(arch);
+  })();
+
+  // ============================================================
+  // CHARACTERS — recurring cast (twelve POVs co-exist)
+  // ============================================================
+  function makeFigure(opts){
+    var g = new THREE.Group();
+    var skin = new THREE.MeshStandardMaterial({color: opts.skin||0xe6c8a8, roughness:.85});
+    var cloth = new THREE.MeshStandardMaterial({color: opts.cloth||0x445566, roughness:.95});
+    var hair  = new THREE.MeshStandardMaterial({color: opts.hair ||0x2a1a10, roughness:.85});
+    var h = opts.height||1.7;
+    var legH = h*0.45, torH = h*0.32, headH = h*0.13, neckH=h*0.04;
+    var legs = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.12,legH,8), cloth);
+    legs.position.y = legH/2; g.add(legs);
+    var tor = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.18,torH,10), cloth);
+    tor.position.y = legH + torH/2; g.add(tor);
+    var head = new THREE.Mesh(new THREE.SphereGeometry(headH,12,10), skin);
+    head.position.y = legH + torH + neckH + headH; g.add(head);
+    if(opts.hat){
+      var hat = new THREE.Mesh(new THREE.CylinderGeometry(opts.hatR||0.16, opts.hatR||0.18, opts.hatH||0.1, 14),
+        new THREE.MeshStandardMaterial({color:opts.hatC||0x222233, roughness:.9}));
+      hat.position.y = legH + torH + neckH + headH*1.55; g.add(hat);
+    } else {
+      var capHair = new THREE.Mesh(new THREE.SphereGeometry(headH*1.02, 12, 8, 0, Math.PI*2, 0, Math.PI/2), hair);
+      capHair.position.y = legH + torH + neckH + headH; g.add(capHair);
+    }
+    g.userData = {head:head, baseY: g.position.y, talk:0, name:opts.name};
+    return g;
+  }
+
+  var people = [];
+  function add(p,x,z,ry){ p.position.set(x,0,z); p.rotation.y=ry||0; scene.add(p); people.push(p); return p; }
+
+  // Bride — Lily (POV 1) — white dress, dark hair
+  var lily = makeFigure({name:"lily", skin:0xefd0b3, cloth:0xfff8ee, hair:0x2a1a10, height:1.66});
+  add(lily, 0.42, -5.4, 0);
+  // Groom — Arthur (POV 2)
+  var arthur = makeFigure({name:"arthur", skin:0xe2c098, cloth:0x222a3a, hair:0x3a2a18, height:1.78});
+  add(arthur, -0.42, -5.4, 0);
+  // Reverend Hollow (POV 3) — black robe
+  var rev = makeFigure({name:"rev_hollow", skin:0xddc0a0, cloth:0x111111, hair:0xbbbbbb, height:1.72, hat:true, hatC:0x111111, hatR:0.18, hatH:0.15});
+  add(rev, 0, -6.0, 0);
+  // Nan Briar (POV 4) — bonnet
+  var nan = makeFigure({name:"nan_briar", skin:0xead0b6, cloth:0x6a4a3a, hair:0xeeeeee, height:1.55, hat:true, hatC:0xddccbb, hatR:0.18, hatH:0.07});
+  add(nan, -1.6, -1.5, 0.1);
+  // Fiddler Tom (POV 5) — green coat
+  var tom = makeFigure({name:"fiddler", skin:0xe2c098, cloth:0x3a5a3a, hair:0x4a2a18, height:1.74});
+  add(tom, 4.2, -2.0, -0.4);
+  // Willa, photographer (POV 6) — black coat, dark hair
+  var willa = makeFigure({name:"photog", skin:0xddc0a0, cloth:0x222222, hair:0x111111, height:1.67});
+  add(willa, 3.0, -3.5, -0.3);
+  // Little Ned, flower kid (POV 7) — small
+  var ned = makeFigure({name:"flower_kid", skin:0xf2dcc0, cloth:0x88aabb, hair:0xa86a3a, height:1.05});
+  add(ned, -0.7, -3.0, 0);
+  // Jem the publican (POV 9)
+  var jem = makeFigure({name:"publican", skin:0xddb892, cloth:0x6a3a2a, hair:0x4a2a18, height:1.78});
+  add(jem, 2.6, -1.0, -0.2);
+  // Old Saul, bell-ringer (POV 10)
+  var saul = makeFigure({name:"bell_ringer", skin:0xddc0a0, cloth:0x4a4a4a, hair:0xdddddd, height:1.6});
+  add(saul, -3.0, -2.5, 0.2);
+  // Constable Rook (POV 11) — dark blue, tall hat
+  var rook = makeFigure({name:"constable", skin:0xe2c098, cloth:0x1a2a4a, hair:0x222222, height:1.82, hat:true, hatC:0x111111, hatR:0.16, hatH:0.28});
+  add(rook, -3.4, -4.0, 0.0);
+  // The Stranger (POV 12) — long coat, hat
+  var stranger = makeFigure({name:"stranger", skin:0xd0b090, cloth:0x2a1a2a, hair:0x111111, height:1.78, hat:true, hatC:0x222222, hatR:0.2, hatH:0.18});
+  add(stranger, 4.5, -7.5, 0.6);
+  // a few extra townsfolk
+  for(var i=0;i<14;i++){
+    var f = makeFigure({
+      skin: 0xe6c8a8,
+      cloth: new THREE.Color().setHSL(Math.random()*0.15+0.55, 0.3, 0.35+Math.random()*0.2).getHex(),
+      hair: 0x2a1a10,
+      height: 1.55 + Math.random()*0.25,
+      hat: Math.random()<0.4
+    });
+    var side = Math.random()<0.5 ? -1 : 1;
+    var rowZ = -2.2 - Math.floor(Math.random()*5)*1.4;
+    add(f, side*(1.3+Math.random()*0.8), rowZ, side<0?0.1:-0.1);
+  }
+
+  // ============================================================
+  // PEMBERTON'S BODY (we never see her, but her hands & cane do exist)
+  // already attached via cane to camera. add an occasional shawl edge.
+  // ============================================================
+  (function(){
+    var sh = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.18),
+      new THREE.MeshStandardMaterial({color:0x6a2a3a, roughness:1, side:THREE.DoubleSide, transparent:true, opacity:0.9}));
+    sh.position.set(0, -0.55, -0.45);
+    sh.rotation.x = -0.4;
+    camera.add(sh);
+  })();
+
+  // ============================================================
+  // TIMELINE
+  // ============================================================
+  // Wedding reprise schedule — Pemberton arrives slowly, takes seat-of-honour,
+  // brings the cake she baked, gives a tiny speech at reception, watches.
+  // 0–60s     : approaching from bakery (slow walk down lane)
+  // 60–90s    : arriving at chestnut court, greeted
+  // 90–150s   : settling into seat-of-honour
+  // 150–300s  : ceremony at altar (Lily & Arthur)
+  // 300–330s  : recessional / blessings
+  // 330–420s  : reception begins, cake unveiled (the one she baked)
+  // 420–470s  : her tiny speech ("four generations under this chestnut...")
+  // 470–540s  : she sits and watches, hands on cane
+  // 540s      : LILY KNEELS — convergence moment
+  // 540s+     : warm afterglow, twilight, lanterns lit
+  // ============================================================
+
+  var startedAt = performance.now();
+  var masterClock = 0;
+  var lastBcSent = 0;
+  var lastCk = -1;
+
+  // Camera pose interpolation (we are inside Pemberton's head)
+  // These define where her gaze rests at given times.
+  var gazePoints = []; // array of {t, look:Vec3, posOverride?, eye?, note?}
+  function gp(t, look, opts){ var o={t:t, look:look.clone()}; if(opts) Object.assign(o,opts); gazePoints.push(o); }
+  // Approaching — eye STAND_EYE, walking from x ≈ -8 toward seat
+  gp(0,    new THREE.Vector3(0,1.5,-3),   {pos:new THREE.Vector3(-7.5,1.55,4.0), eye:1.55, note:"morning bell — limping in from the bakery"});
+  gp(40,   new THREE.Vector3(-2.6,1.4,1.4),{pos:new THREE.Vector3(-5.5,1.55,3.0), eye:1.55, note:"the chestnut. always the chestnut."});
+  gp(70,   new THREE.Vector3(-2.6,0.9,1.4),{pos:new THREE.Vector3(-3.5,1.55,2.4), eye:1.55, note:"young lily's mother held me here once, the morning her own mother wed"});
+  gp(95,   new THREE.Vector3(0,1.5,-5),   {pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"settled. the shawl. the cane. the chair that knows me."});
+  gp(150,  new THREE.Vector3(0,1.5,-5),   {pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"reverend hollow lifts his hands. so does my heart."});
+  gp(220,  new THREE.Vector3(0.4,1.6,-5.4),{pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"lily — i remember kneading dough beside her gran in '47"});
+  gp(280,  new THREE.Vector3(-0.4,1.6,-5.4),{pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"arthur. honest hands. like his grandfather."});
+  gp(305,  new THREE.Vector3(0,1.5,-5),   {pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"the kiss. the bells."});
+  gp(335,  new THREE.Vector3(0,0.95,5.5), {pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"they wheel the cake out. four tiers. flour from my own bin."});
+  gp(420,  new THREE.Vector3(0,0.95,5.5), {pos:new THREE.Vector3(-2.0,1.30,1.6), eye:1.30, note:"i raise my voice. small. but they listen."});
+  gp(470,  new THREE.Vector3(0,1.5,-2),   {pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"i sit. i watch. four generations under this chestnut."});
+  gp(540,  new THREE.Vector3(0,1.30,1.0), {pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"lily — kneeling. her hands on mine. her face level with mine."});
+  gp(560,  new THREE.Vector3(0,1.30,1.0), {pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"i tap her cheek. her father's eyes. her grandmother's smile."});
+  gp(620,  new THREE.Vector3(0,1.5,-1),   {pos:new THREE.Vector3(-2.6,1.30,1.4), eye:1.30, note:"twilight. lanterns. the fiddler tunes up. and i'm tired now."});
+
+  function findGaze(t){
+    for(var i=0;i<gazePoints.length-1;i++){
+      if(t>=gazePoints[i].t && t<gazePoints[i+1].t){
+        var a=gazePoints[i], b=gazePoints[i+1];
+        var u=(t-a.t)/(b.t-a.t);
+        // ease
+        u = u<0.5 ? 2*u*u : 1-Math.pow(-2*u+2,2)/2;
+        return {a:a, b:b, u:u};
+      }
+    }
+    var last = gazePoints[gazePoints.length-1];
+    return {a:last, b:last, u:0};
+  }
+
+  function lerpV(a,b,u,out){ out.x=a.x+(b.x-a.x)*u; out.y=a.y+(b.y-a.y)*u; out.z=a.z+(b.z-a.z)*u; return out; }
+
+  // ============================================================
+  // CHYRONS (paced through the timeline)
+  // ============================================================
+  var chyronScript = [
+    {t:0,   txt:'<i>brimsworth · convergence · pov 8 / 12</i> — mrs pemberton, 99, baker'},
+    {t:8,   txt:'i set the loaves to cool. then i took the cane. the bells were waiting.'},
+    {t:55,  txt:'the lane. the chestnut. the chair they keep for me.'},
+    {t:95,  txt:'<i>arrival · the seat-of-honour · the cane finds the earth</i>'},
+    {t:155, txt:'reverend hollow opens the book. his father married my brother in \'52.'},
+    {t:230, txt:'lily steps forward — i remember her at five, flour on her chin.'},
+    {t:285, txt:'arthur. his grandfather drove a milk cart for me through the storm of \'63.'},
+    {t:308, txt:'the kiss. the bells of st. brendan ring across four generations.'},
+    {t:335, txt:'<i>reception · the cake she baked · four tiers of brimsworth flour</i>'},
+    {t:425, txt:'the elder rises. she speaks. the village hushes for ninety-nine years of breath.'},
+    {t:472, txt:'and now — <i>i sit. i watch. i have seen this aisle four times before.</i>'},
+    {t:535, txt:'lily turns. lily comes. lily kneels.'},
+    {t:540, txt:'<b>convergence: pemberton — the elder\'s blessing.</b>'},
+    {t:558, txt:'her hands in mine. i tap her cheek. <i>"go on then, dear. live it well."</i>'},
+    {t:600, txt:'the lanterns light themselves into the dusk.'}
+  ];
+  var chyronIdx = 0;
+
+  // ============================================================
+  // MAIN LOOP
+  // ============================================================
+  var lookAtTarget = new THREE.Vector3(0,1.5,-3);
+  var posTarget    = new THREE.Vector3(-7.5,1.55,4.0);
+  var eyeTarget    = 1.55;
+  var headJitter = new THREE.Vector3();
+  var blinkPhase = 0;
+  var canePulse = 0;
+
+  function update(dt){
+    var elapsed = (performance.now()-startedAt)/1000;
+    masterClock = elapsed;
+    elT.textContent = fmtClock(elapsed);
+
+    // reseed every 600s
+    maybeReseed(elapsed);
+
+    // chyrons
+    while(chyronIdx<chyronScript.length && elapsed>=chyronScript[chyronIdx].t){
+      chy(chyronScript[chyronIdx].txt, 6500);
+      chyronIdx++;
+    }
+    if(performance.now()>chyronUntil) elChy.classList.add("h");
+
+    // gaze interp
+    var g = findGaze(elapsed);
+    var pa = g.a.pos || posTarget, pb = g.b.pos || pa;
+    var ea = g.a.eye!=null? g.a.eye : eyeTarget;
+    var eb = g.b.eye!=null? g.b.eye : ea;
+    var newPos = lerpV(pa, pb, g.u, new THREE.Vector3());
+    var newLook= lerpV(g.a.look, g.b.look, g.u, new THREE.Vector3());
+    var newEye = ea + (eb-ea)*g.u;
+
+    // Pemberton head wobble — slow, with occasional pause-and-rest-on-cane
+    var t = elapsed;
+    var slow = Math.sin(t*0.12)*0.02 + Math.sin(t*0.07+1.3)*0.018;
+    var bow  = Math.max(0, Math.sin(t*0.05)*0.04); // periodic head-bow over cane
+    headJitter.set(slow, -bow + Math.sin(t*0.31)*0.004, 0);
+    // breath
+    var breath = Math.sin(t*0.9)*0.005;
+    newPos.y = newEye + breath + (Math.sin(t*0.05)*0.01);
+
+    // walking bob (only during initial approach)
+    if(elapsed < 90){
+      var stepF = Math.abs(Math.sin(t*1.5));
+      newPos.y += stepF*0.02;
+      // tiny limp side-shift
+      newPos.x += Math.sin(t*1.5)*0.01;
+    }
+
+    // smooth toward
+    posTarget.lerp(newPos, 0.08);
+    lookAtTarget.lerp(newLook, 0.05);
+    camera.position.copy(posTarget);
+    camera.lookAt(lookAtTarget.x + headJitter.x, lookAtTarget.y + headJitter.y, lookAtTarget.z);
+
+    // blink (rare, for an old eye)
+    blinkPhase -= dt;
+    if(blinkPhase<0){
+      elBlink.style.transition = "opacity .12s linear";
+      elBlink.style.opacity = "1";
+      setTimeout(function(){ elBlink.style.opacity="0"; }, 110);
+      blinkPhase = 4 + Math.random()*5.5;
+    }
+
+    // cane sway
+    canePulse += dt;
+    cane.rotation.z = -0.18 + Math.sin(canePulse*0.6)*0.012 + (elapsed<90 ? Math.sin(canePulse*1.5)*0.04 : 0);
+    cane.position.x = 0.34 + Math.sin(canePulse*0.6)*0.005;
+
+    // ===== Scene staging =====
+
+    // make wedding party stand still during ceremony, sway in reception
+    var inRecep = elapsed > 330 && elapsed < 540;
+    var inCereS = elapsed > 150 && elapsed <= 330;
+
+    // reveal cake during reception
+    cakeGrp.visible = elapsed > 320;
+    if(cakeGrp.visible){
+      cakeGrp.position.y = 0.86 + Math.sin(t*0.6)*0.005;
+      cakeGrp.rotation.y = Math.sin(t*0.1)*0.03;
+    }
+
+    // ceremony layout: lily, arthur, rev at altar
+    if(elapsed > 95){
+      lily.position.set(0.42 + Math.sin(t*0.7)*0.02, 0, -5.4);
+      arthur.position.set(-0.42 + Math.sin(t*0.6)*0.02, 0, -5.4);
+      rev.position.set(0, 0, -6.0);
+      lily.rotation.y = arthur.rotation.y = 0;
+      rev.rotation.y = Math.PI;
+    }
+
+    // recessional: lily & arthur walk down aisle 305–330
+    if(elapsed > 305 && elapsed < 332){
+      var u = (elapsed - 305)/27;
+      lily.position.z = -5.4 + u*9.6;
+      arthur.position.z = -5.4 + u*9.6;
+      lily.rotation.y = arthur.rotation.y = Math.PI;
+    }
+    // reception: gathered around cake
+    if(elapsed >= 332 && elapsed < 535){
+      lily.position.set(-0.4 + Math.sin(t*0.5)*0.02, 0, 4.6);
+      arthur.position.set(0.4 + Math.sin(t*0.55)*0.02, 0, 4.6);
+      lily.rotation.y = arthur.rotation.y = Math.PI;
+    }
+
+    // CONVERGENCE — Lily breaks away and walks to Pemberton's chair
+    if(elapsed >= 525 && elapsed < 600){
+      var u2 = Math.min(1, (elapsed-525)/12);
+      // Lily moves from reception to seat
+      var sx = -0.4, sz = 4.6;
+      var ex = -2.45, ez = 2.0; // just in front of chair
+      lily.position.x = sx + (ex-sx)*u2;
+      lily.position.z = sz + (ez-sz)*u2;
+      lily.rotation.y = Math.atan2(sx-ex, sz-ez);
+      // kneel at t=540
+      if(elapsed >= 540){
+        // sink lily down so head is at camera height
+        var k = Math.min(1, (elapsed-540)/3);
+        lily.scale.y = 1 - 0.32*k;
+        lily.position.y = 0; // hips fall as scale shrinks legs
+        lily.rotation.y = Math.PI - 0.2;
+        // hands on Pemberton's hands → glow on cane handle area
+      }
+      // CONVERGENCE FIRE
+      if(elapsed >= 540 && convergenceFiredAt==null){
+        convergenceFiredAt = Math.floor(elapsed);
+        appendLedger({event:"convergence", master_clock_at:convergenceFiredAt, note:"lily kneels — the elder's blessing"});
+        chy('<b>convergence: pemberton — the elder\'s blessing.</b>', 9000);
+        // soft warm flash
+        elFlash.style.background = "#ffe8b0";
+        elFlash.style.transition = "opacity .25s ease";
+        elFlash.style.opacity = "0.55";
+        setTimeout(function(){
+          elFlash.style.transition = "opacity 1.6s ease";
+          elFlash.style.opacity = "0";
+        }, 260);
+        bcSend("convergence", {convergence_at: convergenceFiredAt, master_clock: masterClock});
+      }
+    }
+
+    // people gentle sway
+    for(var i=0;i<people.length;i++){
+      var p = people[i];
+      if(p===lily && elapsed>=540) continue; // lily is kneeling
+      p.position.y = Math.abs(Math.sin(t*0.6 + i))*0.005;
+      if(p.userData && p.userData.head){
+        p.userData.head.rotation.y = Math.sin(t*0.4 + i*0.7)*0.18;
+      }
+    }
+
+    // fiddler bow motion in reception
+    if(inRecep){
+      tom.rotation.y = -0.4 + Math.sin(t*1.4)*0.05;
+    }
+
+    // sun warms toward gold near 540
+    var goldenU = Math.max(0, Math.min(1, (elapsed-470)/120));
+    sun.color.setHSL(0.10 - goldenU*0.04, 0.7, 0.62);
+    ambient.color.setHSL(0.10, 0.4, 0.6 + goldenU*0.08);
+    scene.fog.color.setHSL(0.09 - goldenU*0.03, 0.4, 0.55 - goldenU*0.18);
+    renderer.setClearColor(scene.fog.color);
+
+    // lantern brightens at dusk
+    lant.intensity = 0.35 + goldenU*1.4;
+
+    // bc heartbeat
+    if(performance.now() - lastBcSent > 1500){
+      lastBcSent = performance.now();
+      liveTabs[POV_ID].master_clock = masterClock|0;
+      bcSend("tick", {master_clock: masterClock|0, label:"pemberton · 99 · baker"});
+      // prune stale tabs
+      var now = Date.now();
+      Object.keys(liveTabs).forEach(function(k){
+        if(k!==POV_ID && now - (liveTabs[k].last_seen||0) > 60000) delete liveTabs[k];
+      });
+      renderTicker();
+    }
+
+    // periodic ledger snapshot every 60s (so other tabs can read progress)
+    var ck = (elapsed/60)|0;
+    if(ck !== lastCk){
+      lastCk = ck;
+      appendLedger({event:"tick", at_minute: ck, master_clock: masterClock|0});
+    }
+  }
+
+  // ---------- resize ----------
+  function onResize(){
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", onResize);
+
+  // ---------- visibility / unload ----------
+  document.addEventListener("visibilitychange", function(){
+    appendLedger({event:"visibility", state: document.visibilityState});
+  });
+  window.addEventListener("beforeunload", function(){
+    appendLedger({event:"leave", master_clock: masterClock|0, convergence_at: convergenceFiredAt});
+    bcSend("bye", {master_clock: masterClock|0});
+  });
+
+  // ---------- frame ----------
+  var prev = performance.now();
+  function frame(now){
+    var dt = Math.min(0.05, (now-prev)/1000); prev = now;
+    update(dt);
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- initial ticker ----------
+  renderTicker();
+
+  // ---------- console banner ----------
+  try{
+    console.log("%cBRIMSWORTH CONVERGENCE · POV 8/12 · MRS PEMBERTON",
+      "background:#3a2a16;color:#fff7e0;padding:6px 12px;border-radius:3px;font:bold 12px Georgia");
+    console.log("ledger key:", LEDGER_KEY, " · cross-read:",
+      ["brimsworth_worlds_v1","brimsworth_multiverse_v1","brimsworth_century_v1","brimsworth_lifetime_v1","recurring_cast_v1"]);
+    console.log("master clock: BroadcastChannel('brimsworth_convergence')");
+    console.log("convergence at t=" + CONVERGENCE_T + "s. reseed every " + RESEED_INTERVAL + "s. all fictional.");
+  }catch(e){}
+
+})();
+</script>
+</body>
+</html>

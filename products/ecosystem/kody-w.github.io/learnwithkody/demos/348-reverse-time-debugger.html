@@ -1,0 +1,1101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'none'; style-src 'unsafe-inline'; style-src-attr 'none'; img-src 'none'; font-src 'none'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#080a0f">
+<title>Reverse-Time Debugger · Crash Cinema</title>
+<style>
+:root{
+  --ink:#f5f7fb;
+  --muted:#939dad;
+  --dim:#667085;
+  --void:#080a0f;
+  --panel:#10141c;
+  --panel2:#151b25;
+  --line:#293243;
+  --green:#57e59a;
+  --cyan:#62d9ff;
+  --violet:#aa87ff;
+  --amber:#ffc86b;
+  --red:#ff5f78;
+  --shadow:0 18px 60px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--void);color:var(--ink)}
+body{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+button,input{font:inherit}
+button{color:inherit}
+button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+.skip{
+  position:fixed;z-index:100;top:.6rem;left:.6rem;transform:translateY(-160%);
+  padding:.6rem .8rem;border-radius:.5rem;background:#fff;color:#080a0f;font-weight:900
+}
+.skip:focus{transform:none}
+#atmosphere{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:.8}
+#cinema{
+  --crash:1;--country:1;--press:1;--flash:0;--schema:1;
+  position:relative;z-index:1;height:100dvh;display:grid;
+  grid-template-rows:auto auto minmax(0,1fr) auto auto;
+  gap:8px;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right))
+    max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));
+  isolation:isolate
+}
+#cinema::before{
+  content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(circle at 8% 15%,rgba(98,217,255,.08),transparent 28%),
+    radial-gradient(circle at 90% 4%,rgba(170,135,255,.09),transparent 26%),
+    linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px);
+  background-size:auto,auto,100% 24px
+}
+#cinema::after{
+  content:"";position:absolute;inset:0;z-index:20;pointer-events:none;opacity:calc(var(--crash)*.18);
+  background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,95,120,.1) 4px);
+  mix-blend-mode:screen
+}
+.topbar,.transport,.panel,.perspectives,.narrative{
+  border:1px solid var(--line);background:rgba(12,16,23,.94);box-shadow:var(--shadow)
+}
+.topbar{
+  min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:8px 12px;border-radius:10px
+}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand-mark{
+  display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--cyan);
+  border-radius:8px;color:var(--cyan);font-weight:1000;box-shadow:0 0 22px rgba(98,217,255,.18)
+}
+.kicker{margin:0;color:var(--cyan);font-size:10px;font-weight:900;letter-spacing:.17em;text-transform:uppercase}
+h1{margin:1px 0 0;font-size:clamp(14px,2.1vw,22px);line-height:1.05;letter-spacing:-.04em;white-space:nowrap}
+.crash-clock{display:flex;align-items:center;gap:10px;text-align:right}
+.clock-label{color:var(--muted);font-size:10px;letter-spacing:.12em}
+#clock{
+  min-width:86px;color:var(--red);font-size:clamp(18px,3vw,27px);font-weight:1000;
+  letter-spacing:-.05em;text-shadow:0 0 18px rgba(255,95,120,.55)
+}
+.transport{
+  display:grid;grid-template-columns:auto minmax(180px,1fr) auto;align-items:center;gap:12px;
+  min-height:56px;padding:7px 10px;border-radius:10px
+}
+.mode{
+  display:flex;align-items:center;gap:7px;min-width:190px;color:var(--cyan);
+  font-size:10px;font-weight:900;letter-spacing:.1em;text-transform:uppercase
+}
+.mode-dot{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor}
+.scrub-wrap{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px}
+.edge{color:var(--muted);font-size:10px;font-weight:800}
+#timeRange{
+  width:100%;height:28px;margin:0;appearance:none;background:transparent;cursor:ew-resize;
+  touch-action:pan-x
+}
+#timeRange::-webkit-slider-runnable-track{
+  height:5px;border:1px solid #354157;border-radius:999px;
+  background:linear-gradient(90deg,var(--cyan),var(--violet) 62%,var(--red))
+}
+#timeRange::-moz-range-track{
+  height:5px;border:1px solid #354157;border-radius:999px;
+  background:linear-gradient(90deg,var(--cyan),var(--violet) 62%,var(--red))
+}
+#timeRange::-webkit-slider-thumb{
+  appearance:none;width:18px;height:18px;margin-top:-7px;border:3px solid #fff;border-radius:50%;
+  background:var(--red);box-shadow:0 0 0 4px rgba(255,95,120,.18),0 0 18px rgba(255,95,120,.65)
+}
+#timeRange::-moz-range-thumb{
+  width:13px;height:13px;border:3px solid #fff;border-radius:50%;
+  background:var(--red);box-shadow:0 0 0 4px rgba(255,95,120,.18),0 0 18px rgba(255,95,120,.65)
+}
+.transport-actions{display:flex;gap:6px}
+.control{
+  min-height:36px;padding:6px 10px;border:1px solid #3a4559;border-radius:7px;
+  background:#171d28;font-size:10px;font-weight:900;letter-spacing:.04em;cursor:pointer
+}
+.control:hover:not(:disabled){border-color:var(--cyan);background:#1d2735}
+.control:disabled{opacity:.38;cursor:default}
+.stage{display:grid;grid-template-columns:1fr 1.22fr 1fr;gap:8px;min-height:0}
+.panel{position:relative;min-width:0;min-height:0;overflow:hidden;border-radius:10px}
+.panel-head{
+  height:39px;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(20,26,36,.9)
+}
+.layer-name{display:flex;align-items:center;gap:7px;min-width:0}
+.layer-no{color:var(--dim);font-size:9px}
+h2{margin:0;font-size:11px;letter-spacing:.09em;text-transform:uppercase}
+.healthy{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border:1px solid rgba(87,229,154,.36);
+  border-radius:99px;color:var(--green);background:rgba(87,229,154,.07);font-size:9px;font-weight:900
+}
+.healthy::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 9px var(--green)}
+.checkout-body{height:calc(100% - 39px);padding:9px;display:grid;place-items:center}
+.checkout-window{
+  position:relative;width:min(100%,390px);max-height:100%;overflow:hidden;border:1px solid #354157;
+  border-radius:12px;background:#f5f1e9;color:#1e2530;box-shadow:0 14px 42px rgba(0,0,0,.34)
+}
+.shop-bar{
+  display:flex;align-items:center;justify-content:space-between;padding:9px 11px;
+  border-bottom:1px solid #d5d0c7;background:#fff;font-family:system-ui,sans-serif
+}
+.shop-logo{font-weight:950;letter-spacing:-.04em}
+.saved{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 6px;border-radius:99px;
+  background:#e1f8eb;color:#12683b;font-size:9px;font-weight:850
+}
+.checkout-content{padding:10px 12px 12px;font-family:system-ui,sans-serif}
+.checkout-content h3{margin:0 0 7px;font-size:16px;letter-spacing:-.03em}
+.item{
+  display:grid;grid-template-columns:37px 1fr auto;align-items:center;gap:8px;padding:7px 0;
+  border-bottom:1px solid #ded9cf
+}
+.item-art{
+  display:grid;place-items:center;width:37px;height:37px;border-radius:8px;
+  background:linear-gradient(135deg,#1d2634,#6d7a8f);color:#fff;font-size:18px
+}
+.item b,.item small{display:block}.item small{color:#687080;font-size:10px}
+.field-label{display:block;margin:9px 0 4px;color:#5c6471;font-size:9px;font-weight:850;letter-spacing:.08em;text-transform:uppercase}
+.country-switch{
+  position:relative;display:grid;grid-template-columns:1fr 1fr;padding:3px;border:1px solid #c9c5bd;
+  border-radius:8px;background:#e6e2da;overflow:hidden
+}
+#countryMarker{
+  position:absolute;z-index:0;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);
+  border-radius:6px;background:#fff;box-shadow:0 2px 7px rgba(0,0,0,.13);
+  transform:translateX(calc(var(--country)*100%))
+}
+.country-option{position:relative;z-index:1;padding:5px;text-align:center;font-size:10px;font-weight:900}
+.country-option.is-current{color:#2851a3}
+.totals{display:grid;gap:3px;margin:8px 0;padding:7px 0;border-top:1px solid #ded9cf}
+.total-row{display:flex;justify-content:space-between;color:#58606c;font-size:10px}
+.total-row strong{color:#202733}.total-row.final{font-size:12px;color:#202733}
+.order-button{
+  display:grid;place-items:center;min-height:34px;border-radius:8px;background:#121820;color:#fff;
+  font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;
+  transform:translateY(calc(var(--press)*3px));
+  box-shadow:0 calc(4px - var(--press)*3px) 0 #566172,0 7px 16px rgba(0,0,0,.18)
+}
+.click-ring{
+  position:absolute;right:21%;bottom:10%;width:26px;height:26px;border:2px solid var(--cyan);
+  border-radius:50%;opacity:var(--press);transform:scale(calc(.6 + var(--press)*1.4));
+  box-shadow:0 0 16px rgba(98,217,255,.8);pointer-events:none
+}
+.crash-banner{
+  position:absolute;inset:auto 8px 8px;display:grid;grid-template-columns:auto 1fr;gap:8px;
+  padding:8px;border:1px solid var(--red);border-radius:8px;background:rgba(36,8,16,.96);
+  color:#fff;opacity:var(--crash);transform:translateY(calc((1 - var(--crash))*16px));
+  box-shadow:0 0 28px rgba(255,95,120,.38);pointer-events:none
+}
+.crash-icon{color:var(--red);font-size:20px;font-weight:1000}
+.crash-banner b,.crash-banner small{display:block}.crash-banner small{color:#f3afba;font-size:9px}
+.topology-body{height:calc(100% - 39px);display:grid;grid-template-rows:minmax(145px,1fr) auto;min-height:0}
+.map-wrap{position:relative;min-height:0;padding:3px}
+.topology-svg{width:100%;height:100%;display:block}
+.route{fill:none;stroke:#344057;stroke-width:2;stroke-dasharray:5 6}
+.route[data-cause]{transition:stroke .15s,stroke-width .15s,filter .15s}
+.node rect{fill:#151c27;stroke:#3a465a;stroke-width:1.5;rx:9}
+.node text{fill:#eaf0f8;font-size:12px;font-weight:900}
+.node .sub{fill:#8e99aa;font-size:8px;font-weight:650}
+.node .lamp{fill:var(--green)}
+.node[data-cause]{transition:filter .15s}
+.packet{stroke:#fff;stroke-width:2}
+.packet.request{fill:var(--cyan)}.packet.response{fill:var(--violet)}.packet.order{fill:var(--amber)}
+.packet-label{font-size:8px;font-weight:1000;paint-order:stroke;stroke:#080a0f;stroke-width:4px;stroke-linejoin:round}
+.payload{
+  margin:0 8px 8px;padding:8px 9px;border:1px solid #303b4e;border-radius:8px;background:#090c12;
+  box-shadow:inset 0 0 22px rgba(0,0,0,.35)
+}
+.payload-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.payload-title{color:var(--violet);font-size:9px;font-weight:950;letter-spacing:.08em}
+.payload-status{color:var(--green);font-size:9px;font-weight:900}
+.json-row{display:grid;grid-template-columns:minmax(84px,.8fr) minmax(0,1.2fr);gap:6px;color:#aab4c3;font-size:9px;line-height:1.5}
+.json-key{color:#8ddcff}
+.value-slot{position:relative;min-height:15px}
+.schema-present,.schema-void{position:absolute;inset:0}
+.schema-present{color:#a8f0c8;opacity:calc(1 - var(--schema))}
+.schema-void{
+  opacity:var(--schema);border:1px solid rgba(170,135,255,.72);border-radius:3px;
+  background:#080a0f;box-shadow:inset 0 0 12px #000,0 0 10px rgba(170,135,255,.72)
+}
+.absence-label{
+  margin:5px 0 0;color:var(--violet);font-size:8px;font-weight:1000;letter-spacing:.1em;
+  text-align:right;opacity:var(--schema)
+}
+.stack-body{position:relative;height:calc(100% - 39px);padding:8px;display:grid;grid-template-rows:auto minmax(0,1fr);gap:7px;min-height:0}
+.exception{
+  display:flex;align-items:center;gap:7px;padding:6px 8px;border-left:3px solid var(--red);
+  background:rgba(255,95,120,.08);color:#ffb5c0;font-size:9px
+}
+.exception strong{color:#fff}
+.stack-grid{display:grid;grid-template-rows:auto minmax(100px,1fr);gap:7px;min-height:0}
+.frames{display:grid;gap:4px}
+.frame{
+  width:100%;min-height:38px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
+  gap:7px;padding:5px 7px;border:1px solid #303b4e;border-radius:7px;background:#111722;text-align:left;
+  cursor:pointer
+}
+.frame:hover{border-color:#5a6880}.frame[aria-pressed="true"]{border-color:var(--amber);background:#211d16;box-shadow:0 0 18px rgba(255,200,107,.12)}
+.frame-index{color:var(--dim);font-size:9px}.frame-name{font-size:10px;font-weight:950}.frame-file{color:var(--muted);font-size:8px}
+.frame-pulse{width:6px;height:6px;border-radius:50%;background:#465268}
+.frame.is-live .frame-pulse{background:var(--red);box-shadow:0 0 10px var(--red)}
+.code{
+  min-height:0;overflow:auto;border:1px solid #303b4e;border-radius:8px;background:#090c12;
+  padding:7px 0;font-size:9px;line-height:1.62
+}
+.code-head{display:flex;justify-content:space-between;padding:0 8px 6px;color:var(--muted);font-size:8px}
+.code-line{display:grid;grid-template-columns:28px 1fr;padding:1px 8px;color:#bbc4d1;white-space:pre}
+.code-line .ln{color:#566174;user-select:none}.code-line.hot{background:rgba(255,95,120,.12);color:#fff;border-left:2px solid var(--red)}
+.token-key{color:#c99fff}.token-prop{color:#7bdcff}.token-comment{color:#66768a}
+#cinema[data-focus="calculateTax"] [data-cause~="tax"],
+#cinema[data-focus="finalizeOrder"] [data-cause~="order"],
+#cinema[data-focus="submitOrder"] [data-cause~="client"]{
+  filter:drop-shadow(0 0 6px var(--amber))
+}
+#cinema[data-focus="calculateTax"] .route[data-cause~="tax"],
+#cinema[data-focus="finalizeOrder"] .route[data-cause~="order"],
+#cinema[data-focus="submitOrder"] .route[data-cause~="client"]{stroke:var(--amber);stroke-width:4}
+#flashback{
+  position:absolute;z-index:8;inset:7px;padding:10px;border:1px solid var(--amber);border-radius:9px;
+  background:rgba(24,18,8,.97);opacity:var(--flash);overflow:hidden;box-shadow:0 0 40px rgba(255,200,107,.18)
+}
+#flashback::before{
+  content:"INFERENCE  INFERENCE  INFERENCE";position:absolute;inset:35% -20%;transform:rotate(-16deg);
+  color:rgba(255,200,107,.09);font-size:23px;font-weight:1000;letter-spacing:.14em;white-space:nowrap
+}
+.flash-head{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.watermark{
+  display:inline-block;padding:3px 6px;border:1px solid var(--amber);border-radius:4px;color:#171006;
+  background:var(--amber);font-size:9px;font-weight:1000;letter-spacing:.13em
+}
+.six-months{color:var(--amber);font-size:9px;font-weight:900;text-align:right}
+.flashback-copy{position:relative;margin:9px 0 7px;color:#f7deb0;font:11px/1.5 system-ui,sans-serif}
+.flash-code{position:relative;margin:0;padding:8px;border:1px solid rgba(255,200,107,.3);border-radius:6px;background:#0c0b08;color:#e9d9b8;font-size:8px;white-space:pre-wrap}
+.inference-note{position:relative;margin:7px 0 0;color:#bbaa88;font-size:8px}
+.perspectives{
+  display:grid;grid-template-columns:auto repeat(3,minmax(0,1fr));gap:7px;align-items:stretch;
+  min-height:76px;padding:7px;border-radius:10px
+}
+.perspective-label{
+  display:grid;place-items:center;padding:0 5px;color:var(--dim);font-size:8px;font-weight:950;
+  letter-spacing:.12em;writing-mode:vertical-rl;transform:rotate(180deg)
+}
+.perspective{
+  position:relative;min-width:0;padding:7px 8px;border:1px solid #2d3749;border-radius:7px;
+  background:#111721;overflow:hidden
+}
+.perspective::after{content:"";position:absolute;inset:auto 0 0;height:2px;background:#3c475b}
+.perspective.is-active{border-color:#55657c;background:#151d29}
+.perspective.is-active::after{background:var(--cyan);box-shadow:0 0 9px var(--cyan)}
+.perspective[data-role="author"].is-active::after{background:var(--amber);box-shadow:0 0 9px var(--amber)}
+.role{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;color:var(--cyan);font-size:8px;font-weight:1000;letter-spacing:.09em;text-transform:uppercase}
+.perspective[data-role="author"] .role{color:var(--amber)}
+.role-time{color:var(--dim);font-weight:700}.voice{margin:0;color:#b8c1cf;font:10px/1.35 system-ui,sans-serif}
+.narrative{
+  min-height:38px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;
+  padding:6px 10px;border-radius:10px
+}
+.narrative-tag{color:var(--violet);font-size:9px;font-weight:1000;letter-spacing:.1em}
+#narrativeText{margin:0;color:#c7cfda;font:10px/1.35 system-ui,sans-serif}
+.keys{color:var(--dim);font-size:8px;white-space:nowrap}
+kbd{padding:1px 4px;border:1px solid #394459;border-bottom-width:2px;border-radius:3px;background:#171e29;color:#b9c3d1}
+.sr-only{
+  position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;
+  overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important
+}
+@media(max-width:980px){
+  html,body{overflow:auto}
+  #cinema{height:auto;min-height:100dvh;display:flex;flex-direction:column;overflow:visible}
+  .stage{grid-template-columns:1fr 1fr;grid-auto-rows:minmax(360px,62vh)}
+  .stack-layer{grid-column:1/-1}
+  .perspectives{grid-template-columns:auto repeat(3,minmax(210px,1fr));overflow-x:auto}
+}
+@media(max-width:680px){
+  .topbar{min-height:48px}.clock-label{display:none}h1{font-size:13px}
+  .transport{grid-template-columns:1fr;gap:4px}.mode{min-width:0;justify-content:center}
+  .transport-actions{justify-content:center}.control{flex:1;max-width:150px}
+  .stage{grid-template-columns:1fr;grid-auto-rows:minmax(390px,70vh)}
+  .stack-layer{grid-column:auto}
+  .perspectives{grid-template-columns:1fr;overflow:visible}
+  .perspective-label{writing-mode:horizontal-tb;transform:none;padding:2px}
+  .narrative{grid-template-columns:auto 1fr}.keys{display:none}
+}
+@media(max-width:380px){
+  #cinema{padding:5px;gap:5px}.brand-mark{display:none}.crash-clock{gap:4px}
+  .checkout-body{padding:5px}.payload{margin:0 4px 4px}.panel-head{padding-inline:7px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
+  #cinema::after{display:none}
+}
+</style>
+<style id="dynamic-state">#cinema{--crash:1;--country:1;--press:1;--flash:0;--schema:1}</style>
+</head>
+<body>
+<a class="skip" href="#timeRange">Skip to time controls</a>
+<canvas id="atmosphere" aria-hidden="true"></canvas>
+<main id="cinema" class="is-crashed" data-direction="reverse" data-focus="calculateTax">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">↶</div>
+      <div>
+        <p class="kicker">Deterministic incident reconstruction · seed 348607</p>
+        <h1>Reverse-Time Crash Cinema</h1>
+      </div>
+    </div>
+    <div class="crash-clock" aria-label="Current reconstructed time">
+      <span class="clock-label">LAST 60 SECONDS</span>
+      <span id="clock">CRASH</span>
+    </div>
+  </header>
+
+  <section class="transport" aria-label="Timeline transport">
+    <div class="mode" id="mode"><span class="mode-dot" aria-hidden="true"></span><span id="modeText">Crash found · rewind armed</span></div>
+    <div class="scrub-wrap">
+      <span class="edge">T-60</span>
+      <input id="timeRange" type="range" min="0" max="60" step="0.01" value="60" aria-label="Scrub the final sixty seconds" aria-valuetext="Crash">
+      <span class="edge">CRASH</span>
+    </div>
+    <div class="transport-actions">
+      <button class="control" id="play" type="button" disabled>Autoplay</button>
+      <button class="control" id="pause" type="button">Pause</button>
+      <button class="control" id="replay" type="button">Replay</button>
+    </div>
+  </section>
+
+  <section class="stage" aria-label="Three synchronized incident layers">
+    <article class="panel checkout-layer" aria-labelledby="checkout-title">
+      <header class="panel-head">
+        <div class="layer-name"><span class="layer-no">01</span><h2 id="checkout-title">User checkout surface</h2></div>
+        <span class="healthy">CART SYNCED</span>
+      </header>
+      <div class="checkout-body">
+        <div class="checkout-window" data-cause="client order">
+          <div class="shop-bar"><span class="shop-logo">NORTH/SHOP</span><span class="saved">✓ SAVED CART · 7F3A</span></div>
+          <div class="checkout-content">
+            <h3>Checkout</h3>
+            <div class="item">
+              <span class="item-art" aria-hidden="true">◈</span>
+              <span><b>Transit Pack</b><small>Graphite · Qty 1</small></span>
+              <b>$84.00</b>
+            </div>
+            <span class="field-label">Shipping country</span>
+            <div class="country-switch" aria-label="Shipping country in reconstructed state">
+              <span id="countryMarker" aria-hidden="true"></span>
+              <span class="country-option" id="usOption">US</span>
+              <span class="country-option is-current" id="caOption">CA</span>
+            </div>
+            <div class="totals">
+              <div class="total-row"><span>Subtotal</span><strong>$84.00</strong></div>
+              <div class="total-row"><span>Shipping</span><strong>$8.00</strong></div>
+              <div class="total-row"><span>Estimated tax</span><strong id="taxTotal">—</strong></div>
+              <div class="total-row final"><span>Total</span><strong id="grandTotal">$92.00</strong></div>
+            </div>
+            <div class="order-button" id="placeOrder">PLACE ORDER · INTERRUPTED</div>
+          </div>
+          <span class="click-ring" aria-hidden="true"></span>
+          <div class="crash-banner" id="crashBanner" role="img" aria-label="Checkout crashed in calculateTax">
+            <span class="crash-icon" aria-hidden="true">×</span>
+            <span><b>Checkout could not finish</b><small>TypeError in calculateTax · request fictional-7f3a</small></span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel topology-layer" aria-labelledby="topology-title">
+      <header class="panel-head">
+        <div class="layer-name"><span class="layer-no">02</span><h2 id="topology-title">Service / data topology</h2></div>
+        <span class="healthy">6 / 6 HEALTHY</span>
+      </header>
+      <div class="topology-body">
+        <div class="map-wrap">
+          <svg class="topology-svg" viewBox="0 0 620 300" role="img" aria-labelledby="map-title map-desc">
+            <title id="map-title">Checkout service topology and synchronized packets</title>
+            <desc id="map-desc">All services report healthy while quote data returns without taxBreakdown. Packet motion reverses exactly when the timeline moves backward.</desc>
+            <defs>
+              <filter id="greenGlow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              <filter id="packetGlow" x="-300%" y="-300%" width="700%" height="700%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
+            <path class="route" data-cause="client tax" d="M78 150 L215 150 L375 72 L525 72"/>
+            <path class="route" data-cause="client order" d="M78 150 L215 150 L380 238"/>
+            <path class="route" data-cause="order" d="M380 238 L525 238"/>
+
+            <g class="node" data-cause="client" transform="translate(20 120)">
+              <rect width="116" height="60"/><circle class="lamp" cx="101" cy="14" r="4"/>
+              <text x="12" y="25">BROWSER</text><text class="sub" id="topologyCountry" x="12" y="42">checkout · CA</text>
+            </g>
+            <g class="node" data-cause="client order tax" transform="translate(162 120)">
+              <rect width="116" height="60"/><circle class="lamp" cx="101" cy="14" r="4"/>
+              <text x="12" y="25">API GATEWAY</text><text class="sub" x="12" y="42">200 · 18 ms</text>
+            </g>
+            <g class="node" data-cause="tax" transform="translate(322 42)">
+              <rect width="116" height="60"/><circle class="lamp" cx="101" cy="14" r="4"/>
+              <text x="12" y="25">QUOTE SVC</text><text class="sub" x="12" y="42">200 · schema ✓</text>
+            </g>
+            <g class="node" data-cause="tax" transform="translate(470 42)">
+              <rect width="116" height="60"/><circle class="lamp" cx="101" cy="14" r="4"/>
+              <text x="12" y="25">TAX SVC</text><text class="sub" x="12" y="42">200 · green</text>
+            </g>
+            <g class="node" data-cause="order" transform="translate(322 208)">
+              <rect width="116" height="60"/><circle class="lamp" cx="101" cy="14" r="4"/>
+              <text x="12" y="25">ORDER SVC</text><text class="sub" x="12" y="42">healthy · idle</text>
+            </g>
+            <g class="node" data-cause="order" transform="translate(470 208)">
+              <rect width="116" height="60"/><circle class="lamp" cx="101" cy="14" r="4"/>
+              <text x="12" y="25">CART SVC</text><text class="sub" x="12" y="42">saved · green</text>
+            </g>
+
+            <circle id="quoteRequest" class="packet request" r="7" cx="525" cy="72" opacity=".18"/>
+            <text id="quoteRequestLabel" class="packet-label" fill="#62d9ff" x="535" y="62">QUOTE REQ</text>
+            <circle id="quoteResponse" class="packet response" r="7" cx="78" cy="150" opacity=".3"/>
+            <text id="quoteResponseLabel" class="packet-label" fill="#aa87ff" x="88" y="140">200 · FIELD ABSENT</text>
+            <circle id="orderPacket" class="packet order" r="7" cx="380" cy="238" opacity="1"/>
+            <text id="orderPacketLabel" class="packet-label" fill="#ffc86b" x="390" y="228">PLACE ORDER</text>
+          </svg>
+        </div>
+        <div class="payload" data-cause="tax" aria-label="Quote response payload">
+          <div class="payload-head">
+            <span class="payload-title">GET /QUOTE · RESPONSE BODY</span>
+            <span class="payload-status">● 200 OK · VALID JSON</span>
+          </div>
+          <div class="json-row"><span class="json-key">"subtotal":</span><span>84.00,</span></div>
+          <div class="json-row"><span class="json-key">"shipping":</span><span>8.00,</span></div>
+          <div class="json-row">
+            <span class="json-key">"taxBreakdown":</span>
+            <span class="value-slot">
+              <span class="schema-present" id="presentField">{ "total": 10.92 },</span>
+              <span class="schema-void" id="missingField" aria-label="Missing taxBreakdown value"></span>
+            </span>
+          </div>
+          <p class="absence-label" id="absenceLabel">↑ LITERAL NEGATIVE SPACE · FIELD ABSENT WHILE STATUS STAYS GREEN</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel stack-layer" aria-labelledby="stack-title">
+      <header class="panel-head">
+        <div class="layer-name"><span class="layer-no">03</span><h2 id="stack-title">Stack / code frames</h2></div>
+        <span class="healthy">TRACE CAPTURED</span>
+      </header>
+      <div class="stack-body">
+        <div class="exception"><span aria-hidden="true">◆</span><span><strong>TypeError:</strong> Cannot read properties of undefined (reading 'total')</span></div>
+        <div class="stack-grid">
+          <div class="frames" aria-label="Clickable stack frames">
+            <button class="frame is-live" type="button" data-frame="calculateTax" data-cause="tax" aria-pressed="true">
+              <span class="frame-index">#0</span><span><span class="frame-name">calculateTax</span><span class="frame-file">checkout.js:184:27</span></span><span class="frame-pulse" aria-hidden="true"></span>
+            </button>
+            <button class="frame is-live" type="button" data-frame="finalizeOrder" data-cause="order" aria-pressed="false">
+              <span class="frame-index">#1</span><span><span class="frame-name">finalizeOrder</span><span class="frame-file">checkout.js:241:16</span></span><span class="frame-pulse" aria-hidden="true"></span>
+            </button>
+            <button class="frame is-live" type="button" data-frame="submitOrder" data-cause="client" aria-pressed="false">
+              <span class="frame-index">#2</span><span><span class="frame-name">submitOrder</span><span class="frame-file">checkout.js:319:5</span></span><span class="frame-pulse" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="code" data-cause="tax" aria-label="Code around selected failing line">
+            <div class="code-head"><span>checkout.js</span><span id="codeState">EXECUTING · FRAME #0</span></div>
+            <div class="code-line"><span class="ln">181</span><span><span class="token-key">function</span> calculateTax(quote) {</span></div>
+            <div class="code-line"><span class="ln">182</span><span>  <span class="token-comment">// API contract says this object exists</span></span></div>
+            <div class="code-line hot"><span class="ln">184</span><span>  <span class="token-key">return</span> quote.<span class="token-prop">taxBreakdown</span>.total;</span></div>
+            <div class="code-line"><span class="ln">185</span><span>}</span></div>
+            <div class="code-line"><span class="ln">···</span><span></span></div>
+            <div class="code-line"><span class="ln">241</span><span>const tax = calculateTax(quote);</span></div>
+            <div class="code-line"><span class="ln">319</span><span>await finalizeOrder(cart);</span></div>
+          </div>
+        </div>
+        <aside id="flashback" hidden aria-label="Inference flashback, six months earlier">
+          <div class="flash-head"><span class="watermark">INFERENCE</span><span class="six-months">SIX MONTHS EARLIER<br>RECONSTRUCTED · NOT OBSERVED</span></div>
+          <p class="flashback-copy">The original author probably saw only domestic fixtures. Every US quote carried <code>taxBreakdown</code>, so the object felt structural rather than conditional.</p>
+          <pre class="flash-code">if (country === "US") {
+  return { subtotal, shipping, taxBreakdown };
+}
+return { subtotal, shipping }; // inferred blind branch</pre>
+          <p class="inference-note">Watermark means hypothesis. The trace proves the dereference, not the thought that produced it.</p>
+        </aside>
+      </div>
+    </article>
+  </section>
+
+  <section class="perspectives" aria-label="Three synchronized human perspectives">
+    <div class="perspective-label">PERSPECTIVES</div>
+    <article class="perspective" id="userPerspective" data-role="user">
+      <div class="role"><span>User</span><span class="role-time" id="userTime">CRASH</span></div>
+      <p class="voice" id="userVoice">“I changed the address, checked the total, and clicked once. The store stopped at the last possible moment.”</p>
+    </article>
+    <article class="perspective is-active" id="oncallPerspective" data-role="oncall">
+      <div class="role"><span>On-call</span><span class="role-time" id="oncallTime">PAGE OPEN</span></div>
+      <p class="voice" id="oncallVoice">“The exception is red. Every upstream health check is green. I follow the payload, not the lights.”</p>
+    </article>
+    <article class="perspective" id="authorPerspective" data-role="author">
+      <div class="role"><span>Original author</span><span class="role-time" id="authorTime">+6 MONTHS</span></div>
+      <p class="voice" id="authorVoice">“The trace exposes an assumption in my line; the flashback remains clearly labeled inference.”</p>
+    </article>
+  </section>
+
+  <footer class="narrative">
+    <span class="narrative-tag" id="phaseTag">CRASH</span>
+    <p id="narrativeText">calculateTax dereferences the absent taxBreakdown field. The user sees failure; all six service indicators remain green.</p>
+    <span class="keys"><kbd>←</kbd><kbd>→</kbd> scrub · <kbd>Space</kbd> pause · <kbd>R</kbd> replay</span>
+  </footer>
+  <p class="sr-only" id="liveStatus" role="status" aria-live="polite">Crash loaded. Automatic rewind is armed.</p>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const TIMELINE_SEED = 348607;
+  const DURATION = 60;
+  const SPEED = 8;
+  const QUOTE_RESPONSE_START = 26;
+  const QUOTE_RESPONSE_ARRIVAL = 39;
+  const RESPONSE_APPLY_END = 40;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const byId = id => document.getElementById(id);
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const smooth = (start, end, value) => {
+    const x = clamp((value - start) / (end - start), 0, 1);
+    return x * x * (3 - 2 * x);
+  };
+  const flashWindow = value => Math.min(smooth(27, 30, value), 1 - smooth(38, 41, value));
+
+  function stateAt(t) {
+    const time = clamp(Number.isFinite(t) ? t : 0, 0, DURATION);
+    const countryBlend = smooth(10, 16, time);
+    const buttonPress = smooth(43, 46, time);
+    const crash = smooth(56, 59.25, time);
+    const flashback = flashWindow(time);
+    const quoteRequest = clamp((time - 16) / 11, 0, 1);
+    const quoteResponse = clamp(
+      (time - QUOTE_RESPONSE_START) /
+        (QUOTE_RESPONSE_ARRIVAL - QUOTE_RESPONSE_START),
+      0,
+      1
+    );
+    const responseAtBrowser = quoteResponse === 1;
+    const schemaGap = responseAtBrowser
+      ? smooth(QUOTE_RESPONSE_ARRIVAL, RESPONSE_APPLY_END, time)
+      : 0;
+    const orderRequest = clamp((time - 45) / 10, 0, 1);
+    let phase = "SAVED CART";
+    let event = 0;
+    let narrative = "A saved cart opens with a US address and a complete taxBreakdown object.";
+    if (time >= 10) {
+      phase = "COUNTRY CHANGE"; event = 1;
+      narrative = "Shipping country moves from US to CA; the saved cart remains synchronized.";
+    }
+    if (time >= 16) {
+      phase = "QUOTE REQUEST"; event = 2;
+      narrative = "The browser sends a cross-border quote request through the green gateway.";
+    }
+    if (time >= 26) {
+      phase = "QUOTE RESPONSE"; event = 3;
+      narrative = "A 200 response carrying valid JSON without taxBreakdown travels toward the browser.";
+    }
+    if (time >= QUOTE_RESPONSE_ARRIVAL) {
+      phase = "SCHEMA ABSENCE"; event = 4;
+      narrative = "The response reaches the browser. Checkout now applies the missing taxBreakdown while every service stays green.";
+    }
+    if (time >= 43) {
+      phase = "PLACE ORDER"; event = 5;
+      narrative = "The user presses Place Order; the incomplete quote is already resident in checkout state.";
+    }
+    if (time >= 50) {
+      phase = "ORDER DISPATCH"; event = 6;
+      narrative = "submitOrder hands the saved cart to finalizeOrder while the order packet crosses the gateway.";
+    }
+    if (time >= 56) {
+      phase = "DEREFERENCE"; event = 7;
+      narrative = "calculateTax reaches quote.taxBreakdown.total, carrying the missing field into frame zero.";
+    }
+    if (time >= 59.25) {
+      phase = "CRASH"; event = 8;
+      narrative = "calculateTax dereferences the absent taxBreakdown field. The user sees failure; all six service indicators remain green.";
+    }
+    return Object.freeze({
+      time,
+      phase,
+      event,
+      narrative,
+      schemaGap,
+      countryBlend,
+      buttonPress,
+      crash,
+      flashback,
+      country: countryBlend < .5 ? "US" : "CA",
+      quoteRequest,
+      quoteResponse,
+      responseAtBrowser,
+      orderRequest,
+      stack: Object.freeze({
+        submitOrder: time >= 50,
+        finalizeOrder: time >= 53.5,
+        calculateTax: time >= 56
+      }),
+      noiseSeed: TIMELINE_SEED + Math.floor(time * 12)
+    });
+  }
+
+  const topologyCountryLabel = state => "checkout · " + state.country;
+  const shouldAutoResume = (wasRunning, prefersReducedMotion) =>
+    Boolean(wasRunning && !prefersReducedMotion);
+
+  function testTimelineInvariants() {
+    for (let tick = 0; tick <= DURATION * 20; tick += 1) {
+      const state = stateAt(tick / 20);
+      if (state.quoteResponse < 1 && state.schemaGap !== 0) {
+        throw new Error("Timeline invariant failed: checkout applied an in-flight response");
+      }
+      if (state.schemaGap > 0 && !state.responseAtBrowser) {
+        throw new Error("Timeline invariant failed: schema gap preceded browser arrival");
+      }
+    }
+    if (stateAt(QUOTE_RESPONSE_ARRIVAL - .001).schemaGap !== 0) {
+      throw new Error("Timeline invariant failed immediately before response arrival");
+    }
+    const applied = stateAt(QUOTE_RESPONSE_ARRIVAL + .5);
+    if (applied.quoteResponse !== 1 || applied.schemaGap <= 0) {
+      throw new Error("Timeline invariant failed after response arrival");
+    }
+    if (
+      topologyCountryLabel(stateAt(0)) !== "checkout · US" ||
+      topologyCountryLabel(stateAt(DURATION)) !== "checkout · CA"
+    ) {
+      throw new Error("Timeline invariant failed: topology country diverged");
+    }
+  }
+
+  function testPlaybackRegressions() {
+    if (shouldAutoResume(true, true) || !shouldAutoResume(true, false)) {
+      throw new Error("Playback invariant failed: reduced-motion auto-resume");
+    }
+  }
+
+  testTimelineInvariants();
+  testPlaybackRegressions();
+
+  const elements = {
+    cinema: byId("cinema"),
+    clock: byId("clock"),
+    range: byId("timeRange"),
+    mode: byId("mode"),
+    modeText: byId("modeText"),
+    play: byId("play"),
+    pause: byId("pause"),
+    replay: byId("replay"),
+    us: byId("usOption"),
+    ca: byId("caOption"),
+    topologyCountry: byId("topologyCountry"),
+    taxTotal: byId("taxTotal"),
+    grandTotal: byId("grandTotal"),
+    placeOrder: byId("placeOrder"),
+    crashBanner: byId("crashBanner"),
+    presentField: byId("presentField"),
+    missingField: byId("missingField"),
+    absenceLabel: byId("absenceLabel"),
+    flashback: byId("flashback"),
+    codeState: byId("codeState"),
+    phaseTag: byId("phaseTag"),
+    narrative: byId("narrativeText"),
+    live: byId("liveStatus"),
+    userCard: byId("userPerspective"),
+    oncallCard: byId("oncallPerspective"),
+    authorCard: byId("authorPerspective"),
+    userTime: byId("userTime"),
+    oncallTime: byId("oncallTime"),
+    authorTime: byId("authorTime"),
+    userVoice: byId("userVoice"),
+    oncallVoice: byId("oncallVoice"),
+    authorVoice: byId("authorVoice"),
+    canvas: byId("atmosphere")
+  };
+  const dynamicRule = byId("dynamic-state").sheet.cssRules[0].style;
+  const frameButtons = Array.from(document.querySelectorAll(".frame"));
+  const packets = {
+    quoteRequest: byId("quoteRequest"),
+    quoteRequestLabel: byId("quoteRequestLabel"),
+    quoteResponse: byId("quoteResponse"),
+    quoteResponseLabel: byId("quoteResponseLabel"),
+    order: byId("orderPacket"),
+    orderLabel: byId("orderPacketLabel")
+  };
+  const routes = {
+    quoteRequest: [[78,150],[215,150],[375,72],[525,72]],
+    quoteResponse: [[525,72],[375,72],[215,150],[78,150]],
+    order: [[78,150],[215,150],[380,238]]
+  };
+  let selectedFrame = "calculateTax";
+  let playhead = DURATION;
+  let direction = -1;
+  let running = !reducedMotion.matches;
+  let lastFrame = 0;
+  let holdUntil = running ? performance.now() + 900 : 0;
+  let resumeWhenVisible = false;
+  let lastAnnouncement = "";
+  let canvasWidth = 0;
+  let canvasHeight = 0;
+
+  function seeded(seed) {
+    let value = seed >>> 0;
+    return () => {
+      value += 0x6D2B79F5;
+      let z = value;
+      z = Math.imul(z ^ z >>> 15, z | 1);
+      z ^= z + Math.imul(z ^ z >>> 7, z | 61);
+      return ((z ^ z >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function pointOn(points, progress) {
+    const lengths = [];
+    let total = 0;
+    for (let index = 1; index < points.length; index += 1) {
+      const dx = points[index][0] - points[index - 1][0];
+      const dy = points[index][1] - points[index - 1][1];
+      const length = Math.hypot(dx, dy);
+      lengths.push(length);
+      total += length;
+    }
+    let distance = clamp(progress, 0, 1) * total;
+    for (let index = 0; index < lengths.length; index += 1) {
+      if (distance <= lengths[index] || index === lengths.length - 1) {
+        const ratio = lengths[index] ? distance / lengths[index] : 0;
+        return [
+          points[index][0] + (points[index + 1][0] - points[index][0]) * ratio,
+          points[index][1] + (points[index + 1][1] - points[index][1]) * ratio
+        ];
+      }
+      distance -= lengths[index];
+    }
+    return points[points.length - 1];
+  }
+
+  function placePacket(circle, label, points, progress, opacity) {
+    const point = pointOn(points, progress);
+    circle.setAttribute("cx", point[0].toFixed(2));
+    circle.setAttribute("cy", point[1].toFixed(2));
+    circle.setAttribute("opacity", opacity.toFixed(2));
+    label.setAttribute("x", (point[0] + 10).toFixed(2));
+    label.setAttribute("y", (point[1] - 10).toFixed(2));
+    label.setAttribute("opacity", opacity.toFixed(2));
+  }
+
+  function packetOpacity(time, start, end, tail) {
+    if (time < start - 2) return .08;
+    if (time <= end) return .95;
+    return tail;
+  }
+
+  function timeLabel(time) {
+    if (time >= 59.95) return "CRASH";
+    return "T-" + String(Math.max(1, Math.ceil(DURATION - time))).padStart(2, "0");
+  }
+
+  function directionCopy(state) {
+    if (!running && state.time >= 59.95 && direction > 0) return "Crash reconstructed · replay complete";
+    if (!running) return "Paused · scrub to inspect";
+    if (direction < 0 && state.time >= 59.95) return "Crash found · rewind armed";
+    if (direction < 0) return "Rewinding cause · exact reverse";
+    if (state.time <= .05) return "T-60 reached · replay armed";
+    return "Replaying evidence · forward";
+  }
+
+  function reverseNarrative(state) {
+    if (direction >= 0 || !running) return state.narrative;
+    if (state.time < 46 && state.time >= 39) {
+      return "Reverse signature: Place Order un-clicks. The order packet flies upstream toward the browser.";
+    }
+    if (state.time < QUOTE_RESPONSE_ARRIVAL && state.time >= 30) {
+      return "Reverse signature: the absent taxBreakdown field restores as the response leaves the browser upstream.";
+    }
+    if (state.time < 16 && state.time >= 7) {
+      return "Reverse signature: the shipping country rolls back from CA to US.";
+    }
+    return state.narrative;
+  }
+
+  function perspectiveState(state) {
+    let user = "“My saved cart is open. I am checking the destination before ordering.”";
+    if (state.time >= 10) user = "“I switch the shipping country from US to CA and wait for the total to settle.”";
+    if (state.time >= 26) user = "“The quote is returning. My checkout still holds the last complete total.”";
+    if (state.time >= QUOTE_RESPONSE_ARRIVAL) user = "“The page looks ready. Nothing says the successful quote is incomplete.”";
+    if (state.time >= 43) user = "“I click Place Order once. The checkout begins processing.”";
+    if (state.time >= 59.25) user = "“I changed the address, checked the total, and clicked once. The store stopped at the last possible moment.”";
+
+    let oncall = "“No page yet. Cart, quote, tax, gateway, and order indicators are green.”";
+    if (state.time >= 26) oncall = "“The 200 response is legal JSON, but its shape is the evidence that matters.”";
+    if (state.time >= 50) oncall = "“The order path is active; I correlate request fictional-7f3a across the green topology.”";
+    if (state.time >= 59.25) oncall = "“The exception is red. Every upstream health check is green. I follow the payload, not the lights.”";
+
+    let author = "“The code line exists, but this earlier thought is unknown.”";
+    if (state.flashback > .1) author = "“INFERENCE: domestic fixtures may have made taxBreakdown feel unconditional six months ago.”";
+    if (state.time >= 56) author = "“The trace exposes an assumption in my line; the flashback remains clearly labeled inference.”";
+    return {user, oncall, author};
+  }
+
+  function renderFocus() {
+    elements.cinema.dataset.focus = selectedFrame;
+    frameButtons.forEach(button => {
+      const selected = button.dataset.frame === selectedFrame;
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+    const labels = {
+      calculateTax: "EXECUTING · FRAME #0 · SCHEMA → TAX PATH",
+      finalizeOrder: "FRAME #1 · BUTTON → ORDER PATH",
+      submitOrder: "FRAME #2 · USER → GATEWAY PATH"
+    };
+    elements.codeState.textContent = labels[selectedFrame];
+  }
+
+  function drawAtmosphere(state) {
+    const canvas = elements.canvas;
+    const context = canvas.getContext("2d");
+    if (!context || !canvasWidth || !canvasHeight) return;
+    context.clearRect(0, 0, canvasWidth, canvasHeight);
+    const random = seeded(state.noiseSeed);
+    context.lineWidth = 1;
+    for (let index = 0; index < 34; index += 1) {
+      const x = random() * canvasWidth;
+      const y = random() * canvasHeight;
+      const length = 12 + random() * 90;
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x + length, y);
+      context.strokeStyle = index % 5 === 0
+        ? "rgba(255,95,120," + (.025 + state.crash * .11).toFixed(3) + ")"
+        : "rgba(98,217,255,.035)";
+      context.stroke();
+    }
+  }
+
+  function resizeCanvas() {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvasWidth = Math.max(1, Math.floor(window.innerWidth * ratio));
+    canvasHeight = Math.max(1, Math.floor(window.innerHeight * ratio));
+    elements.canvas.width = canvasWidth;
+    elements.canvas.height = canvasHeight;
+    render(stateAt(playhead), false);
+  }
+
+  function render(state, announce = true) {
+    dynamicRule.setProperty("--crash", state.crash.toFixed(4));
+    dynamicRule.setProperty("--country", state.countryBlend.toFixed(4));
+    dynamicRule.setProperty("--press", state.buttonPress.toFixed(4));
+    dynamicRule.setProperty("--flash", state.flashback.toFixed(4));
+    dynamicRule.setProperty("--schema", state.schemaGap.toFixed(4));
+    elements.cinema.classList.toggle("is-crashed", state.crash > .6);
+    elements.cinema.dataset.direction = direction < 0 ? "reverse" : "forward";
+
+    const label = timeLabel(state.time);
+    elements.clock.textContent = label;
+    elements.range.value = state.time.toFixed(2);
+    elements.range.setAttribute("aria-valuetext", label + " · " + state.phase.toLowerCase());
+    elements.modeText.textContent = directionCopy(state);
+    elements.mode.setAttribute("aria-label", directionCopy(state));
+
+    elements.us.classList.toggle("is-current", state.country === "US");
+    elements.ca.classList.toggle("is-current", state.country === "CA");
+    elements.topologyCountry.textContent = topologyCountryLabel(state);
+    elements.taxTotal.textContent = state.schemaGap < .5 ? "$10.92" : "—";
+    elements.grandTotal.textContent = state.schemaGap < .5 ? "$102.92" : "$92.00";
+    elements.placeOrder.textContent = state.crash > .6
+      ? "PLACE ORDER · INTERRUPTED"
+      : state.buttonPress > .5 ? "PLACING ORDER…" : "PLACE ORDER";
+    elements.crashBanner.setAttribute("aria-hidden", state.crash < .05 ? "true" : "false");
+    elements.presentField.setAttribute("aria-hidden", state.schemaGap > .5 ? "true" : "false");
+    elements.missingField.setAttribute("aria-hidden", state.schemaGap > .5 ? "false" : "true");
+    elements.absenceLabel.setAttribute("aria-hidden", state.schemaGap > .12 ? "false" : "true");
+
+    placePacket(
+      packets.quoteRequest,
+      packets.quoteRequestLabel,
+      routes.quoteRequest,
+      state.quoteRequest,
+      packetOpacity(state.time, 16, 28, .18)
+    );
+    placePacket(
+      packets.quoteResponse,
+      packets.quoteResponseLabel,
+      routes.quoteResponse,
+      state.quoteResponse,
+      packetOpacity(state.time, 26, 40, .3)
+    );
+    placePacket(
+      packets.order,
+      packets.orderLabel,
+      routes.order,
+      state.orderRequest,
+      packetOpacity(state.time, 45, 60, .22)
+    );
+
+    frameButtons.forEach(button => {
+      button.classList.toggle("is-live", Boolean(state.stack[button.dataset.frame]));
+    });
+    const showFlashback = state.flashback > .015;
+    elements.flashback.hidden = !showFlashback;
+    elements.flashback.setAttribute("aria-hidden", showFlashback ? "false" : "true");
+
+    const voices = perspectiveState(state);
+    elements.userVoice.textContent = voices.user;
+    elements.oncallVoice.textContent = voices.oncall;
+    elements.authorVoice.textContent = voices.author;
+    elements.userTime.textContent = label;
+    elements.oncallTime.textContent = state.time >= 56 ? "PAGE OPEN" : "NO PAGE";
+    elements.authorTime.textContent = showFlashback ? "−6 MONTHS · INFERENCE" : "+6 MONTHS";
+    elements.userCard.classList.toggle("is-active", state.time >= 10 && state.time < 50);
+    elements.oncallCard.classList.toggle("is-active", state.time >= 50);
+    elements.authorCard.classList.toggle("is-active", showFlashback);
+
+    elements.phaseTag.textContent = state.phase;
+    elements.narrative.textContent = reverseNarrative(state);
+    drawAtmosphere(state);
+    renderFocus();
+    updateControls();
+
+    const announcementKey = state.event + ":" + (direction < 0 ? "R" : "F") + ":" + (running ? "P" : "S");
+    if (announce && announcementKey !== lastAnnouncement) {
+      elements.live.textContent = label + ". " + directionCopy(state) + ". " + reverseNarrative(state);
+      lastAnnouncement = announcementKey;
+    }
+  }
+
+  function updateControls() {
+    elements.play.disabled = running;
+    elements.pause.disabled = !running;
+  }
+
+  function startPlayback(automatic = false) {
+    if (automatic && reducedMotion.matches) {
+      resumeWhenVisible = false;
+      return;
+    }
+    if (playhead >= DURATION - .01) direction = -1;
+    else if (playhead <= .01) direction = 1;
+    running = true;
+    lastFrame = performance.now();
+    holdUntil = 0;
+    render(stateAt(playhead));
+  }
+
+  function pausePlayback(message) {
+    running = false;
+    holdUntil = 0;
+    if (message) elements.live.textContent = message;
+    render(stateAt(playhead));
+  }
+
+  function replay() {
+    playhead = DURATION;
+    direction = -1;
+    running = !reducedMotion.matches;
+    lastFrame = performance.now();
+    holdUntil = running ? lastFrame + 700 : 0;
+    lastAnnouncement = "";
+    render(stateAt(playhead));
+    if (!running) {
+      elements.live.textContent = "Crash loaded. Reduced motion is active; scrub manually or choose Autoplay.";
+    }
+  }
+
+  function seek(next, inferredDirection) {
+    const previous = playhead;
+    playhead = clamp(next, 0, DURATION);
+    if (inferredDirection) direction = inferredDirection;
+    else if (playhead !== previous) direction = playhead < previous ? -1 : 1;
+    render(stateAt(playhead));
+  }
+
+  function tick(now) {
+    if (!lastFrame) lastFrame = now;
+    const delta = Math.min((now - lastFrame) / 1000, .1);
+    lastFrame = now;
+    if (running && now >= holdUntil) {
+      playhead += direction * delta * SPEED;
+      if (direction < 0 && playhead <= 0) {
+        playhead = 0;
+        direction = 1;
+        holdUntil = now + 650;
+        lastAnnouncement = "";
+      } else if (direction > 0 && playhead >= DURATION) {
+        playhead = DURATION;
+        running = false;
+        holdUntil = 0;
+        lastAnnouncement = "";
+      }
+      render(stateAt(playhead));
+    }
+    window.requestAnimationFrame(tick);
+  }
+
+  frameButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      selectedFrame = button.dataset.frame;
+      render(stateAt(playhead));
+      elements.live.textContent = button.querySelector(".frame-name").textContent + " selected. Its causal path is illuminated across all layers.";
+    });
+  });
+  elements.play.addEventListener("click", () => startPlayback());
+  elements.pause.addEventListener("click", () => pausePlayback("Playback paused at " + timeLabel(playhead) + "."));
+  elements.replay.addEventListener("click", replay);
+  elements.range.addEventListener("pointerdown", () => pausePlayback());
+  elements.range.addEventListener("input", event => {
+    running = false;
+    seek(Number(event.currentTarget.value));
+  });
+
+  document.addEventListener("keydown", event => {
+    const target = event.target;
+    const interactive = target instanceof HTMLButtonElement || target instanceof HTMLInputElement;
+    if (interactive && target !== elements.range) return;
+    if (event.key === " " && target !== elements.range) {
+      event.preventDefault();
+      if (running) pausePlayback("Playback paused at " + timeLabel(playhead) + ".");
+      else startPlayback();
+      return;
+    }
+    if (event.key.toLowerCase() === "r") {
+      event.preventDefault();
+      replay();
+      return;
+    }
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      running = false;
+      const amount = event.shiftKey ? 5 : 1;
+      seek(playhead + (event.key === "ArrowLeft" ? -amount : amount), event.key === "ArrowLeft" ? -1 : 1);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault(); running = false; seek(0, -1);
+    } else if (event.key === "End") {
+      event.preventDefault(); running = false; seek(DURATION, 1);
+    }
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      resumeWhenVisible = shouldAutoResume(running, reducedMotion.matches);
+      if (running) pausePlayback("Playback paused because this tab is hidden.");
+    } else {
+      const resume = shouldAutoResume(resumeWhenVisible, reducedMotion.matches);
+      resumeWhenVisible = false;
+      if (resume) startPlayback(true);
+    }
+  });
+  reducedMotion.addEventListener("change", event => {
+    if (event.matches) {
+      resumeWhenVisible = false;
+      if (running) {
+        pausePlayback("Playback paused because reduced motion was enabled.");
+      }
+    }
+  });
+  window.addEventListener("resize", resizeCanvas, {passive:true});
+
+  resizeCanvas();
+  render(stateAt(DURATION), false);
+  if (reducedMotion.matches) {
+    elements.live.textContent = "Crash loaded. Reduced motion is active; scrub manually or choose Autoplay.";
+  }
+  window.requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

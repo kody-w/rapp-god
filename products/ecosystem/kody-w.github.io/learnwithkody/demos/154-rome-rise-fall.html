@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VOLTERRA — 600 Years of a Fictional Empire</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;background:#0a0a12;color:#e8e3d4;font-family:Georgia,'Times New Roman',serif;overflow:hidden;height:100%}
+#c{position:fixed;inset:0;display:block;width:100%;height:100%}
+.hud{position:fixed;pointer-events:none;text-shadow:0 1px 3px #000c}
+#year{top:14px;left:18px;font-size:30px;font-weight:bold;letter-spacing:3px;color:#f4e7c8}
+#era{top:50px;left:20px;font-size:12px;letter-spacing:4px;color:#caa85a;text-transform:uppercase}
+#dynasty{top:14px;right:18px;text-align:right;font-size:14px;color:#f4e7c8;letter-spacing:1px}
+#emperor{top:34px;right:18px;text-align:right;font-size:12px;color:#caa85a;letter-spacing:2px}
+#heir{top:52px;right:18px;text-align:right;font-size:11px;color:#9a8a70;font-style:italic}
+#shot{position:fixed;left:50%;top:18px;transform:translateX(-50%);font-size:11px;color:#caa85a;letter-spacing:3px}
+#chyron{bottom:0;left:0;right:0;background:linear-gradient(0deg,#000d 0,#0006 70%,transparent);padding:14px 28px 22px;font-family:Georgia,serif}
+#chyron .lbl{color:#caa85a;letter-spacing:3px;font-size:10px;font-weight:bold}
+#chyron .txt{font-size:15px;color:#f4e7c8;margin-top:3px;line-height:1.4}
+#chyron .sub{font-size:12px;color:#9a8a70;margin-top:2px;font-style:italic}
+#whois{position:fixed;right:18px;bottom:96px;background:#000a;border:1px solid #caa85a55;padding:8px 14px;max-width:240px;font-size:12px;border-radius:2px}
+#whois .lbl{color:#caa85a;font-size:9px;letter-spacing:2px}
+#whois .n{color:#f4e7c8;font-weight:bold;margin-top:2px}
+#whois .r{color:#caa85a;font-size:11px;text-transform:uppercase;letter-spacing:1px}
+#whois .y{color:#9a8a70;font-size:10px;font-style:italic;margin-top:3px}
+#map{position:fixed;left:18px;bottom:96px;width:200px;height:140px;background:#000a;border:1px solid #caa85a55;border-radius:2px}
+#empire{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);font-size:11px;color:#caa85a;letter-spacing:4px;text-align:center}
+#empire b{color:#f4e7c8;font-size:14px;letter-spacing:6px;display:block}
+#vignette{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 220px #000c;z-index:1}
+.fade{transition:opacity 1s ease}
+</style>
+</head>
+<body>
+<!-- ROUND16_EPOCH v1 -->
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+<div class="hud" id="year">YEAR 1</div>
+<div class="hud" id="era">FOUNDING</div>
+<div class="hud" id="dynasty">DYNASTY 1 — HOUSE VOLAEN</div>
+<div class="hud" id="emperor">EMPEROR MARCAN VOLAEN</div>
+<div class="hud" id="heir">heir: —</div>
+<div class="hud" id="shot">SHOT 1 — HILLTOP WIDE</div>
+<canvas id="map" width="200" height="140"></canvas>
+<div id="empire" class="hud"><span>EMPIRE OF</span><b>VOLTERRA</b></div>
+<div id="whois" class="hud"><div class="lbl">WHO IS</div><div class="n">—</div><div class="r">—</div><div class="y">—</div></div>
+<div id="chyron" class="hud"><div class="lbl">CHRONICLE OF VOLTERRA</div><div class="txt">In the first year, Marcan Volaen breaks the soil of the seven hills.</div><div class="sub">— from the Founding Tablets, fragmentary —</div></div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+var T = window.THREE;
+if (!T) { document.body.innerHTML = '<div style="color:#caa85a;padding:40px;font-family:Georgia,serif">three.js failed to load.</div>'; return; }
+
+// ========================================================================
+// DISPOSABLE REGISTRY
+// ========================================================================
+var _disp = [];
+function track(o){ _disp.push(o); return o; }
+function disposeAll(){
+  for (var i = 0; i < _disp.length; i++){
+    var o = _disp[i];
+    try {
+      if (o && o.geometry && o.geometry.dispose) o.geometry.dispose();
+      if (o && o.material){
+        if (Array.isArray(o.material)) for (var k=0;k<o.material.length;k++){ if(o.material[k]&&o.material[k].dispose) o.material[k].dispose(); }
+        else if (o.material.dispose) o.material.dispose();
+      }
+      if (o && o.dispose && !o.geometry && !o.material) o.dispose();
+      if (o && o.parent && o.parent.remove) o.parent.remove(o);
+    } catch(e){}
+  }
+  _disp.length = 0;
+}
+
+// ========================================================================
+// FICTIONAL EMPIRE DATA  (NO REAL HISTORICAL FIGURES ANYWHERE)
+// ========================================================================
+var EMPIRE_CHAIN = ['VOLTERRA','AURELIUM','KASTRA','MERIDIAN','OBSIDIA','SOLARIN','THENARA','ZENNIRA'];
+
+var EMPERORS = [
+  { n:'Marcan Volaen',   y0:1,   y1:55,  d:1, role:'Founder-King',         epithet:'who broke the first soil' },
+  { n:'Octavia Faulus',  y0:55,  y1:108, d:1, role:'Stone-Builder',         epithet:'who raised the early walls' },
+  { n:'Tytan Pelorin',   y0:108, y1:158, d:2, role:'Wall-Raiser',           epithet:'consolidator of the seven hills' },
+  { n:'Drusan Maevarn',  y0:158, y1:208, d:2, role:'First Consul',          epithet:'who opened the senate steps' },
+  { n:'Quintan Orelth',  y0:208, y1:262, d:3, role:'Republic Closer',       epithet:'last consul before the crown' },
+  { n:'Luciane Vendrix', y0:262, y1:312, d:4, role:'Empress-Proclaimed',    epithet:'crowned in the new forum' },
+  { n:'Cassran Strox',   y0:312, y1:360, d:4, role:'Lawgiver',              epithet:'compiler of the Fourteen Codes' },
+  { n:'Valerina Kestin', y0:360, y1:412, d:5, role:'Coliseum Patron',       epithet:'who consecrated the great oval' },
+  { n:'Aurel Tarvex',    y0:412, y1:460, d:6, role:'Aqueduct Engineer',     epithet:'who brought water across the dry valley' },
+  { n:'Selvar Volusen',  y0:460, y1:510, d:7, role:'Marble-Bringer',        epithet:'whose quarries polished the city white' },
+  { n:'Severin Aelryn',  y0:510, y1:558, d:8, role:'Last Strategist',       epithet:'who repaired the western wall thrice' },
+  { n:'Domitra Brastor', y0:558, y1:601, d:8, role:'Twilight Sovereign',    epithet:'who walked the rooftops at dusk' }
+];
+
+var DYNASTIES = [
+  { id:1, name:'House Volaen',  color:0xb24a2a },
+  { id:2, name:'House Pelorin', color:0x4a7a8c },
+  { id:3, name:'House Orelth',  color:0xa07030 },
+  { id:4, name:'House Vendrix', color:0x8a3a5a },
+  { id:5, name:'House Kestin',  color:0xc8a04a },
+  { id:6, name:'House Tarvex',  color:0x4a7a3a },
+  { id:7, name:'House Volusen', color:0x6a5a8a },
+  { id:8, name:'House Aelryn',  color:0x9a3a3a }
+];
+
+var FEATURED = [
+  { n:'Senator Velven Pelinus',     r:'Senator',     y:'fl. yr 130', e:'voice of the early republic; opposed the granaries tariff' },
+  { n:'Senator Vetra Cossin',       r:'Senator',     y:'fl. yr 215', e:'last republican; resigned the day of the proclamation' },
+  { n:'Senator Olran Vendix',       r:'Senator',     y:'fl. yr 285', e:'reformer of the salt assize' },
+  { n:'General Brastor Vex',        r:'General',     y:'fl. yr 270', e:'pacified the southern frontier; never seen on screen' },
+  { n:'General Marila Drant',       r:'General',     y:'fl. yr 380', e:'commanded the harbor legions; grandmother of Severin' },
+  { n:'General Holvar Strex',       r:'General',     y:'fl. yr 470', e:'last marshal of the dry valley garrisons' },
+  { n:'Oracle Sybella of the Hill', r:'Oracle',      y:'fl. yr 12',  e:'foretold the seven hills before they were named' },
+  { n:'Oracle Pyrrhan the Blind',   r:'Oracle',      y:'fl. yr 410', e:'spoke of the long shadow over the marble' },
+  { n:'Trader Hesper Volunn',       r:'Trader',      y:'fl. yr 175', e:'opened the eastern silk routes; built three docks' },
+  { n:'Trader Karyon Mervex',       r:'Trader',      y:'fl. yr 320', e:'merchant prince; financed the first arena tier' },
+  { n:'Hex the Tall',               r:'Gladiator',   y:'fl. yr 365', e:'undefeated of the new arena; retired to a vineyard' },
+  { n:'Brunna Iron-arm',            r:'Gladiator',   y:'fl. yr 430', e:'champion of three coliseums; later a teacher' },
+  { n:'Tessa Volaen-Free',          r:'Freedwoman',  y:'fl. yr 165', e:'first scholar of her line; founded the lamp school' },
+  { n:'Ostan the Smith',            r:'Freedman',    y:'fl. yr 240', e:'forged the senate gates; signed every hinge' },
+  { n:'Lyceon Faldrix',             r:'Philosopher', y:'fl. yr 295', e:'wrote the Twelve Discourses on quiet rule' },
+  { n:'Nylla of the Forum',         r:'Philosopher', y:'fl. yr 480', e:'taught at the marble steps; refused the palace' },
+  { n:'Architect Vellis Maelan',    r:'Builder',     y:'fl. yr 360', e:'designed the great oval; never named in the inscription' },
+  { n:'Architect Cyran Oroth',      r:'Builder',     y:'fl. yr 430', e:'spanned the dry valley with eighty-one arches' }
+];
+
+var ERA_STAMPS = [
+  { y0:1,   t:'YEAR 1 \u2014 FOUNDING' },
+  { y0:50,  t:'YEAR 50 \u2014 FIRST WALLS' },
+  { y0:120, t:'YEAR 120 \u2014 REPUBLIC' },
+  { y0:200, t:'YEAR 200 \u2014 THE FORUM RISES' },
+  { y0:250, t:'YEAR 250 \u2014 EMPIRE PROCLAIMED' },
+  { y0:320, t:'YEAR 320 \u2014 GREAT OVAL FOUNDED' },
+  { y0:400, t:'YEAR 400 \u2014 AQUEDUCTS BEGUN' },
+  { y0:475, t:'YEAR 475 \u2014 MARBLE WHITE' },
+  { y0:540, t:'YEAR 540 \u2014 FIRST CRACKS' },
+  { y0:600, t:'YEAR 600 \u2014 THE CITY ENDURES' }
+];
+
+// ========================================================================
+// MEMORY  (localStorage)
+// ========================================================================
+var MEM_KEY = 'volterra_empire_memory_v1';
+function loadMem(){
+  try { var j = localStorage.getItem(MEM_KEY); if (j) return JSON.parse(j); } catch(e){}
+  return null;
+}
+function saveMem(m){
+  try { localStorage.setItem(MEM_KEY, JSON.stringify(m)); } catch(e){}
+}
+function defaultMem(){
+  return {
+    iteration: 1,
+    cycle: 0,
+    empireName: EMPIRE_CHAIN[0],
+    successorChain: [EMPIRE_CHAIN[0]],
+    dynasty: DYNASTIES.map(function(d){
+      var last = null;
+      for (var k=0;k<EMPERORS.length;k++) if (EMPERORS[k].d===d.id) last = EMPERORS[k];
+      return {
+        name: last ? last.n : d.name,
+        role: last ? (last.role + ' of ' + d.name) : 'imperial dynasty',
+        reignYears: last ? ('yr ' + last.y0 + '-' + last.y1) : 'unknown',
+        state: 'awaiting'
+      };
+    }),
+    chronicled: [],
+    bornAt: Date.now()
+  };
+}
+var mem = loadMem();
+if (!mem || !mem.dynasty || mem.dynasty.length !== 8){ mem = defaultMem(); saveMem(mem); }
+
+function advanceMem(){
+  mem.iteration = (mem.iteration||0) + 1;
+  mem.cycle = (mem.cycle||0) + 1;
+  mem.empireName = EMPIRE_CHAIN[mem.cycle % EMPIRE_CHAIN.length];
+  if (!mem.successorChain) mem.successorChain = [];
+  mem.successorChain.push(mem.empireName);
+  if (mem.successorChain.length > 12) mem.successorChain.shift();
+  // Save 8 named dynasty members with role/reign-years/state
+  mem.dynasty = DYNASTIES.map(function(d){
+    var last = null;
+    for (var k=0;k<EMPERORS.length;k++) if (EMPERORS[k].d===d.id) last = EMPERORS[k];
+    return {
+      name: last ? last.n : d.name,
+      role: last ? (last.role + ' of ' + d.name) : 'imperial dynasty',
+      reignYears: last ? ('yr ' + last.y0 + '-' + last.y1) : 'unknown',
+      state: (last && last.y1 < 600) ? 'remembered' : 'last sovereign'
+    };
+  });
+  mem.bornAt = Date.now();
+  saveMem(mem);
+}
+
+// ========================================================================
+// THREE SETUP
+// ========================================================================
+var canvas = document.getElementById('c');
+var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+var scene = new T.Scene();
+scene.background = new T.Color(0x6e8aa2);
+scene.fog = new T.Fog(0x6e8aa2, 110, 380);
+
+var camera = new T.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.5, 1000);
+camera.position.set(80, 50, 80);
+camera.lookAt(0, 8, 0);
+
+window.addEventListener('resize', function(){
+  var w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+});
+
+// Lights
+var ambient = new T.AmbientLight(0xffffff, 0.55);
+scene.add(ambient);
+var sun = new T.DirectionalLight(0xfff0d0, 0.9);
+sun.position.set(40, 80, 30);
+scene.add(sun);
+var moon = new T.DirectionalLight(0x6080a0, 0.0);
+moon.position.set(-40, 80, -30);
+scene.add(moon);
+
+// ========================================================================
+// SHARED MATERIALS
+// ========================================================================
+var matMarble  = track(new T.MeshLambertMaterial({ color:0x7a7060 }));
+var matStone   = track(new T.MeshLambertMaterial({ color:0x6c6660 }));
+var matWood    = track(new T.MeshLambertMaterial({ color:0x6a4a2a }));
+var matRoof    = track(new T.MeshLambertMaterial({ color:0x8a3a2a }));
+var matBronze  = track(new T.MeshLambertMaterial({ color:0x9a7a3a }));
+var matBanner  = track(new T.MeshBasicMaterial({ color:0xb24a2a, side:T.DoubleSide }));
+var matCypress = track(new T.MeshLambertMaterial({ color:0x2a4a2a }));
+var matOlive   = track(new T.MeshLambertMaterial({ color:0x6a8a4a }));
+var matTrunk   = track(new T.MeshLambertMaterial({ color:0x4a3220 }));
+var matWater   = track(new T.MeshLambertMaterial({ color:0x3a5a8a }));
+var matGround  = track(new T.MeshLambertMaterial({ color:0x6a8a4a }));
+var matHill    = track(new T.MeshLambertMaterial({ color:0x7c7a5a }));
+var matRoad    = track(new T.MeshLambertMaterial({ color:0x9a8a6a }));
+var matRuin    = track(new T.MeshLambertMaterial({ color:0x4a4640 }));
+var matSailA   = track(new T.MeshBasicMaterial({ color:0xeae5d2, side:T.DoubleSide }));
+var matSailB   = track(new T.MeshBasicMaterial({ color:0xb24a2a, side:T.DoubleSide }));
+var matAltar   = track(new T.MeshLambertMaterial({ color:0x8a7060 }));
+
+var cMarbleA = new T.Color(0x7a7060);
+var cMarbleB = new T.Color(0xeae5d2);
+var cSkyDawn = new T.Color(0xc89070);
+var cSkyDay  = new T.Color(0x6e8aa2);
+var cSkyDusk = new T.Color(0xc06a44);
+var cSkyNight= new T.Color(0x14182a);
+var cFogDay  = new T.Color(0x6e8aa2);
+var cFogNight= new T.Color(0x14182a);
+
+// ========================================================================
+// SHARED GEOMETRIES (origin at bottom face for easy y-rise)
+// ========================================================================
+function gBoxBottom(w,h,d){ var g = new T.BoxGeometry(w,h,d); g.translate(0,h/2,0); return track(g); }
+function gCylBottom(rt,rb,h,seg,oe){ var g = new T.CylinderGeometry(rt,rb,h,seg||10, 1, !!oe); g.translate(0,h/2,0); return track(g); }
+function gConeBottom(r,h,seg){ var g = new T.ConeGeometry(r,h,seg||8); g.translate(0,h/2,0); return track(g); }
+
+var gUnitBox  = gBoxBottom(1,1,1);
+var gUnitCyl  = gCylBottom(0.5,0.5,1,12);
+var gUnitCone = gConeBottom(1,1,8);
+var gColumn   = gCylBottom(0.32,0.36,1,10);
+var gRoof     = gConeBottom(1,1,4);
+var gColRing  = gCylBottom(1,1,1,32,true);
+var gSphere   = track(new T.SphereGeometry(0.5, 10, 8));
+
+// ========================================================================
+// GROUND, WATER, HILL, ROADS
+// ========================================================================
+var ground = track(new T.Mesh(new T.PlaneGeometry(420,420), matGround));
+ground.rotation.x = -Math.PI/2;
+ground.position.y = 0;
+scene.add(ground);
+track(ground.geometry);
+
+var water = track(new T.Mesh(new T.PlaneGeometry(420,260), matWater));
+water.rotation.x = -Math.PI/2;
+water.position.set(0, 0.05, 145);
+scene.add(water);
+track(water.geometry);
+
+// Central hill (always present, year 1)
+var hill = track(new T.Mesh(new T.ConeGeometry(38, 12, 10), matHill));
+hill.position.set(0, 6, 0);
+scene.add(hill);
+track(hill.geometry);
+
+// Roads (radial spokes) - always present from year 30
+var roads = new T.Group();
+for (var ri = 0; ri < 6; ri++){
+  var ang = (ri/6) * Math.PI * 2;
+  var rd = track(new T.Mesh(gUnitBox, matRoad));
+  rd.position.set(Math.cos(ang)*30, 0.06, Math.sin(ang)*30);
+  rd.scale.set(2.5, 0.05, 60);
+  rd.rotation.y = -ang + Math.PI/2;
+  roads.add(rd);
+}
+scene.add(roads);
+roads.visible = false; // appears at year 30+
+
+// ========================================================================
+// BUILDING REGISTRY  (each building rises over years; some decay)
+// ========================================================================
+var buildings = [];
+function addBuilding(node, startYear, riseYears, decayYear){
+  node.userData = node.userData || {};
+  node.userData.startYear = startYear;
+  node.userData.riseYears = riseYears || 18;
+  node.userData.decayYear = (typeof decayYear === 'number') ? decayYear : null;
+  node.userData.baseY = node.position.y;
+  node.userData.baseSY = node.scale.y;
+  node.scale.y = 0.001;
+  node.visible = false;
+  buildings.push(node);
+  return node;
+}
+function makeMesh(g, m){ var x = new T.Mesh(g, m); track(x); return x; }
+
+// ----- Hilltop founding village (huts) -----
+var villageGroup = new T.Group();
+villageGroup.position.set(0, 12, 0);
+for (var hi = 0; hi < 12; hi++){
+  var ang = (hi/12) * Math.PI * 2 + 0.2;
+  var rad = 6 + Math.random()*3;
+  var hx = Math.cos(ang)*rad, hz = Math.sin(ang)*rad;
+  var hut = makeMesh(gUnitBox, matWood);
+  hut.position.set(hx, 0, hz);
+  hut.scale.set(2 + Math.random()*0.4, 1.2, 2 + Math.random()*0.4);
+  villageGroup.add(hut);
+  var hroof = makeMesh(gRoof, matRoof);
+  hroof.position.set(hx, 1.2, hz);
+  hroof.scale.set(1.6, 1.0, 1.6);
+  villageGroup.add(hroof);
+}
+// Founding altar
+var altar = makeMesh(gUnitBox, matAltar);
+altar.position.set(0, 0.5, 0);
+altar.scale.set(1.5, 1.0, 1.5);
+villageGroup.add(altar);
+scene.add(villageGroup);
+addBuilding(villageGroup, 1, 6);
+
+// ----- Stone walls (octagonal ring) -----
+var wallsGroup = new T.Group();
+for (var wi = 0; wi < 24; wi++){
+  var wa = (wi/24) * Math.PI * 2;
+  var wseg = makeMesh(gUnitBox, matStone);
+  var wr = 28;
+  wseg.position.set(Math.cos(wa)*wr, 0, Math.sin(wa)*wr);
+  wseg.rotation.y = -wa;
+  wseg.scale.set(7.5, 4, 1.4);
+  wallsGroup.add(wseg);
+  if (wi % 3 === 0){
+    var tower = makeMesh(gUnitBox, matStone);
+    tower.position.set(Math.cos(wa)*wr, 0, Math.sin(wa)*wr);
+    tower.rotation.y = -wa;
+    tower.scale.set(2.6, 6.5, 2.6);
+    wallsGroup.add(tower);
+  }
+}
+scene.add(wallsGroup);
+addBuilding(wallsGroup, 50, 30, 555);
+
+// ----- Forum + senate -----
+var forumGroup = new T.Group();
+// Senate building (rectangular with columns + pediment)
+var senate = makeMesh(gUnitBox, matMarble);
+senate.position.set(0, 0, -28);
+senate.scale.set(16, 6, 9);
+forumGroup.add(senate);
+// Front colonnade
+for (var sc = -3; sc <= 3; sc++){
+  var col = makeMesh(gColumn, matMarble);
+  col.position.set(sc*2.2, 0, -23.5);
+  col.scale.set(1, 7, 1);
+  forumGroup.add(col);
+}
+// Pediment
+var pediment = makeMesh(gRoof, matMarble);
+pediment.position.set(0, 7.0, -28);
+pediment.scale.set(8.5, 2.3, 4.6);
+pediment.rotation.y = Math.PI/2;
+forumGroup.add(pediment);
+// Forum plaza markers
+for (var fp = 0; fp < 6; fp++){
+  var fpa = (fp/6)*Math.PI*2;
+  var stat = makeMesh(gColumn, matMarble);
+  stat.position.set(Math.cos(fpa)*5, 0, -16 + Math.sin(fpa)*4);
+  stat.scale.set(0.8, 3, 0.8);
+  forumGroup.add(stat);
+}
+// Banner pillars at forum entrance
+var bannerL = makeMesh(gUnitBox, matBanner);
+bannerL.position.set(-7, 4.5, -19);
+bannerL.scale.set(0.3, 4, 1.6);
+forumGroup.add(bannerL);
+var bannerR = makeMesh(gUnitBox, matBanner);
+bannerR.position.set(7, 4.5, -19);
+bannerR.scale.set(0.3, 4, 1.6);
+forumGroup.add(bannerR);
+scene.add(forumGroup);
+addBuilding(forumGroup, 120, 28);
+
+// ----- Imperial palace (on hilltop, replaces village center) -----
+var palaceGroup = new T.Group();
+palaceGroup.position.set(0, 12, 0);
+var palCore = makeMesh(gUnitBox, matMarble);
+palCore.position.set(0, 0, 0);
+palCore.scale.set(10, 5, 10);
+palaceGroup.add(palCore);
+// Upper floor
+var palUp = makeMesh(gUnitBox, matMarble);
+palUp.position.set(0, 5, 0);
+palUp.scale.set(8, 3.5, 8);
+palaceGroup.add(palUp);
+// Tower
+var palTower = makeMesh(gUnitBox, matMarble);
+palTower.position.set(0, 8.5, 0);
+palTower.scale.set(3.5, 5, 3.5);
+palaceGroup.add(palTower);
+// Dome on top
+var palDome = makeMesh(gSphere, matBronze);
+palDome.position.set(0, 14, 0);
+palDome.scale.set(2.4, 1.6, 2.4);
+palaceGroup.add(palDome);
+// Corner columns
+for (var pc = 0; pc < 4; pc++){
+  var pca = pc*Math.PI/2 + Math.PI/4;
+  var pcol = makeMesh(gColumn, matMarble);
+  pcol.position.set(Math.cos(pca)*5, 0, Math.sin(pca)*5);
+  pcol.scale.set(1.1, 5, 1.1);
+  palaceGroup.add(pcol);
+}
+// Palace banners
+var palBan = makeMesh(gUnitBox, matBanner);
+palBan.position.set(0, 11, 1.8);
+palBan.scale.set(2.2, 3, 0.1);
+palaceGroup.add(palBan);
+scene.add(palaceGroup);
+addBuilding(palaceGroup, 250, 32);
+
+// ----- Coliseum (great oval) -----
+var colGroup = new T.Group();
+var colPos = new T.Vector3(40, 0, 6);
+// Outer wall ring
+var colOuter = makeMesh(gColRing, matMarble);
+colOuter.position.set(colPos.x, 0, colPos.z);
+colOuter.scale.set(13, 11, 13);
+colGroup.add(colOuter);
+// Second tier
+var colTier = makeMesh(gColRing, matMarble);
+colTier.position.set(colPos.x, 0, colPos.z);
+colTier.scale.set(11.5, 13, 11.5);
+colGroup.add(colTier);
+// Top archway ring (decorative)
+for (var ck = 0; ck < 24; ck++){
+  var cka = (ck/24)*Math.PI*2;
+  var carch = makeMesh(gUnitBox, matMarble);
+  carch.position.set(colPos.x + Math.cos(cka)*12.6, 9.5, colPos.z + Math.sin(cka)*12.6);
+  carch.rotation.y = -cka;
+  carch.scale.set(0.6, 3, 1.4);
+  colGroup.add(carch);
+}
+// Inner stands
+var colInner = makeMesh(gColRing, matStone);
+colInner.position.set(colPos.x, 0, colPos.z);
+colInner.scale.set(8, 6, 8);
+colGroup.add(colInner);
+// Floor
+var colFloor = makeMesh(gUnitCyl, matStone);
+colFloor.position.set(colPos.x, 0, colPos.z);
+colFloor.scale.set(7, 0.4, 7);
+colGroup.add(colFloor);
+scene.add(colGroup);
+addBuilding(colGroup, 320, 50, 580);
+
+// ----- Aqueduct (long line of arches across the dry valley to west) -----
+var aqGroup = new T.Group();
+var aqStart = -90, aqEnd = -22, aqZ = -2, aqSpan = 7;
+var aqCount = Math.floor((aqEnd - aqStart)/aqSpan);
+for (var ai = 0; ai < aqCount; ai++){
+  var ax = aqStart + ai*aqSpan + aqSpan/2;
+  // Pillar A
+  var pA = makeMesh(gUnitBox, matMarble);
+  pA.position.set(ax - aqSpan/2 + 0.5, 0, aqZ);
+  pA.scale.set(1.2, 9 + Math.sin(ai*0.4)*0.4, 1.6);
+  aqGroup.add(pA);
+  // Pillar B
+  var pB = makeMesh(gUnitBox, matMarble);
+  pB.position.set(ax + aqSpan/2 - 0.5, 0, aqZ);
+  pB.scale.set(1.2, 9 + Math.sin(ai*0.4+1)*0.4, 1.6);
+  aqGroup.add(pB);
+  // Top span
+  var top = makeMesh(gUnitBox, matMarble);
+  top.position.set(ax, 9, aqZ);
+  top.scale.set(aqSpan, 1.2, 1.8);
+  aqGroup.add(top);
+  // Channel above
+  var ch = makeMesh(gUnitBox, matMarble);
+  ch.position.set(ax, 10.2, aqZ);
+  ch.scale.set(aqSpan*0.95, 0.8, 1.2);
+  aqGroup.add(ch);
+  // Decorative arch crossbar (low)
+  var lo = makeMesh(gUnitBox, matMarble);
+  lo.position.set(ax, 4.5, aqZ);
+  lo.scale.set(aqSpan*0.7, 0.6, 1.4);
+  aqGroup.add(lo);
+}
+scene.add(aqGroup);
+addBuilding(aqGroup, 400, 52, 590);
+
+// ----- Insula blocks (residential apartments) -----
+var insulaGroup = new T.Group();
+var insulaSpots = [
+  [-22,  10],[-26,  18],[-18,  20],[-14,  12],
+  [ 16, -22],[ 22, -16],[ 12, -18],
+  [-22, -20],[-28, -12],[-16, -28],
+  [ 22,  22],[ 28,  14],[ 14,  26]
+];
+for (var ii = 0; ii < insulaSpots.length; ii++){
+  var ix = insulaSpots[ii][0], iz = insulaSpots[ii][1];
+  var floors = 2 + (ii % 4);
+  for (var fl = 0; fl < floors; fl++){
+    var ins = makeMesh(gUnitBox, fl===0 ? matStone : matMarble);
+    ins.position.set(ix, fl*2.6, iz);
+    ins.scale.set(4 + (ii%3)*0.4, 2.4, 4 + (ii%2)*0.4);
+    insulaGroup.add(ins);
+  }
+  // Roof
+  var iroof = makeMesh(gRoof, matRoof);
+  iroof.position.set(ix, floors*2.6, iz);
+  iroof.scale.set(2.6, 1.4, 2.6);
+  iroof.rotation.y = Math.PI/4;
+  insulaGroup.add(iroof);
+}
+scene.add(insulaGroup);
+addBuilding(insulaGroup, 150, 60);
+
+// ----- Port (piers + cranes + warehouses + ships) -----
+var portGroup = new T.Group();
+// Piers
+for (var qp = 0; qp < 3; qp++){
+  var qx = -10 + qp*10;
+  var pier = makeMesh(gUnitBox, matWood);
+  pier.position.set(qx, 0.4, 38);
+  pier.scale.set(2.4, 0.5, 22);
+  portGroup.add(pier);
+}
+// Warehouses
+for (var wh = 0; wh < 4; wh++){
+  var wx = -16 + wh*10;
+  var ware = makeMesh(gUnitBox, matWood);
+  ware.position.set(wx, 0, 30);
+  ware.scale.set(7, 4, 5);
+  portGroup.add(ware);
+  var wroof = makeMesh(gRoof, matRoof);
+  wroof.position.set(wx, 4, 30);
+  wroof.scale.set(4.5, 2, 3.4);
+  wroof.rotation.y = Math.PI/4;
+  portGroup.add(wroof);
+}
+// Crane
+var crane = makeMesh(gUnitBox, matWood);
+crane.position.set(8, 0, 42);
+crane.scale.set(0.6, 9, 0.6);
+portGroup.add(crane);
+var craneArm = makeMesh(gUnitBox, matWood);
+craneArm.position.set(11, 7, 42);
+craneArm.scale.set(7, 0.4, 0.4);
+portGroup.add(craneArm);
+// Ships (two)
+var shipHull1 = makeMesh(gUnitBox, matWood);
+shipHull1.position.set(-12, 0.7, 50);
+shipHull1.scale.set(2.4, 1.5, 8);
+portGroup.add(shipHull1);
+var shipMast1 = makeMesh(gColumn, matWood);
+shipMast1.position.set(-12, 0.7, 50);
+shipMast1.scale.set(0.4, 5, 0.4);
+portGroup.add(shipMast1);
+var sail1 = makeMesh(gUnitBox, matSailA);
+sail1.position.set(-12, 4, 50);
+sail1.scale.set(0.1, 3, 5);
+portGroup.add(sail1);
+var shipHull2 = makeMesh(gUnitBox, matWood);
+shipHull2.position.set(6, 0.7, 56);
+shipHull2.scale.set(2.4, 1.5, 8);
+portGroup.add(shipHull2);
+var shipMast2 = makeMesh(gColumn, matWood);
+shipMast2.position.set(6, 0.7, 56);
+shipMast2.scale.set(0.4, 5, 0.4);
+portGroup.add(shipMast2);
+var sail2 = makeMesh(gUnitBox, matSailB);
+sail2.position.set(6, 4, 56);
+sail2.scale.set(0.1, 3, 5);
+portGroup.add(sail2);
+scene.add(portGroup);
+addBuilding(portGroup, 200, 36);
+
+// ----- Military camp (palisade square + tents) -----
+var campGroup = new T.Group();
+var campCx = -38, campCz = -42;
+// Palisade
+for (var pp = 0; pp < 16; pp++){
+  var pa = (pp/16)*Math.PI*2;
+  var pole = makeMesh(gColumn, matWood);
+  pole.position.set(campCx + Math.cos(pa)*9, 0, campCz + Math.sin(pa)*9);
+  pole.scale.set(1, 3.2, 1);
+  campGroup.add(pole);
+}
+// Tents (cones)
+for (var tt = 0; tt < 9; tt++){
+  var ta = (tt/9)*Math.PI*2;
+  var tx = campCx + Math.cos(ta)*5;
+  var tz = campCz + Math.sin(ta)*5;
+  var tent = makeMesh(gRoof, matWood);
+  tent.position.set(tx, 0, tz);
+  tent.scale.set(1.6, 2.4, 1.6);
+  campGroup.add(tent);
+}
+// Banner pole at center
+var campPole = makeMesh(gColumn, matWood);
+campPole.position.set(campCx, 0, campCz);
+campPole.scale.set(0.6, 7, 0.6);
+campGroup.add(campPole);
+var campFlag = makeMesh(gUnitBox, matBanner);
+campFlag.position.set(campCx + 1, 5.5, campCz);
+campFlag.scale.set(2, 1.5, 0.1);
+campGroup.add(campFlag);
+scene.add(campGroup);
+addBuilding(campGroup, 100, 22);
+
+// ----- Marketplace (stalls) -----
+var marketGroup = new T.Group();
+for (var mk = 0; mk < 14; mk++){
+  var mka = (mk/14)*Math.PI*2;
+  var mkr = 14 + (mk%3);
+  var mx = Math.cos(mka)*mkr, mz = -10 + Math.sin(mka)*mkr;
+  var stall = makeMesh(gUnitBox, matWood);
+  stall.position.set(mx, 0, mz);
+  stall.scale.set(2, 1.4, 2);
+  marketGroup.add(stall);
+  var canopy = makeMesh(gRoof, matSailA);
+  canopy.position.set(mx, 1.4, mz);
+  canopy.scale.set(1.8, 1.2, 1.8);
+  marketGroup.add(canopy);
+}
+scene.add(marketGroup);
+addBuilding(marketGroup, 80, 24);
+
+// ----- Aqueduct terminus fountain in city -----
+var fountainGroup = new T.Group();
+var fbase = makeMesh(gUnitCyl, matMarble);
+fbase.position.set(-10, 0, 4);
+fbase.scale.set(2.4, 1, 2.4);
+fountainGroup.add(fbase);
+var fpil = makeMesh(gColumn, matMarble);
+fpil.position.set(-10, 1, 4);
+fpil.scale.set(1.2, 3, 1.2);
+fountainGroup.add(fpil);
+scene.add(fountainGroup);
+addBuilding(fountainGroup, 410, 20);
+
+// ----- Triumphal arch -----
+var archGroup = new T.Group();
+var archL = makeMesh(gUnitBox, matMarble);
+archL.position.set(-12, 0, -14);
+archL.scale.set(1.8, 7, 1.8);
+archGroup.add(archL);
+var archR = makeMesh(gUnitBox, matMarble);
+archR.position.set(-6, 0, -14);
+archR.scale.set(1.8, 7, 1.8);
+archGroup.add(archR);
+var archTop = makeMesh(gUnitBox, matMarble);
+archTop.position.set(-9, 7, -14);
+archTop.scale.set(7, 2, 2);
+archGroup.add(archTop);
+var archBan = makeMesh(gUnitBox, matBanner);
+archBan.position.set(-9, 8.6, -14);
+archBan.scale.set(4, 1.4, 0.1);
+archGroup.add(archBan);
+scene.add(archGroup);
+addBuilding(archGroup, 270, 14);
+
+// ----- Library (later building, marble cubes) -----
+var libGroup = new T.Group();
+var libCore = makeMesh(gUnitBox, matMarble);
+libCore.position.set(20, 0, -10);
+libCore.scale.set(8, 5, 6);
+libGroup.add(libCore);
+for (var lc = -2; lc <= 2; lc++){
+  var lcol = makeMesh(gColumn, matMarble);
+  lcol.position.set(lc*1.4, 0, -7);
+  lcol.position.x += 20;
+  lcol.scale.set(1, 5.5, 1);
+  libGroup.add(lcol);
+}
+scene.add(libGroup);
+addBuilding(libGroup, 470, 20);
+
+// ----- Temple complex on a side hill -----
+var templeGroup = new T.Group();
+var tempBase = makeMesh(gUnitBox, matMarble);
+tempBase.position.set(-12, 0, 22);
+tempBase.scale.set(10, 1.5, 7);
+templeGroup.add(tempBase);
+for (var tk = -3; tk <= 3; tk++){
+  for (var tj = 0; tj < 2; tj++){
+    var tcol = makeMesh(gColumn, matMarble);
+    tcol.position.set(-12 + tk*1.5, 1.5, 22 + (tj?-2.5:2.5));
+    tcol.scale.set(1, 5, 1);
+    templeGroup.add(tcol);
+  }
+}
+var tempRoof = makeMesh(gRoof, matMarble);
+tempRoof.position.set(-12, 6.5, 22);
+tempRoof.scale.set(5.5, 2, 4.2);
+tempRoof.rotation.y = Math.PI/2;
+templeGroup.add(tempRoof);
+scene.add(templeGroup);
+addBuilding(templeGroup, 180, 22);
+
+// ----- Decay overlays (rubble piles that appear after year 580) -----
+var rubbleGroup = new T.Group();
+var rubbleSpots = [
+  [-14, 18],[ 26, 16],[-26, -8],[ 30, -28],[ -8, -22],[ 18,  4],[ 24, -6],[-30, 14]
+];
+for (var rb = 0; rb < rubbleSpots.length; rb++){
+  for (var rk = 0; rk < 4; rk++){
+    var rrub = makeMesh(gUnitBox, matRuin);
+    rrub.position.set(rubbleSpots[rb][0] + (Math.random()-0.5)*3, 0, rubbleSpots[rb][1] + (Math.random()-0.5)*3);
+    rrub.scale.set(0.6 + Math.random(), 0.4 + Math.random()*0.6, 0.6 + Math.random());
+    rrub.rotation.y = Math.random()*Math.PI;
+    rubbleGroup.add(rrub);
+  }
+}
+scene.add(rubbleGroup);
+addBuilding(rubbleGroup, 580, 25);
+
+// ========================================================================
+// VEGETATION  (cypress + olive)  procedural scatter
+// ========================================================================
+var vegGroup = new T.Group();
+var vegEntries = [];
+function addTree(kind, x, z){
+  if (kind === 'cypress'){
+    var trunk = makeMesh(gColumn, matTrunk);
+    trunk.position.set(x, 0, z);
+    trunk.scale.set(0.5, 1.5, 0.5);
+    vegGroup.add(trunk);
+    var top = makeMesh(gUnitCone, matCypress);
+    top.position.set(x, 1.5, z);
+    top.scale.set(1.4, 5.5, 1.4);
+    vegGroup.add(top);
+    vegEntries.push({trunk:trunk, top:top, baseT:1.5, baseH:5.5});
+  } else {
+    var trk2 = makeMesh(gColumn, matTrunk);
+    trk2.position.set(x, 0, z);
+    trk2.scale.set(0.45, 1.6, 0.45);
+    vegGroup.add(trk2);
+    var top2 = makeMesh(gSphere, matOlive);
+    top2.position.set(x, 2.4, z);
+    top2.scale.set(2.2, 1.8, 2.2);
+    vegGroup.add(top2);
+    vegEntries.push({trunk:trk2, top:top2, baseT:1.6, baseH:1.8});
+  }
+}
+// Cypress avenue along main road
+for (var cv = 0; cv < 14; cv++){
+  addTree('cypress', -50 + cv*8, 12);
+  addTree('cypress', -50 + cv*8, -12);
+}
+// Olive groves on south & east
+for (var ov = 0; ov < 22; ov++){
+  var oa = ov * 0.6;
+  addTree('olive', 50 + Math.cos(oa)*6 + (ov%3)*3, -22 + Math.sin(oa)*8);
+  addTree('olive', -56 - (ov%5)*3, -28 + Math.sin(oa)*9);
+}
+// Cypresses on the hill base
+for (var ch2 = 0; ch2 < 10; ch2++){
+  var cha = (ch2/10)*Math.PI*2;
+  addTree('cypress', Math.cos(cha)*16, Math.sin(cha)*16);
+}
+scene.add(vegGroup);
+
+// ========================================================================
+// CITIZENS  (InstancedMesh of 60 walking figures)
+// ========================================================================
+var CITIZEN_COUNT = 60;
+var citizenGeo = track(new T.BoxGeometry(0.42, 1.3, 0.42));
+citizenGeo.translate(0, 0.65, 0);
+var citizenMat = track(new T.MeshLambertMaterial({ color:0xffffff }));
+var citizens = new T.InstancedMesh(citizenGeo, citizenMat, CITIZEN_COUNT);
+track(citizens);
+scene.add(citizens);
+
+var citizenPaths = [];
+for (var ci = 0; ci < CITIZEN_COUNT; ci++){
+  var clusterRoll = Math.random();
+  var cx, cz;
+  if (clusterRoll < 0.3){ cx = (Math.random()-0.5)*30; cz = -10 + (Math.random()-0.5)*20; } // forum/center
+  else if (clusterRoll < 0.55){ cx = 38 + (Math.random()-0.5)*16; cz = 6 + (Math.random()-0.5)*16; } // coliseum
+  else if (clusterRoll < 0.7){ cx = -22 + (Math.random()-0.5)*16; cz = 12 + (Math.random()-0.5)*16; } // insula west
+  else if (clusterRoll < 0.85){ cx = (Math.random()-0.5)*16; cz = 36 + (Math.random()-0.5)*8; } // port
+  else { cx = -34 + (Math.random()-0.5)*8; cz = -42 + (Math.random()-0.5)*8; } // camp
+  citizenPaths.push({
+    cx: cx, cz: cz,
+    r: 1.5 + Math.random()*4.5,
+    speed: (0.04 + Math.random()*0.10) * (Math.random()<0.5?-1:1),
+    phase: Math.random() * Math.PI * 2,
+    bob: Math.random()*0.4 + 0.1,
+    bobSpeed: 1 + Math.random()*2,
+    hue: (ci * 0.137) % 1
+  });
+}
+
+var _cm = new T.Matrix4();
+var _cQ = new T.Quaternion();
+var _cV = new T.Vector3();
+var _cS = new T.Vector3(1,1,1);
+var _cC = new T.Color();
+function updateCitizens(simYear, t){
+  // Era clothing palette
+  var sat, lite;
+  if (simYear < 80){ sat = 0.18; lite = 0.32; }
+  else if (simYear < 200){ sat = 0.30; lite = 0.45; }
+  else if (simYear < 350){ sat = 0.45; lite = 0.55; }
+  else if (simYear < 500){ sat = 0.55; lite = 0.62; }
+  else if (simYear < 580){ sat = 0.50; lite = 0.58; }
+  else { sat = 0.30; lite = 0.40; }
+  for (var i = 0; i < CITIZEN_COUNT; i++){
+    var p = citizenPaths[i];
+    var ang = p.phase + t * p.speed;
+    var x = p.cx + Math.cos(ang)*p.r;
+    var z = p.cz + Math.sin(ang)*p.r;
+    var y = 0 + Math.sin(t*p.bobSpeed + i)*0.04;
+    _cV.set(x, y, z);
+    _cQ.setFromAxisAngle(new T.Vector3(0,1,0), ang + Math.PI/2);
+    _cS.set(1, 1, 1);
+    _cm.compose(_cV, _cQ, _cS);
+    citizens.setMatrixAt(i, _cm);
+    _cC.setHSL(p.hue, sat, lite);
+    if (citizens.setColorAt) citizens.setColorAt(i, _cC);
+  }
+  citizens.instanceMatrix.needsUpdate = true;
+  if (citizens.instanceColor) citizens.instanceColor.needsUpdate = true;
+}
+
+// ========================================================================
+// CAMERAS  (24+ director shots)
+// ========================================================================
+var SHOTS = [
+  { n:'HILLTOP WIDE',         pos:[80, 50, 80], look:[0, 8, 0],   orbit:false },
+  { n:'FORUM DEBATE',         pos:[0, 4, -10],  look:[0, 5, -28], orbit:false },
+  { n:'FORUM PANORAMA',       pos:[26, 14, -50],look:[0, 4, -25], orbit:true  },
+  { n:'COLISEUM ORBIT',       pos:[55, 18, 22], look:[40, 4, 6],  orbit:true  },
+  { n:'COLISEUM ENTRANCE',    pos:[40, 3, 30],  look:[40, 5, 6],  orbit:false },
+  { n:'AQUEDUCT TRACKING',    pos:[-58, 14, 8], look:[-30, 6, -2],orbit:false },
+  { n:'AQUEDUCT ABOVE',       pos:[-44, 30, 30],look:[-44, 4, -2],orbit:true  },
+  { n:'PALACE ORBIT',         pos:[18, 22, 18], look:[0, 16, 0],  orbit:true  },
+  { n:'PALACE GATE',          pos:[6, 8, 14],   look:[0, 14, 0],  orbit:false },
+  { n:'PORT HARBOR',          pos:[10, 6, 75],  look:[0, 2, 50],  orbit:false },
+  { n:'PORT CRANE',           pos:[-15, 14, 65],look:[6, 4, 45],  orbit:false },
+  { n:'INSULA STREET',        pos:[-22, 3, 12], look:[-12, 4, 8], orbit:false },
+  { n:'INSULA ROOFTOPS',      pos:[-30, 18, 18],look:[-15, 5, 10],orbit:true  },
+  { n:'MILITARY CAMP',        pos:[-45, 8, -32],look:[-32, 2, -42],orbit:false},
+  { n:'CAMP GATE',            pos:[-22, 4, -38],look:[-32, 4, -42],orbit:false},
+  { n:'FOUNDING REENACT',     pos:[8, 14, 8],   look:[0, 12, 0],  orbit:true  },
+  { n:'DUSK ROOFTOPS',        pos:[42, 30, 42], look:[0, 6, 0],   orbit:true  },
+  { n:'DAWN HILLS',           pos:[-66, 36, -34],look:[0, 8, 0],  orbit:false },
+  { n:'SENATE STEPS',         pos:[-4, 3, -18], look:[0, 5, -28], orbit:false },
+  { n:'MARKET LANE',          pos:[14, 4, -8],  look:[0, 4, 0],   orbit:false },
+  { n:'CYPRESS GROVE',        pos:[-66, 6, -10],look:[-50, 4, 0], orbit:false },
+  { n:'OLIVE GROVE',          pos:[60, 6, -28], look:[44, 4, -16],orbit:false },
+  { n:'WALL WALK',            pos:[34, 12, -18],look:[10, 6, -10],orbit:false },
+  { n:'IMPERIAL PROCESSION',  pos:[15, 3, -30], look:[0, 4, 0],   orbit:false }
+];
+
+var shotIndex = 0;
+var shotChangeAt = 0;
+var shotDuration = 25.0; // seconds per shot
+var camPos = new T.Vector3();
+var camLook = new T.Vector3();
+camPos.copy(camera.position);
+camLook.set(0, 8, 0);
+var nextPos = new T.Vector3(); var nextLook = new T.Vector3();
+var orbitAngle = 0;
+
+function selectShot(simYear, idx){
+  // Prefer shots that match what's been built
+  var s = SHOTS[idx % SHOTS.length];
+  // If coliseum shot but coliseum not yet built, fallback to forum
+  if ((s.n.indexOf('COLISEUM')===0) && simYear < 320) s = SHOTS[1];
+  if ((s.n.indexOf('AQUEDUCT')===0) && simYear < 400) s = SHOTS[18];
+  if ((s.n.indexOf('PALACE')===0) && simYear < 250) s = SHOTS[15];
+  if ((s.n.indexOf('PORT')===0) && simYear < 200) s = SHOTS[19];
+  return s;
+}
+
+function updateCamera(simYear, t, dt){
+  if (t > shotChangeAt){
+    shotIndex = (shotIndex + 1) % SHOTS.length;
+    shotChangeAt = t + shotDuration;
+    var s = selectShot(simYear, shotIndex);
+    nextPos.set(s.pos[0], s.pos[1], s.pos[2]);
+    nextLook.set(s.look[0], s.look[1], s.look[2]);
+    document.getElementById('shot').textContent = 'SHOT ' + (shotIndex+1) + ' / ' + SHOTS.length + ' \u2014 ' + s.n;
+    orbitAngle = 0;
+  }
+  var cur = selectShot(simYear, shotIndex);
+  if (cur.orbit){
+    orbitAngle += dt * 0.18;
+    var lookV = new T.Vector3(cur.look[0], cur.look[1], cur.look[2]);
+    var dx = cur.pos[0] - cur.look[0];
+    var dz = cur.pos[2] - cur.look[2];
+    var rad = Math.sqrt(dx*dx + dz*dz);
+    var startAng = Math.atan2(dz, dx);
+    nextPos.set(
+      cur.look[0] + Math.cos(startAng + orbitAngle) * rad,
+      cur.pos[1] + Math.sin(t*0.15)*1.6,
+      cur.look[2] + Math.sin(startAng + orbitAngle) * rad
+    );
+    nextLook.copy(lookV);
+  } else {
+    nextPos.set(cur.pos[0] + Math.sin(t*0.2)*0.4, cur.pos[1] + Math.sin(t*0.13)*0.3, cur.pos[2] + Math.cos(t*0.18)*0.4);
+    nextLook.set(cur.look[0], cur.look[1], cur.look[2]);
+  }
+  camPos.lerp(nextPos, 0.06);
+  camLook.lerp(nextLook, 0.08);
+  camera.position.copy(camPos);
+  camera.lookAt(camLook);
+}
+
+// ========================================================================
+// SUN ARC  (sky shifts per sim-year; full diurnal cycle each sim-year)
+// ========================================================================
+var skyColor = new T.Color();
+var fogColor = new T.Color();
+function updateSky(simYearF){
+  var dayPhase = (simYearF % 1.0); // 0..1 per sim-year
+  var pi2 = Math.PI * 2;
+  var sunAngle = dayPhase * pi2;
+  sun.position.set(Math.cos(sunAngle)*60, Math.max(8, Math.sin(sunAngle)*80), 30 + Math.sin(sunAngle*0.7)*20);
+  var elevation = Math.sin(sunAngle); // -1..1
+  sun.intensity = Math.max(0.05, 0.45 + elevation * 0.55);
+  ambient.intensity = 0.30 + Math.max(0, elevation) * 0.30;
+  moon.intensity = Math.max(0, -elevation) * 0.4;
+  // Sky color
+  if (elevation > 0.4){ skyColor.copy(cSkyDay); }
+  else if (elevation > 0.0){
+    var tt = elevation / 0.4;
+    skyColor.copy(cSkyDawn).lerp(cSkyDay, tt);
+  } else if (elevation > -0.2){
+    var tt2 = (elevation + 0.2) / 0.2;
+    skyColor.copy(cSkyDusk).lerp(cSkyDawn, tt2);
+  } else {
+    var tt3 = Math.min(1, (-elevation - 0.2) / 0.4);
+    skyColor.copy(cSkyDusk).lerp(cSkyNight, tt3);
+  }
+  scene.background = skyColor;
+  fogColor.copy(skyColor);
+  scene.fog.color.copy(fogColor);
+}
+
+// ========================================================================
+// CHYRON  (rolling chronicle text)
+// ========================================================================
+function getEra(year){
+  for (var i = ERA_STAMPS.length-1; i >= 0; i--){
+    if (year >= ERA_STAMPS[i].y0) return ERA_STAMPS[i].t.split(' \u2014 ')[1] || ERA_STAMPS[i].t;
+  }
+  return 'FOUNDING';
+}
+function getEmperor(year){
+  for (var i = 0; i < EMPERORS.length; i++){
+    if (year >= EMPERORS[i].y0 && year < EMPERORS[i].y1) return EMPERORS[i];
+  }
+  return EMPERORS[EMPERORS.length-1];
+}
+function getHeir(year){
+  var cur = getEmperor(year);
+  for (var i = 0; i < EMPERORS.length; i++){
+    if (EMPERORS[i].y0 > cur.y0) return EMPERORS[i];
+  }
+  return null;
+}
+function getDynasty(year){
+  var e = getEmperor(year);
+  for (var i = 0; i < DYNASTIES.length; i++){
+    if (DYNASTIES[i].id === e.d) return DYNASTIES[i];
+  }
+  return DYNASTIES[0];
+}
+function getFeatured(year){
+  var idx = Math.floor((year * 1.05) / 35) % FEATURED.length;
+  return FEATURED[idx];
+}
+
+var CHYRONS = [
+  { y0:1,   y1:30,  t:'YEAR {y} \u2014 {emperor} breaks the soil of the seven hills. Across the dry valley, woodsmen fell cypress for the first walls.' },
+  { y0:30,  y1:55,  t:'YEAR {y} \u2014 {emperor} consecrates the founding altar. By the river, fishermen lay the first quay-stones.' },
+  { y0:55,  y1:90,  t:'YEAR {y} \u2014 Under {emperor}, masons square the early walls. Marketplaces multiply on the lower slopes.' },
+  { y0:90,  y1:120, t:'YEAR {y} \u2014 Stone walls ring the hill. Clans merge into the people of the seven hills.' },
+  { y0:120, y1:160, t:'YEAR {y} \u2014 First senate convenes under {emperor}. In the south fields, vineyards spread to the horizon.' },
+  { y0:160, y1:200, t:'YEAR {y} \u2014 Republic of {empire} mints its first coin. Trader Hesper Volunn opens the eastern routes.' },
+  { y0:200, y1:230, t:'YEAR {y} \u2014 The forum is paved white. {emperor} entertains foreign envoys at the senate steps.' },
+  { y0:230, y1:262, t:'YEAR {y} \u2014 The republic frays. {emperor} resists, but the legions cheer for a single voice.' },
+  { y0:262, y1:300, t:'YEAR {y} \u2014 {emperor} crowned in the forum. Across the harbor, the new fleet is christened.' },
+  { y0:300, y1:330, t:'YEAR {y} \u2014 Foundations of the great oval are laid. Marble caravans climb from the northern quarries.' },
+  { y0:330, y1:370, t:'YEAR {y} \u2014 Tiers of the coliseum rise under {emperor}. Distant frontiers report long peace.' },
+  { y0:370, y1:412, t:'YEAR {y} \u2014 Crowds fill the great oval. The emperor watches from the marble box; cheers carry to the harbor.' },
+  { y0:412, y1:450, t:'YEAR {y} \u2014 Aqueducts begin to span the dry valley. Architect Cyran Oroth sketches eighty-one arches.' },
+  { y0:450, y1:485, t:'YEAR {y} \u2014 Water flows into the city for the first time. Children play in the new fountains under {emperor}.' },
+  { y0:485, y1:520, t:'YEAR {y} \u2014 Marble polishes white. Children are born to the longest peace any chronicle records.' },
+  { y0:520, y1:550, t:'YEAR {y} \u2014 {emperor} faces the first frost. Cracks appear in the western wall, repaired in haste.' },
+  { y0:550, y1:585, t:'YEAR {y} \u2014 Roof tiles slip in the autumn rains. Workers patch where they can; banners are lowered for mourning.' },
+  { y0:585, y1:601, t:'YEAR {y} \u2014 Twilight over the seven hills. {emperor} walks the rooftops at dusk; the city endures, weathered and white.' }
+];
+
+function getChyron(simYear, emp, dyn){
+  for (var i = 0; i < CHYRONS.length; i++){
+    var c = CHYRONS[i];
+    if (simYear >= c.y0 && simYear < c.y1){
+      return c.t.replace('{y}', simYear).replace('{emperor}', emp.n).replace('{empire}', mem.empireName).replace('{dynasty}', dyn.name);
+    }
+  }
+  return CHYRONS[CHYRONS.length-1].t.replace('{y}', simYear).replace('{emperor}', emp.n).replace('{empire}', mem.empireName);
+}
+
+// ========================================================================
+// MINI-MAP  (top-down city outline + hotspot)
+// ========================================================================
+var mapCanvas = document.getElementById('map');
+var mapCtx = mapCanvas.getContext('2d');
+var MAP_W = 200, MAP_H = 140;
+var mapPulse = 0;
+function w2m(x){ return MAP_W/2 + x * (MAP_W/220); }
+function z2m(z){ return MAP_H/2 + z * (MAP_H/200); }
+function drawMap(simYear, look){
+  mapCtx.clearRect(0,0,MAP_W,MAP_H);
+  // Background
+  mapCtx.fillStyle = '#0b0a08';
+  mapCtx.fillRect(0,0,MAP_W,MAP_H);
+  // Water
+  mapCtx.fillStyle = '#1a2a44';
+  mapCtx.fillRect(0, z2m(40), MAP_W, MAP_H - z2m(40));
+  // Hill
+  mapCtx.fillStyle = '#3a3a26';
+  mapCtx.beginPath(); mapCtx.arc(w2m(0), z2m(0), 24, 0, Math.PI*2); mapCtx.fill();
+  // Walls (after y50)
+  if (simYear >= 50){
+    mapCtx.strokeStyle = '#caa85a';
+    mapCtx.lineWidth = 1.5;
+    mapCtx.globalAlpha = Math.min(1, (simYear-50)/30);
+    mapCtx.beginPath(); mapCtx.arc(w2m(0), z2m(0), 28, 0, Math.PI*2); mapCtx.stroke();
+    mapCtx.globalAlpha = 1;
+  }
+  // Buildings
+  function bldDot(x, z, year, color, sz){
+    if (simYear < year) return;
+    var t = Math.min(1, (simYear - year) / 25);
+    mapCtx.fillStyle = color;
+    mapCtx.globalAlpha = t * (simYear > 580 ? 0.7 : 1);
+    mapCtx.fillRect(w2m(x)-sz/2, z2m(z)-sz/2, sz, sz);
+    mapCtx.globalAlpha = 1;
+  }
+  bldDot(0, -28, 120, '#eae5d2', 8); // forum
+  bldDot(0, 0,   250, '#caa85a', 6); // palace
+  bldDot(40, 6,  320, '#eae5d2', 10);// coliseum
+  bldDot(-50, -2, 400, '#eae5d2', 4);// aqueduct
+  bldDot(-30, -2, 400, '#eae5d2', 4);
+  bldDot(-70, -2, 400, '#eae5d2', 4);
+  bldDot(0, 38, 200, '#aa8060', 8);  // port
+  bldDot(-38, -42, 100, '#8a6a3a', 6);// camp
+  bldDot(-22, 14, 150, '#7a6a4a', 5); bldDot(22, -18, 150, '#7a6a4a', 5);
+  bldDot(20, -10, 470, '#eae5d2', 4); // library
+  bldDot(-12, 22, 180, '#eae5d2', 5); // temple
+  // Camera hotspot pulse
+  mapPulse += 0.06;
+  var pul = 4 + Math.sin(mapPulse)*2.5;
+  mapCtx.strokeStyle = '#f4e7c8';
+  mapCtx.lineWidth = 2;
+  mapCtx.beginPath();
+  mapCtx.arc(w2m(look.x), z2m(look.z), pul, 0, Math.PI*2);
+  mapCtx.stroke();
+  // Compass
+  mapCtx.fillStyle = '#caa85a';
+  mapCtx.font = '9px Georgia';
+  mapCtx.fillText('N', MAP_W-12, 12);
+  mapCtx.fillText('VOLTERRA', 6, 12);
+  // Year corner
+  mapCtx.fillStyle = '#9a8a70';
+  mapCtx.fillText('yr ' + simYear, 6, MAP_H - 6);
+  // Iteration
+  mapCtx.fillText('iter ' + (mem.iteration||1), MAP_W - 50, MAP_H - 6);
+}
+
+// ========================================================================
+// HUD UPDATE
+// ========================================================================
+var hYear     = document.getElementById('year');
+var hEra      = document.getElementById('era');
+var hDynasty  = document.getElementById('dynasty');
+var hEmperor  = document.getElementById('emperor');
+var hHeir     = document.getElementById('heir');
+var hChyron   = document.querySelector('#chyron .txt');
+var hChyronSub= document.querySelector('#chyron .sub');
+var hWhoIs    = document.getElementById('whois');
+var hWhoIsN   = hWhoIs.querySelector('.n');
+var hWhoIsR   = hWhoIs.querySelector('.r');
+var hWhoIsY   = hWhoIs.querySelector('.y');
+var hEmpire   = document.querySelector('#empire b');
+var hEmpireLb = document.querySelector('#empire span');
+
+var lastEmperor = '';
+var lastDynastyId = -1;
+var lastFeaturedIdx = -1;
+
+function updateHUD(simYear){
+  var yi = Math.floor(simYear);
+  hYear.textContent = 'YEAR ' + Math.max(1, yi);
+  hEra.textContent = getEra(yi);
+  var emp = getEmperor(yi);
+  var dyn = getDynasty(yi);
+  var heir = getHeir(yi);
+  hDynasty.textContent = 'DYNASTY ' + dyn.id + ' \u2014 ' + dyn.name.toUpperCase();
+  hEmperor.textContent = 'EMPEROR ' + emp.n.toUpperCase();
+  hHeir.textContent = heir ? ('heir: ' + heir.n + ' (will reign yr ' + heir.y0 + ')') : 'heir: none recorded';
+  hEmpire.textContent = mem.empireName;
+  hEmpireLb.textContent = 'EMPIRE OF \u2014 ITER ' + (mem.iteration||1);
+  // Banner color = current dynasty
+  matBanner.color.set(dyn.color);
+  // Chyron
+  hChyron.textContent = getChyron(yi, emp, dyn);
+  // Subtitle: featured cast hint
+  var fidx = Math.floor(simYear / 33) % FEATURED.length;
+  var feat = FEATURED[fidx];
+  if (fidx !== lastFeaturedIdx){
+    lastFeaturedIdx = fidx;
+    hWhoIsN.textContent = feat.n;
+    hWhoIsR.textContent = feat.r + ' \u2014 ' + feat.y;
+    hWhoIsY.textContent = feat.e;
+  }
+  hChyronSub.textContent = '\u2014 ' + emp.role + ', ' + emp.epithet + ' \u2014';
+}
+
+// ========================================================================
+// BUILDING UPDATE  (rise / decay / marble polish / vegetation)
+// ========================================================================
+function updateBuildings(simYear){
+  for (var i = 0; i < buildings.length; i++){
+    var b = buildings[i];
+    var ud = b.userData;
+    var rise = Math.max(0, Math.min(1, (simYear - ud.startYear) / ud.riseYears));
+    var s = rise;
+    if (ud.decayYear !== null && simYear > ud.decayYear){
+      var dec = Math.min(1, (simYear - ud.decayYear) / 60);
+      s = Math.max(0.55, s - dec * 0.35);
+    }
+    if (s <= 0.001){
+      b.visible = false;
+      b.scale.y = 0.001;
+    } else {
+      b.visible = true;
+      b.scale.y = (ud.baseSY || 1) * Math.max(0.02, s);
+    }
+  }
+  // Marble polish: tan -> white over years 1..400
+  var polish = Math.min(1, simYear / 400);
+  matMarble.color.copy(cMarbleA).lerp(cMarbleB, polish);
+  // Roads visible after year 30
+  roads.visible = simYear >= 30;
+  // Vegetation grows over time then bursts on decay
+  var vGrow = Math.min(1, simYear / 120);
+  var vDec  = simYear > 580 ? Math.min(1.4, 1 + (simYear - 580) / 30) : 1.0;
+  for (var v = 0; v < vegEntries.length; v++){
+    var ve = vegEntries[v];
+    ve.top.scale.y = (ve.baseH) * (0.4 + 0.6*vGrow) * vDec;
+  }
+}
+
+// ========================================================================
+// MAIN LOOP
+// ========================================================================
+var TOTAL_SIM_YEARS = 600;
+var TOTAL_RUNTIME_S = 600; // 10 minutes
+var simStartT = performance.now() / 1000;
+var hasReseeded = false;
+
+function getSimYear(){
+  var elapsed = performance.now() / 1000 - simStartT;
+  var simYear = elapsed * (TOTAL_SIM_YEARS / TOTAL_RUNTIME_S) + 1;
+  return Math.min(TOTAL_SIM_YEARS, simYear);
+}
+
+function maybeReseed(simYear){
+  if (simYear >= TOTAL_SIM_YEARS && !hasReseeded){
+    hasReseeded = true;
+    advanceMem();
+    // Begin a brief crossfade then reset cycle
+    setTimeout(function(){
+      simStartT = performance.now() / 1000;
+      shotChangeAt = 0;
+      shotIndex = -1;
+      hasReseeded = false;
+      // Update empire label visibly
+      hEmpire.textContent = mem.empireName;
+    }, 4000);
+  }
+}
+
+var lastT = performance.now() / 1000;
+function tick(){
+  var nowT = performance.now() / 1000;
+  var dt = Math.min(0.066, nowT - lastT);
+  lastT = nowT;
+  var simYear = getSimYear();
+  var simYearI = Math.floor(simYear);
+
+  updateBuildings(simYearI);
+  updateCitizens(simYearI, nowT);
+  updateSky(simYear);
+  updateCamera(simYearI, nowT - simStartT, dt);
+  updateHUD(simYear);
+  drawMap(simYearI, camLook);
+  maybeReseed(simYear);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+
+// First HUD paint
+updateHUD(1);
+updateBuildings(1);
+updateSky(0.25);
+
+// Boot the loop
+requestAnimationFrame(tick);
+
+// Cleanup on unload
+window.addEventListener('beforeunload', function(){
+  try { saveMem(mem); } catch(e){}
+  try { disposeAll(); } catch(e){}
+  try { if (renderer && renderer.dispose) renderer.dispose(); } catch(e){}
+});
+
+// Expose for debugging (no-op in production)
+window.__VOLTERRA__ = {
+  mem: mem,
+  emperors: EMPERORS,
+  featured: FEATURED,
+  shots: SHOTS,
+  disposeAll: disposeAll,
+  reseed: function(){ advanceMem(); simStartT = performance.now()/1000; }
+};
+
+})();
+</script>
+</body>
+</html>

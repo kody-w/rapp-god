@@ -1,0 +1,866 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>THE CELL — DNA → mRNA → Protein → Fold</title>
+<style>
+  :root{
+    --bg:#05070d; --panel:#0c1322; --panel2:#0a0f1c;
+    --ink:#e7eefc; --dim:#7e8aa6; --line:#1b2538;
+    --acc:#7df9ff; --acc2:#ff8a3d; --hot:#ff5577; --cold:#4b8bff; --pos:#3ae07f;
+    --warn:#ffd166;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;height:100%}
+  header{padding:10px 14px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:linear-gradient(180deg,#0a1124,#070b16)}
+  header h1{font-size:14px;margin:0;letter-spacing:2px;color:var(--acc)}
+  header .sub{color:var(--dim);font-size:11px}
+  main{display:grid;grid-template-columns:1fr;grid-template-rows:auto auto 1fr;gap:8px;padding:8px;height:calc(100% - 44px)}
+  .row{display:grid;gap:8px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:hidden}
+  .panel h2{font-size:11px;letter-spacing:2px;color:var(--acc);margin:0 0 6px;text-transform:uppercase}
+  textarea{width:100%;min-height:60px;background:#06090f;color:var(--ink);
+    border:1px solid var(--line);border-radius:6px;padding:8px;font:12px ui-monospace,Menlo,monospace;
+    resize:vertical;letter-spacing:1px}
+  button,select{background:#13203a;color:var(--ink);border:1px solid #2a3a5d;
+    border-radius:6px;padding:6px 10px;cursor:pointer;font:12px ui-monospace,Menlo,monospace}
+  button:hover{background:#1c2c50;border-color:#3a4f7d}
+  button.primary{background:var(--acc);color:#022;border-color:var(--acc);font-weight:700}
+  button.primary:hover{background:#a6fbff}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .controls label{color:var(--dim);font-size:11px;display:flex;align-items:center;gap:6px}
+  input[type=range]{accent-color:var(--acc)}
+  /* Pipeline grid */
+  .pipe{display:grid;grid-template-columns:1.1fr 1.1fr 1.3fr 1.5fr;gap:8px;min-height:0}
+  .stage{display:flex;flex-direction:column;min-height:0}
+  .stage .body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  canvas{display:block;width:100%;height:100%;background:#04070d;border-radius:6px;border:1px solid var(--line)}
+  .meta{font-size:10.5px;color:var(--dim);margin-top:4px;line-height:1.35;max-height:42px;overflow:hidden}
+  /* Translation */
+  #codonStream{font:12px ui-monospace,Menlo,monospace;letter-spacing:1px;
+    background:#04070d;border:1px solid var(--line);border-radius:6px;
+    padding:6px;height:100%;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  .codon{display:inline-block;padding:1px 3px;border-radius:3px;margin:1px;border:1px solid #1d2a45}
+  .codon.read{background:#16335c;border-color:#2a5fa9;color:#a9d4ff}
+  .codon.now{background:#ff8a3d;border-color:#ffae7f;color:#1a0f06;font-weight:700;
+    box-shadow:0 0 8px rgba(255,138,61,.6)}
+  .codon.stop{background:#5a1820;border-color:#a04050;color:#ffc1c8}
+  .aa{display:inline-block;padding:1px 4px;border-radius:3px;margin:1px;
+    background:#0e1c33;border:1px solid #21345a;font-weight:700}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;font-size:10.5px;color:var(--dim);margin-top:4px}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:3px}
+  footer{font-size:10.5px;color:var(--dim);padding:0 12px 8px}
+  .badge{display:inline-block;padding:1px 6px;border-radius:8px;border:1px solid var(--line);
+    color:var(--acc);font-size:10.5px;margin-left:6px}
+  .seqbox{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start}
+  .seqctrls{display:flex;flex-direction:column;gap:6px;min-width:160px}
+  .stat{font-size:10.5px;color:var(--dim)}
+  .stat b{color:var(--ink);font-weight:600}
+  .pill{display:inline-block;padding:1px 6px;border-radius:8px;background:#101a2e;border:1px solid #1c2a48;color:var(--ink);margin-right:4px}
+  @media (max-width: 1100px){
+    .pipe{grid-template-columns:1fr 1fr;grid-auto-rows:240px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>// THE CELL</h1>
+  <span class="sub">DNA → mRNA → Ribosome → Folded Protein <span class="badge">vibe-coded biology</span></span>
+</header>
+
+<main>
+  <!-- INPUT PANEL -->
+  <section class="panel">
+    <h2>Input — Coding DNA Sequence (5' → 3')</h2>
+    <div class="seqbox">
+      <textarea id="dna" spellcheck="false"></textarea>
+      <div class="seqctrls">
+        <select id="preset"></select>
+        <button id="random">Load random gene</button>
+        <button id="run" class="primary">Transcribe + Translate + Fold</button>
+        <div class="stat" id="seqstat">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTROLS -->
+  <section class="panel">
+    <div class="controls">
+      <button id="playPause">Pause</button>
+      <button id="remix">Remix sequence (mutate)</button>
+      <label>fold speed
+        <input type="range" id="speed" min="1" max="20" value="6" />
+      </label>
+      <label>iterations
+        <span class="pill" id="iter">0 / 300</span>
+      </label>
+      <label>energy
+        <span class="pill" id="energy">—</span>
+      </label>
+      <label>H-bonds
+        <span class="pill" id="hbonds">0</span>
+      </label>
+      <span class="stat">Drag fold viewer to rotate · scroll to zoom</span>
+    </div>
+  </section>
+
+  <!-- PIPELINE -->
+  <section class="pipe">
+    <!-- 1) DNA -->
+    <div class="panel stage">
+      <h2>1 · DNA Double Helix</h2>
+      <div class="body">
+        <canvas id="dnaCanvas"></canvas>
+        <div class="meta" id="dnaMeta">Antiparallel strands · A↔T, G↔C base pairing.</div>
+      </div>
+    </div>
+
+    <!-- 2) mRNA -->
+    <div class="panel stage">
+      <h2>2 · Transcription → mRNA</h2>
+      <div class="body">
+        <canvas id="rnaCanvas"></canvas>
+        <div class="meta" id="rnaMeta">Strands separate. Coding strand T → U becomes mRNA.</div>
+      </div>
+    </div>
+
+    <!-- 3) Translation -->
+    <div class="panel stage">
+      <h2>3 · Ribosome Translation</h2>
+      <div class="body">
+        <div id="codonStream"></div>
+        <div class="legend">
+          <span><span class="swatch" style="background:#ff8a3d"></span>reading codon</span>
+          <span><span class="swatch" style="background:#16335c"></span>done</span>
+          <span><span class="swatch" style="background:#5a1820"></span>STOP</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4) Fold -->
+    <div class="panel stage">
+      <h2>4 · 3D Fold (Levinthal-lite)</h2>
+      <div class="body">
+        <canvas id="foldCanvas"></canvas>
+        <div class="legend">
+          <span><span class="swatch" style="background:#ff8a3d"></span>hydrophobic</span>
+          <span><span class="swatch" style="background:#4b8bff"></span>polar</span>
+          <span><span class="swatch" style="background:#ff5577"></span>acidic (-)</span>
+          <span><span class="swatch" style="background:#3ae07f"></span>basic (+)</span>
+          <span><span class="swatch" style="background:#cccccc"></span>special (G/P/C)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span id="proteinName">—</span>
+  · sequence length: <b id="aaLen">0</b> aa
+  · folded with simplified force model: H-bonds (N–H ⋯ O=C, ≤3.5Å), hydrophobic burial, repulsive overlap.
+</footer>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+// =====================================================================
+// PRELOADED REAL CODING SEQUENCES (5'→3', start with ATG, end at stop)
+// All trimmed to a tractable size; STOP codon included so translation halts.
+// =====================================================================
+const PRESETS = [
+  {
+    name: "Human Insulin (preproinsulin signal+B chain fragment, ~108 nt)",
+    dna:  "ATGGCCCTGTGGATGCGCCTCCTGCCCCTGCTGGCGCTGCTGGCCCTCTGGGGACCTGACCCAGCCGCAGCCTTTGTGAACCAACACCTGTGCGGCTCACACCTGGTGGAAGCTCTCTACCTGTAA"
+  },
+  {
+    name: "Human Hemoglobin β (HBB, N-terminal ~120 nt)",
+    dna:  "ATGGTGCATCTGACTCCTGAGGAGAAGTCTGCCGTTACTGCCCTGTGGGGCAAGGTGAACGTGGATGAAGTTGGTGGTGAGGCCCTGGGCAGGCTGCTGGTGGTCTACCCTTGGACCCAGAGGTAA"
+  },
+  {
+    name: "Zinc Finger (Cys2-His2 motif, synthetic ~96 nt)",
+    dna:  "ATGGAGCGCCCTTACCCATGCCCTGTGGAGAGCTGCGACCGCCGCTTCAGCCGCAGCGACGAGCTCACCCGCCATATCCGCATCCATACAGGAGAGTAA"
+  },
+  {
+    name: "GFP chromophore region (jellyfish, ~120 nt)",
+    dna:  "ATGAGCAAAGGAGAAGAACTTTTCACTGGAGTTGTCCCAATTCTTGTTGAATTAGATGGTGATGTTAATGGGCACAAATTTTCTGTCAGTGGAGAGGGTGAAGGTGATGCAACATACTAA"
+  },
+  {
+    name: "Ubiquitin (yeast, N-terminal ~108 nt)",
+    dna:  "ATGCAGATCTTCGTCAAGACCTTGACCGGTAAGACCATCACCCTAGAGGTCGAGTCCAGCGACACCATCGACAACGTCAAGGCCAAGATCCAAGACAAAGAAGGCTAA"
+  },
+];
+
+// =====================================================================
+// Standard genetic code — 64 codons → 20 aa + STOP
+// =====================================================================
+const CODON_TABLE = {
+  TTT:'F',TTC:'F',TTA:'L',TTG:'L',
+  CTT:'L',CTC:'L',CTA:'L',CTG:'L',
+  ATT:'I',ATC:'I',ATA:'I',ATG:'M',
+  GTT:'V',GTC:'V',GTA:'V',GTG:'V',
+  TCT:'S',TCC:'S',TCA:'S',TCG:'S',
+  CCT:'P',CCC:'P',CCA:'P',CCG:'P',
+  ACT:'T',ACC:'T',ACA:'T',ACG:'T',
+  GCT:'A',GCC:'A',GCA:'A',GCG:'A',
+  TAT:'Y',TAC:'Y',TAA:'*',TAG:'*',
+  CAT:'H',CAC:'H',CAA:'Q',CAG:'Q',
+  AAT:'N',AAC:'N',AAA:'K',AAG:'K',
+  GAT:'D',GAC:'D',GAA:'E',GAG:'E',
+  TGT:'C',TGC:'C',TGA:'*',TGG:'W',
+  CGT:'R',CGC:'R',CGA:'R',CGG:'R',
+  AGT:'S',AGC:'S',AGA:'R',AGG:'R',
+  GGT:'G',GGC:'G',GGA:'G',GGG:'G',
+};
+
+// Amino acid full names
+const AA_NAMES = {
+  A:'Ala',R:'Arg',N:'Asn',D:'Asp',C:'Cys',E:'Glu',Q:'Gln',G:'Gly',
+  H:'His',I:'Ile',L:'Leu',K:'Lys',M:'Met',F:'Phe',P:'Pro',S:'Ser',
+  T:'Thr',W:'Trp',Y:'Tyr',V:'Val',
+};
+
+// Hydrophobicity & charge classification
+// hydrophobic: AILMFWVCP-ish, polar: STNQHY, acidic(-): DE, basic(+): KRH (H mostly), special: GPC
+const AA_PROPS = {
+  A:{type:'hydrophobic'}, V:{type:'hydrophobic'}, L:{type:'hydrophobic'},
+  I:{type:'hydrophobic'}, M:{type:'hydrophobic'}, F:{type:'hydrophobic'},
+  W:{type:'hydrophobic'}, Y:{type:'hydrophobic'},
+  S:{type:'polar'}, T:{type:'polar'}, N:{type:'polar'}, Q:{type:'polar'},
+  D:{type:'acidic'}, E:{type:'acidic'},
+  K:{type:'basic'}, R:{type:'basic'}, H:{type:'basic'},
+  G:{type:'special'}, P:{type:'special'}, C:{type:'special'},
+};
+const TYPE_COLOR = {
+  hydrophobic:0xff8a3d,
+  polar:0x4b8bff,
+  acidic:0xff5577,
+  basic:0x3ae07f,
+  special:0xcccccc,
+};
+
+// =====================================================================
+// Utilities
+// =====================================================================
+const COMPLEMENT = {A:'T',T:'A',C:'G',G:'C'};
+function cleanDNA(s){
+  return (s||'').toUpperCase().replace(/[^ACGT]/g,'');
+}
+function reverseComplement(s){
+  let r=''; for(let i=s.length-1;i>=0;i--) r += COMPLEMENT[s[i]]||'N'; return r;
+}
+function transcribe(coding){ return coding.replace(/T/g,'U'); }
+function translate(dna){
+  const out=[]; const codons=[];
+  for(let i=0;i+3<=dna.length;i+=3){
+    const c=dna.substr(i,3);
+    const aa=CODON_TABLE[c]||'X';
+    codons.push(c);
+    if(aa==='*'){ out.push('*'); break; }
+    out.push(aa);
+  }
+  return {protein:out.join(''), codons};
+}
+function randomBase(){ return 'ACGT'[(Math.random()*4)|0]; }
+
+// =====================================================================
+// DOM refs
+// =====================================================================
+const dnaTA = document.getElementById('dna');
+const presetSel = document.getElementById('preset');
+const seqStat = document.getElementById('seqstat');
+const dnaCanvas = document.getElementById('dnaCanvas');
+const rnaCanvas = document.getElementById('rnaCanvas');
+const foldCanvas = document.getElementById('foldCanvas');
+const codonStream = document.getElementById('codonStream');
+const iterPill = document.getElementById('iter');
+const energyPill = document.getElementById('energy');
+const hbondPill = document.getElementById('hbonds');
+const aaLenEl = document.getElementById('aaLen');
+const proteinNameEl = document.getElementById('proteinName');
+const playPauseBtn = document.getElementById('playPause');
+const speedSlider = document.getElementById('speed');
+
+// Populate presets
+PRESETS.forEach((p,i)=>{
+  const o=document.createElement('option'); o.value=i; o.textContent=p.name; presetSel.appendChild(o);
+});
+presetSel.value = 0;
+dnaTA.value = PRESETS[0].dna;
+
+// =====================================================================
+// Global state
+// =====================================================================
+const state = {
+  dna:'', mrna:'', protein:'', codons:[],
+  readCodon: 0, readTimer: 0,
+  paused:false, speed:6,
+  iter:0, maxIter:300,
+  fold:null, // { positions, aas, types, hbonds }
+  presetName: PRESETS[0].name,
+};
+
+// =====================================================================
+// CANVAS 1 — DNA double helix (2D animated)
+// =====================================================================
+const dctx = dnaCanvas.getContext('2d');
+function resizeCanvas(c){
+  const r = c.getBoundingClientRect();
+  c.width = Math.max(50, r.width*devicePixelRatio);
+  c.height= Math.max(50, r.height*devicePixelRatio);
+}
+function drawDNA(t){
+  resizeCanvas(dnaCanvas);
+  const W=dnaCanvas.width, H=dnaCanvas.height;
+  dctx.fillStyle='#04070d'; dctx.fillRect(0,0,W,H);
+  const seq = state.dna.slice(0, 90); // visualize first 90 bases
+  if(!seq.length) return;
+  const n = seq.length;
+  const margin = 16*devicePixelRatio;
+  const xstep = (W - margin*2) / Math.max(1, n-1);
+  const cy = H/2;
+  const amp = Math.min(H*0.32, 60*devicePixelRatio);
+  const rotSpeed = 0.0015;
+
+  // base color
+  const baseCol = {A:'#ff6b9d', T:'#7df9ff', G:'#ffd166', C:'#a78bff'};
+
+  // draw the two helical backbones + rungs
+  for(let i=0;i<n-1;i++){
+    const x1 = margin + i*xstep;
+    const x2 = margin + (i+1)*xstep;
+    const phase = i*0.55 + t*rotSpeed;
+    const phase2 = (i+1)*0.55 + t*rotSpeed;
+    const y1a = cy + Math.sin(phase)*amp;
+    const y1b = cy - Math.sin(phase)*amp;
+    const y2a = cy + Math.sin(phase2)*amp;
+    const y2b = cy - Math.sin(phase2)*amp;
+
+    // backbone strand A
+    dctx.strokeStyle='rgba(125,249,255,0.85)';
+    dctx.lineWidth=2*devicePixelRatio;
+    dctx.beginPath(); dctx.moveTo(x1,y1a); dctx.lineTo(x2,y2a); dctx.stroke();
+    // backbone strand B
+    dctx.strokeStyle='rgba(255,138,61,0.85)';
+    dctx.beginPath(); dctx.moveTo(x1,y1b); dctx.lineTo(x2,y2b); dctx.stroke();
+
+    // base-pair rung (every other base, where phase crosses)
+    if(i%1===0){
+      const depth = Math.cos(phase); // simulate which side is "front"
+      dctx.strokeStyle = `rgba(180,200,255,${0.18+0.32*Math.abs(depth)})`;
+      dctx.lineWidth=1*devicePixelRatio;
+      dctx.beginPath(); dctx.moveTo(x1,y1a); dctx.lineTo(x1,y1b); dctx.stroke();
+
+      // base letters (small)
+      if(xstep > 8*devicePixelRatio){
+        dctx.font = `${10*devicePixelRatio}px ui-monospace,Menlo,monospace`;
+        dctx.textAlign='center';
+        const b = seq[i], bc = COMPLEMENT[b]||'N';
+        dctx.fillStyle = baseCol[b]||'#fff';
+        dctx.fillText(b, x1, y1a + (y1a>cy?-3:11)*devicePixelRatio);
+        dctx.fillStyle = baseCol[bc]||'#fff';
+        dctx.fillText(bc, x1, y1b + (y1b>cy?-3:11)*devicePixelRatio);
+      }
+    }
+  }
+  // 5' / 3' labels
+  dctx.fillStyle='#7e8aa6';
+  dctx.font = `${11*devicePixelRatio}px ui-monospace,Menlo,monospace`;
+  dctx.textAlign='left';
+  dctx.fillText("5'", 4*devicePixelRatio, cy - amp - 4*devicePixelRatio);
+  dctx.fillText("3'", 4*devicePixelRatio, cy + amp + 14*devicePixelRatio);
+  dctx.textAlign='right';
+  dctx.fillText("3'", W - 4*devicePixelRatio, cy - amp - 4*devicePixelRatio);
+  dctx.fillText("5'", W - 4*devicePixelRatio, cy + amp + 14*devicePixelRatio);
+}
+
+// =====================================================================
+// CANVAS 2 — mRNA (T→U animation, strand splits open)
+// =====================================================================
+const rctx = rnaCanvas.getContext('2d');
+let rnaProgress = 0; // 0..1, advances over time
+function drawRNA(t){
+  resizeCanvas(rnaCanvas);
+  const W=rnaCanvas.width, H=rnaCanvas.height;
+  rctx.fillStyle='#04070d'; rctx.fillRect(0,0,W,H);
+  const seq = state.dna.slice(0, 90);
+  if(!seq.length) return;
+
+  const n=seq.length;
+  const margin=16*devicePixelRatio;
+  const xstep=(W-margin*2)/Math.max(1,n-1);
+  const cy=H/2;
+  const amp = Math.min(H*0.28, 50*devicePixelRatio);
+
+  // progress sweep across the strand: bases left of sweep are "transcribed"
+  rnaProgress = (rnaProgress + 0.0035) % 1.0;
+  const sweep = rnaProgress * n;
+
+  for(let i=0;i<n;i++){
+    const x = margin + i*xstep;
+    const opened = i < sweep;
+    // separation grows where opened
+    const sep = opened ? amp*1.0 : amp*0.35;
+    const yTop = cy - sep;
+    const yBot = cy + sep;
+
+    // backbone segments
+    if(i<n-1){
+      const x2 = margin+(i+1)*xstep;
+      const opened2 = (i+1)<sweep;
+      const sep2 = opened2 ? amp*1.0 : amp*0.35;
+      // template strand (bottom, original DNA, T)
+      rctx.strokeStyle='rgba(125,249,255,0.55)';
+      rctx.lineWidth=2*devicePixelRatio;
+      rctx.beginPath(); rctx.moveTo(x,cy+sep); rctx.lineTo(x2,cy+sep2); rctx.stroke();
+      // mRNA (top, with U)
+      rctx.strokeStyle = opened?'rgba(255,138,61,0.95)':'rgba(255,138,61,0.55)';
+      rctx.beginPath(); rctx.moveTo(x,cy-sep); rctx.lineTo(x2,cy-sep2); rctx.stroke();
+    }
+
+    // Base letters
+    if(xstep > 7*devicePixelRatio){
+      rctx.font = `${10*devicePixelRatio}px ui-monospace,Menlo,monospace`;
+      rctx.textAlign='center';
+      const dnaBase = seq[i];
+      const rnaBase = dnaBase==='T'?'U':dnaBase;
+      // top = mRNA
+      rctx.fillStyle = opened ? (rnaBase==='U'?'#ffd166':'#ff8a3d') : 'rgba(255,138,61,0.5)';
+      rctx.fillText(rnaBase, x, yTop - 2*devicePixelRatio);
+      // bottom = template DNA
+      rctx.fillStyle = 'rgba(125,249,255,0.7)';
+      rctx.fillText(dnaBase, x, yBot + 11*devicePixelRatio);
+    }
+  }
+
+  // bubble/RNA polymerase indicator
+  const sx = margin + sweep*xstep;
+  rctx.fillStyle='rgba(255,138,61,0.18)';
+  rctx.beginPath(); rctx.arc(sx, cy, amp*1.4, 0, Math.PI*2); rctx.fill();
+  rctx.strokeStyle='rgba(255,138,61,0.7)'; rctx.lineWidth=1*devicePixelRatio;
+  rctx.stroke();
+
+  // Labels
+  rctx.fillStyle='#7e8aa6';
+  rctx.font=`${10*devicePixelRatio}px ui-monospace,Menlo,monospace`;
+  rctx.textAlign='left';
+  rctx.fillText("mRNA (T→U)", 4*devicePixelRatio, 12*devicePixelRatio);
+  rctx.fillText("template DNA", 4*devicePixelRatio, H-4*devicePixelRatio);
+}
+
+// =====================================================================
+// PANEL 3 — Translation (DOM rendering)
+// =====================================================================
+function renderTranslation(){
+  const codons = state.codons;
+  const protein = state.protein;
+  const readUpTo = state.readCodon;
+  let html = '';
+  for(let i=0;i<codons.length;i++){
+    const c = codons[i];
+    const aa = CODON_TABLE[c]||'X';
+    let cls='codon';
+    if(aa==='*') cls += ' stop';
+    if(i < readUpTo) cls += ' read';
+    if(i === readUpTo) cls += ' now';
+    html += `<span class="${cls}">${c}</span>`;
+    if(i < readUpTo){
+      // emitted aa
+      if(aa!=='*'){
+        const col = TYPE_COLOR[(AA_PROPS[aa]||{type:'special'}).type];
+        html += `<span class="aa" style="color:#${col.toString(16).padStart(6,'0')}">${aa}</span>`;
+      } else {
+        html += `<span class="aa" style="color:#ffc1c8">STOP</span>`;
+      }
+    }
+    if((i+1)%10===0) html += '<br>';
+  }
+  // protein summary
+  if(protein.length){
+    html += `<div style="margin-top:8px;color:#7e8aa6">Protein (${protein.replace('*','').length} aa): `;
+    for(const aa of protein){
+      if(aa==='*') break;
+      const col = TYPE_COLOR[(AA_PROPS[aa]||{type:'special'}).type];
+      html += `<span style="color:#${col.toString(16).padStart(6,'0')}">${aa}</span>`;
+    }
+    html += `</div>`;
+  }
+  codonStream.innerHTML = html;
+  // auto-scroll to current codon
+  const cur = codonStream.querySelector('.codon.now');
+  if(cur) cur.scrollIntoView({block:'nearest', inline:'nearest'});
+}
+
+// =====================================================================
+// PANEL 4 — 3D Fold (three.js + tiny physics)
+// =====================================================================
+let renderer, scene, camera, controlsDrag, ribbonMesh, atomGroup, hbondGroup;
+let dragState={down:false, lx:0, ly:0, rx:0.6, ry:0.4, dist:30};
+
+function initFoldScene(){
+  renderer = new THREE.WebGLRenderer({canvas:foldCanvas, antialias:true, alpha:false});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x04070d);
+  // soft fog
+  scene.fog = new THREE.Fog(0x04070d, 50, 140);
+
+  camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+  camera.position.set(0,0,30);
+
+  const amb = new THREE.AmbientLight(0xffffff, 0.55);
+  scene.add(amb);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.85);
+  dir.position.set(5,8,12);
+  scene.add(dir);
+  const dir2 = new THREE.DirectionalLight(0x7df9ff, 0.4);
+  dir2.position.set(-8,-4,-6); scene.add(dir2);
+
+  atomGroup = new THREE.Group(); scene.add(atomGroup);
+  hbondGroup = new THREE.Group(); scene.add(hbondGroup);
+
+  // basic mouse drag controls (no extra lib)
+  foldCanvas.addEventListener('mousedown', e=>{ dragState.down=true; dragState.lx=e.clientX; dragState.ly=e.clientY; });
+  window.addEventListener('mouseup', ()=> dragState.down=false);
+  window.addEventListener('mousemove', e=>{
+    if(!dragState.down) return;
+    const dx = (e.clientX - dragState.lx)*0.005;
+    const dy = (e.clientY - dragState.ly)*0.005;
+    dragState.lx=e.clientX; dragState.ly=e.clientY;
+    dragState.ry += dx; dragState.rx += dy;
+  });
+  foldCanvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    dragState.dist *= (1 + Math.sign(e.deltaY)*0.08);
+    dragState.dist = Math.max(8, Math.min(120, dragState.dist));
+  }, {passive:false});
+
+  // resize
+  resizeRenderer();
+  new ResizeObserver(resizeRenderer).observe(foldCanvas);
+}
+function resizeRenderer(){
+  const r = foldCanvas.getBoundingClientRect();
+  renderer.setSize(Math.max(50,r.width), Math.max(50,r.height), false);
+  camera.aspect = Math.max(0.01, r.width/Math.max(1,r.height));
+  camera.updateProjectionMatrix();
+}
+
+// Simple sphere + line palette
+const sphereGeo = new THREE.SphereGeometry(1, 14, 12);
+const matCache = {};
+function aaMaterial(type){
+  if(!matCache[type]) matCache[type] = new THREE.MeshStandardMaterial({
+    color: TYPE_COLOR[type]||0xffffff, roughness:0.55, metalness:0.15,
+    emissive: TYPE_COLOR[type]||0xffffff, emissiveIntensity:0.06
+  });
+  return matCache[type];
+}
+
+// Build chain initial state (extended-ish with slight zigzag)
+function buildChain(protein){
+  // strip stop
+  const aas = [];
+  for(const a of protein){ if(a==='*') break; aas.push(a); }
+  const n = aas.length;
+  const positions = new Array(n);
+  // initial: small spiral so it doesn't overlap, pre-compresses nicely
+  const radius = 1.0, rise = 1.6;
+  for(let i=0;i<n;i++){
+    const ang = i * 1.05;
+    positions[i] = new THREE.Vector3(
+      Math.cos(ang)*radius,
+      Math.sin(ang)*radius,
+      (i - n/2) * 0.9
+    );
+  }
+  const types = aas.map(a => (AA_PROPS[a]||{type:'special'}).type);
+  return {aas, positions, types, hbonds:[]};
+}
+
+// One step of "Levinthal-lite" force-based relaxation.
+// Forces:
+//   1) bond spring keeps adjacent CA atoms ~bondLen apart
+//   2) hydrogen bonds form between residues |i-j|>=3 within range, pulling them
+//   3) hydrophobic burial: hydrophobic residues pulled to centroid
+//   4) repulsive overlap: pair penalty for close non-bonded contacts
+//   5) gentle damping
+function foldStep(fold){
+  const {positions, types, aas} = fold;
+  const n = positions.length;
+  if(n<2) return 0;
+  const F = positions.map(()=>new THREE.Vector3());
+  const bondLen = 1.5;
+  const kBond = 0.45;
+  const kRepel = 0.25;
+  const kHbond = 0.10;
+  const kHydroph = 0.018;
+  const repelR = 1.4;
+  const hbMin = 1.6, hbMax = 3.5;
+
+  // 1) bond springs
+  for(let i=0;i<n-1;i++){
+    const a = positions[i], b = positions[i+1];
+    const d = a.distanceTo(b);
+    const diff = d - bondLen;
+    if(d > 1e-6){
+      const dir = b.clone().sub(a).divideScalar(d).multiplyScalar(diff*kBond);
+      F[i].add(dir);
+      F[i+1].sub(dir);
+    }
+  }
+
+  // 2)+4) pair interactions
+  let hbCount = 0;
+  const hbList = [];
+  // centroid for hydrophobic burial
+  const cen = new THREE.Vector3();
+  for(const p of positions) cen.add(p);
+  cen.multiplyScalar(1/n);
+
+  for(let i=0;i<n;i++){
+    // hydrophobic burial
+    if(types[i]==='hydrophobic'){
+      const v = cen.clone().sub(positions[i]).multiplyScalar(kHydroph);
+      F[i].add(v);
+    }
+    for(let j=i+2;j<n;j++){
+      const a = positions[i], b = positions[j];
+      const d = a.distanceTo(b);
+      if(d < 1e-6) continue;
+      const dir = b.clone().sub(a).divideScalar(d);
+
+      // repulsive overlap
+      if(d < repelR){
+        const push = (repelR - d) * kRepel;
+        F[i].sub(dir.clone().multiplyScalar(push));
+        F[j].add(dir.clone().multiplyScalar(push));
+      }
+
+      // hydrogen bonds (model: between non-adjacent residues with backbone-friendly distance)
+      // Restrict so it actually rewards beta-sheet/helix-ish geometry: |i-j|>=3
+      if(j - i >= 3 && d > hbMin && d < hbMax){
+        // pull together gently to length ~2.8
+        const target = 2.8;
+        const diff = (d - target) * kHbond;
+        F[i].add(dir.clone().multiplyScalar(diff));
+        F[j].sub(dir.clone().multiplyScalar(diff));
+        hbCount++;
+        if(hbList.length < 200) hbList.push([i,j]);
+      }
+    }
+  }
+
+  // integrate (with damping; clamp to keep stable)
+  const damp = 0.62;
+  let energy = 0;
+  for(let i=0;i<n;i++){
+    const f = F[i];
+    const m = f.length();
+    if(m > 0.6) f.multiplyScalar(0.6/m);
+    positions[i].add(f.multiplyScalar(damp));
+    energy += m;
+  }
+
+  fold.hbonds = hbList;
+  fold._hbCount = hbCount;
+  fold._energy = energy;
+  return energy;
+}
+
+// Build/update render objects for current fold
+function rebuildFoldMeshes(){
+  // clear
+  while(atomGroup.children.length) atomGroup.remove(atomGroup.children[0]);
+  while(hbondGroup.children.length) hbondGroup.remove(hbondGroup.children[0]);
+  if(!state.fold) return;
+  const {positions, types, aas} = state.fold;
+
+  // residue spheres
+  for(let i=0;i<positions.length;i++){
+    const m = new THREE.Mesh(sphereGeo, aaMaterial(types[i]));
+    m.position.copy(positions[i]);
+    m.scale.setScalar(0.55);
+    atomGroup.add(m);
+  }
+
+  // ribbon (LineSegments along backbone, plus thicker "tube" via TubeGeometry-lite)
+  if(positions.length >= 2){
+    // smooth curve
+    const curve = new THREE.CatmullRomCurve3(positions.map(p=>p.clone()));
+    const tubeGeo = new THREE.TubeGeometry(curve, Math.max(8, positions.length*4), 0.18, 6, false);
+    const tubeMat = new THREE.MeshStandardMaterial({
+      color: 0xb8cdfc, roughness:0.45, metalness:0.2,
+      emissive:0x1a2a4a, emissiveIntensity:0.15
+    });
+    const tube = new THREE.Mesh(tubeGeo, tubeMat);
+    atomGroup.add(tube);
+  }
+}
+function updateFoldMeshes(){
+  if(!state.fold) return;
+  const {positions, hbonds} = state.fold;
+  // residue spheres are first N children, tube is last
+  const n = positions.length;
+  for(let i=0;i<n;i++){
+    const m = atomGroup.children[i];
+    if(m) m.position.copy(positions[i]);
+  }
+  // rebuild tube every frame is expensive; do every few frames
+  if(state.iter % 4 === 0 && atomGroup.children.length > n){
+    const oldTube = atomGroup.children[n];
+    atomGroup.remove(oldTube);
+    if(oldTube.geometry) oldTube.geometry.dispose();
+    const curve = new THREE.CatmullRomCurve3(positions.map(p=>p.clone()));
+    const tubeGeo = new THREE.TubeGeometry(curve, Math.max(8, n*4), 0.18, 6, false);
+    const tubeMat = new THREE.MeshStandardMaterial({
+      color: 0xb8cdfc, roughness:0.45, metalness:0.2,
+      emissive:0x1a2a4a, emissiveIntensity:0.15
+    });
+    const tube = new THREE.Mesh(tubeGeo, tubeMat);
+    atomGroup.add(tube);
+  }
+
+  // H-bond dotted lines
+  while(hbondGroup.children.length) hbondGroup.remove(hbondGroup.children[0]);
+  const lineMat = new THREE.LineDashedMaterial({color:0x7df9ff, dashSize:0.25, gapSize:0.2, transparent:true, opacity:0.6});
+  for(const [i,j] of hbonds){
+    const g = new THREE.BufferGeometry().setFromPoints([positions[i], positions[j]]);
+    const l = new THREE.Line(g, lineMat);
+    l.computeLineDistances();
+    hbondGroup.add(l);
+  }
+}
+
+// =====================================================================
+// Main pipeline runner
+// =====================================================================
+function runPipeline(){
+  state.dna = cleanDNA(dnaTA.value);
+  if(state.dna.length < 6){
+    seqStat.textContent = "Enter at least 6 bases (ACGT).";
+    return;
+  }
+  // Find first ATG (start codon) – if not found, just use sequence start
+  let start = state.dna.indexOf('ATG');
+  if(start < 0) start = 0;
+  const orf = state.dna.substr(start);
+
+  state.mrna = transcribe(orf);
+  const tr = translate(orf);
+  state.protein = tr.protein;
+  state.codons = tr.codons;
+  state.readCodon = 0;
+  state.readTimer = 0;
+
+  state.fold = buildChain(state.protein);
+  state.iter = 0;
+
+  // UI
+  seqStat.innerHTML = `<b>${state.dna.length}</b> bases · ORF starts at <b>${start}</b> · <b>${state.codons.length}</b> codons`;
+  aaLenEl.textContent = state.protein.replace('*','').length;
+  iterPill.textContent = `0 / ${state.maxIter}`;
+  energyPill.textContent = '—';
+  hbondPill.textContent = '0';
+  proteinNameEl.textContent = state.presetName;
+
+  rebuildFoldMeshes();
+  renderTranslation();
+}
+
+// =====================================================================
+// Animation loop
+// =====================================================================
+let lastT = performance.now();
+function animate(now){
+  const dt = now - lastT; lastT = now;
+  state.speed = +speedSlider.value;
+
+  // helix + rna draw every frame (cheap)
+  drawDNA(now);
+  drawRNA(now);
+
+  if(!state.paused && state.codons.length){
+    // Translation: advance reading frame
+    state.readTimer += dt * state.speed * 0.025;
+    while(state.readTimer >= 1 && state.readCodon < state.codons.length){
+      state.readTimer -= 1;
+      state.readCodon++;
+      // re-render translation pane
+      renderTranslation();
+      if(CODON_TABLE[state.codons[state.readCodon-1]] === '*') break;
+    }
+
+    // Folding iterations (run multiple per frame depending on speed)
+    if(state.fold && state.fold.positions.length>1 && state.iter < state.maxIter){
+      const stepsThisFrame = Math.max(1, Math.round(state.speed/2));
+      for(let s=0;s<stepsThisFrame && state.iter<state.maxIter;s++){
+        foldStep(state.fold);
+        state.iter++;
+      }
+      iterPill.textContent = `${state.iter} / ${state.maxIter}`;
+      energyPill.textContent = state.fold._energy ? state.fold._energy.toFixed(2) : '—';
+      hbondPill.textContent  = String(state.fold._hbCount||0);
+    }
+    if(state.fold) updateFoldMeshes();
+  }
+
+  // 3D camera orbit
+  const r = dragState.dist;
+  camera.position.x = Math.cos(dragState.ry)*Math.cos(dragState.rx)*r;
+  camera.position.y = Math.sin(dragState.rx)*r;
+  camera.position.z = Math.sin(dragState.ry)*Math.cos(dragState.rx)*r;
+  camera.lookAt(0,0,0);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+// =====================================================================
+// Event wiring
+// =====================================================================
+document.getElementById('run').addEventListener('click', runPipeline);
+document.getElementById('random').addEventListener('click', ()=>{
+  const i = Math.floor(Math.random()*PRESETS.length);
+  presetSel.value = i;
+  state.presetName = PRESETS[i].name;
+  dnaTA.value = PRESETS[i].dna;
+  runPipeline();
+});
+presetSel.addEventListener('change', ()=>{
+  const i = +presetSel.value;
+  state.presetName = PRESETS[i].name;
+  dnaTA.value = PRESETS[i].dna;
+  runPipeline();
+});
+playPauseBtn.addEventListener('click', ()=>{
+  state.paused = !state.paused;
+  playPauseBtn.textContent = state.paused ? 'Play' : 'Pause';
+});
+document.getElementById('remix').addEventListener('click', ()=>{
+  // Random point mutations (~3% of bases)
+  let s = cleanDNA(dnaTA.value).split('');
+  for(let i=0;i<s.length;i++){
+    if(Math.random() < 0.03){
+      let nb;
+      do { nb = randomBase(); } while(nb === s[i]);
+      s[i] = nb;
+    }
+  }
+  dnaTA.value = s.join('');
+  state.presetName = '(mutated) ' + state.presetName.replace(/^\(mutated\)\s*/,'');
+  runPipeline();
+});
+
+// =====================================================================
+// Boot
+// =====================================================================
+state.presetName = PRESETS[0].name;
+initFoldScene();
+runPipeline();
+requestAnimationFrame(animate);
+
+</script>
+</body>
+</html>

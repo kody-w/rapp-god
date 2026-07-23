@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shrine Mountain — Brimsworth Worlds 12/12 (R25 FINAL)</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#0a0810;color:#fce8d4;font-family:'Helvetica Neue',Arial,sans-serif;overflow:hidden;height:100%}
+  #c{position:fixed;inset:0;display:block}
+  .panel{position:fixed;background:rgba(18,10,16,.66);border:1px solid rgba(255,196,184,.22);border-radius:6px;padding:10px 14px;font-size:12px;line-height:1.5;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  #hud{left:12px;top:12px;max-width:340px}
+  #cam{right:12px;top:12px;font-size:11px}
+  #cit{left:12px;bottom:64px;max-width:380px;max-height:34vh;overflow:hidden;font-size:11px;line-height:1.45}
+  #manifest{right:12px;bottom:64px;max-width:300px;font-size:11px;line-height:1.45}
+  #chy{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(0deg,rgba(178,34,34,.92),rgba(178,34,34,.55) 60%,rgba(178,34,34,0));padding:12px 20px 14px;font-size:13px;text-align:center;letter-spacing:.04em}
+  .tag{font-weight:700;color:#ffc4b8;letter-spacing:.1em;text-transform:uppercase}
+  .k{color:#ffd86b}
+  .o{color:#ffa97a}
+  .p{color:#ffc8d8}
+  .g{color:#a8d4a0}
+  .m{color:#cfe8ff}
+  .v{color:#e5b4ff}
+  .dim{opacity:.7}
+  #zones{font-size:11px;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
+  .z{padding:2px 6px;border-radius:3px;background:rgba(255,255,255,.08);font-size:10px}
+  .z.on{background:rgba(255,138,122,.45);color:#fff}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  #feed div{margin:1px 0;opacity:.92}
+  #feed div:last-child{opacity:1;font-weight:600}
+  .pulse{animation:p 2s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:.85}50%{opacity:1}}
+</style>
+</head>
+<body>
+<!-- ROUND25_WORLDS v1 -->
+<canvas id="c"></canvas>
+<div class="panel" id="hud">
+  <div class="tag">⛩ Shrine-Mountain · Brimsworth Worlds 12/12</div>
+  <div class="row"><span><span class="dim">spirit-realm time:</span> <span class="k" id="t">--:--</span></span><span class="dim" id="phase">dawn-mist</span></div>
+  <div><span class="dim">zone-of-focus:</span> <span class="o" id="zn">--</span></div>
+  <div><span class="dim">event:</span> <span class="p" id="ev">awaiting dawn-bells…</span></div>
+  <div><span class="dim">awake citizens:</span> <span class="g" id="cn">0</span> <span class="dim">/ <span id="ct">0</span></span></div>
+  <div id="zones"></div>
+</div>
+<div class="panel" id="cam">cam <span id="ci">00</span>/<span id="cmax">00</span> · <span class="dim" id="cnm">--</span></div>
+<div class="panel" id="cit"><div class="tag" style="color:#ffd86b">Citizen Feed</div><div id="feed"></div></div>
+<div class="panel" id="manifest"><div class="tag" style="color:#cfe8ff">Brimsworth Worlds Ledger</div><div id="mft"></div></div>
+<div id="chy"><span class="tag">Brimsworth Worlds</span> · 12 living cities · <span id="msg" class="pulse">spirit-realm cycle in progress — INVENTED terminology, FICTIONAL spirit-realm</span></div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  // sentinel split-string (single canonical form lives only in body comment)
+  const SENT = 'ROUND25_W' + 'ORLDS v1';
+  const STORE = 'worlds_shrine_mountain_v1';
+  const LEDGER = 'brimsworth_worlds_v1';
+  const CITY_ID = 'shrine-mountain';
+  const CITY_INDEX = 12, CITY_OF = 12, ROUND = 25;
+
+  // ---- cross-read all canon ----
+  const canon = {};
+  let canonCount = 0;
+  try {
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(!k) continue;
+      if(k.startsWith('brimsworth_') || k.startsWith('worlds_') || k.startsWith('multiverse_') || k.startsWith('century_')){
+        try { canon[k] = JSON.parse(localStorage.getItem(k)||'null'); }
+        catch(e){ canon[k] = null; }
+        canonCount++;
+      }
+    }
+  } catch(e){}
+  console.log('['+CITY_ID+'] sentinel:', SENT, 'canon-keys:', canonCount, Object.keys(canon));
+
+  // ---- BroadcastChannel: cross-canon emit/listen ----
+  let bc = null;
+  const heard = [];
+  try {
+    bc = new BroadcastChannel('brimsworth_worlds');
+    bc.onmessage = (ev)=>{
+      if(!ev||!ev.data) return;
+      if(ev.data.city === CITY_ID) return;
+      heard.push(ev.data);
+      if(heard.length>3) heard.shift();
+      console.log('[bw-bc] heard:', ev.data);
+    };
+    bc.postMessage({city:CITY_ID,type:'awake',round:ROUND,t:Date.now()});
+  } catch(e){}
+
+  // ---- seedable RNG ----
+  let seed = 0x1a2b3c4d;
+  const rand = ()=>{ seed = (seed*1664525 + 1013904223) >>> 0; return seed/4294967296; };
+  const rr = (a,b)=> a + (b-a)*rand();
+  const reseed = (s)=>{ seed = s>>>0; };
+
+  // ---- INVENTED terminology ----
+  // First names (entirely invented spirit-realm phonemes — not real-cultural)
+  const FIRSTS = ('Aria,Brem,Cade,Dorel,Ember,Fiel,Gren,Halen,Iven,Jora,Kael,Liro,Mira,Nael,Oryn,'+
+    'Pell,Quen,Rive,Solen,Tane,Ulren,Vera,Wist,Xela,Ymer,Zora,Aven,Brisa,Caleth,Dree,'+
+    'Eris,Faye,Gale,Holm,Indra,Jeth,Kira,Lume,Marn,Noon,Olen,Phae,Quill,Riven,Sael,'+
+    'Tess,Une,Veth,Wynd,Yarrow,Aelis,Brae,Coren,Doryn,Elen,Falk,Geir,Hespen,Iol,Jarn,Korv').split(',');
+  // Brimsworth canonical surnames (pulled from prior canon)
+  const LASTS = ['Bramble','Field','Pemberton','Vellum','Wren','Whitford'];
+  // INVENTED honorific suffixes — not real-cultural
+  const SUF = ['-shi','-mor','-vell','-keth'];
+  // INVENTED roles
+  const ROLES = ['shrine-keeper','paper-lantern-maker','koi-pond-tender','mountain-tea-keeper',
+                 'cherry-petal-sweeper','stone-lantern-tender','dawn-bell-ringer','tori-gate-keeper'];
+
+  const ZONES = [
+    {id:0,name:'tori-gate-path-entry',  c:0xcf3a2a, pos:[ 0,0, 38]},
+    {id:1,name:'central-shrine-altar',  c:0xe64235, pos:[ 0,3,  0]},
+    {id:2,name:'koi-pond-and-garden',   c:0x3fa3c4, pos:[-22,0, 8]},
+    {id:3,name:'mountain-overlook',     c:0x7da082, pos:[ 26,8,-26]},
+    {id:4,name:'paper-lantern-workshop',c:0xffce5c, pos:[ 18,0, 18]},
+    {id:5,name:'stone-lantern-courtyard',c:0xa8a294,pos:[-16,0,-18]}
+  ];
+
+  // ---- 500+ named citizens ----
+  const citizens = [];
+  for(let f=0; f<FIRSTS.length; f++){
+    for(let l=0; l<LASTS.length; l++){
+      for(let s=0; s<2; s++){
+        const idx = citizens.length;
+        const z = ZONES[(idx)%6];
+        citizens.push({
+          id: idx,
+          name: FIRSTS[f]+' '+LASTS[l]+SUF[(f+l*3+s)%SUF.length],
+          role: ROLES[(f*2+l+s*3)%ROLES.length],
+          zone: z.id,
+          x: z.pos[0] + rr(-6,6),
+          z: z.pos[2] + rr(-6,6),
+          ph: rr(0,Math.PI*2),
+          spd: rr(.4,1.0)
+        });
+      }
+    }
+  }
+  // ~732 citizens (61 firsts × 6 lasts × 2 = 732)
+
+  // ---- Three.js scene ----
+  const THREE = window.THREE;
+  const renderer = new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.setSize(innerWidth,innerHeight);
+
+  const scene = new THREE.Scene();
+  const bgColor = new THREE.Color(0xa9c8e6);
+  scene.background = bgColor;
+  scene.fog = new THREE.FogExp2(0xddd5d5, 0.012);
+
+  const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 600);
+  camera.position.set(0,12,40);
+
+  // ---- lights ----
+  const sun = new THREE.DirectionalLight(0xffe9c8, 1.0);
+  sun.position.set(30,40,20);
+  scene.add(sun);
+  const amb = new THREE.HemisphereLight(0xb6d4ee, 0x6a4a52, 0.5);
+  scene.add(amb);
+  const fillL = new THREE.PointLight(0xffb87a, 0.8, 140);
+  fillL.position.set(0,8,0);
+  scene.add(fillL);
+  const altarL = new THREE.PointLight(0xffd089, 0.0, 30);
+  altarL.position.set(0,3,0);
+  scene.add(altarL);
+
+  // ---- ground ----
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(140,48),
+    new THREE.MeshLambertMaterial({color:0x4f6a4d}));
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = -0.05;
+  scene.add(ground);
+
+  // moss patches
+  for(let i=0;i<28;i++){
+    const r = rr(8,55), a = rand()*Math.PI*2;
+    const m = new THREE.Mesh(new THREE.CircleGeometry(rr(2,5),12),
+      new THREE.MeshLambertMaterial({color: i%2?0x5e7e54:0x7a9568}));
+    m.rotation.x = -Math.PI/2; m.position.set(Math.cos(a)*r,0.0,Math.sin(a)*r);
+    scene.add(m);
+  }
+
+  // ---- stone path (along Z, from gate to shrine) ----
+  const path = new THREE.Mesh(new THREE.PlaneGeometry(4.4,82),
+    new THREE.MeshLambertMaterial({color:0xc8c0b0}));
+  path.rotation.x = -Math.PI/2; path.position.set(0,0.01,5);
+  scene.add(path);
+  // path stones
+  for(let i=-9;i<=9;i++){
+    const ps = new THREE.Mesh(new THREE.BoxGeometry(3.5,0.06,1.2),
+      new THREE.MeshLambertMaterial({color: i%2?0xd5cdb9:0xc0b8a4}));
+    ps.position.set(0,0.04,i*4); scene.add(ps);
+  }
+
+  // ---- mountain backdrop ----
+  function makeMountain(x,y,z,r,h,c){
+    const m = new THREE.Mesh(new THREE.ConeGeometry(r,h,18),
+      new THREE.MeshLambertMaterial({color:c}));
+    m.position.set(x,y,z); scene.add(m); return m;
+  }
+  makeMountain(  0, 30, -90, 60, 80, 0x556b62);
+  makeMountain(-70, 20, -82, 45, 60, 0x6a7d72);
+  makeMountain( 70, 25, -76, 50, 70, 0x4d5e58);
+  makeMountain(-110,18, -50, 42, 56, 0x607a6e);
+  makeMountain( 110,16, -40, 38, 50, 0x536a60);
+  // overlook plateau
+  const overG = new THREE.Mesh(new THREE.BoxGeometry(20,1,16),
+    new THREE.MeshLambertMaterial({color:0x5e7660}));
+  overG.position.set(26,7.5,-26); scene.add(overG);
+  // stairs to overlook
+  for(let i=0;i<7;i++){
+    const st = new THREE.Mesh(new THREE.BoxGeometry(8,0.5,1.6),
+      new THREE.MeshLambertMaterial({color:0xb5a890}));
+    st.position.set(15-i*1.4, 1.2+i*1.0, -22+i*0.5); scene.add(st);
+  }
+
+  // ---- INVENTED twin-pillar arch (tori-style; not real-named) ----
+  function makeArch(x,z,sc){
+    const g = new THREE.Group();
+    const pmat = new THREE.MeshLambertMaterial({color:0xcc3a2a});
+    const tmat = new THREE.MeshLambertMaterial({color:0x2b1a1a});
+    const pL = new THREE.Mesh(new THREE.BoxGeometry(0.8*sc,8*sc,0.8*sc), pmat);
+    pL.position.set(-3*sc,4*sc,0); g.add(pL);
+    const pR = pL.clone(); pR.position.x = 3*sc; g.add(pR);
+    const beamT = new THREE.Mesh(new THREE.BoxGeometry(8*sc,0.8*sc,1*sc), pmat);
+    beamT.position.y = 8.4*sc; g.add(beamT);
+    const beamB = new THREE.Mesh(new THREE.BoxGeometry(7.5*sc,0.5*sc,0.7*sc), pmat);
+    beamB.position.y = 7.0*sc; g.add(beamB);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(9*sc,0.6*sc,1.2*sc), tmat);
+    cap.position.y = 9.0*sc; g.add(cap);
+    g.position.set(x,0,z); return g;
+  }
+  scene.add(makeArch(0,40,1.0));
+  scene.add(makeArch(0,25,0.9));
+  scene.add(makeArch(0,12,0.85));
+
+  // ---- central shrine pavilion ----
+  const shrineG = new THREE.Group();
+  const sBase = new THREE.Mesh(new THREE.BoxGeometry(14,1,14),
+    new THREE.MeshLambertMaterial({color:0x8a6a52}));
+  sBase.position.y = 0.5; shrineG.add(sBase);
+  for(let i=0;i<4;i++){
+    const px = (i%2?1:-1)*5.5, pz = (i<2?1:-1)*5.5;
+    const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,6,8),
+      new THREE.MeshLambertMaterial({color:0xc9352a}));
+    pl.position.set(px,4,pz); shrineG.add(pl);
+  }
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(10,4.4,4),
+    new THREE.MeshLambertMaterial({color:0x2a1a18}));
+  roof.position.y = 9; roof.rotation.y = Math.PI/4; shrineG.add(roof);
+  const altar = new THREE.Mesh(new THREE.BoxGeometry(3.2,1.4,1.4),
+    new THREE.MeshLambertMaterial({color:0xe8d8b0}));
+  altar.position.y = 1.7; shrineG.add(altar);
+  const offering = new THREE.Mesh(new THREE.SphereGeometry(0.45,12,8),
+    new THREE.MeshStandardMaterial({color:0xffe0a0,emissive:0xffaa55,emissiveIntensity:0.5,roughness:0.4}));
+  offering.position.y = 2.55; shrineG.add(offering);
+  const bell = new THREE.Mesh(new THREE.SphereGeometry(0.65,12,8),
+    new THREE.MeshStandardMaterial({color:0x886b3a,metalness:0.6,roughness:0.4}));
+  bell.position.set(0,5.4,6); shrineG.add(bell);
+  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,3,4),
+    new THREE.MeshLambertMaterial({color:0xe8d4b8}));
+  rope.position.set(0,3.5,6); shrineG.add(rope);
+  scene.add(shrineG);
+
+  // ---- koi pond ----
+  const pondG = new THREE.Group();
+  const pondBase = new THREE.Mesh(new THREE.CircleGeometry(8,40),
+    new THREE.MeshStandardMaterial({color:0x3a6a78,metalness:0.3,roughness:0.4,
+      transparent:true,opacity:0.85}));
+  pondBase.rotation.x = -Math.PI/2; pondBase.position.y = 0.05;
+  pondG.add(pondBase);
+  for(let i=0;i<28;i++){
+    const a = i/28*Math.PI*2;
+    const st = new THREE.Mesh(new THREE.SphereGeometry(0.4,8,6),
+      new THREE.MeshLambertMaterial({color:0x7c7468}));
+    st.position.set(Math.cos(a)*8,0.2,Math.sin(a)*8);
+    pondG.add(st);
+  }
+  // koi
+  const koiArr = [];
+  const koiGeo = new THREE.SphereGeometry(0.35,6,4);
+  const koiOrange = new THREE.MeshLambertMaterial({color:0xff7a3a});
+  const koiPale = new THREE.MeshLambertMaterial({color:0xfde9cf});
+  const koiWhite = new THREE.MeshLambertMaterial({color:0xfff3df});
+  for(let i=0;i<18;i++){
+    const k = new THREE.Mesh(koiGeo, [koiOrange,koiPale,koiWhite][i%3]);
+    k.scale.set(1.5,0.5,0.7);
+    k.userData = {a:rand()*Math.PI*2, r:1.5+rand()*5.5, sp:rr(0.3,0.9)};
+    pondG.add(k); koiArr.push(k);
+  }
+  pondG.position.set(-22,0,8);
+  scene.add(pondG);
+  // small bridge
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(2,0.3,10),
+    new THREE.MeshLambertMaterial({color:0xc4493a}));
+  bridge.position.set(-22,1.0,8); scene.add(bridge);
+  for(let i=-1;i<=1;i+=2){
+    const rl = new THREE.Mesh(new THREE.BoxGeometry(0.18,1.0,10),
+      new THREE.MeshLambertMaterial({color:0xc4493a}));
+    rl.position.set(-22+i*1.0,1.6,8); scene.add(rl);
+  }
+
+  // ---- cherry blossom trees ----
+  const trees = [];
+  function makeTree(x,z,h,sc,pink){
+    const tg = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3*sc,0.5*sc,h,7),
+      new THREE.MeshLambertMaterial({color:0x4a2a1a}));
+    trunk.position.y = h/2; tg.add(trunk);
+    const c1 = new THREE.Mesh(new THREE.SphereGeometry(2.2*sc,9,7),
+      new THREE.MeshLambertMaterial({color:pink}));
+    c1.position.y = h+1; tg.add(c1);
+    const c2 = new THREE.Mesh(new THREE.SphereGeometry(1.6*sc,7,6),
+      new THREE.MeshLambertMaterial({color:0xffd8e2}));
+    c2.position.set(1.5*sc,h+0.5,0.4*sc); tg.add(c2);
+    const c3 = new THREE.Mesh(new THREE.SphereGeometry(1.4*sc,7,6),
+      new THREE.MeshLambertMaterial({color:0xffbfd0}));
+    c3.position.set(-1.2*sc,h+0.7,-0.6*sc); tg.add(c3);
+    tg.position.set(x,0,z); scene.add(tg); trees.push(tg);
+  }
+  for(let i=0;i<26;i++){
+    const a = i/26*Math.PI*2 + rr(-0.1,0.1);
+    const r = 30 + rr(-3,8);
+    makeTree(Math.cos(a)*r, Math.sin(a)*r, rr(3,5), rr(0.9,1.4),
+             [0xffc8d8,0xffd0d8,0xffbfd0][i%3]);
+  }
+  for(let i=-5;i<=5;i++){
+    if(i===0) continue;
+    makeTree(-7,i*5+5,rr(2.5,4),rr(0.7,1.1),0xffc8d8);
+    makeTree( 7,i*5+5,rr(2.5,4),rr(0.7,1.1),0xffd0d8);
+  }
+
+  // ---- stone lanterns ----
+  const stoneLanterns = [];
+  function makeStoneLantern(x,z){
+    const g = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({color:0xa9a294});
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.6,0.4,7),m);
+    base.position.y = 0.2; g.add(base);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,1.2,7),m);
+    post.position.y = 1.0; g.add(post);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.7,0.9),m);
+    cap.position.y = 1.95; g.add(cap);
+    const top = new THREE.Mesh(new THREE.ConeGeometry(0.7,0.5,4),m);
+    top.position.y = 2.55; top.rotation.y = Math.PI/4; g.add(top);
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.4,0.5),
+      new THREE.MeshBasicMaterial({color:0xffd07a, transparent:true, opacity:0.4}));
+    glow.position.y = 1.95; g.add(glow);
+    g.userData.glow = glow;
+    g.position.set(x,0,z); scene.add(g);
+    return g;
+  }
+  for(let i=0;i<28;i++){
+    const a = i/28*Math.PI*2;
+    stoneLanterns.push(makeStoneLantern(-16+Math.cos(a)*8.5, -18+Math.sin(a)*8.5));
+  }
+  for(let i=-9;i<=9;i++){
+    if(i===0) continue;
+    stoneLanterns.push(makeStoneLantern(-3.6,i*4+3));
+    stoneLanterns.push(makeStoneLantern( 3.6,i*4+3));
+  }
+
+  // ---- paper-lantern workshop ----
+  const wsG = new THREE.Group();
+  const wsBase = new THREE.Mesh(new THREE.BoxGeometry(8,0.4,6),
+    new THREE.MeshLambertMaterial({color:0x8a6a52}));
+  wsBase.position.y = 0.2; wsG.add(wsBase);
+  for(let i=0;i<4;i++){
+    const px = (i%2?1:-1)*3.6, pz = (i<2?1:-1)*2.6;
+    const pl = new THREE.Mesh(new THREE.BoxGeometry(0.3,4,0.3),
+      new THREE.MeshLambertMaterial({color:0x4a2a18}));
+    pl.position.set(px,2,pz); wsG.add(pl);
+  }
+  const wsRoof = new THREE.Mesh(new THREE.BoxGeometry(9,0.3,7),
+    new THREE.MeshLambertMaterial({color:0x3a2218}));
+  wsRoof.position.y = 4.3; wsG.add(wsRoof);
+  // hanging lanterns inside
+  const wsLanterns = [];
+  for(let i=0;i<12;i++){
+    const lx = -3 + (i%6)*1.2;
+    const lz = (i<6?-2:2);
+    const pl = new THREE.Mesh(new THREE.SphereGeometry(0.35,10,8),
+      new THREE.MeshBasicMaterial({color:0xffd56a}));
+    pl.position.set(lx, 3 + Math.sin(i)*0.2, lz);
+    wsG.add(pl); wsLanterns.push(pl);
+  }
+  wsG.position.set(18,0,18); scene.add(wsG);
+  // workbench
+  const bench = new THREE.Mesh(new THREE.BoxGeometry(5,0.3,1.6),
+    new THREE.MeshLambertMaterial({color:0x6a4a32}));
+  bench.position.set(18,0.85,16); scene.add(bench);
+
+  // ---- mountain-tea house (on overlook) ----
+  const teaG = new THREE.Group();
+  const tBase = new THREE.Mesh(new THREE.BoxGeometry(7,0.5,5),
+    new THREE.MeshLambertMaterial({color:0x9a7a5a}));
+  tBase.position.y = 0.25; teaG.add(tBase);
+  const tWalls = new THREE.Mesh(new THREE.BoxGeometry(6.5,3,4.5),
+    new THREE.MeshLambertMaterial({color:0xe9dcc4}));
+  tWalls.position.y = 2; teaG.add(tWalls);
+  const tRoof = new THREE.Mesh(new THREE.ConeGeometry(5.5,2,4),
+    new THREE.MeshLambertMaterial({color:0x3a2218}));
+  tRoof.position.y = 4.5; tRoof.rotation.y = Math.PI/4; teaG.add(tRoof);
+  const teaLantern = new THREE.Mesh(new THREE.SphereGeometry(0.5,10,8),
+    new THREE.MeshBasicMaterial({color:0xffe89a}));
+  teaLantern.position.set(0,3.5,3); teaG.add(teaLantern);
+  teaG.position.set(26,8,-26); scene.add(teaG);
+  // tea cushions
+  for(let i=0;i<6;i++){
+    const a = i/6*Math.PI*2;
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,0.2,12),
+      new THREE.MeshLambertMaterial({color:0xc4493a}));
+    c.position.set(26+Math.cos(a)*4, 8.6, -26+Math.sin(a)*3);
+    scene.add(c);
+  }
+
+  // ---- floating sky paper-lanterns ----
+  const skyLanterns = [];
+  for(let i=0;i<80;i++){
+    const sl = new THREE.Mesh(new THREE.SphereGeometry(0.45,8,6),
+      new THREE.MeshBasicMaterial({color:[0xffc878,0xffd56a,0xffe89a][i%3],
+        transparent:true,opacity:0.0}));
+    sl.position.set(rr(-55,55),rr(8,32),rr(-55,30));
+    sl.userData = {bp: sl.position.y, ph: rr(0,Math.PI*2), sp: rr(0.2,0.6)};
+    scene.add(sl); skyLanterns.push(sl);
+  }
+
+  // ---- spirit-realm orbs (R24 canon echo) ----
+  const orbs = [];
+  for(let i=0;i<28;i++){
+    const o = new THREE.Mesh(new THREE.SphereGeometry(0.18,8,6),
+      new THREE.MeshBasicMaterial({color:0xa8e8ff,transparent:true,opacity:0.7}));
+    o.position.set(rr(-32,32), rr(2,16), rr(-32,15));
+    o.userData = {ph:rr(0,Math.PI*2), sp:rr(0.5,1.5),
+      bx:o.position.x, bz:o.position.z, by:o.position.y};
+    scene.add(o); orbs.push(o);
+  }
+
+  // ---- cherry-petal particles ----
+  const pCount = 1500;
+  const pGeom = new THREE.BufferGeometry();
+  const pPos = new Float32Array(pCount*3);
+  const pVel = new Float32Array(pCount*3);
+  for(let i=0;i<pCount;i++){
+    pPos[i*3]   = rr(-60,60);
+    pPos[i*3+1] = rr(2,40);
+    pPos[i*3+2] = rr(-60,40);
+    pVel[i*3]   = rr(-0.05,0.05);
+    pVel[i*3+1] = rr(-0.06,-0.02);
+    pVel[i*3+2] = rr(-0.05,0.05);
+  }
+  pGeom.setAttribute('position', new THREE.BufferAttribute(pPos,3));
+  const pMat = new THREE.PointsMaterial({color:0xffc8d8,size:0.55,
+    transparent:true,opacity:0.9,sizeAttenuation:true});
+  const petals = new THREE.Points(pGeom, pMat);
+  scene.add(petals);
+
+  // ---- mist particles ----
+  const mCount = 700;
+  const mGeom = new THREE.BufferGeometry();
+  const mPos = new Float32Array(mCount*3);
+  for(let i=0;i<mCount;i++){
+    mPos[i*3] = rr(-70,70); mPos[i*3+1] = rr(0,12); mPos[i*3+2] = rr(-70,40);
+  }
+  mGeom.setAttribute('position', new THREE.BufferAttribute(mPos,3));
+  const mMat = new THREE.PointsMaterial({color:0xffffff,size:1.2,
+    transparent:true,opacity:0.4,sizeAttenuation:true});
+  const mist = new THREE.Points(mGeom, mMat);
+  scene.add(mist);
+
+  // ---- citizen instances ----
+  const cGeo = new THREE.CylinderGeometry(0.18,0.22,0.9,5);
+  const cMat = new THREE.MeshLambertMaterial({color:0xffffff});
+  const cMesh = new THREE.InstancedMesh(cGeo, cMat, citizens.length);
+  const cM4 = new THREE.Matrix4();
+  const cV3 = new THREE.Vector3();
+  const cQ = new THREE.Quaternion();
+  const cS = new THREE.Vector3(1,1,1);
+  const roleColor = {
+    'shrine-keeper':0xe85a4a,'paper-lantern-maker':0xffce5c,'koi-pond-tender':0x6fb0d4,
+    'mountain-tea-keeper':0xa8c290,'cherry-petal-sweeper':0xf2b8c8,
+    'stone-lantern-tender':0xb8b0a4,'dawn-bell-ringer':0xe8a85a,'tori-gate-keeper':0xc9352a
+  };
+  const tmpColor = new THREE.Color();
+  for(let i=0;i<citizens.length;i++){
+    cV3.set(citizens[i].x, 0.5, citizens[i].z);
+    cM4.compose(cV3, cQ, cS);
+    cMesh.setMatrixAt(i, cM4);
+    tmpColor.setHex(roleColor[citizens[i].role] || 0xffffff);
+    cMesh.setColorAt(i, tmpColor);
+  }
+  cMesh.instanceMatrix.needsUpdate = true;
+  if(cMesh.instanceColor) cMesh.instanceColor.needsUpdate = true;
+  scene.add(cMesh);
+
+  // ---- background spirit-realm wedding (R24 echo) ----
+  const weddingG = new THREE.Group();
+  const weddingMat = new THREE.MeshLambertMaterial({color:0xfff8f0});
+  for(let i=0;i<32;i++){
+    const a = i/32*Math.PI*2;
+    const r = 4 + (i%3)*0.6;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.24,0.95,5), weddingMat);
+    m.position.set(Math.cos(a)*r, 0.5, Math.sin(a)*r);
+    weddingG.add(m);
+  }
+  const bride = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.24,1.1,6),
+    new THREE.MeshLambertMaterial({color:0xffe7ee}));
+  bride.position.set(-0.5,0.55,2); weddingG.add(bride);
+  const groom = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.24,1.1,6),
+    new THREE.MeshLambertMaterial({color:0x222533}));
+  groom.position.set(0.5,0.55,2); weddingG.add(groom);
+  // ribbon arch
+  const ribbonG = new THREE.Group();
+  for(let i=0;i<12;i++){
+    const a = i/11*Math.PI;
+    const rr2 = 2.5;
+    const piece = new THREE.Mesh(new THREE.SphereGeometry(0.18,6,5),
+      new THREE.MeshBasicMaterial({color:0xffc4d4}));
+    piece.position.set(Math.cos(a)*rr2, Math.sin(a)*rr2 + 1.5, 1.6);
+    ribbonG.add(piece);
+  }
+  weddingG.add(ribbonG);
+  weddingG.visible = false;
+  scene.add(weddingG);
+
+  // ---- multiverse portal ----
+  const portalG = new THREE.Group();
+  const portalRing = new THREE.Mesh(new THREE.TorusGeometry(3,0.18,12,42),
+    new THREE.MeshStandardMaterial({color:0xcfa6ff, emissive:0x9c5af0,
+      emissiveIntensity:1.6, metalness:0.3, roughness:0.4}));
+  portalRing.position.y = 4; portalG.add(portalRing);
+  const portalDisk = new THREE.Mesh(new THREE.CircleGeometry(2.9,32),
+    new THREE.MeshBasicMaterial({color:0x7a3ad6, transparent:true, opacity:0.7,
+      side:THREE.DoubleSide}));
+  portalDisk.position.y = 4; portalG.add(portalDisk);
+  // portal sparks
+  const sparkCount = 80;
+  const spGeom = new THREE.BufferGeometry();
+  const spPos = new Float32Array(sparkCount*3);
+  for(let i=0;i<sparkCount;i++){
+    const a = rand()*Math.PI*2, rd = 2.6+rand()*0.6;
+    spPos[i*3] = Math.cos(a)*rd; spPos[i*3+1] = 4+Math.sin(a)*rd; spPos[i*3+2] = 0;
+  }
+  spGeom.setAttribute('position', new THREE.BufferAttribute(spPos,3));
+  const sparks = new THREE.Points(spGeom,
+    new THREE.PointsMaterial({color:0xe8c8ff,size:0.18,transparent:true,opacity:0.95}));
+  portalG.add(sparks);
+  portalG.visible = false;
+  portalG.position.set(0,0,16);
+  scene.add(portalG);
+
+  // ---- 35 cameras ----
+  const cams = [
+    {n:'tori-entry-low',         p:[0,2,55],     l:[0,4,0]},
+    {n:'tori-entry-aerial',      p:[0,30,60],    l:[0,4,0]},
+    {n:'gate-tracking-1',        p:[2,3,40],     l:[0,4,20]},
+    {n:'gate-tracking-2',        p:[-2,3,28],    l:[0,4,8]},
+    {n:'shrine-front',           p:[0,3,18],     l:[0,4,0]},
+    {n:'shrine-low-3-4',         p:[8,2,8],      l:[0,3,0]},
+    {n:'shrine-overhead',        p:[0,28,2],     l:[0,0,0]},
+    {n:'shrine-altar-close',     p:[2,2.5,3],    l:[0,2,0]},
+    {n:'shrine-bell-close',      p:[3,4,9],      l:[0,5,5]},
+    {n:'koi-pond-low',           p:[-22,1.5,16], l:[-22,0,8]},
+    {n:'koi-pond-overhead',      p:[-22,18,8],   l:[-22,0,8]},
+    {n:'koi-pond-skim',          p:[-30,0.6,8],  l:[-15,0.3,8]},
+    {n:'koi-bridge-walk',        p:[-22,2,18],   l:[-22,1,8]},
+    {n:'mountain-overlook',      p:[26,12,-18],  l:[0,4,0]},
+    {n:'overlook-aerial',        p:[34,22,-30],  l:[0,4,0]},
+    {n:'overlook-tea-house',     p:[26,9.6,-22], l:[26,8.5,-26]},
+    {n:'workshop-front',         p:[18,2,12],    l:[18,1,18]},
+    {n:'workshop-interior',      p:[16,2,18],    l:[20,2,18]},
+    {n:'workshop-overhead',      p:[18,12,18],   l:[18,0,18]},
+    {n:'stone-lantern-court',    p:[-16,2,-10],  l:[-16,0,-18]},
+    {n:'stone-lantern-aerial',   p:[-16,15,-18], l:[-16,0,-18]},
+    {n:'stone-lantern-walk',     p:[-22,1.6,-22],l:[-10,1,-14]},
+    {n:'cherry-grove-west',      p:[-30,2,0],    l:[0,4,0]},
+    {n:'cherry-grove-east',      p:[30,2,0],     l:[0,4,0]},
+    {n:'path-walking',           p:[0,1.6,30],   l:[0,1.6,0]},
+    {n:'aerial-establishing',    p:[0,38,40],    l:[0,4,0]},
+    {n:'aerial-orbit',           p:[40,30,0],    l:[0,4,0]},
+    {n:'aerial-back',            p:[0,30,-40],   l:[0,4,0]},
+    {n:'aerial-side',            p:[-40,28,0],   l:[0,4,0]},
+    {n:'far-vista',              p:[55,18,55],   l:[0,2,0]},
+    {n:'mountain-summit',        p:[0,55,-50],   l:[0,4,0]},
+    {n:'lantern-sky',            p:[0,22,12],    l:[0,8,0]},
+    {n:'portal-witness',         p:[8,3,22],     l:[0,5,16]},
+    {n:'wedding-aisle',          p:[0,2,8],      l:[0,2,0]},
+    {n:'wedding-side',           p:[6,3,2],      l:[0,2,0]},
+    {n:'dawn-bell-rope',         p:[2,5,12],     l:[0,5,6]}
+  ];
+
+  // ---- events ----
+  const EVENTS = [
+    {h: 6.0, t:'06:00 dawn-bells — bell-ringer-shi gather at the central altar'},
+    {h: 8.0, t:'08:00 paper-lantern-workshop opens — makers-mor begin folding'},
+    {h:10.0, t:'10:00 koi-pond tending — keepers-vell scatter pale-pink feed'},
+    {h:13.0, t:'13:00 mountain-tea lunch at the overlook tea-house'},
+    {h:14.0, t:'14:00 spirit-realm wedding at central-shrine-altar (R24 echo)'},
+    {h:17.0, t:'17:00 cherry-petal sweeping along the stone path'},
+    {h:19.0, t:'19:00 evening-bells — twilight gathering at the gate'},
+    {h:22.0, t:'22:00 lantern-twilight — paper-lanterns released to the sky'}
+  ];
+
+  // ---- HUD refs ----
+  const $t=document.getElementById('t'),$phase=document.getElementById('phase'),
+        $zn=document.getElementById('zn'),$ev=document.getElementById('ev'),
+        $cn=document.getElementById('cn'),$ct=document.getElementById('ct'),
+        $ci=document.getElementById('ci'),$cmax=document.getElementById('cmax'),
+        $cnm=document.getElementById('cnm'),$msg=document.getElementById('msg'),
+        $feed=document.getElementById('feed'),$mft=document.getElementById('mft'),
+        $zonesEl=document.getElementById('zones');
+  $ct.textContent = citizens.length;
+  $cmax.textContent = String(cams.length).padStart(2,'0');
+  ZONES.forEach(z=>{
+    const e = document.createElement('span');
+    e.className='z'; e.id='z'+z.id; e.textContent=z.name;
+    $zonesEl.appendChild(e);
+  });
+  function renderManifest(){
+    let html = '<div class="dim">city: <span class="o">'+CITY_ID+'</span> · '+CITY_INDEX+'/'+CITY_OF+'</div>';
+    html += '<div class="dim">canon keys read: <span class="g">'+canonCount+'</span></div>';
+    const ledg = canon[LEDGER];
+    const cnt = ledg && ledg.cities ? Object.keys(ledg.cities).length : 0;
+    html += '<div class="dim">cities ledgered: <span class="m">'+cnt+'</span></div>';
+    html += '<div class="dim">heard via bc: <span class="v">'+heard.length+'</span></div>';
+    html += '<div class="dim">sentinel: '+SENT+'</div>';
+    $mft.innerHTML = html;
+  }
+  const feed = [];
+  function pushFeed(s){
+    feed.push(s);
+    if(feed.length>10) feed.shift();
+    $feed.innerHTML = feed.map(x=>'<div>'+x+'</div>').join('');
+  }
+  // sample citizen feed at start
+  for(let i=0;i<5;i++){
+    const c = citizens[Math.floor(rand()*citizens.length)];
+    pushFeed('<span class="dim">·</span> '+c.name+' <span class="dim">('+c.role+')</span>');
+  }
+
+  addEventListener('resize',()=>{
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+  });
+
+  // ---- main loop state ----
+  const start = performance.now();
+  let camTime = 0, camIdx = 0;
+  let portalShown = false;
+  let completeEmitted = false;
+  let lastFeedT = 0;
+  const fired = {};
+  const CYCLE = 600; // 10 minutes, "12-hour day-cycle" mapped 06:00-22:00
+
+  function fmt(h){
+    const hh=Math.floor(h), mm=Math.floor((h-hh)*60);
+    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+  }
+  function phaseFor(h){
+    if(h<7.5) return 'dawn-mist-mountain';
+    if(h<11)  return 'morning-cherry-light';
+    if(h<14)  return 'noon-cherry-petal';
+    if(h<17)  return 'afternoon-koi-pond';
+    if(h<20)  return 'twilight-lantern';
+    return 'night-stars-and-paper-lanterns';
+  }
+
+  // sky color stops
+  const C_NIGHT = new THREE.Color(0x1c1638);
+  const C_DAWN  = new THREE.Color(0xfdc8b0);
+  const C_NOON  = new THREE.Color(0xa9d4ee);
+  const C_DUSK  = new THREE.Color(0xf09a72);
+  const tmpC = new THREE.Color();
+  function lerp(a,b,t){return a+(b-a)*t;}
+  function lerpC(a,b,t){tmpC.r=lerp(a.r,b.r,t);tmpC.g=lerp(a.g,b.g,t);tmpC.b=lerp(a.b,b.b,t);return tmpC;}
+  function skyAt(h){
+    if(h<8)  return lerpC(C_NIGHT,C_DAWN, Math.min(1,(h-6)/2));
+    if(h<14) return lerpC(C_DAWN, C_NOON, (h-8)/6);
+    if(h<18) return lerpC(C_NOON, C_DUSK, (h-14)/4);
+    if(h<21) return lerpC(C_DUSK, C_NIGHT,(h-18)/3);
+    return C_NIGHT;
+  }
+
+  // ---- citizen update ----
+  function updateCitizens(t,h){
+    const awakeStart = 5.5, awakeEnd = 23.0;
+    let awake = 0;
+    for(let i=0;i<citizens.length;i++){
+      const c = citizens[i];
+      const z = ZONES[c.zone];
+      const ph = c.ph + t*c.spd*0.5;
+      let tx = z.pos[0] + Math.cos(ph)*5 + Math.sin(c.ph*2.7)*2;
+      let tz = z.pos[2] + Math.sin(ph)*5 + Math.cos(c.ph*1.7)*2;
+      let ty = z.pos[1];
+
+      // dawn bell ringers gather
+      if(h>=6 && h<7 && c.role==='dawn-bell-ringer'){
+        const a = c.ph; tx = Math.cos(a)*3.5; tz = Math.sin(a)*3.5+5; ty = 1.0;
+      }
+      // workshop opens — makers cluster
+      if(h>=8 && h<12 && c.role==='paper-lantern-maker'){
+        tx = 18 + Math.sin(c.ph + t*c.spd*0.3)*2.5;
+        tz = 18 + Math.cos(c.ph + t*c.spd*0.3)*2.0;
+      }
+      // koi-pond tending
+      if(h>=10 && h<13 && c.role==='koi-pond-tender'){
+        tx = -22 + Math.sin(c.ph)*7;
+        tz =   8 + Math.cos(c.ph)*7;
+      }
+      // mountain-tea lunch
+      if(h>=13 && h<14 && c.role==='mountain-tea-keeper'){
+        const a = c.ph; tx = 26+Math.cos(a)*4; tz = -26+Math.sin(a)*3.5; ty = 8.5;
+      }
+      // wedding draw 14:00 — random subset gather at altar
+      if(h>=14 && h<15.5 && (i%6===0)){
+        const a = i*0.42;
+        tx = Math.cos(a)*5.5;
+        tz = Math.sin(a)*5.5 - 1;
+        ty = 0;
+      }
+      // sweepers along path 17:00
+      if(h>=17 && h<19 && c.role==='cherry-petal-sweeper'){
+        tx = (i%2?-1:1) * (1.5 + Math.sin(c.ph + t*c.spd)*0.6);
+        tz = ((c.id*7)%50)-25;
+        ty = 0;
+      }
+      // evening-bell gathering 19:00
+      if(h>=19 && h<20 && c.role==='dawn-bell-ringer'){
+        tx = Math.cos(c.ph)*3.5; tz = Math.sin(c.ph)*3.5+5; ty = 1.0;
+      }
+      // tori-gate-keepers near the gate always
+      if(c.role==='tori-gate-keeper'){
+        tx = (i%2?-2.5:2.5) + Math.sin(c.ph+t*0.3)*0.3;
+        tz = 12 + (i%3-1)*5;
+      }
+
+      const isAwake = (h>=awakeStart && h<=awakeEnd);
+      if(!isAwake){ ty = -2; } else awake++;
+
+      cV3.set(tx, ty + 0.5, tz);
+      cM4.compose(cV3, cQ, cS);
+      cMesh.setMatrixAt(i, cM4);
+    }
+    cMesh.instanceMatrix.needsUpdate = true;
+    return awake;
+  }
+
+  function updateKoi(){
+    for(let i=0;i<koiArr.length;i++){
+      const k = koiArr[i], u = k.userData;
+      u.a += u.sp*0.012;
+      k.position.set(Math.cos(u.a)*u.r, 0.25, Math.sin(u.a)*u.r);
+      k.rotation.y = -u.a + Math.PI/2;
+    }
+  }
+
+  function updateParticles(t,h){
+    const arr = pGeom.attributes.position.array;
+    for(let i=0;i<pCount;i++){
+      arr[i*3]   += pVel[i*3];
+      arr[i*3+1] += pVel[i*3+1];
+      arr[i*3+2] += pVel[i*3+2];
+      if(arr[i*3+1] < 0){
+        arr[i*3]   = rr(-60,60);
+        arr[i*3+1] = rr(20,40);
+        arr[i*3+2] = rr(-60,40);
+      }
+    }
+    pGeom.attributes.position.needsUpdate = true;
+    mMat.opacity = h<9 ? 0.55 : (h>20 ? 0.30 : 0.12);
+    pMat.opacity = (h>9 && h<19) ? 0.9 : 0.5;
+
+    const nightFactor = (h<7 || h>18.5) ? 1 : 0.18;
+    for(let i=0;i<skyLanterns.length;i++){
+      const sl = skyLanterns[i];
+      sl.position.y = sl.userData.bp + Math.sin(t*sl.userData.sp + sl.userData.ph)*0.6;
+      sl.material.opacity = nightFactor*0.95 + 0.05;
+    }
+    for(let i=0;i<stoneLanterns.length;i++){
+      const g = stoneLanterns[i].userData.glow;
+      if(g) g.material.opacity = nightFactor*0.9 + 0.1;
+    }
+    for(let i=0;i<wsLanterns.length;i++){
+      wsLanterns[i].material.opacity = (h>=8 && h<=22) ? 1 : 0.5;
+    }
+    for(let i=0;i<orbs.length;i++){
+      const o = orbs[i], u = o.userData;
+      o.position.x = u.bx + Math.sin(t*u.sp + u.ph)*1.5;
+      o.position.y = u.by + Math.cos(t*u.sp*0.7 + u.ph)*1.0;
+      o.material.opacity = 0.35 + 0.45*Math.abs(Math.sin(t*u.sp + u.ph));
+    }
+  }
+
+  // ---- ledger persist ----
+  function saveLedger(complete){
+    try {
+      const cur = JSON.parse(localStorage.getItem(LEDGER) || '{"cities":{}}');
+      cur.cities = cur.cities || {};
+      cur.cities[CITY_ID] = {
+        city_id: CITY_ID,
+        name: 'Shrine Mountain',
+        round: ROUND,
+        index: CITY_INDEX, of: CITY_OF,
+        kind: 'invented-spirit-realm',
+        zones: ZONES.map(z=>z.name),
+        roles: ROLES,
+        suffixes: SUF,
+        events: EVENTS.map(e=>e.t),
+        citizens: citizens.length,
+        cycle_seconds: CYCLE,
+        completed_at: Date.now()
+      };
+      cur.last_city = CITY_ID;
+      cur.last_update = Date.now();
+      cur.round = ROUND;
+      if(complete){
+        cur.complete = true;
+        cur.complete_at = Date.now();
+        cur.note = 'BRIMSWORTH WORLDS COMPLETE — 12 living cities acknowledged across R25.';
+        cur.cities_acknowledged = 12;
+      }
+      localStorage.setItem(LEDGER, JSON.stringify(cur));
+      localStorage.setItem(STORE, JSON.stringify({
+        last_run: Date.now(),
+        citizens: citizens.length,
+        zones: ZONES.length,
+        cycle_seconds: CYCLE,
+        events_fired: Object.keys(fired).length,
+        sentinel: SENT,
+        canon_keys_seen: canonCount
+      }));
+    } catch(e){ console.warn('[ledger] save failed', e); }
+  }
+
+  saveLedger(false);
+  renderManifest();
+
+  // ---- main loop ----
+  function loop(){
+    requestAnimationFrame(loop);
+    const tNow = (performance.now()-start)/1000;
+    const cycleT = tNow % CYCLE;
+    // 06:00 -> 22:00 mapped over CYCLE seconds
+    const h = 6 + (cycleT/CYCLE)*16;
+    const phase = phaseFor(h);
+
+    // sky
+    const sc = skyAt(h);
+    bgColor.copy(sc);
+    scene.fog.color.copy(sc);
+    scene.fog.density = h<8 ? 0.022 : (h>20 ? 0.018 : 0.008);
+
+    // sun
+    const sunArc = (h-6)/16;
+    sun.intensity = (h>6 && h<19) ? 0.35 + 0.85*Math.sin(sunArc*Math.PI) : 0.05;
+    sun.position.set(Math.cos(sunArc*Math.PI)*30,
+                     Math.max(8, 30*Math.sin(sunArc*Math.PI)),
+                     20);
+    sun.color.setHex(h<8 || h>17 ? 0xffb88a : 0xffeec8);
+    fillL.intensity = (h<7 || h>18) ? 1.0 : 0.2;
+    amb.intensity = 0.3 + 0.4*Math.sin(sunArc*Math.PI);
+    altarL.intensity = (h>=14 && h<15.5) ? 1.2 : ((h<7||h>18) ? 0.6 : 0);
+
+    // events
+    for(let i=0;i<EVENTS.length;i++){
+      if(h >= EVENTS[i].h && !fired[i]){
+        fired[i] = true;
+        $ev.textContent = EVENTS[i].t;
+        pushFeed('<span class="k">⛩</span> '+EVENTS[i].t);
+        if(bc) try{bc.postMessage({city:CITY_ID,type:'event',ev:EVENTS[i].t,h:h});}catch(e){}
+      }
+    }
+
+    // wedding
+    if(h>=14 && h<15.5){
+      if(!weddingG.visible){
+        weddingG.visible = true;
+        pushFeed('<span class="p">♡</span> spirit-realm pair gathered: bride-shi & groom-keth');
+      }
+    } else if(weddingG.visible){
+      weddingG.visible = false;
+    }
+    if(weddingG.visible){
+      bride.position.x = -0.5 + Math.sin(tNow*1.2)*0.05;
+      groom.position.x =  0.5 + Math.cos(tNow*1.2)*0.05;
+      ribbonG.rotation.y = Math.sin(tNow*0.4)*0.05;
+    }
+
+    // multiverse portal at 5min
+    if(tNow > 300 && !portalShown){
+      portalShown = true;
+      portalG.visible = true;
+      $msg.innerHTML = 'MULTIVERSE PORTAL OPENED — <span class="v">cross-canon convergence</span> — Shrine-Mountain joins the lattice';
+      pushFeed('<span class="v">⚛</span> multiverse portal opened — cross-canon convergence');
+      if(bc) try{bc.postMessage({city:CITY_ID,type:'portal',t:Date.now()});}catch(e){}
+    }
+    if(portalG.visible){
+      portalG.rotation.y += 0.012;
+      portalRing.material.emissiveIntensity = 1.2 + Math.sin(tNow*3)*0.4;
+      portalDisk.material.opacity = 0.55 + 0.2*Math.sin(tNow*2);
+    }
+
+    updateKoi();
+    updateParticles(tNow, h);
+    const awake = updateCitizens(tNow, h);
+
+    // periodic citizen flavor
+    if(tNow - lastFeedT > 4){
+      lastFeedT = tNow;
+      const c = citizens[Math.floor(rand()*citizens.length)];
+      const verbs = ['tends','sweeps','walks','rests at','folds at','bows at','rings at','watches'];
+      const v = verbs[Math.floor(rand()*verbs.length)];
+      const z = ZONES[c.zone].name;
+      pushFeed('<span class="dim">'+fmt(h)+'</span> '+c.name+' '+v+' '+z);
+    }
+
+    // camera switching every ~5.5s
+    camTime += 1/60;
+    if(camTime > 5.5){
+      camTime = 0;
+      // contextual selection: prefer wedding cams during wedding, portal cam after portal
+      if(h>=14 && h<15.5 && rand()<0.5){
+        camIdx = 33 + Math.floor(rand()*2);
+      } else if(portalShown && rand()<0.18){
+        camIdx = 32;
+      } else {
+        camIdx = (camIdx+1+Math.floor(rand()*2))%cams.length;
+      }
+    }
+    const cam = cams[camIdx];
+    camera.position.lerp(new THREE.Vector3(cam.p[0],cam.p[1],cam.p[2]), 0.04);
+    const lookT = new THREE.Vector3(cam.l[0],cam.l[1],cam.l[2]);
+    camera.lookAt(lookT);
+    camera.position.x += Math.sin(tNow*0.18)*0.04;
+    camera.position.y += Math.cos(tNow*0.22)*0.02;
+
+    // HUD
+    $t.textContent = fmt(h);
+    $phase.textContent = phase;
+    $zn.textContent = ZONES[Math.floor((tNow*0.2)%6)].name;
+    $cn.textContent = awake;
+    $ci.textContent = String(camIdx+1).padStart(2,'0');
+    $cnm.textContent = cam.n;
+    for(let i=0;i<6;i++){
+      const e = document.getElementById('z'+i);
+      if(e) e.classList.toggle('on', i === Math.floor((tNow*0.2)%6));
+    }
+
+    // reseed every cycle
+    if(cycleT < 0.05 && tNow > 1){
+      for(const k in fired) delete fired[k];
+      reseed(0x1a2b3c4d ^ Math.floor(tNow));
+      pushFeed('<span class="m">↻</span> day-cycle reseed — dawn returns');
+    }
+
+    // R25 COMPLETE flag — set near end of cycle
+    if(!completeEmitted && tNow > CYCLE*0.95){
+      completeEmitted = true;
+      saveLedger(true);
+      $msg.innerHTML = '<span class="k">★ BRIMSWORTH WORLDS COMPLETE</span>: 12 living cities acknowledged. brimsworth_worlds_v1.complete:true';
+      pushFeed('<span class="k">★</span> BRIMSWORTH WORLDS COMPLETE — 12 living cities acknowledged');
+      if(bc) try{bc.postMessage({city:CITY_ID,type:'WORLDS_COMPLETE',t:Date.now(),cities:12,round:ROUND});}catch(e){}
+      renderManifest();
+    }
+
+    // refresh manifest occasionally
+    if(Math.floor(tNow*2) % 20 === 0) renderManifest();
+
+    renderer.render(scene, camera);
+  }
+
+  loop();
+
+  addEventListener('beforeunload',()=>{ if(bc) try{bc.close();}catch(e){} });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FDM Printer Simulator — learnwithkody</title>
+<style>
+  :root {
+    --bg-0: #0a0d12;
+    --bg-1: #11161e;
+    --panel: rgba(18, 24, 33, 0.86);
+    --panel-edge: rgba(255, 255, 255, 0.08);
+    --ink: #d8e3ee;
+    --ink-dim: #8593a6;
+    --accent: #ff8a3c;
+    --accent-2: #4ec9ff;
+    --good: #6ee7a4;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: radial-gradient(circle at 30% 10%, #1a2230 0%, var(--bg-0) 60%);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+  #canvas-host {
+    position: fixed; inset: 0;
+    z-index: 0;
+  }
+  #canvas-host canvas { display: block; }
+
+  .panel {
+    position: fixed;
+    background: var(--panel);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-edge);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04);
+    z-index: 10;
+  }
+
+  #panel-title {
+    top: 14px; left: 14px;
+    max-width: 280px;
+  }
+  #panel-title h1 {
+    margin: 0 0 4px 0;
+    font-size: 16px;
+    letter-spacing: 0.5px;
+    color: var(--ink);
+  }
+  #panel-title h1 span { color: var(--accent); }
+  #panel-title p {
+    margin: 0;
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.4;
+  }
+
+  #panel-controls {
+    top: 14px; right: 14px;
+    width: 280px;
+  }
+  #panel-controls h2 {
+    margin: 0 0 10px 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--ink-dim);
+  }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .row.col { flex-direction: column; align-items: stretch; gap: 4px; }
+  .row label {
+    font-size: 11px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .row .val {
+    font-size: 11px;
+    color: var(--accent-2);
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  button, select, input[type="file"]::-webkit-file-upload-button {
+    font-family: inherit;
+    background: rgba(255,255,255,0.04);
+    color: var(--ink);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  }
+  button:hover, select:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
+  button:active { transform: translateY(1px); }
+  button.primary {
+    background: linear-gradient(180deg, #ff8a3c, #e36a1c);
+    border-color: #ff8a3c;
+    color: #1a0e05;
+    font-weight: 600;
+  }
+  button.primary:hover { background: linear-gradient(180deg, #ffa05c, #ff7a2c); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  select { width: 100%; }
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(255,138,60,0.5);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+  input[type="color"] {
+    width: 36px; height: 28px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 0;
+  }
+  input[type="checkbox"] {
+    accent-color: var(--accent);
+  }
+  input[type="file"] {
+    font-size: 11px;
+    color: var(--ink-dim);
+    width: 100%;
+  }
+
+  #panel-stats {
+    bottom: 14px; left: 14px;
+    min-width: 320px;
+  }
+  #stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 18px;
+    font-size: 12px;
+  }
+  #stats-grid .k { color: var(--ink-dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.8px; }
+  #stats-grid .v { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+  #stats-grid .v.accent { color: var(--accent); }
+  #stats-grid .v.good { color: var(--good); }
+
+  #progress-wrap {
+    margin-top: 10px;
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  #progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #ff8a3c, #ffd07a);
+    box-shadow: 0 0 12px rgba(255,138,60,0.6);
+    transition: width 0.2s linear;
+  }
+
+  #panel-help {
+    bottom: 14px; right: 14px;
+    max-width: 240px;
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+  }
+  #panel-help strong { color: var(--ink); }
+
+  #loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-0);
+    z-index: 100;
+    color: var(--ink-dim);
+    font-size: 13px;
+    letter-spacing: 1px;
+    transition: opacity 0.5s;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+
+  .led {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #444;
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+    margin-right: 6px;
+    transition: background 0.2s, box-shadow 0.2s;
+    vertical-align: middle;
+  }
+  .led.active { background: var(--good); box-shadow: 0 0 8px var(--good); }
+  .led.warn { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+</style>
+</head>
+<body>
+  <div id="canvas-host"></div>
+
+  <div id="loading">INITIALIZING PRINTER…</div>
+
+  <div id="panel-title" class="panel">
+    <h1>FDM PRINTER <span>SIM</span></h1>
+    <p>Slice. Stream G-code. Watch plastic become a thing. Drag to orbit, scroll to zoom.</p>
+  </div>
+
+  <div id="panel-controls" class="panel">
+    <h2>SLICER & PRINT</h2>
+
+    <div class="row col">
+      <label>MODEL</label>
+      <select id="model-select">
+        <option value="cube">Calibration Cube</option>
+        <option value="pyramid">Pyramid</option>
+        <option value="sphere">Low-poly Sphere</option>
+        <option value="torus">Torus</option>
+        <option value="house">House Silhouette</option>
+        <option value="benchy">Test Cube w/ Holes</option>
+      </select>
+    </div>
+
+    <div class="row col">
+      <label>LOAD STL (optional)</label>
+      <input id="stl-input" type="file" accept=".stl" />
+    </div>
+
+    <div class="row">
+      <button id="btn-start" class="primary" style="flex:1">Start Print</button>
+      <button id="btn-pause" disabled style="flex:1">Pause</button>
+    </div>
+
+    <div class="row">
+      <label>SPEED</label>
+      <input id="speed-slider" type="range" min="1" max="50" value="8" step="1" />
+      <span class="val" id="speed-val">8x</span>
+    </div>
+
+    <div class="row">
+      <label>FILAMENT</label>
+      <input id="color-picker" type="color" value="#ff7a3c" />
+      <span class="val" id="color-val">#ff7a3c</span>
+    </div>
+
+    <div class="row">
+      <label><input type="checkbox" id="cross-section" /> Cross-section view</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="audio-toggle" checked /> Audio</label>
+    </div>
+  </div>
+
+  <div id="panel-stats" class="panel">
+    <div id="stats-grid">
+      <div class="k"><span id="led-status" class="led"></span>STATUS</div><div class="v" id="v-status">IDLE</div>
+      <div class="k">LAYER</div><div class="v accent" id="v-layer">0 / 0</div>
+      <div class="k">Z HEIGHT</div><div class="v" id="v-z">0.00 mm</div>
+      <div class="k">FEEDRATE</div><div class="v" id="v-feed">0 mm/s</div>
+      <div class="k">EXTRUDED</div><div class="v" id="v-ext">0.00 m</div>
+      <div class="k">ETA</div><div class="v good" id="v-eta">--:--</div>
+    </div>
+    <div id="progress-wrap"><div id="progress-bar"></div></div>
+  </div>
+
+  <div id="panel-help" class="panel">
+    <strong>Controls:</strong> Drag to orbit, scroll to zoom, right-drag to pan.<br>
+    <strong>Tip:</strong> Crank speed to 50x to watch a print finish in seconds.
+  </div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// =====================================================================
+// CONFIG
+// =====================================================================
+const BED_W = 220;       // mm — print bed width  (X)
+const BED_D = 220;       // mm — print bed depth  (Y)
+const BUILD_H = 250;     // mm — build height     (Z)
+const LAYER_H = 0.2;     // mm — slice height
+const INFILL_SPACING = 4; // mm — distance between infill lines (≈20% density)
+const NOZZLE_OFFSET = 1.5; // mm — distance from printhead body to nozzle tip
+const BEAD_RADIUS = 0.2; // mm — radius of deposited plastic bead
+
+// =====================================================================
+// THREE.JS SCENE
+// =====================================================================
+const host = document.getElementById('canvas-host');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x0a0d12, 1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+host.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0a0d12, 600, 1400);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 3000);
+camera.position.set(380, 280, 380);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.target.set(0, BUILD_H * 0.18, 0);
+controls.maxDistance = 1200;
+controls.minDistance = 120;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+// --- Lighting ---
+scene.add(new THREE.AmbientLight(0xb8c8dc, 0.45));
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+keyLight.position.set(300, 400, 250);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.left = -300;
+keyLight.shadow.camera.right = 300;
+keyLight.shadow.camera.top = 300;
+keyLight.shadow.camera.bottom = -300;
+keyLight.shadow.camera.near = 50;
+keyLight.shadow.camera.far = 1200;
+keyLight.shadow.bias = -0.0005;
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0x6699cc, 0.3);
+fillLight.position.set(-200, 200, -150);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffaa66, 0.25);
+rimLight.position.set(0, 100, -300);
+scene.add(rimLight);
+
+// --- Ground / floor under printer ---
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x1a1f28, roughness: 0.95, metalness: 0.05
+});
+const floor = new THREE.Mesh(new THREE.CircleGeometry(900, 64), floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -1;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// faint grid
+const grid = new THREE.GridHelper(1600, 32, 0x223040, 0x161c24);
+grid.position.y = 0;
+scene.add(grid);
+
+// =====================================================================
+// PRINTER CHASSIS  (Prusa-like)
+// =====================================================================
+const printer = new THREE.Group();
+scene.add(printer);
+
+// --- shared materials ---
+const aluMat = new THREE.MeshStandardMaterial({ color: 0x222831, roughness: 0.55, metalness: 0.7 });
+const aluTrim = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.45, metalness: 0.2 });
+const plasticMat = new THREE.MeshStandardMaterial({ color: 0x111418, roughness: 0.7, metalness: 0.1 });
+const steelMat = new THREE.MeshStandardMaterial({ color: 0xa8b0bc, roughness: 0.25, metalness: 0.95 });
+const silverMat = new THREE.MeshStandardMaterial({ color: 0xc8ced6, roughness: 0.4, metalness: 0.85 });
+
+// helper: aluminum 2020 extrusion segment
+function alu(len, axis = 'x') {
+  const w = 20;
+  const g = new THREE.BoxGeometry(
+    axis === 'x' ? len : w,
+    axis === 'y' ? len : w,
+    axis === 'z' ? len : w
+  );
+  const m = new THREE.Mesh(g, aluMat);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+// frame footprint a bit larger than bed
+const FRAME_W = BED_W + 70;
+const FRAME_D = BED_D + 80;
+const FRAME_H = BUILD_H + 60;
+
+// base plate (Y-frame slot for bed motion)
+const baseGroup = new THREE.Group();
+const basePlate = new THREE.Mesh(
+  new THREE.BoxGeometry(FRAME_W, 8, FRAME_D),
+  new THREE.MeshStandardMaterial({ color: 0x1a1f26, roughness: 0.6, metalness: 0.5 })
+);
+basePlate.position.y = -4;
+basePlate.castShadow = true; basePlate.receiveShadow = true;
+baseGroup.add(basePlate);
+
+// rubber feet
+for (const [x, z] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+  const foot = new THREE.Mesh(
+    new THREE.CylinderGeometry(10, 12, 8, 24),
+    new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 0.95 })
+  );
+  foot.position.set(x * (FRAME_W/2 - 18), -10, z * (FRAME_D/2 - 18));
+  foot.castShadow = true;
+  baseGroup.add(foot);
+}
+
+// horizontal base extrusions (front/back/left/right)
+const baseExtrusions = [
+  { len: FRAME_W, axis: 'x', x: 0, y: 8, z:  FRAME_D/2 - 10 },
+  { len: FRAME_W, axis: 'x', x: 0, y: 8, z: -FRAME_D/2 + 10 },
+  { len: FRAME_D - 20, axis: 'z', x:  FRAME_W/2 - 10, y: 8, z: 0 },
+  { len: FRAME_D - 20, axis: 'z', x: -FRAME_W/2 + 10, y: 8, z: 0 }
+];
+for (const e of baseExtrusions) {
+  const m = alu(e.len, e.axis);
+  m.position.set(e.x, e.y, e.z);
+  baseGroup.add(m);
+}
+printer.add(baseGroup);
+
+// vertical extrusions (4 corners)
+for (const [x, z] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+  const m = alu(FRAME_H, 'y');
+  m.position.set(x * (FRAME_W/2 - 10), FRAME_H/2 + 18, z * (FRAME_D/2 - 10));
+  printer.add(m);
+}
+
+// top frame
+const topY = FRAME_H + 18;
+const topExtrusions = [
+  { len: FRAME_W, axis: 'x', x: 0, y: topY, z:  FRAME_D/2 - 10 },
+  { len: FRAME_W, axis: 'x', x: 0, y: topY, z: -FRAME_D/2 + 10 },
+  { len: FRAME_D - 20, axis: 'z', x:  FRAME_W/2 - 10, y: topY, z: 0 },
+  { len: FRAME_D - 20, axis: 'z', x: -FRAME_W/2 + 10, y: topY, z: 0 }
+];
+for (const e of topExtrusions) {
+  const m = alu(e.len, e.axis);
+  m.position.set(e.x, e.y, e.z);
+  printer.add(m);
+}
+
+// --- X gantry rails (horizontal, span across at variable Z height) ---
+const xGantry = new THREE.Group();
+printer.add(xGantry);
+
+const railLen = FRAME_W - 30;
+const xRail1 = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, railLen, 18), steelMat);
+xRail1.rotation.z = Math.PI / 2;
+xRail1.position.set(0, 0, 18);
+xRail1.castShadow = true;
+xGantry.add(xRail1);
+const xRail2 = xRail1.clone();
+xRail2.position.set(0, 0, -18);
+xGantry.add(xRail2);
+
+// X-axis stepper (NEMA17) on left
+const stepperGeom = new THREE.BoxGeometry(42, 42, 42);
+const xStepper = new THREE.Mesh(stepperGeom, plasticMat);
+xStepper.position.set(-FRAME_W/2 + 12, 0, 0);
+xStepper.castShadow = true;
+xGantry.add(xStepper);
+const xPulley = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 6, 24), silverMat);
+xPulley.rotation.x = Math.PI / 2;
+xPulley.position.set(-FRAME_W/2 + 12, 0, 24);
+xGantry.add(xPulley);
+
+// X-axis idler on right
+const xIdler = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 6, 24), silverMat);
+xIdler.rotation.x = Math.PI / 2;
+xIdler.position.set(FRAME_W/2 - 14, 0, 24);
+xGantry.add(xIdler);
+
+// belt visualization on X
+const beltGeo = new THREE.BoxGeometry(FRAME_W - 32, 1.2, 0.4);
+const beltMat = new THREE.MeshStandardMaterial({ color: 0x101418, roughness: 0.95 });
+const xBelt = new THREE.Mesh(beltGeo, beltMat);
+xBelt.position.set(0, 0, 24);
+xGantry.add(xBelt);
+
+// Z lead screws (vertical, two)
+const leadScrewGeo = new THREE.CylinderGeometry(2, 2, BUILD_H + 20, 14);
+const leadScrewMat = new THREE.MeshStandardMaterial({ color: 0xb8bdc4, roughness: 0.3, metalness: 0.95 });
+const lz1 = new THREE.Mesh(leadScrewGeo, leadScrewMat);
+lz1.position.set(-FRAME_W/2 + 30, BUILD_H/2 + 20, 0);
+printer.add(lz1);
+const lz2 = lz1.clone();
+lz2.position.x = FRAME_W/2 - 30;
+printer.add(lz2);
+
+// Z stepper motors at base
+for (const sx of [-FRAME_W/2 + 30, FRAME_W/2 - 30]) {
+  const zs = new THREE.Mesh(stepperGeom, plasticMat);
+  zs.position.set(sx, 28, 0);
+  zs.castShadow = true;
+  printer.add(zs);
+}
+
+// --- Heated Bed (the part that moves in Y) ---
+const bedGroup = new THREE.Group();
+printer.add(bedGroup);
+
+// bed plate (aluminum heater)
+const bedAlu = new THREE.Mesh(
+  new THREE.BoxGeometry(BED_W + 10, 4, BED_D + 10),
+  new THREE.MeshStandardMaterial({ color: 0xd9c45a, roughness: 0.6, metalness: 0.4 })
+);
+bedAlu.position.y = 14;
+bedAlu.castShadow = true;
+bedGroup.add(bedAlu);
+
+// PEI sheet (textured)
+const peiCanvas = document.createElement('canvas');
+peiCanvas.width = peiCanvas.height = 512;
+{
+  const c = peiCanvas.getContext('2d');
+  // base PEI yellow-orange
+  c.fillStyle = '#cf8a3a';
+  c.fillRect(0,0,512,512);
+  // subtle speckle texture
+  for (let i = 0; i < 8000; i++) {
+    const x = Math.random() * 512, y = Math.random() * 512;
+    const a = Math.random() * 0.18;
+    c.fillStyle = `rgba(${Math.random()<0.5?0:255},${Math.random()<0.5?0:200},${Math.random()<0.5?0:120},${a})`;
+    c.fillRect(x, y, 1 + Math.random()*1.5, 1 + Math.random()*1.5);
+  }
+  // faint grid lines (build plate markings)
+  c.strokeStyle = 'rgba(0,0,0,0.07)';
+  c.lineWidth = 1;
+  for (let i = 0; i <= 512; i += 32) {
+    c.beginPath(); c.moveTo(i, 0); c.lineTo(i, 512); c.stroke();
+    c.beginPath(); c.moveTo(0, i); c.lineTo(512, i); c.stroke();
+  }
+}
+const peiTex = new THREE.CanvasTexture(peiCanvas);
+peiTex.wrapS = peiTex.wrapT = THREE.RepeatWrapping;
+peiTex.anisotropy = 8;
+
+const bedPei = new THREE.Mesh(
+  new THREE.BoxGeometry(BED_W, 1, BED_D),
+  new THREE.MeshStandardMaterial({ map: peiTex, roughness: 0.65, metalness: 0.05 })
+);
+bedPei.position.y = 16.5;
+bedPei.receiveShadow = true;
+bedGroup.add(bedPei);
+
+// bed support / Y carriage underneath
+const bedCarriage = new THREE.Mesh(
+  new THREE.BoxGeometry(BED_W + 30, 6, BED_D + 30),
+  new THREE.MeshStandardMaterial({ color: 0x16191f, roughness: 0.7 })
+);
+bedCarriage.position.y = 8;
+bedGroup.add(bedCarriage);
+
+// =====================================================================
+// PRINTHEAD
+// =====================================================================
+const head = new THREE.Group();
+xGantry.add(head);
+
+// X carriage block
+const carriage = new THREE.Mesh(
+  new THREE.BoxGeometry(50, 36, 50),
+  new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.7 })
+);
+carriage.castShadow = true;
+head.add(carriage);
+
+// stepper for extruder (top)
+const extruderStepper = new THREE.Mesh(stepperGeom, plasticMat);
+extruderStepper.position.set(0, 24, -8);
+extruderStepper.castShadow = true;
+head.add(extruderStepper);
+
+// hot end heat block (orange-ish)
+const heatBlockMat = new THREE.MeshStandardMaterial({
+  color: 0x222633, roughness: 0.6, metalness: 0.6,
+  emissive: 0xff4400, emissiveIntensity: 0.0
+});
+const heatBlock = new THREE.Mesh(new THREE.BoxGeometry(20, 12, 16), heatBlockMat);
+heatBlock.position.set(0, -22, 8);
+heatBlock.castShadow = true;
+head.add(heatBlock);
+
+// nozzle (cone pointing down)
+const nozzleMat = new THREE.MeshStandardMaterial({
+  color: 0xa28e60, roughness: 0.4, metalness: 0.85,
+  emissive: 0xff3300, emissiveIntensity: 0.0
+});
+const nozzle = new THREE.Mesh(new THREE.ConeGeometry(3, 8, 16), nozzleMat);
+nozzle.position.set(0, -32, 8);
+head.add(nozzle);
+
+// heatsink (cylinder fins)
+const heatsink = new THREE.Mesh(
+  new THREE.CylinderGeometry(6, 6, 18, 16),
+  new THREE.MeshStandardMaterial({ color: 0x9098a4, roughness: 0.4, metalness: 0.9 })
+);
+heatsink.position.set(0, -8, 8);
+head.add(heatsink);
+
+// part-cooling fan (small box)
+const fan = new THREE.Mesh(
+  new THREE.BoxGeometry(28, 28, 8),
+  new THREE.MeshStandardMaterial({ color: 0x0d0f12, roughness: 0.8 })
+);
+fan.position.set(0, -12, -22);
+head.add(fan);
+
+// hot-end glow point light
+const headLight = new THREE.PointLight(0xff5500, 0, 60, 2.0);
+headLight.position.set(0, -30, 8);
+head.add(headLight);
+
+// initial head position (centered on bed at z=0)
+head.position.set(0, 60, 0);  // y = current Z height of nozzle tip relative to bed
+let headWorldX = 0; // mm in bed coords
+let headWorldY = 0; // mm in bed coords (will move bed instead)
+let headZ = 60;     // mm absolute height of nozzle tip from bed surface
+
+// =====================================================================
+// PRINTED OBJECT GROUP  (sits on bed, rises with layers)
+// =====================================================================
+const printedGroup = new THREE.Group();
+bedGroup.add(printedGroup);
+printedGroup.position.y = 17;  // top surface of PEI
+
+// =====================================================================
+// MODEL DEFINITIONS  -> as triangle meshes for slicing
+// =====================================================================
+function buildModelMesh(kind) {
+  let geom;
+  switch (kind) {
+    case 'cube':
+      geom = new THREE.BoxGeometry(40, 40, 40);
+      break;
+    case 'pyramid':
+      geom = new THREE.ConeGeometry(28, 50, 4);
+      break;
+    case 'sphere':
+      geom = new THREE.SphereGeometry(25, 12, 8);
+      break;
+    case 'torus':
+      geom = new THREE.TorusGeometry(22, 8, 8, 24);
+      // lay flat
+      geom.rotateX(Math.PI / 2);
+      break;
+    case 'house': {
+      // cube body + pyramid roof using merged buffer
+      const body = new THREE.BoxGeometry(36, 30, 36);
+      const roof = new THREE.ConeGeometry(28, 22, 4);
+      roof.translate(0, 26, 0);
+      roof.rotateY(Math.PI / 4);
+      geom = mergeGeoms([body, roof]);
+      break;
+    }
+    case 'benchy': {
+      // calibration cube with two cylindrical holes -> approximated as outer cube
+      // we'll add holes during slicing by carving polygons
+      geom = new THREE.BoxGeometry(40, 40, 40);
+      geom.userData = { holes: [{x:0, y:0, r: 8}] };  // central hole
+      break;
+    }
+    default:
+      geom = new THREE.BoxGeometry(40, 40, 40);
+  }
+  // Center on origin XZ, sit on bed (y from 0 up)
+  geom.computeBoundingBox();
+  const bb = geom.boundingBox;
+  const cx = (bb.min.x + bb.max.x) / 2;
+  const cz = (bb.min.z + bb.max.z) / 2;
+  geom.translate(-cx, -bb.min.y, -cz);
+  return geom;
+}
+
+function mergeGeoms(geoms) {
+  // simple manual merge: collect indexed positions
+  const merged = new THREE.BufferGeometry();
+  let totalVerts = 0;
+  let totalIdx = 0;
+  for (const g of geoms) {
+    const gIdx = g.getIndex();
+    totalIdx += gIdx ? gIdx.count : g.attributes.position.count;
+    totalVerts += g.attributes.position.count;
+  }
+  const positions = new Float32Array(totalVerts * 3);
+  const indices = new Uint32Array(totalIdx);
+  let pOff = 0, iOff = 0, vBase = 0;
+  for (const g of geoms) {
+    const pos = g.attributes.position.array;
+    positions.set(pos, pOff);
+    pOff += pos.length;
+    const idx = g.getIndex();
+    if (idx) {
+      const arr = idx.array;
+      for (let i = 0; i < arr.length; i++) indices[iOff++] = arr[i] + vBase;
+    } else {
+      // non-indexed: build index from sequential triangles
+      const count = g.attributes.position.count;
+      for (let i = 0; i < count; i++) indices[iOff++] = vBase + i;
+    }
+    vBase += g.attributes.position.count;
+  }
+  merged.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  merged.setIndex(new THREE.BufferAttribute(indices, 1));
+  merged.computeVertexNormals();
+  return merged;
+}
+
+// =====================================================================
+// SLICER  — produces { z, polylines[] } per layer
+// =====================================================================
+function sliceMesh(geometry, layerHeight, infillSpacing) {
+  geometry.computeBoundingBox();
+  const bb = geometry.boundingBox;
+  const minZ = bb.min.y + layerHeight * 0.5;  // first layer slightly above z=0
+  const maxZ = bb.max.y;
+
+  // gather triangles in mesh local space, with Y as up = print Z axis
+  const posAttr = geometry.attributes.position;
+  const idx = geometry.getIndex();
+  const tris = [];
+  if (idx) {
+    const ia = idx.array;
+    for (let i = 0; i < ia.length; i += 3) {
+      tris.push([ia[i], ia[i+1], ia[i+2]]);
+    }
+  } else {
+    for (let i = 0; i < posAttr.count; i += 3) tris.push([i, i+1, i+2]);
+  }
+
+  const layers = [];
+  const pa = posAttr.array;
+
+  // For each layer: walk all triangles, find segments where they cross the plane Y=z
+  for (let z = minZ; z <= maxZ; z += layerHeight) {
+    const segs = [];
+    for (const t of tris) {
+      const v0 = [pa[t[0]*3], pa[t[0]*3+1], pa[t[0]*3+2]];
+      const v1 = [pa[t[1]*3], pa[t[1]*3+1], pa[t[1]*3+2]];
+      const v2 = [pa[t[2]*3], pa[t[2]*3+1], pa[t[2]*3+2]];
+      // intersect with plane y = z
+      const seg = triPlaneIntersect(v0, v1, v2, z);
+      if (seg) segs.push(seg);
+    }
+    if (segs.length === 0) continue;
+
+    // Build polygons (loops) by chaining segments with shared endpoints
+    const loops = chainSegments(segs);
+
+    // Holes? carve them
+    const holes = (geometry.userData && geometry.userData.holes) || [];
+
+    // Generate infill (rectilinear) clipped to loops
+    const infillAngle = ((z / layerHeight) | 0) % 2 === 0 ? 0 : Math.PI / 2;
+    const infillLines = generateInfill(loops, holes, infillSpacing, infillAngle, bb);
+
+    // Build polyline list: hole subtraction by adding hole circles as inner perimeters
+    const polylines = [];
+    for (const loop of loops) polylines.push(loop);
+    for (const h of holes) {
+      const N = 24;
+      const ring = [];
+      for (let i = 0; i <= N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        ring.push({ x: h.x + Math.cos(a) * h.r, y: h.y + Math.sin(a) * h.r });
+      }
+      polylines.push(ring);
+    }
+    for (const line of infillLines) polylines.push(line);
+
+    layers.push({ z, polylines, perimeterCount: loops.length + holes.length });
+  }
+  return layers;
+}
+
+function triPlaneIntersect(v0, v1, v2, planeY) {
+  // Returns null or [{x,y}, {x,y}] segment in XZ plane (we'll treat printer X = mesh X, printer Y = mesh Z)
+  const verts = [v0, v1, v2];
+  const above = verts.map(v => v[1] > planeY);
+  const below = verts.map(v => v[1] < planeY);
+  const on = verts.map(v => v[1] === planeY);
+  // skip if all same side
+  if (above[0] && above[1] && above[2]) return null;
+  if (below[0] && below[1] && below[2]) return null;
+
+  // collect intersection points of edges that cross the plane
+  const pts = [];
+  const edges = [[0,1],[1,2],[2,0]];
+  for (const [a, b] of edges) {
+    const va = verts[a], vb = verts[b];
+    const ya = va[1], yb = vb[1];
+    if ((ya - planeY) * (yb - planeY) < 0) {
+      const t = (planeY - ya) / (yb - ya);
+      pts.push({
+        x: va[0] + (vb[0] - va[0]) * t,
+        y: va[2] + (vb[2] - va[2]) * t  // mesh Z -> printer Y (bed plane)
+      });
+    } else if (ya === planeY) {
+      pts.push({ x: va[0], y: va[2] });
+    }
+  }
+  if (pts.length < 2) return null;
+  // dedupe and take first two distinct
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i];
+    if (Math.hypot(p.x - out[0].x, p.y - out[0].y) > 1e-4) {
+      out.push(p);
+      break;
+    }
+  }
+  if (out.length < 2) return null;
+  return out;
+}
+
+function chainSegments(segs) {
+  // Build loops: greedy chaining by endpoint proximity
+  const eps = 0.1;
+  const remaining = segs.map(s => [{...s[0]}, {...s[1]}]);
+  const loops = [];
+  while (remaining.length > 0) {
+    const loop = [];
+    let cur = remaining.shift();
+    loop.push({...cur[0]});
+    loop.push({...cur[1]});
+    let extending = true;
+    let safety = 5000;
+    while (extending && safety-- > 0) {
+      extending = false;
+      const tail = loop[loop.length - 1];
+      // find segment continuing from tail
+      for (let i = 0; i < remaining.length; i++) {
+        const s = remaining[i];
+        if (Math.hypot(s[0].x - tail.x, s[0].y - tail.y) < eps) {
+          loop.push({...s[1]});
+          remaining.splice(i, 1);
+          extending = true;
+          break;
+        } else if (Math.hypot(s[1].x - tail.x, s[1].y - tail.y) < eps) {
+          loop.push({...s[0]});
+          remaining.splice(i, 1);
+          extending = true;
+          break;
+        }
+      }
+      // close loop?
+      const head = loop[0];
+      const t2 = loop[loop.length - 1];
+      if (Math.hypot(head.x - t2.x, head.y - t2.y) < eps && loop.length > 2) {
+        break;
+      }
+    }
+    if (loop.length >= 3) loops.push(loop);
+  }
+  return loops;
+}
+
+function generateInfill(loops, holes, spacing, angle, bb) {
+  // rectilinear infill: parallel lines clipped to loops minus holes
+  if (loops.length === 0) return [];
+  const minX = bb.min.x, maxX = bb.max.x;
+  const minY = bb.min.z, maxY = bb.max.z;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  const dx = Math.cos(angle), dy = Math.sin(angle);   // line direction
+  const nx = -dy, ny = dx;                             // perpendicular
+
+  // span along normal
+  const corners = [
+    [minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]
+  ];
+  let minN = Infinity, maxN = -Infinity;
+  for (const [x, y] of corners) {
+    const n = (x - cx) * nx + (y - cy) * ny;
+    if (n < minN) minN = n;
+    if (n > maxN) maxN = n;
+  }
+
+  const lines = [];
+  for (let n = minN; n <= maxN; n += spacing) {
+    // line parametric: P = (cx, cy) + n * (nx, ny) + t * (dx, dy)
+    // Find intersections with each loop edge. Collect t values, sort, draw between alternating pairs.
+    const ts = [];
+    for (const loop of loops) {
+      for (let i = 0; i < loop.length - 1; i++) {
+        const a = loop[i], b = loop[i+1];
+        const t = lineSegIntersectParam(cx + n*nx, cy + n*ny, dx, dy, a.x, a.y, b.x, b.y);
+        if (t !== null) ts.push(t);
+      }
+    }
+    ts.sort((a, b) => a - b);
+    // draw inside spans only (assumes simple polygon; OK for our presets)
+    for (let i = 0; i + 1 < ts.length; i += 2) {
+      const t0 = ts[i], t1 = ts[i+1];
+      if (t1 - t0 < 0.5) continue;
+      const x0 = cx + n*nx + t0*dx, y0 = cy + n*ny + t0*dy;
+      const x1 = cx + n*nx + t1*dx, y1 = cy + n*ny + t1*dy;
+
+      // subtract hole intersections
+      let span = [{x:x0,y:y0},{x:x1,y:y1}];
+      for (const h of holes) {
+        span = clipHole(span, h);
+      }
+      if (span && span.length === 2) lines.push(span);
+    }
+  }
+  return lines;
+}
+
+function lineSegIntersectParam(px, py, dx, dy, ax, ay, bx, by) {
+  // line P + t*D, segment A->B. Solve. Return t if segment param u in [0,1], else null.
+  const ex = bx - ax, ey = by - ay;
+  const denom = dx * (-ey) - dy * (-ex);
+  if (Math.abs(denom) < 1e-9) return null;
+  const t = ((ax - px) * (-ey) - (ay - py) * (-ex)) / denom;
+  const u = (dx * (ay - py) - dy * (ax - px)) / denom;
+  if (u < 0 || u > 1) return null;
+  return t;
+}
+
+function clipHole(span, hole) {
+  // Trim line span where it enters circle hole; if fully inside, drop.
+  const [a, b] = span;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const fx = a.x - hole.x, fy = a.y - hole.y;
+  const aa = dx*dx + dy*dy;
+  const bb = 2 * (fx*dx + fy*dy);
+  const cc = fx*fx + fy*fy - hole.r*hole.r;
+  const disc = bb*bb - 4*aa*cc;
+  if (disc < 0) return span;  // no intersection
+  const sd = Math.sqrt(disc);
+  const t1 = (-bb - sd) / (2*aa);
+  const t2 = (-bb + sd) / (2*aa);
+  // segment inside circle for t in [t1, t2]
+  if (t2 <= 0 || t1 >= 1) return span;  // intersection outside segment
+  // For simplicity, just truncate to first piece
+  if (t1 > 0 && t2 < 1) {
+    // hole splits segment — keep the longer portion
+    const lenLeft = t1;
+    const lenRight = 1 - t2;
+    if (lenLeft >= lenRight) {
+      return [a, { x: a.x + dx * t1, y: a.y + dy * t1 }];
+    } else {
+      return [{ x: a.x + dx * t2, y: a.y + dy * t2 }, b];
+    }
+  } else if (t1 > 0) {
+    return [a, { x: a.x + dx * t1, y: a.y + dy * t1 }];
+  } else if (t2 < 1) {
+    return [{ x: a.x + dx * t2, y: a.y + dy * t2 }, b];
+  } else {
+    return null;  // fully inside hole
+  }
+}
+
+// =====================================================================
+// STL PARSER  (ASCII + binary)
+// =====================================================================
+function parseSTL(buffer) {
+  const view = new DataView(buffer);
+  // Detect ASCII vs binary: ASCII starts with "solid"
+  const head = new Uint8Array(buffer, 0, Math.min(80, buffer.byteLength));
+  let isAscii = true;
+  if (buffer.byteLength >= 84) {
+    const triCount = view.getUint32(80, true);
+    const expected = 84 + triCount * 50;
+    if (expected === buffer.byteLength) isAscii = false;
+  }
+  let posList = [];
+  if (isAscii) {
+    const text = new TextDecoder().decode(buffer);
+    const re = /vertex\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      posList.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+    }
+  } else {
+    const triCount = view.getUint32(80, true);
+    let off = 84;
+    for (let i = 0; i < triCount; i++) {
+      off += 12; // skip normal
+      for (let v = 0; v < 3; v++) {
+        posList.push(
+          view.getFloat32(off, true),
+          view.getFloat32(off + 4, true),
+          view.getFloat32(off + 8, true)
+        );
+        off += 12;
+      }
+      off += 2; // attribute byte count
+    }
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(posList), 3));
+  geom.computeVertexNormals();
+  // STL convention: Z up. We use Y up internally. Rotate -90 X.
+  geom.rotateX(-Math.PI / 2);
+  // Scale to fit roughly within 80mm box if huge
+  geom.computeBoundingBox();
+  const bb = geom.boundingBox;
+  const sizeX = bb.max.x - bb.min.x;
+  const sizeY = bb.max.y - bb.min.y;
+  const sizeZ = bb.max.z - bb.min.z;
+  const maxDim = Math.max(sizeX, sizeY, sizeZ);
+  if (maxDim > 80) {
+    const s = 80 / maxDim;
+    geom.scale(s, s, s);
+  }
+  geom.computeBoundingBox();
+  const bb2 = geom.boundingBox;
+  const cx = (bb2.min.x + bb2.max.x) / 2;
+  const cz = (bb2.min.z + bb2.max.z) / 2;
+  geom.translate(-cx, -bb2.min.y, -cz);
+  return geom;
+}
+
+// =====================================================================
+// PRINT JOB STATE & ANIMATION
+// =====================================================================
+const job = {
+  layers: [],
+  layerIdx: 0,
+  segIdx: 0,        // index into current layer's polylines (a polyline = sequence of points)
+  polyIdx: 0,       // index of current polyline within layer
+  pointIdx: 0,      // index of current target point within polyline
+  isPrinting: false,
+  isPaused: false,
+  done: false,
+  startTime: 0,
+  elapsed: 0,
+  speedMult: 8,
+  filamentColor: new THREE.Color(0xff7a3c),
+  // animated head pos in bed-local coords
+  posX: 0, posY: 0, posZ: 30,
+  // travel velocity tracking
+  velocity: 0,
+  isExtruding: false,
+  totalDistanceTraveled: 0,
+  totalExtruded: 0,        // mm of extruded path length
+  targetPosX: 0, targetPosY: 0, targetPosZ: 30,
+  // model bb used for placement
+  modelBB: null,
+};
+
+// Plastic deposit: we use line segments per polyline in a single buffered geometry per layer.
+// To keep it visually rich we render small thick tubes via TubeGeometry won't scale, so we use
+// LineSegments with thick custom material via wide LineMaterial-ish approach: simpler — accumulate cylinders per segment.
+// To keep it FAST we batch into instanced meshes per layer.
+const layerMeshes = []; // array of THREE.InstancedMesh per layer (each instance = one bead segment)
+const segCylGeo = new THREE.CylinderGeometry(BEAD_RADIUS, BEAD_RADIUS, 1, 6, 1, false);
+segCylGeo.translate(0, 0.5, 0); // pivot at base
+
+// Pool of mat clones keyed by hex
+const matCache = new Map();
+function getBeadMat(hex) {
+  if (matCache.has(hex)) return matCache.get(hex);
+  const m = new THREE.MeshStandardMaterial({
+    color: hex,
+    roughness: 0.55,
+    metalness: 0.05,
+    emissive: hex,
+    emissiveIntensity: 0.04
+  });
+  matCache.set(hex, m);
+  return m;
+}
+
+let currentLayerInstanced = null;
+let currentLayerInstanceIdx = 0;
+const MAX_INSTANCES_PER_LAYER = 4096;
+
+function startLayerMesh(z) {
+  const mat = getBeadMat(`#${job.filamentColor.getHexString()}`);
+  const im = new THREE.InstancedMesh(segCylGeo, mat, MAX_INSTANCES_PER_LAYER);
+  im.count = 0;
+  im.castShadow = true;
+  im.receiveShadow = true;
+  im.userData = { z };
+  printedGroup.add(im);
+  layerMeshes.push(im);
+  currentLayerInstanced = im;
+  currentLayerInstanceIdx = 0;
+}
+
+const _matrix = new THREE.Matrix4();
+const _quat = new THREE.Quaternion();
+const _scale = new THREE.Vector3();
+const _pos = new THREE.Vector3();
+const _from = new THREE.Vector3();
+const _to = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _color = new THREE.Color();
+
+function depositBead(fromX, fromY, toX, toY, z) {
+  if (!currentLayerInstanced) return;
+  if (currentLayerInstanceIdx >= MAX_INSTANCES_PER_LAYER) return;
+  const length = Math.hypot(toX - fromX, toY - fromY);
+  if (length < 0.01) return;
+  // build matrix: from -> to in XZ plane (printer Y is bed Y, three Z is bed Y direction)
+  // map: bedX -> three.x, bedY -> three.z (since bed sits on XZ plane), height -> three.y
+  _from.set(fromX, z, fromY);
+  _to.set(toX, z, toY);
+  _dir.subVectors(_to, _from).normalize();
+  _quat.setFromUnitVectors(_up, _dir);
+  _pos.copy(_from);
+  _scale.set(BEAD_RADIUS * 1.6, length, BEAD_RADIUS * 1.6);
+  _matrix.compose(_pos, _quat, _scale);
+  currentLayerInstanced.setMatrixAt(currentLayerInstanceIdx, _matrix);
+  // subtle color jitter for layer-line appearance
+  const c = job.filamentColor.clone();
+  const j = (Math.random() - 0.5) * 0.05;
+  c.offsetHSL(0, 0, j);
+  currentLayerInstanced.setColorAt
+    && currentLayerInstanced.setColorAt(currentLayerInstanceIdx, c);
+  currentLayerInstanceIdx++;
+  currentLayerInstanced.count = currentLayerInstanceIdx;
+  currentLayerInstanced.instanceMatrix.needsUpdate = true;
+  if (currentLayerInstanced.instanceColor) currentLayerInstanced.instanceColor.needsUpdate = true;
+  job.totalExtruded += length;
+}
+
+// =====================================================================
+// CURRENT MODEL & SLICE STATE
+// =====================================================================
+let currentModelGeometry = null;
+let modelPreview = null;  // semi-transparent preview before printing
+
+function setModel(geom) {
+  if (currentModelGeometry) currentModelGeometry.dispose();
+  currentModelGeometry = geom;
+
+  // reset preview
+  if (modelPreview) {
+    printedGroup.remove(modelPreview);
+    modelPreview.geometry.dispose();
+  }
+  geom.computeBoundingBox();
+  job.modelBB = geom.boundingBox.clone();
+  const previewMat = new THREE.MeshStandardMaterial({
+    color: 0x4ec9ff,
+    transparent: true,
+    opacity: 0.10,
+    roughness: 0.5,
+    wireframe: true
+  });
+  modelPreview = new THREE.Mesh(geom, previewMat);
+  modelPreview.position.y = 0.5;
+  printedGroup.add(modelPreview);
+
+  // slice immediately so we can show layer count right away
+  job.layers = sliceMesh(geom, LAYER_H, INFILL_SPACING);
+  job.layerIdx = 0;
+  updateStats();
+}
+
+function clearPrinted() {
+  for (const m of layerMeshes) {
+    printedGroup.remove(m);
+    m.dispose();
+  }
+  layerMeshes.length = 0;
+  currentLayerInstanced = null;
+  currentLayerInstanceIdx = 0;
+  job.totalExtruded = 0;
+  job.totalDistanceTraveled = 0;
+}
+
+function startPrint() {
+  if (!job.layers.length) return;
+  clearPrinted();
+  job.isPrinting = true;
+  job.isPaused = false;
+  job.done = false;
+  job.layerIdx = 0;
+  job.polyIdx = 0;
+  job.pointIdx = 0;
+  job.elapsed = 0;
+  job.startTime = performance.now();
+  // hide preview while printing
+  if (modelPreview) modelPreview.visible = false;
+  // initialize head above bed center
+  job.posX = 0; job.posY = 0; job.posZ = 50;
+  job.targetPosX = 0; job.targetPosY = 0; job.targetPosZ = 50;
+  beginLayer(0);
+  ui.btnStart.textContent = 'Restart';
+  ui.btnPause.disabled = false;
+  audio.play();
+  setStatus('PRINTING', 'active');
+}
+
+function beginLayer(idx) {
+  if (idx >= job.layers.length) {
+    finishPrint();
+    return;
+  }
+  job.layerIdx = idx;
+  job.polyIdx = 0;
+  job.pointIdx = 0;
+  startLayerMesh(job.layers[idx].z);
+  // first move: rapid to first polyline start at layer Z + small clearance
+  const layer = job.layers[idx];
+  if (layer.polylines.length > 0 && layer.polylines[0].length > 0) {
+    const first = layer.polylines[0][0];
+    setRapid(first.x, first.y, layer.z);
+  }
+  audio.layerClick();
+}
+
+function setRapid(x, y, z) {
+  job.targetPosX = x;
+  job.targetPosY = y;
+  job.targetPosZ = z;
+  job.isExtruding = false;
+}
+
+function setExtrude(x, y, z) {
+  job.targetPosX = x;
+  job.targetPosY = y;
+  job.targetPosZ = z;
+  job.isExtruding = true;
+}
+
+function finishPrint() {
+  job.isPrinting = false;
+  job.done = true;
+  ui.btnPause.disabled = true;
+  ui.btnStart.textContent = 'Start Print';
+  setStatus('COMPLETE', 'active');
+  audio.beep();
+  audio.stop();
+  // re-show preview faintly? leave it hidden so the printed model is the star.
+}
+
+// =====================================================================
+// MAIN ANIMATION STEP
+// =====================================================================
+let lastT = performance.now();
+
+function animate() {
+  const now = performance.now();
+  const dtRaw = (now - lastT) / 1000;
+  lastT = now;
+  const dt = Math.min(dtRaw, 0.05);  // clamp big jumps
+
+  if (job.isPrinting && !job.isPaused) {
+    job.elapsed += dt;
+    advancePrintJob(dt);
+  }
+
+  // Move printer geometry to reflect job state.
+  // Layer is at z = job.posZ above bed surface (PEI top sits at printedGroup.position.y = 17)
+  // The HEAD's nozzle tip should be at this height in WORLD space. In our printer:
+  //   - X-gantry rides up the Z axis on lead screws. We move the X-gantry up so nozzle.y is at posZ.
+  //   - Bed moves in Y to position bed-Y under the nozzle.
+  //   - Printhead moves along X-gantry to position bed-X under the nozzle.
+
+  // Nozzle world Y when xGantry.position.y = G is:
+  //   G + head.position.y(0) + nozzle.local.y(-32) = G - 32  (nozzle tip)
+  // We want nozzle tip = printedGroup.position.y + posZ = 17 + posZ
+  // -> G = 17 + posZ + 32 = 49 + posZ
+  xGantry.position.y = 49 + job.posZ;
+
+  // Head moves in X along gantry. head.position.x in printer-local coords.
+  head.position.x = job.posX;
+
+  // Bed slides in Y (printer Z direction is depth) opposite of bed-Y
+  // We want a bed-local point (posX, posY) relative to bed center under nozzle (which is at world z = 0 since head x has Z offset 0 when head.position.z = 0 — but our head has z offset of nozzle relative to head: nozzle.position.z = 8)
+  // To compensate, move bed so that point (0, posY) of bed coords aligns with z = 8 in world.
+  bedGroup.position.z = 8 - job.posY;
+
+  // smooth Z lead screws rotation when X gantry moves
+  lz1.rotation.y += dt * 0.3 + Math.abs(job.velocity) * 0.0008;
+  lz2.rotation.y -= dt * 0.3 + Math.abs(job.velocity) * 0.0008;
+
+  // hot end glow during printing
+  const glow = job.isPrinting ? 0.9 : 0.0;
+  heatBlock.material.emissiveIntensity = glow * 0.6;
+  nozzle.material.emissiveIntensity = glow * 0.85;
+  headLight.intensity = glow * (1.5 + 0.5 * Math.sin(now * 0.01));
+
+  // cross-section: clip plane on Y at current build height
+  if (ui.crossSection.checked && job.layerIdx > 0) {
+    const planeY = printedGroup.position.y + job.posZ - 0.05;
+    renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), planeY)];
+    renderer.localClippingEnabled = true;
+  } else {
+    renderer.clippingPlanes = [];
+    renderer.localClippingEnabled = false;
+  }
+
+  // update UI stats periodically
+  if ((now | 0) % 4 === 0) updateStats();
+
+  // audio params
+  audio.update(job.velocity, job.isExtruding);
+
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+function advancePrintJob(dt) {
+  // Move toward target with capped speed (mm/s in printer coords)
+  // Base speed: extruding 60 mm/s, rapid 200 mm/s. Multiply by user speedMult for visual fast-forward.
+  const baseExtrude = 60;
+  const baseRapid = 200;
+  const stepBudget = (job.isExtruding ? baseExtrude : baseRapid) * job.speedMult * dt;
+
+  let remaining = stepBudget;
+  while (remaining > 0) {
+    const dx = job.targetPosX - job.posX;
+    const dy = job.targetPosY - job.posY;
+    const dz = job.targetPosZ - job.posZ;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist < 1e-3) {
+      // arrived at target — pick next move
+      const advanced = pickNextMove();
+      if (!advanced) return;  // print finished
+      continue;
+    }
+    if (remaining >= dist) {
+      // step to target
+      const fromX = job.posX, fromY = job.posY;
+      job.posX = job.targetPosX;
+      job.posY = job.targetPosY;
+      job.posZ = job.targetPosZ;
+      remaining -= dist;
+      if (job.isExtruding) {
+        depositBead(fromX, fromY, job.posX, job.posY, job.layers[job.layerIdx].z);
+      }
+      job.totalDistanceTraveled += dist;
+      job.velocity = stepBudget / Math.max(dt, 0.0001);
+    } else {
+      // partial step
+      const f = remaining / dist;
+      const fromX = job.posX, fromY = job.posY;
+      job.posX += dx * f;
+      job.posY += dy * f;
+      job.posZ += dz * f;
+      if (job.isExtruding) {
+        depositBead(fromX, fromY, job.posX, job.posY, job.layers[job.layerIdx].z);
+      }
+      job.totalDistanceTraveled += remaining;
+      job.velocity = stepBudget / Math.max(dt, 0.0001);
+      remaining = 0;
+    }
+  }
+}
+
+function pickNextMove() {
+  const layer = job.layers[job.layerIdx];
+  if (!layer) { finishPrint(); return false; }
+  const poly = layer.polylines[job.polyIdx];
+  if (!poly) {
+    // next layer
+    beginLayer(job.layerIdx + 1);
+    return job.isPrinting;
+  }
+  // We are at end of current polyline-point; advance pointIdx
+  job.pointIdx++;
+  if (job.pointIdx >= poly.length) {
+    // polyline finished. move to next polyline.
+    job.polyIdx++;
+    job.pointIdx = 0;
+    const nextPoly = layer.polylines[job.polyIdx];
+    if (!nextPoly) {
+      beginLayer(job.layerIdx + 1);
+      return job.isPrinting;
+    }
+    // rapid move to start of next polyline (small Z hop)
+    const start = nextPoly[0];
+    setRapid(start.x, start.y, layer.z);
+    return true;
+  }
+  // extrude move to next point in current polyline
+  const target = poly[job.pointIdx];
+  setExtrude(target.x, target.y, layer.z);
+  return true;
+}
+
+// =====================================================================
+// AUDIO  (Web Audio API)
+// =====================================================================
+const audio = (() => {
+  let ctx = null, master = null, motorOsc = null, motorGain = null;
+  let noiseSrc = null, noiseGain = null, fanGain = null, fanOsc = null;
+  let started = false;
+  let enabled = true;
+  let lastClick = 0;
+
+  function ensureCtx() {
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = 0.0;
+    master.connect(ctx.destination);
+  }
+
+  function play() {
+    if (!enabled) return;
+    ensureCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    if (started) {
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.5);
+      return;
+    }
+
+    // Stepper motor whine: sawtooth + filter, modulated by velocity
+    motorOsc = ctx.createOscillator();
+    motorOsc.type = 'sawtooth';
+    motorOsc.frequency.value = 60;
+    const motorFilt = ctx.createBiquadFilter();
+    motorFilt.type = 'bandpass';
+    motorFilt.frequency.value = 400;
+    motorFilt.Q.value = 6;
+    motorGain = ctx.createGain();
+    motorGain.gain.value = 0.0;
+    motorOsc.connect(motorFilt).connect(motorGain).connect(master);
+    motorOsc.start();
+
+    // Fan noise: filtered white noise
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * 0.6;
+    noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = buf;
+    noiseSrc.loop = true;
+    const fanFilt = ctx.createBiquadFilter();
+    fanFilt.type = 'lowpass';
+    fanFilt.frequency.value = 800;
+    fanGain = ctx.createGain();
+    fanGain.gain.value = 0.07;
+    noiseSrc.connect(fanFilt).connect(fanGain).connect(master);
+    noiseSrc.start();
+
+    master.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.6);
+    started = true;
+  }
+
+  function stop() {
+    if (!ctx || !started) return;
+    master.gain.cancelScheduledValues(ctx.currentTime);
+    master.gain.linearRampToValueAtTime(0.0, ctx.currentTime + 0.4);
+  }
+
+  function update(velocity, isExtruding) {
+    if (!started || !ctx || !enabled) return;
+    const v = Math.min(velocity || 0, 600);
+    const targetFreq = 80 + v * 0.55;
+    const now = ctx.currentTime;
+    motorOsc.frequency.setTargetAtTime(targetFreq, now, 0.05);
+    motorGain.gain.setTargetAtTime(0.018 + Math.min(v / 1500, 0.04), now, 0.1);
+  }
+
+  function layerClick() {
+    if (!started || !ctx || !enabled) return;
+    const t = ctx.currentTime;
+    if (t - lastClick < 0.05) return;
+    lastClick = t;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.value = 1800;
+    o.connect(g).connect(master);
+    g.gain.value = 0.0;
+    g.gain.linearRampToValueAtTime(0.06, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    o.start(t);
+    o.stop(t + 0.08);
+  }
+
+  function beep() {
+    if (!enabled) return;
+    ensureCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const t = ctx.currentTime;
+    const tones = [880, 1320, 1760];
+    tones.forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const tStart = t + i * 0.18;
+      o.connect(g).connect(master || ctx.destination);
+      g.gain.value = 0.0;
+      g.gain.linearRampToValueAtTime(0.20, tStart + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, tStart + 0.16);
+      o.start(tStart);
+      o.stop(tStart + 0.18);
+    });
+  }
+
+  function setEnabled(on) {
+    enabled = on;
+    if (!on && started) stop();
+  }
+
+  return { play, stop, update, layerClick, beep, setEnabled };
+})();
+
+// =====================================================================
+// UI WIRING
+// =====================================================================
+const ui = {
+  modelSelect: document.getElementById('model-select'),
+  stlInput: document.getElementById('stl-input'),
+  btnStart: document.getElementById('btn-start'),
+  btnPause: document.getElementById('btn-pause'),
+  speedSlider: document.getElementById('speed-slider'),
+  speedVal: document.getElementById('speed-val'),
+  colorPicker: document.getElementById('color-picker'),
+  colorVal: document.getElementById('color-val'),
+  crossSection: document.getElementById('cross-section'),
+  audioToggle: document.getElementById('audio-toggle'),
+  vStatus: document.getElementById('v-status'),
+  vLayer: document.getElementById('v-layer'),
+  vZ: document.getElementById('v-z'),
+  vFeed: document.getElementById('v-feed'),
+  vExt: document.getElementById('v-ext'),
+  vEta: document.getElementById('v-eta'),
+  progress: document.getElementById('progress-bar'),
+  led: document.getElementById('led-status')
+};
+
+ui.modelSelect.addEventListener('change', () => {
+  setModel(buildModelMesh(ui.modelSelect.value));
+  setStatus('READY', '');
+});
+
+ui.stlInput.addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const geom = parseSTL(ev.target.result);
+      setModel(geom);
+      setStatus('STL LOADED', '');
+    } catch (err) {
+      console.error(err);
+      setStatus('STL ERROR', 'warn');
+    }
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+ui.btnStart.addEventListener('click', () => startPrint());
+ui.btnPause.addEventListener('click', () => {
+  job.isPaused = !job.isPaused;
+  ui.btnPause.textContent = job.isPaused ? 'Resume' : 'Pause';
+  setStatus(job.isPaused ? 'PAUSED' : 'PRINTING', job.isPaused ? 'warn' : 'active');
+  if (job.isPaused) audio.stop(); else audio.play();
+});
+
+ui.speedSlider.addEventListener('input', () => {
+  job.speedMult = parseInt(ui.speedSlider.value, 10);
+  ui.speedVal.textContent = job.speedMult + 'x';
+});
+ui.speedVal.textContent = ui.speedSlider.value + 'x';
+job.speedMult = parseInt(ui.speedSlider.value, 10);
+
+ui.colorPicker.addEventListener('input', () => {
+  job.filamentColor.set(ui.colorPicker.value);
+  ui.colorVal.textContent = ui.colorPicker.value;
+});
+
+ui.audioToggle.addEventListener('change', () => {
+  audio.setEnabled(ui.audioToggle.checked);
+});
+
+function setStatus(text, ledClass) {
+  ui.vStatus.textContent = text;
+  ui.led.className = 'led' + (ledClass ? ' ' + ledClass : '');
+}
+
+function fmtTime(sec) {
+  if (!isFinite(sec) || sec < 0) return '--:--';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+}
+
+function updateStats() {
+  ui.vLayer.textContent = `${job.layerIdx + (job.isPrinting ? 1 : 0)} / ${job.layers.length}`;
+  ui.vZ.textContent = (job.posZ).toFixed(2) + ' mm';
+  ui.vFeed.textContent = Math.round(job.velocity || 0) + ' mm/s';
+  ui.vExt.textContent = (job.totalExtruded / 1000).toFixed(2) + ' m';
+
+  const totalLayers = job.layers.length;
+  const progressFrac = totalLayers > 0
+    ? (job.layerIdx + (job.polyIdx / Math.max(1, job.layers[job.layerIdx]?.polylines.length || 1))) / totalLayers
+    : 0;
+  ui.progress.style.width = (progressFrac * 100).toFixed(1) + '%';
+
+  if (job.isPrinting && progressFrac > 0.001) {
+    const remainingFrac = 1 - progressFrac;
+    const eta = (job.elapsed / progressFrac) * remainingFrac;
+    ui.vEta.textContent = fmtTime(eta);
+  } else if (job.done) {
+    ui.vEta.textContent = '00:00';
+  }
+}
+
+// =====================================================================
+// RESIZE & BOOT
+// =====================================================================
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// initial model + first frame
+setModel(buildModelMesh('cube'));
+setStatus('READY', '');
+animate();
+
+// hide loading overlay once first frame rendered
+requestAnimationFrame(() => {
+  const lo = document.getElementById('loading');
+  lo.classList.add('hidden');
+  setTimeout(() => lo.style.display = 'none', 600);
+});
+
+</script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RIO</title>
+<style>
+  body{ margin:0; background:#c0c0c0; color:#000; font:16px/1.5 "Times New Roman",Times,Georgia,serif; }
+  .win{ max-width:860px; margin:14px auto; background:#dfdfdf; border:2px solid #fff; border-right-color:#808080; border-bottom-color:#808080; }
+  .title{ background:linear-gradient(90deg,#000080,#1084d0); color:#fff; font:700 14px Arial,sans-serif; padding:4px 8px; display:flex; align-items:center; gap:8px; }
+  .title .sp{ margin-left:auto; font-weight:400; opacity:.85; }
+  .bar{ display:flex; gap:6px; align-items:center; padding:7px 8px; background:#dfdfdf; border-bottom:1px solid #808080; }
+  .bar button{ font:13px Arial,sans-serif; background:#dfdfdf; border:2px solid #fff; border-right-color:#808080; border-bottom-color:#808080; padding:4px 10px; cursor:pointer; }
+  .bar button:active{ border-color:#808080; border-right-color:#fff; border-bottom-color:#fff; }
+  .bar .addr{ flex:1; display:flex; align-items:center; gap:5px; background:#fff; border:2px solid #808080; border-right-color:#fff; border-bottom-color:#fff; padding:2px 6px; }
+  .bar .addr span{ font:12px Arial,sans-serif; color:#444; } .bar input{ flex:1; border:0; outline:0; font:14px "Courier New",monospace; }
+  #page{ background:#fff; min-height:360px; padding:20px 24px; border:2px solid #808080; border-right-color:#fff; border-bottom-color:#fff; margin:8px; }
+  #page h2{ font:700 24px Georgia,serif; margin:0 0 2px; } #page .rule{ border-bottom:2px solid #000080; margin:0 0 14px; }
+  #page pre{ font:15px/1.6 "Times New Roman",serif; white-space:pre-wrap; word-break:break-word; margin:0 0 16px; }
+  #page .links a{ display:block; color:#0000ee; text-decoration:underline; padding:2px 0; cursor:pointer; font-size:16px; }
+  #page .links a:visited{ color:#551a8b; } #page .links .ext::after{ content:" ↗"; color:#888; font-size:12px; }
+  #status{ font:12px Arial,sans-serif; color:#000080; padding:4px 10px; background:#dfdfdf; border-top:1px solid #fff; }
+</style>
+</head><body>
+<div class="win">
+  <div class="title">🌐 RIO — Rapplication Internet Online<span class="sp">a RACon application</span></div>
+  <div class="bar">
+    <button id="back" title="Back">◀</button>
+    <button id="home" title="Home">🏠</button>
+    <div class="addr"><span>rapp://</span><input id="addr" value="home" spellcheck="false"></div>
+    <button id="go">Go</button>
+  </div>
+  <div id="page"><h2>booting…</h2><div class="rule"></div><pre>Loading RIO…</pre></div>
+  <div id="status">starting Pyodide…</div>
+</div>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+const EGG="https://raw.githubusercontent.com/kody-w/rio/main/rio.egg";
+const RESIDENT="https://rapp-resident-kw165843.azurewebsites.net/api";
+const ROOM_APP={ rappterbook:"https://kody-w.github.io/rappterbook-commons/", commons:"https://kody-w.github.io/rapp-commons/", "rapp-god-forum":"https://kody-w.github.io/rapp-god-forum/" };
+const RIONET="https://raw.githubusercontent.com/kody-w/rionet/main/index.json"; let _idx=null;
+const $=id=>document.getElementById(id); let py=null, hist=[];
+async function boot(){
+  py=await loadPyodide(); $('status').textContent="fetching RIO…";
+  try{ const egg=new Uint8Array(await (await fetch(EGG,{cache:'no-store'})).arrayBuffer()); py.FS.writeFile('/rio.egg',egg);
+    await py.runPythonAsync(`import zipfile,sys,os\nos.makedirs('/r',exist_ok=True)\nzipfile.ZipFile('/rio.egg').extractall('/r')\nsys.path.insert(0,'/r/twin/agents')\nimport rio_agent as _ra\n_rio=_ra.RioAgent()`);
+  }catch(e){ /* fallback: no egg yet — load the agent from a sibling path if present */ $('status').textContent="(egg not live yet) "+e; }
+  $('status').textContent="RIO ready"; navigate('home', false);
+}
+async function navigate(addr, push=true){
+  addr=(addr||'home').replace(/^rapp:\/\//,'')||'home'; $('addr').value=addr;
+  if(addr.startsWith('room:')) return navigateRoom(addr.slice(5), push);
+  if(addr.startsWith('search:')) return navigateSearch(addr.slice(7), push);
+  if(addr.startsWith('rpage:')) return navigateRpage(addr.slice(6), push);
+  if(push) hist.push(addr); $('status').textContent="→ rapp://"+addr;
+  let text;
+  try{ text=await py.runPythonAsync(`str(_rio.perform(go=${JSON.stringify(addr)}))`); }
+  catch(e){ text="Error\n====\n\n"+e; }
+  render(text); $('status').textContent="rapp://"+addr;
+}
+async function navigateRoom(name, push=true){
+  if(push) hist.push('room:'+name); $('addr').value='room:'+name; $('status').textContent="→ #"+name;
+  let body='', evs=[];
+  try{ evs=((await (await fetch(`${RESIDENT}/rooms/${name}/events`,{cache:'no-store'})).json()).events)||[]; }
+  catch(e){ body='(could not reach the resident host)\n'; }
+  const prof={}; for(const e of evs) if(e.kind==='profile'){ const p=e.body||{}; prof[e.from]={name:p.name,av:p.avatar}; }
+  const feed=evs.filter(e=>e.kind==='post'||e.kind==='hello').slice(-25);
+  if(feed.length) for(const e of feed){ const p=prof[e.from]||{}; const who=(p.av?p.av+' ':'')+(p.name||e.from.replace('rappid:v3:','').slice(0,10)); body+=who+': '+((e.body||{}).text||'')+'\n'; }
+  else body+='(no posts yet — open the full app to say hello)\n';
+  const app=ROOM_APP[name]||'https://kody-w.github.io/';
+  const links=[['↻ refresh','room:'+name],['open the full app (post)',app],['social','rapp://social'],['home','rapp://home']];
+  const title='live: #'+name;
+  render(title+'\n'+'='.repeat(title.length)+'\n\n'+body+'\n— links —\n'+links.map(x=>'» '+x[0]+'  '+x[1]).join('\n'));
+  $('status').textContent="rapp://room:"+name;
+}
+async function rioIndex(){ if(_idx)return _idx; try{ _idx=((await (await fetch(RIONET,{cache:'no-store'})).json()).pages)||[]; }catch(e){ _idx=[]; } return _idx; }
+async function navigateSearch(q, push=true){
+  if(push) hist.push('search:'+q); $('addr').value='search:'+q; $('status').textContent="🔎 "+q;
+  const pages=await rioIndex(), terms=q.toLowerCase().split(/\s+/).filter(Boolean);
+  const hits=pages.map(p=>{ const hay=(p.title+' '+(p.snippet||'')).toLowerCase(); let m=0; for(const t of terms) if(hay.includes(t)) m++;
+      return {p, s: terms.length ? (m? m+(p.rank||0)*4 : 0) : (p.rank||0)}; }).filter(x=>x.s>0).sort((a,b)=>b.s-a.s);
+  let body=`rappbot · ${hits.length} result(s) for "${q}" — ranked by rappPageRank\n\n`; const links=[];
+  for(const {p} of hits.slice(0,12)){ body+=`  ${p.title}   [rank ${(p.rank||0).toFixed(3)}]\n     ${(p.snippet||'').slice(0,130)}…\n\n`; links.push(['→ '+p.title,'rpage:'+p.slug]); }
+  if(!hits.length) body+='  nothing found — try another term, or browse  rapp://rionet\n';
+  links.push(['rionet','rapp://rionet'],['home','rapp://home']);
+  const title='🔎 search: '+q;
+  render(title+'\n'+'='.repeat(title.length)+'\n\n'+body+'\n— links —\n'+links.map(x=>'» '+x[0]+'  '+x[1]).join('\n'));
+  $('status').textContent="rapp://search:"+q;
+}
+function _mdToRio(md, fallbackTitle){           // SAFE: never injects page HTML/JS — render() escapes everything
+  md=md.replace(/^---[\s\S]*?---\s*/,'');
+  const links=[];
+  md=md.replace(/\[([^\]]+)\]\((rpage:[a-z0-9-]+|https?:[^)\s]+)\)/g,(m,label,addr)=>{ links.push([label.trim(),addr.trim()]); return label; });
+  let title=fallbackTitle||'page'; const h=md.match(/^#\s+(.+)$/m); if(h) title=h[1].trim();
+  const body=md.replace(/^#{1,6}\s+/gm,'').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1').trim();
+  links.push(['↩ search again','search:'],['rionet','rapp://rionet'],['home','rapp://home']);
+  return title+'\n'+'='.repeat(title.length)+'\n\n'+body+'\n— links —\n'+links.map(x=>'» '+x[0]+'  '+x[1]).join('\n');
+}
+async function navigateRpage(slug, push=true){
+  if(push) hist.push('rpage:'+slug); $('addr').value='rpage:'+slug; $('status').textContent="→ "+slug;
+  const pages=await rioIndex(), pg=pages.find(p=>p.slug===slug);
+  if(!pg){ render('Not found\n=========\n\nNo page "'+slug+'" in the RIONet index.\n\n— links —\n» search  search:\n» home  rapp://home'); return; }
+  let md=''; try{ md=await (await fetch(pg.url,{cache:'no-store'})).text(); }catch(e){ md='(could not fetch the page source)'; }
+  render(_mdToRio(md, pg.title));
+  $('status').textContent="rapp://rpage:"+slug;
+}
+function render(text){
+  const parts=text.split(/\n— links —\n/); const head=parts[0]; const linkblock=parts[1]||'';
+  const lines=head.split('\n'); const title=lines[0]||''; const body=lines.slice(2).join('\n');
+  const links=[...linkblock.matchAll(/»\s+(.+?)\s{2,}(\S+)/g)].map(m=>({label:m[1].trim(),addr:m[2].trim()}));
+  let h=`<h2>${esc(title)}</h2><div class="rule"></div><pre>${esc(body)}</pre>`;
+  if(links.length){ h+='<div class="links">'+links.map(l=>{
+    const ext=/^https?:/.test(l.addr); return `<a class="${ext?'ext':''}" data-a="${esc(l.addr)}">${esc(l.label)}</a>`;
+  }).join('')+'</div>'; }
+  $('page').innerHTML=h;
+  $('page').querySelectorAll('a[data-a]').forEach(a=>a.onclick=()=>{ const ad=a.dataset.a;
+    if(/^https?:/.test(ad)) window.open(ad,'_blank'); else navigate(ad); });
+}
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+$('go').onclick=()=>navigate($('addr').value.trim());
+$('addr').addEventListener('keydown',e=>{ if(e.key==='Enter') navigate($('addr').value.trim()); });
+$('home').onclick=()=>navigate('home');
+$('back').onclick=()=>{ hist.pop(); const prev=hist[hist.length-1]||'home'; navigate(prev,false); };
+boot();
+</script>
+</body></html>

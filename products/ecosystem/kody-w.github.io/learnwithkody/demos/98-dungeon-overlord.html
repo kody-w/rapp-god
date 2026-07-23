@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Round 11: 3D Epic Dungeon Overlord</title>
+<style>
+  :root {
+    --vor: #c080ff;
+    --hero: #ffd060;
+    --bg: #0a0612;
+    --panel: rgba(15, 8, 25, 0.86);
+    --border: #4a2870;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: #ddd; font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; }
+  #canvas-host { position: fixed; inset: 0; z-index: 1; }
+  #canvas-host canvas { display: block; width: 100%; height: 100%; }
+  #overlord-panel {
+    position: fixed; top: 12px; right: 12px; z-index: 10;
+    width: 300px; padding: 12px 14px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; backdrop-filter: blur(4px);
+    box-shadow: 0 0 24px rgba(192,128,255,0.25);
+  }
+  #overlord-panel h2 { color: var(--vor); font-size: 16px; margin-bottom: 6px; letter-spacing: 1px; }
+  #overlord-panel .stat { display: flex; justify-content: space-between; font-size: 12px; margin: 3px 0; color: #cbb; }
+  #overlord-panel .stat span:last-child { color: #fff; font-weight: bold; }
+  .bar { height: 6px; background: #221033; border-radius: 3px; overflow: hidden; margin-top: 2px; }
+  .bar > div { height: 100%; background: linear-gradient(90deg, #803, #c0f); transition: width 0.3s; }
+  #throne-mini {
+    position: fixed; top: 220px; right: 12px; z-index: 10;
+    width: 300px; height: 160px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+  #throne-mini canvas { display: block; width: 100%; height: 100%; }
+  #throne-mini .label {
+    position: absolute; top: 4px; left: 8px;
+    font-size: 11px; color: var(--vor); letter-spacing: 1px;
+    text-shadow: 0 0 4px #000;
+  }
+  #wave-banner {
+    position: fixed; top: 12px; left: 12px; z-index: 10;
+    padding: 10px 16px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px;
+  }
+  #wave-banner .big { font-size: 22px; color: var(--hero); font-weight: bold; }
+  #wave-banner .sub { font-size: 11px; color: #aab; }
+  #chronicle {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    height: 180px; padding: 10px 16px;
+    background: linear-gradient(0deg, rgba(8,4,16,0.95), rgba(8,4,16,0.6));
+    border-top: 1px solid var(--border);
+    overflow-y: auto; font-size: 13px; line-height: 1.5;
+  }
+  #chronicle .entry { margin: 2px 0; opacity: 0.9; }
+  #chronicle .entry.vorthak { color: var(--vor); }
+  #chronicle .entry.heroes { color: var(--hero); }
+  #chronicle .entry.system { color: #6cf; font-style: italic; }
+  #chronicle .entry .tag { font-weight: bold; margin-right: 6px; opacity: 0.8; }
+  #endscreen {
+    position: fixed; inset: 0; z-index: 100;
+    background: radial-gradient(ellipse at center, rgba(20,5,40,0.92), rgba(0,0,0,0.98));
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; text-align: center; color: #fff;
+  }
+  #endscreen.show { display: flex; }
+  #endscreen h1 { font-size: 56px; margin-bottom: 16px; letter-spacing: 4px; text-shadow: 0 0 20px currentColor; }
+  #endscreen h1.vorthak { color: var(--vor); }
+  #endscreen h1.heroes { color: var(--hero); }
+  #endscreen p { font-size: 18px; max-width: 720px; line-height: 1.6; margin: 8px 24px; color: #ccd; }
+  #endscreen .countdown { margin-top: 20px; font-size: 14px; color: #888; }
+  #scrollbar::-webkit-scrollbar { width: 6px; }
+  #chronicle::-webkit-scrollbar { width: 6px; }
+  #chronicle::-webkit-scrollbar-thumb { background: #4a2870; border-radius: 3px; }
+</style>
+</head>
+<body>
+<!-- ROUND11_3D_EPIC v1 -->
+<div id="canvas-host"></div>
+<div id="wave-banner">
+  <div class="big" id="wave-title">Wave 0 / 12</div>
+  <div class="sub" id="wave-sub">The dungeon stirs...</div>
+  <div class="sub" id="floor-sub" style="margin-top:4px;">Floor: —</div>
+</div>
+<div id="overlord-panel">
+  <h2 id="ov-name">⚜ THE OVERLORD ⚜</h2>
+  <div class="stat"><span>Mana</span><span id="ov-mana">100</span></div>
+  <div class="bar"><div id="ov-mana-bar" style="width:100%"></div></div>
+  <div class="stat"><span>Soul Energy</span><span id="ov-soul">0</span></div>
+  <div class="stat"><span>Monsters</span><span id="ov-mon">0</span></div>
+  <div class="stat"><span>Traps Set</span><span id="ov-traps">0</span></div>
+  <div class="stat"><span>Heroes Slain</span><span id="ov-kills">0</span></div>
+  <div class="stat"><span>Lieutenant</span><span id="ov-lieu">—</span></div>
+</div>
+<div id="throne-mini">
+  <div class="label">⏃ THRONE ROOM ⏃</div>
+</div>
+<div id="chronicle"></div>
+<div id="endscreen">
+  <h1 id="end-title"></h1>
+  <p id="end-text"></p>
+  <p id="end-stats" style="font-size:14px;color:#889;"></p>
+  <div class="countdown" id="end-countdown">A new tale begins in 10s...</div>
+</div>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+// ROUND 11: 3D EPIC DUNGEON OVERLORD
+// ============================================================
+
+const W = 30, H = 20;          // tiles per floor
+const FLOORS = 5;
+const TILE = 2.0;              // world units per tile
+const FLOOR_GAP = 14;          // vertical spacing per floor
+const HOST = document.getElementById('canvas-host');
+const CHRON = document.getElementById('chronicle');
+
+// ---------- Random helpers ----------
+const rand = (a, b) => a + Math.random() * (b - a);
+const randi = (a, b) => Math.floor(rand(a, b + 1));
+const choice = arr => arr[Math.floor(Math.random() * arr.length)];
+const chance = p => Math.random() < p;
+
+// ---------- Lore tables ----------
+const OVERLORDS = [
+  { name: "Lich King Vorthak", color: 0xc080ff, title: "Eternal Bone Sovereign", flavor: "skeletal" },
+  { name: "Empress Nyx", color: 0xff4488, title: "Whisperer of the Final Shadow", flavor: "shadow" },
+  { name: "Dread Lord Skarn", color: 0xff6020, title: "Forge-Tyrant of the Burning Pit", flavor: "demon" },
+  { name: "Grandmaster Hex", color: 0x40ffaa, title: "Weaver of Forbidden Geometries", flavor: "arcane" }
+];
+const LIEUTENANTS = [
+  { name: "Ghoul Captain Rotmaw", role: "warden" },
+  { name: "Spider Queen Skathra", role: "weaver" },
+  { name: "Shadow Knight Mortavus", role: "champion" },
+  { name: "Necromancer Kaidos", role: "summoner" }
+];
+const HERO_PARTIES = [
+  "The Silver Talons", "The Bronze Order", "The Crimson Watch", "The Azure Cabal",
+  "The Iron Vow", "The Verdant Hand", "The Last Lantern", "The Sundered Few"
+];
+const HERO_NAMES = {
+  paladin: ["Sir Aldric", "Dame Cerise", "Lord Vance", "Captain Joran", "Holy Una", "Sir Petrik"],
+  ranger:  ["Wren", "Kestrel", "Thorne", "Sable", "Ash Greenwood", "Quinn"],
+  wizard:  ["Magister Phael", "Elara", "Korvin", "Yseult", "Mirek the Pale", "Sage Nila"],
+  rogue:   ["Skiv", "Blackfinger", "Mira Vex", "Reyn the Shadow", "Pip", "Edda"]
+};
+const TAUNTS = [
+  "Welcome to your tomb, fleshlings.",
+  "I have devoured kings far braver than thee.",
+  "Your bones shall pave my hall.",
+  "Sing, little hero — sing for the worms.",
+  "I tire of this dance. SLAY THEM.",
+  "How quaint. They believe they can win.",
+  "Bring me their hearts in a chalice.",
+  "Another wave broken on my walls.",
+  "Eternity, hero. Eternity I have."
+];
+const HERO_CRIES = [
+  "For the kingdom!",
+  "Light pierces the dark!",
+  "We shall not falter!",
+  "Push onward — the throne awaits!",
+  "Strike true, friends!",
+  "By steel and by spell!",
+  "We end this curse today!"
+];
+
+// ---------- A* pathfinding on tile grid ----------
+function astar(grid, sx, sy, tx, ty) {
+  const w = grid[0].length, h = grid.length;
+  if (sx === tx && sy === ty) return [[sx, sy]];
+  if (grid[ty] === undefined || grid[ty][tx] === 0) return null;
+  const key = (x, y) => y * w + x;
+  const open = new Map();
+  const came = new Map();
+  const gScore = new Map();
+  const start = key(sx, sy);
+  gScore.set(start, 0);
+  open.set(start, Math.abs(tx - sx) + Math.abs(ty - sy));
+  while (open.size) {
+    let cur = -1, best = Infinity;
+    for (const [k, f] of open) if (f < best) { best = f; cur = k; }
+    if (cur === key(tx, ty)) {
+      const path = [];
+      let n = cur;
+      while (n !== undefined) {
+        path.unshift([n % w, Math.floor(n / w)]);
+        n = came.get(n);
+      }
+      return path;
+    }
+    open.delete(cur);
+    const cx = cur % w, cy = Math.floor(cur / w);
+    const cg = gScore.get(cur);
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      if (grid[ny][nx] === 0) continue;
+      const nk = key(nx, ny);
+      const ng = cg + 1;
+      if (!gScore.has(nk) || ng < gScore.get(nk)) {
+        came.set(nk, cur);
+        gScore.set(nk, ng);
+        open.set(nk, ng + Math.abs(tx - nx) + Math.abs(ty - ny));
+      }
+    }
+  }
+  return null;
+}
+
+// ---------- Procgen: rooms + L-corridors ----------
+function genFloor(floorIndex) {
+  const grid = Array.from({ length: H }, () => new Array(W).fill(0));
+  const rooms = [];
+  const targetRooms = randi(4, 6);
+  let tries = 0;
+  while (rooms.length < targetRooms && tries < 50) {
+    tries++;
+    const rw = randi(4, 7), rh = randi(3, 5);
+    const rx = randi(1, W - rw - 1), ry = randi(1, H - rh - 1);
+    const candidate = { x: rx, y: ry, w: rw, h: rh, cx: rx + (rw>>1), cy: ry + (rh>>1) };
+    let overlap = false;
+    for (const r of rooms) {
+      if (rx <= r.x + r.w + 1 && rx + rw + 1 >= r.x && ry <= r.y + r.h + 1 && ry + rh + 1 >= r.y) {
+        overlap = true; break;
+      }
+    }
+    if (overlap) continue;
+    rooms.push(candidate);
+    for (let y = ry; y < ry + rh; y++)
+      for (let x = rx; x < rx + rw; x++)
+        grid[y][x] = 1;
+  }
+  // Connect rooms with L-corridors
+  for (let i = 1; i < rooms.length; i++) {
+    const a = rooms[i - 1], b = rooms[i];
+    const x0 = Math.min(a.cx, b.cx), x1 = Math.max(a.cx, b.cx);
+    const y0 = Math.min(a.cy, b.cy), y1 = Math.max(a.cy, b.cy);
+    if (Math.random() < 0.5) {
+      for (let x = x0; x <= x1; x++) grid[a.cy][x] = 1;
+      for (let y = y0; y <= y1; y++) grid[y][b.cx] = 1;
+    } else {
+      for (let y = y0; y <= y1; y++) grid[y][a.cx] = 1;
+      for (let x = x0; x <= x1; x++) grid[b.cy][x] = 1;
+    }
+  }
+  // Pick entrance and exit (stairs)
+  const entrance = rooms[0];
+  const exitRoom = rooms[rooms.length - 1];
+  const entranceTile = floorIndex === 0 ? [entrance.cx, entrance.y] : [entrance.cx, entrance.cy];
+  const exitTile = [exitRoom.cx, exitRoom.cy];
+  return { grid, rooms, entrance: entranceTile, exit: exitTile, index: floorIndex };
+}
+
+function tileToWorld(x, y, floorY) {
+  return new THREE.Vector3((x - W / 2) * TILE, floorY, (y - H / 2) * TILE);
+}
+
+// ---------- Three.js scene setup ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+HOST.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05030a);
+scene.fog = new THREE.Fog(0x05030a, 18, 60);
+
+const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 22, 26);
+camera.lookAt(0, 0, 0);
+
+// Ambient + global directional
+scene.add(new THREE.AmbientLight(0x4a3a6a, 0.5));
+const moon = new THREE.DirectionalLight(0xa090ff, 0.4);
+moon.position.set(20, 40, 10);
+scene.add(moon);
+
+// Throne mini scene
+const throneMini = document.getElementById('throne-mini');
+const miniRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+miniRenderer.setSize(throneMini.clientWidth, throneMini.clientHeight);
+miniRenderer.setClearColor(0x0a0518, 1);
+throneMini.appendChild(miniRenderer.domElement);
+const miniScene = new THREE.Scene();
+miniScene.fog = new THREE.Fog(0x0a0518, 4, 14);
+const miniCam = new THREE.PerspectiveCamera(50, throneMini.clientWidth / throneMini.clientHeight, 0.1, 30);
+miniCam.position.set(0, 3, 6);
+miniCam.lookAt(0, 1, 0);
+miniScene.add(new THREE.AmbientLight(0x5040a0, 0.6));
+const miniSpot = new THREE.PointLight(0xc080ff, 1.6, 14);
+miniSpot.position.set(0, 4, 2);
+miniScene.add(miniSpot);
+
+// ---------- Reusable geometries / materials ----------
+const G = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 12),
+  cone: new THREE.ConeGeometry(0.5, 1, 10),
+  sphere: new THREE.SphereGeometry(0.5, 14, 10),
+  torus: new THREE.TorusGeometry(0.4, 0.12, 8, 16),
+  plane: new THREE.PlaneGeometry(1, 1),
+  octa: new THREE.OctahedronGeometry(0.5, 0),
+  dodec: new THREE.DodecahedronGeometry(0.5, 0)
+};
+const M = {
+  stone: new THREE.MeshStandardMaterial({ color: 0x453850, roughness: 0.95, metalness: 0.05 }),
+  stoneDark: new THREE.MeshStandardMaterial({ color: 0x2a2030, roughness: 0.98 }),
+  floor: new THREE.MeshStandardMaterial({ color: 0x1a1422, roughness: 0.9 }),
+  wood: new THREE.MeshStandardMaterial({ color: 0x4a2810, roughness: 0.85 }),
+  bone: new THREE.MeshStandardMaterial({ color: 0xd0c8a8, roughness: 0.7 }),
+  blood: new THREE.MeshStandardMaterial({ color: 0x802020, roughness: 0.5 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0x808890, metalness: 0.7, roughness: 0.3 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xddc060, metalness: 0.8, roughness: 0.25, emissive: 0x442200, emissiveIntensity: 0.3 }),
+  silver: new THREE.MeshStandardMaterial({ color: 0xe0e0f0, metalness: 0.85, roughness: 0.15 }),
+  red: new THREE.MeshStandardMaterial({ color: 0xc02020, roughness: 0.6 }),
+  blue: new THREE.MeshStandardMaterial({ color: 0x4060c0, roughness: 0.6 }),
+  green: new THREE.MeshStandardMaterial({ color: 0x308040, roughness: 0.7 }),
+  purple: new THREE.MeshStandardMaterial({ color: 0x6020a0, roughness: 0.5, emissive: 0x200030, emissiveIntensity: 0.4 }),
+  flesh: new THREE.MeshStandardMaterial({ color: 0xa07050, roughness: 0.8 }),
+  skin: new THREE.MeshStandardMaterial({ color: 0xddc8a0, roughness: 0.7 }),
+  fire: new THREE.MeshStandardMaterial({ color: 0xff8030, emissive: 0xff4400, emissiveIntensity: 1.6 }),
+  arcane: new THREE.MeshStandardMaterial({ color: 0x80c0ff, emissive: 0x4080ff, emissiveIntensity: 1.2, transparent: true, opacity: 0.85 }),
+  shadow: new THREE.MeshStandardMaterial({ color: 0x180820, roughness: 0.95 }),
+  spider: new THREE.MeshStandardMaterial({ color: 0x301020, roughness: 0.7 }),
+  egg: new THREE.MeshStandardMaterial({ color: 0xc0a070, roughness: 0.6, emissive: 0x402010, emissiveIntensity: 0.2 }),
+  trap: new THREE.MeshStandardMaterial({ color: 0xff2040, emissive: 0x800010, emissiveIntensity: 0.6, transparent: true, opacity: 0.7 }),
+  heart: new THREE.MeshStandardMaterial({ color: 0xa01040, emissive: 0xc02050, emissiveIntensity: 0.9 })
+};
+
+// ---------- Floor builder ----------
+function buildFloor(floor, themeIndex) {
+  const group = new THREE.Group();
+  group.name = "floor_" + floor.index;
+  const baseY = -floor.index * FLOOR_GAP;
+  group.position.y = baseY;
+
+  // floor tiles + walls
+  const floorMatVariants = [
+    new THREE.MeshStandardMaterial({ color: 0x2a1830, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x382020, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x1c2a20, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x3a2a10, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x4a1010, roughness: 0.85, emissive: 0x200000, emissiveIntensity: 0.3 })
+  ];
+  const wallMatVariants = [
+    new THREE.MeshStandardMaterial({ color: 0x3a2c46, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x3a2828, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x2a3a2a, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x4a3818, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x501818, roughness: 0.85 })
+  ];
+  const fmat = floorMatVariants[themeIndex % 5];
+  const wmat = wallMatVariants[themeIndex % 5];
+
+  // Big floor slab
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(W * TILE, 0.5, H * TILE), fmat);
+  slab.position.set(0, -0.25, 0);
+  slab.receiveShadow = true;
+  group.add(slab);
+
+  // Walls (instanced for perf)
+  const wallGeom = new THREE.BoxGeometry(TILE, 3.2, TILE);
+  let wallCount = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (floor.grid[y][x] === 0) wallCount++;
+  const walls = new THREE.InstancedMesh(wallGeom, wmat, wallCount);
+  walls.castShadow = true; walls.receiveShadow = true;
+  const dummy = new THREE.Object3D();
+  let wi = 0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (floor.grid[y][x] === 0) {
+        const p = tileToWorld(x, y, 0);
+        dummy.position.set(p.x, 1.6, p.z);
+        dummy.scale.set(1, 1 + Math.random() * 0.2, 1);
+        dummy.rotation.y = randi(0, 3) * Math.PI / 2;
+        dummy.updateMatrix();
+        walls.setMatrixAt(wi++, dummy.matrix);
+      }
+    }
+  }
+  group.add(walls);
+
+  // Per-theme decoration in rooms
+  for (const room of floor.rooms) {
+    decorateRoom(group, room, themeIndex);
+  }
+
+  // Stairs / portal markers
+  const entP = tileToWorld(floor.entrance[0], floor.entrance[1], 0);
+  const entRing = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.08, 8, 24), M.gold);
+  entRing.position.set(entP.x, 0.05, entP.z);
+  entRing.rotation.x = Math.PI / 2;
+  group.add(entRing);
+  group.userData.entranceRing = entRing;
+
+  const exP = tileToWorld(floor.exit[0], floor.exit[1], 0);
+  const exitGeom = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 0.2, 12), M.purple);
+  exitGeom.position.set(exP.x, 0.1, exP.z);
+  group.add(exitGeom);
+  const exitGlow = new THREE.PointLight(0xc080ff, 1.5, 8);
+  exitGlow.position.set(exP.x, 1.5, exP.z);
+  group.add(exitGlow);
+  group.userData.exitGlow = exitGlow;
+
+  // Atmospheric torches at intervals
+  const torchPositions = [];
+  for (const r of floor.rooms) {
+    torchPositions.push([r.x, r.y]);
+    torchPositions.push([r.x + r.w - 1, r.y + r.h - 1]);
+  }
+  for (const [tx, ty] of torchPositions) {
+    if (floor.grid[ty] && floor.grid[ty][tx] === 1) {
+      const p = tileToWorld(tx, ty, 0);
+      const torch = new THREE.PointLight(0xff8040, 1.0, 8);
+      torch.position.set(p.x, 2.6, p.z);
+      torch.userData.flicker = Math.random() * 6.28;
+      group.add(torch);
+      const flame = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 6), M.fire);
+      flame.position.copy(torch.position);
+      flame.userData.flame = true;
+      group.add(flame);
+    }
+  }
+
+  return group;
+}
+
+function decorateRoom(group, room, theme) {
+  const cx = (room.x + room.w / 2 - W / 2) * TILE;
+  const cz = (room.y + room.h / 2 - H / 2) * TILE;
+  if (theme === 0) {
+    // Floor 1: Crypt entry — fountain + columns
+    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.0, 0.4, 14), M.stone);
+    fountain.position.set(cx, 0.2, cz);
+    group.add(fountain);
+    const water = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.05, 14),
+      new THREE.MeshStandardMaterial({ color: 0x2050a0, emissive: 0x102040, emissiveIntensity: 0.4, transparent: true, opacity: 0.7 }));
+    water.position.set(cx, 0.43, cz);
+    group.add(water);
+    if (chance(0.7)) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 3, 8), M.stone);
+      col.position.set(cx + (room.w / 2 - 1) * TILE, 1.5, cz);
+      group.add(col);
+    }
+  } else if (theme === 1) {
+    // Floor 2: Catacombs — sarcophagi + candles
+    if (chance(0.7)) {
+      const sarc = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.5, 1.6), M.stoneDark);
+      sarc.position.set(cx, 0.25, cz);
+      group.add(sarc);
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.1, 1.65), M.stone);
+      lid.position.set(cx, 0.55, cz);
+      group.add(lid);
+    }
+    for (let i = 0; i < 2; i++) {
+      const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.4, 6), M.bone);
+      candle.position.set(cx + rand(-1, 1), 0.2, cz + rand(-1, 1));
+      group.add(candle);
+      const flame = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), M.fire);
+      flame.position.set(candle.position.x, 0.5, candle.position.z);
+      flame.userData.flame = true;
+      group.add(flame);
+    }
+  } else if (theme === 2) {
+    // Floor 3: Spider lair — webs + egg sacs
+    for (let i = 0; i < 3; i++) {
+      const eggSac = new THREE.Mesh(G.sphere, M.egg);
+      eggSac.scale.set(0.6, 0.8, 0.6);
+      eggSac.position.set(cx + rand(-1.2, 1.2), 0.6, cz + rand(-1.2, 1.2));
+      group.add(eggSac);
+    }
+    // suspended web mesh
+    const web = new THREE.Mesh(new THREE.PlaneGeometry(2, 2),
+      new THREE.MeshStandardMaterial({ color: 0xddddee, transparent: true, opacity: 0.18, side: THREE.DoubleSide }));
+    web.rotation.x = -Math.PI / 2;
+    web.position.set(cx, 2.8, cz);
+    group.add(web);
+  } else if (theme === 3) {
+    // Floor 4: Throne hall feeders — banners + braziers
+    const banner = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.6),
+      new THREE.MeshStandardMaterial({ color: 0x4020a0, side: THREE.DoubleSide, emissive: 0x200060, emissiveIntensity: 0.4 }));
+    banner.position.set(cx, 1.6, cz - room.h * TILE * 0.4);
+    group.add(banner);
+    const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 0.5, 10), M.metal);
+    brazier.position.set(cx, 0.25, cz);
+    group.add(brazier);
+    const blaze = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), M.fire);
+    blaze.position.set(cx, 0.6, cz);
+    blaze.userData.flame = true;
+    group.add(blaze);
+    const blazeLight = new THREE.PointLight(0xff8040, 1.2, 6);
+    blazeLight.position.copy(blaze.position);
+    group.add(blazeLight);
+  } else if (theme === 4) {
+    // Floor 5: Heart of evil — pulsing heart, blood pools
+    const heart = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), M.heart);
+    heart.position.set(cx, 1.0, cz);
+    heart.userData.heartBeat = true;
+    group.add(heart);
+    const heartLight = new THREE.PointLight(0xff2040, 2.0, 12);
+    heartLight.position.copy(heart.position);
+    heartLight.userData.heartLight = true;
+    group.add(heartLight);
+    // blood pool
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(1.2, 14), M.blood);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(cx, 0.02, cz);
+    group.add(pool);
+  }
+}
+
+// ---------- Throne (always on floor 3 / index 3) ----------
+function buildThroneOnFloor(floorGroup, floor) {
+  const tx = floor.exit[0], ty = floor.exit[1];
+  const p = tileToWorld(tx, ty, 0);
+  // throne back
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.4, 0.3), M.stoneDark);
+  back.position.set(p.x, 1.2, p.z - 0.4);
+  floorGroup.add(back);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.4, 1.0), M.stoneDark);
+  seat.position.set(p.x, 0.6, p.z);
+  floorGroup.add(seat);
+  // crystal above
+  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.4, 0), M.purple);
+  crystal.position.set(p.x, 3.4, p.z - 0.2);
+  crystal.userData.spin = true;
+  floorGroup.add(crystal);
+  const crystalLight = new THREE.PointLight(0xc080ff, 2.0, 10);
+  crystalLight.position.copy(crystal.position);
+  floorGroup.add(crystalLight);
+}
+
+// ---------- Character builder (low-poly humanoid) ----------
+function makeHumanoid(opts) {
+  const g = new THREE.Group();
+  const bodyMat = opts.body || M.silver;
+  const skinMat = opts.skin || M.skin;
+  // body
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.8, 8), bodyMat);
+  torso.position.y = 0.6;
+  torso.castShadow = true;
+  g.add(torso);
+  // head
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), skinMat);
+  head.position.y = 1.18;
+  head.castShadow = true;
+  g.add(head);
+  // arms
+  for (let s = -1; s <= 1; s += 2) {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.6, 6), bodyMat);
+    arm.position.set(0.32 * s, 0.7, 0);
+    arm.rotation.z = -0.1 * s;
+    g.add(arm);
+  }
+  // legs
+  for (let s = -1; s <= 1; s += 2) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.5, 6), bodyMat);
+    leg.position.set(0.13 * s, 0.25, 0);
+    g.add(leg);
+  }
+  // class marker / weapon
+  if (opts.weapon === 'sword') {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.7, 0.02), M.silver);
+    blade.position.set(0.45, 0.85, 0);
+    g.add(blade);
+  } else if (opts.weapon === 'bow') {
+    const bow = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.04, 6, 14, Math.PI), M.wood);
+    bow.position.set(0.42, 0.7, 0);
+    bow.rotation.z = Math.PI / 2;
+    g.add(bow);
+  } else if (opts.weapon === 'staff') {
+    const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6), M.wood);
+    staff.position.set(0.42, 0.85, 0);
+    g.add(staff);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), M.arcane);
+    orb.position.set(0.42, 1.5, 0);
+    g.add(orb);
+  } else if (opts.weapon === 'dagger') {
+    const dag = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.3, 6), M.silver);
+    dag.position.set(0.4, 0.75, 0);
+    dag.rotation.x = Math.PI / 2;
+    g.add(dag);
+  } else if (opts.weapon === 'scythe') {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.4, 6), M.shadow);
+    pole.position.set(0.42, 0.95, 0);
+    g.add(pole);
+    const blade2 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.04), M.silver);
+    blade2.position.set(0.42, 1.6, 0);
+    g.add(blade2);
+  }
+  // helm / hood
+  if (opts.helm === 'crown') {
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.12, 8), M.gold);
+    crown.position.y = 1.4;
+    g.add(crown);
+    for (let i = 0; i < 5; i++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.16, 5), M.gold);
+      const a = i * Math.PI * 2 / 5;
+      sp.position.set(Math.cos(a) * 0.2, 1.55, Math.sin(a) * 0.2);
+      g.add(sp);
+    }
+  } else if (opts.helm === 'hood') {
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.4, 8), M.shadow);
+    hood.position.y = 1.42;
+    g.add(hood);
+  } else if (opts.helm === 'wizardhat') {
+    const hat = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.55, 8), M.purple);
+    hat.position.y = 1.6;
+    g.add(hat);
+  }
+  // glow ring under chosen one
+  if (opts.legendary) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.06, 6, 18), M.gold);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.05;
+    ring.userData.legendaryRing = true;
+    g.add(ring);
+    const pl = new THREE.PointLight(0xffd060, 1.4, 5);
+    pl.position.y = 1.0;
+    g.add(pl);
+  }
+  return g;
+}
+
+function makeMonster(kind) {
+  const g = new THREE.Group();
+  if (kind === 'skeleton') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.7, 6), M.bone);
+    body.position.y = 0.5; g.add(body);
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), M.bone);
+    skull.position.y = 1.0; g.add(skull);
+    const sword = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.02), M.silver);
+    sword.position.set(0.35, 0.7, 0); g.add(sword);
+  } else if (kind === 'imp') {
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), M.red);
+    body.position.y = 0.4; body.scale.y = 1.1; g.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), M.red);
+    head.position.y = 0.78; g.add(head);
+    for (let s = -1; s <= 1; s += 2) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.14, 5), M.bone);
+      horn.position.set(0.06 * s, 0.94, 0); horn.rotation.z = -0.3 * s; g.add(horn);
+    }
+    // wings
+    for (let s = -1; s <= 1; s += 2) {
+      const wing = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x301010, side: THREE.DoubleSide }));
+      wing.position.set(0.25 * s, 0.5, -0.15);
+      wing.rotation.y = 0.4 * s;
+      wing.userData.wing = s;
+      g.add(wing);
+    }
+  } else if (kind === 'spider') {
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), M.spider);
+    body.position.y = 0.3; body.scale.set(1, 0.7, 1); g.add(body);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 4), M.spider);
+      leg.position.set(Math.cos(a) * 0.3, 0.2, Math.sin(a) * 0.3);
+      leg.rotation.z = Math.cos(a) * 0.6;
+      leg.rotation.x = Math.sin(a) * 0.6;
+      g.add(leg);
+    }
+    const eyes = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), M.fire);
+    eyes.position.set(0, 0.3, 0.32); g.add(eyes);
+  } else if (kind === 'ghoul') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.85, 6), M.flesh);
+    body.position.y = 0.55; g.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), M.flesh);
+    head.position.y = 1.1; g.add(head);
+    const claw = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.22, 5), M.bone);
+    claw.position.set(0.36, 0.8, 0); claw.rotation.z = Math.PI / 2; g.add(claw);
+  } else if (kind === 'shade') {
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0x1a0a30, transparent: true, opacity: 0.7, emissive: 0x4020a0, emissiveIntensity: 0.5 }));
+    body.position.y = 0.6; g.add(body);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), M.arcane);
+    eye.position.set(0, 1.0, 0.1); g.add(eye);
+  } else if (kind === 'demonking') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 1.4, 8), M.shadow);
+    body.position.y = 0.85; g.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 8), M.red);
+    head.position.y = 1.7; g.add(head);
+    for (let s = -1; s <= 1; s += 2) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.5, 6), M.bone);
+      horn.position.set(0.2 * s, 2.0, 0); horn.rotation.z = -0.4 * s; g.add(horn);
+    }
+    // wings
+    for (let s = -1; s <= 1; s += 2) {
+      const wing = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.0),
+        new THREE.MeshStandardMaterial({ color: 0x200810, side: THREE.DoubleSide, emissive: 0x300000, emissiveIntensity: 0.3 }));
+      wing.position.set(0.7 * s, 1.4, -0.3);
+      wing.rotation.y = 0.5 * s;
+      g.add(wing);
+    }
+    const aura = new THREE.PointLight(0xff2040, 2.5, 10);
+    aura.position.y = 1.5;
+    g.add(aura);
+  }
+  return g;
+}
+
+// ---------- Game state ----------
+const game = {
+  floors: [],
+  floorGroups: [],
+  themes: [0, 1, 2, 3, 4],
+  heroes: [],
+  monsters: [],
+  traps: [],
+  damageNumbers: [],
+  projectiles: [],
+  wave: 0,
+  waveMax: 12,
+  ended: false,
+  endTimer: 0,
+  endReason: null,
+  endVictor: null,
+  overlord: null,
+  lieutenant: null,
+  partyName: "",
+  cameraTargetY: 0,
+  cameraFloor: 0,
+  ovMana: 100,
+  ovManaMax: 100,
+  ovSoul: 0,
+  ovTraps: 0,
+  ovKills: 0,
+  ovActionTimer: 0,
+  waveTimer: 0,
+  legendarySpawned: false,
+  bossPhase: false,
+  bossSpawned: false,
+  events: [],
+  totalHeroDeaths: 0,
+  totalMonsterDeaths: 0,
+  startTime: performance.now()
+};
+
+const throneMiniState = { group: null, overlordModel: null };
+
+// ---------- Chronicle ----------
+function chron(tag, text) {
+  const div = document.createElement('div');
+  div.className = 'entry ' + tag;
+  const tagEl = document.createElement('span');
+  tagEl.className = 'tag';
+  if (tag === 'vorthak') tagEl.textContent = '[VORTHAK]';
+  else if (tag === 'heroes') tagEl.textContent = '[HEROES]';
+  else tagEl.textContent = '[CHRONICLE]';
+  div.appendChild(tagEl);
+  div.appendChild(document.createTextNode(text));
+  CHRON.appendChild(div);
+  while (CHRON.childElementCount > 80) CHRON.removeChild(CHRON.firstChild);
+  CHRON.scrollTop = CHRON.scrollHeight;
+}
+
+// ---------- Setup new run ----------
+function newRun() {
+  // clear
+  for (const g of game.floorGroups) scene.remove(g);
+  game.floors = []; game.floorGroups = [];
+  game.heroes.forEach(h => scene.remove(h.mesh));
+  game.heroes = [];
+  game.monsters.forEach(m => scene.remove(m.mesh));
+  game.monsters = [];
+  game.traps.forEach(t => scene.remove(t.mesh));
+  game.traps = [];
+  game.damageNumbers.forEach(d => HOST.removeChild(d.el));
+  game.damageNumbers = [];
+  game.projectiles.forEach(p => scene.remove(p.mesh));
+  game.projectiles = [];
+  if (throneMiniState.group) miniScene.remove(throneMiniState.group);
+
+  game.wave = 0; game.ended = false; game.endTimer = 0;
+  game.ovMana = 100; game.ovSoul = 0; game.ovTraps = 0; game.ovKills = 0;
+  game.ovActionTimer = 0; game.waveTimer = 0;
+  game.legendarySpawned = false; game.bossPhase = false; game.bossSpawned = false;
+  game.cameraFloor = 0; game.cameraTargetY = 0;
+  game.totalHeroDeaths = 0; game.totalMonsterDeaths = 0;
+  game.startTime = performance.now();
+  document.getElementById('endscreen').classList.remove('show');
+
+  // choose overlord & lieutenant
+  game.overlord = choice(OVERLORDS);
+  game.lieutenant = choice(LIEUTENANTS);
+  game.partyName = choice(HERO_PARTIES);
+
+  // gen floors
+  for (let f = 0; f < FLOORS; f++) {
+    const fl = genFloor(f);
+    game.floors.push(fl);
+    const g = buildFloor(fl, f);
+    if (f === 3) buildThroneOnFloor(g, fl);
+    scene.add(g);
+    game.floorGroups.push(g);
+  }
+
+  // build throne mini
+  buildThroneMini();
+
+  // HUD updates
+  document.getElementById('ov-name').textContent = '⚜ ' + game.overlord.name + ' ⚜';
+  document.getElementById('ov-name').style.color = '#' + game.overlord.color.toString(16).padStart(6, '0');
+  document.getElementById('ov-lieu').textContent = game.lieutenant.name.split(' ')[0];
+
+  chron('system', '═══ ' + game.overlord.title + ' awakens. ' + game.partyName + ' approach the gates. ═══');
+  chron('vorthak', '"' + choice(TAUNTS) + '"');
+  chron('heroes', '"' + choice(HERO_CRIES) + '" — ' + game.partyName + ' descend into the dark.');
+  chron('system', game.lieutenant.name + ' stalks the lower halls.');
+
+  // initial party (wave 1 begins immediately)
+  startWave();
+}
+
+function buildThroneMini() {
+  const g = new THREE.Group();
+  // dais
+  const dais = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.4, 0.3, 14), M.stoneDark);
+  dais.position.y = -0.15;
+  g.add(dais);
+  const dais2 = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.8, 0.2, 14), M.stone);
+  dais2.position.y = 0.05;
+  g.add(dais2);
+  // throne
+  const tback = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.6, 0.3), M.stoneDark);
+  tback.position.set(0, 1.45, -0.5);
+  g.add(tback);
+  const tseat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.0), M.stoneDark);
+  tseat.position.set(0, 0.6, 0);
+  g.add(tseat);
+  // crystal
+  const crystal = new THREE.Mesh(G.octa, new THREE.MeshStandardMaterial({ color: game.overlord.color, emissive: game.overlord.color, emissiveIntensity: 0.7 }));
+  crystal.position.set(0, 3.4, -0.5);
+  crystal.scale.set(0.6, 0.6, 0.6);
+  crystal.userData.spin = true;
+  g.add(crystal);
+  // overlord on throne
+  const ovBodyMat = new THREE.MeshStandardMaterial({ color: game.overlord.color, emissive: 0x100020, emissiveIntensity: 0.5, metalness: 0.4, roughness: 0.4 });
+  const ov = makeHumanoid({ body: ovBodyMat, skin: M.bone, weapon: 'scythe', helm: 'crown' });
+  ov.position.set(0, 0.8, 0);
+  g.add(ov);
+  throneMiniState.overlordModel = ov;
+  // pillars
+  for (let s = -1; s <= 1; s += 2) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 3.2, 8), M.stone);
+    col.position.set(1.4 * s, 1.5, 0.6);
+    g.add(col);
+  }
+  miniScene.add(g);
+  throneMiniState.group = g;
+}
+
+// ---------- Spawn heroes ----------
+function spawnHero(cls, floorIndex, opts = {}) {
+  const fl = game.floors[floorIndex];
+  const sx = fl.entrance[0], sy = fl.entrance[1];
+  let body;
+  let weapon;
+  let helm = null;
+  const bodyMatByCls = {
+    paladin: M.silver,
+    ranger: M.green,
+    wizard: M.blue,
+    rogue: M.shadow
+  };
+  body = bodyMatByCls[cls];
+  weapon = { paladin: 'sword', ranger: 'bow', wizard: 'staff', rogue: 'dagger' }[cls];
+  if (cls === 'paladin') helm = 'crown';
+  if (cls === 'wizard') helm = 'wizardhat';
+  if (cls === 'rogue') helm = 'hood';
+  const legendary = !!opts.legendary;
+  if (legendary) body = M.gold;
+  const mesh = makeHumanoid({ body, skin: M.skin, weapon, helm, legendary });
+  const wp = tileToWorld(sx, sy, 0);
+  mesh.position.set(wp.x, 0, wp.z);
+  game.floorGroups[floorIndex].add(mesh);
+
+  const baseStats = {
+    paladin: { hp: 80, atk: 14, range: 1.6, speed: 2.4 },
+    ranger:  { hp: 55, atk: 11, range: 4.5, speed: 2.8 },
+    wizard:  { hp: 45, atk: 18, range: 5.0, speed: 2.3 },
+    rogue:   { hp: 50, atk: 13, range: 1.6, speed: 3.2 }
+  }[cls];
+  const name = opts.name || choice(HERO_NAMES[cls]);
+  const hero = {
+    name, cls, mesh,
+    floor: floorIndex,
+    tile: [sx, sy],
+    target: [...fl.exit],
+    path: null, pathIdx: 0,
+    hp: legendary ? baseStats.hp * 2 : baseStats.hp,
+    hpMax: legendary ? baseStats.hp * 2 : baseStats.hp,
+    atk: legendary ? Math.floor(baseStats.atk * 1.5) : baseStats.atk,
+    range: baseStats.range,
+    speed: baseStats.speed,
+    cooldown: 0,
+    state: 'descending',
+    legendary,
+    alive: true,
+    age: 0
+  };
+  game.heroes.push(hero);
+  return hero;
+}
+
+function startWave() {
+  game.wave++;
+  if (game.wave > game.waveMax) {
+    triggerEnding('vorthak', 'The dungeon stands eternal. ' + game.overlord.name + ' has slain all who came.');
+    return;
+  }
+  document.getElementById('wave-title').textContent = 'Wave ' + game.wave + ' / ' + game.waveMax;
+  document.getElementById('wave-sub').textContent = game.partyName + ' enter the gates.';
+  // Compose a party
+  const partySize = 3 + Math.floor(game.wave / 4);
+  const pool = ['paladin', 'ranger', 'wizard', 'rogue'];
+  let chosenCount = 0;
+  for (let i = 0; i < partySize; i++) {
+    const cls = choice(pool);
+    let isLegendary = false;
+    if (!game.legendarySpawned && game.wave >= 6 && chance(0.15) && chosenCount === 0) {
+      isLegendary = true;
+      game.legendarySpawned = true;
+      chosenCount++;
+    }
+    const h = spawnHero(cls, 0, { legendary: isLegendary });
+    if (isLegendary) {
+      chron('heroes', '✦ THE CHOSEN ONE descends — ' + h.name + ' bears the prophecy! ✦');
+      chron('vorthak', '"...the prophet? Bah. Prophets bleed like the rest."');
+    }
+  }
+  chron('heroes', game.partyName + ' wave ' + game.wave + ' — ' + partySize + ' brave souls march.');
+  if (game.wave === game.waveMax) {
+    chron('system', '═══ FINAL WAVE — the prophecy turns ═══');
+  }
+}
+
+// ---------- Spawn monster ----------
+function spawnMonster(kind, floorIndex, position) {
+  const fl = game.floors[floorIndex];
+  let pos = position;
+  if (!pos) {
+    // pick a random floor tile in any room
+    const r = choice(fl.rooms);
+    pos = [r.x + randi(0, r.w - 1), r.y + randi(0, r.h - 1)];
+  }
+  const mesh = makeMonster(kind);
+  const wp = tileToWorld(pos[0], pos[1], 0);
+  mesh.position.set(wp.x, 0, wp.z);
+  game.floorGroups[floorIndex].add(mesh);
+  const stats = {
+    skeleton: { hp: 22, atk: 6, range: 1.4, speed: 1.6 },
+    imp:      { hp: 14, atk: 5, range: 3.0, speed: 2.2 },
+    spider:   { hp: 18, atk: 7, range: 1.4, speed: 2.4 },
+    ghoul:    { hp: 30, atk: 9, range: 1.4, speed: 1.4 },
+    shade:    { hp: 26, atk: 10, range: 3.5, speed: 2.0 },
+    demonking:{ hp: 350, atk: 22, range: 2.5, speed: 1.6 }
+  }[kind];
+  const m = {
+    kind, mesh,
+    floor: floorIndex,
+    tile: pos.slice(),
+    hp: stats.hp, hpMax: stats.hp,
+    atk: stats.atk, range: stats.range, speed: stats.speed,
+    cooldown: 0,
+    target: null,
+    alive: true,
+    age: 0,
+    boss: kind === 'demonking'
+  };
+  game.monsters.push(m);
+  return m;
+}
+
+function placeTrap(floorIndex) {
+  const fl = game.floors[floorIndex];
+  const r = choice(fl.rooms);
+  const pos = [r.x + randi(0, r.w - 1), r.y + randi(0, r.h - 1)];
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.08, 12), M.trap);
+  const wp = tileToWorld(pos[0], pos[1], 0);
+  mesh.position.set(wp.x, 0.05, wp.z);
+  game.floorGroups[floorIndex].add(mesh);
+  const trap = {
+    floor: floorIndex,
+    tile: pos,
+    mesh,
+    dmg: 18 + game.wave * 2,
+    armed: true,
+    age: 0
+  };
+  game.traps.push(trap);
+  game.ovTraps++;
+}
+
+// ---------- Damage numbers ----------
+function showDamage(worldPos, amount, color) {
+  const v = worldPos.clone().project(camera);
+  const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+  const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+  const el = document.createElement('div');
+  el.style.position = 'fixed';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.color = color;
+  el.style.fontSize = '18px';
+  el.style.fontWeight = 'bold';
+  el.style.textShadow = '0 0 6px black, 1px 1px 0 black';
+  el.style.pointerEvents = 'none';
+  el.style.zIndex = '5';
+  el.style.transition = 'transform 1s linear, opacity 1s linear';
+  el.textContent = String(amount);
+  HOST.appendChild(el);
+  requestAnimationFrame(() => {
+    el.style.transform = 'translateY(-50px)';
+    el.style.opacity = '0';
+  });
+  game.damageNumbers.push({ el, ttl: 1.0 });
+}
+
+// ---------- Pathfind helper ----------
+function setPath(actor) {
+  const fl = game.floors[actor.floor];
+  const path = astar(fl.grid, actor.tile[0], actor.tile[1], actor.target[0], actor.target[1]);
+  actor.path = path;
+  actor.pathIdx = 1;
+}
+
+// ---------- Update overlord HUD ----------
+function updateHUD() {
+  document.getElementById('ov-mana').textContent = Math.round(game.ovMana);
+  document.getElementById('ov-mana-bar').style.width = (100 * game.ovMana / game.ovManaMax) + '%';
+  document.getElementById('ov-soul').textContent = game.ovSoul;
+  document.getElementById('ov-mon').textContent = game.monsters.filter(m => m.alive).length;
+  document.getElementById('ov-traps').textContent = game.traps.filter(t => t.armed).length;
+  document.getElementById('ov-kills').textContent = game.ovKills;
+  document.getElementById('floor-sub').textContent = 'Active Floor: ' + (game.cameraFloor + 1) + ' / 5';
+}
+
+// ---------- Overlord AI: act every 5s ----------
+function overlordAct() {
+  // Determine active floor (where most heroes are)
+  const counts = new Array(FLOORS).fill(0);
+  for (const h of game.heroes) if (h.alive) counts[h.floor]++;
+  let activeFloor = 0; let max = 0;
+  for (let i = 0; i < FLOORS; i++) if (counts[i] > max) { max = counts[i]; activeFloor = i; }
+  if (max === 0) return;
+
+  if (game.bossPhase) return; // overlord engaged in boss fight
+
+  const monstersAlive = game.monsters.filter(m => m.alive && m.floor === activeFloor && !m.boss).length;
+  const heroesAlive = counts[activeFloor];
+  const opts = [];
+  if (game.ovMana >= 25 && monstersAlive < heroesAlive * 2 + 1) opts.push('summon');
+  if (game.ovMana >= 15) opts.push('trap');
+  opts.push('taunt');
+  if (game.ovMana >= 35 && chance(0.3)) opts.push('curse');
+  const action = choice(opts);
+
+  if (action === 'summon') {
+    const kindByFloor = ['skeleton', 'ghoul', 'spider', 'shade', 'imp'];
+    let kind = kindByFloor[activeFloor];
+    if (chance(0.25)) kind = choice(['skeleton', 'imp', 'spider', 'ghoul', 'shade']);
+    const m = spawnMonster(kind, activeFloor);
+    game.ovMana -= 25;
+    chron('vorthak', `"Rise, ${kind}! Devour them on Floor ${activeFloor + 1}."`);
+  } else if (action === 'trap') {
+    placeTrap(activeFloor);
+    game.ovMana -= 15;
+    chron('vorthak', `*A glyph of doom blooms in the dark of Floor ${activeFloor + 1}.*`);
+  } else if (action === 'curse') {
+    // damage all heroes on a floor
+    let hit = 0;
+    for (const h of game.heroes) if (h.alive && h.floor === activeFloor) { h.hp -= 10; hit++; showDamage(h.mesh.position, 10, '#c080ff'); }
+    game.ovMana -= 35;
+    if (hit) chron('vorthak', `"Suffer my withering eye." (${hit} struck on Floor ${activeFloor + 1})`);
+  } else {
+    chron('vorthak', '"' + choice(TAUNTS) + '"');
+  }
+}
+
+// ---------- Combat tick ----------
+function tickCombat(dt) {
+  // Heroes act
+  for (const h of game.heroes) {
+    if (!h.alive) continue;
+    h.age += dt;
+
+    // Check trap stepping
+    for (const t of game.traps) {
+      if (!t.armed || t.floor !== h.floor) continue;
+      if (Math.abs(h.tile[0] - t.tile[0]) <= 0.5 && Math.abs(h.tile[1] - t.tile[1]) <= 0.5) {
+        h.hp -= t.dmg;
+        t.armed = false;
+        t.mesh.material = M.stoneDark;
+        showDamage(h.mesh.position, t.dmg, '#ff4060');
+        chron('vorthak', `*${h.name} triggers a glyph! ${t.dmg} damage.*`);
+        if (h.hp <= 0) killHero(h);
+      }
+    }
+    if (!h.alive) continue;
+
+    // Find target
+    let target = null;
+    let bestDist = Infinity;
+    for (const m of game.monsters) {
+      if (!m.alive || m.floor !== h.floor) continue;
+      const d = h.mesh.position.distanceTo(m.mesh.position);
+      if (d < bestDist) { bestDist = d; target = m; }
+    }
+
+    h.cooldown = Math.max(0, h.cooldown - dt);
+    if (target && bestDist <= h.range) {
+      // Attack
+      if (h.cooldown <= 0) {
+        const dmg = h.atk + randi(-2, 2);
+        target.hp -= dmg;
+        showDamage(target.mesh.position, dmg, '#ffd060');
+        h.cooldown = 0.9;
+        // ranged projectile cosmetic
+        if (h.range > 2) {
+          spawnProjectile(h.mesh.position.clone().setY(0.8), target.mesh.position.clone().setY(0.8), h.cls === 'wizard' ? 0x80c0ff : 0xddccaa, h.floor);
+        }
+        if (target.hp <= 0) killMonster(target, h);
+      }
+      // face target
+      h.mesh.lookAt(target.mesh.position.x, h.mesh.position.y, target.mesh.position.z);
+    } else {
+      // Move along path
+      if (h.state === 'descending') {
+        // path to current floor exit
+        if (!h.path) {
+          h.target = [...game.floors[h.floor].exit];
+          setPath(h);
+        }
+        moveAlongPath(h, dt);
+        // arrived at exit?
+        if (h.tile[0] === h.target[0] && h.tile[1] === h.target[1]) {
+          if (h.floor < FLOORS - 1) {
+            // descend
+            game.floorGroups[h.floor].remove(h.mesh);
+            h.floor++;
+            const ent = game.floors[h.floor].entrance;
+            h.tile = [ent[0], ent[1]];
+            const wp = tileToWorld(ent[0], ent[1], 0);
+            h.mesh.position.set(wp.x, 0, wp.z);
+            game.floorGroups[h.floor].add(h.mesh);
+            h.target = [...game.floors[h.floor].exit];
+            setPath(h);
+            chron('heroes', `${h.name} descends to Floor ${h.floor + 1}.`);
+            // active floor camera follow
+            game.cameraFloor = Math.max(game.cameraFloor, h.floor);
+            game.cameraTargetY = -h.floor * FLOOR_GAP;
+            // boss trigger when reaching floor 4 (index 3) exit (the throne) — actually trigger when on floor 3 reaches throne
+            if (h.floor === 3) {
+              triggerBoss();
+            }
+          } else {
+            // at heart of evil
+            if (!game.bossPhase) triggerBoss();
+          }
+        }
+      }
+    }
+  }
+
+  // Monsters act
+  for (const m of game.monsters) {
+    if (!m.alive) continue;
+    m.age += dt;
+    let target = null; let bestDist = Infinity;
+    for (const h of game.heroes) {
+      if (!h.alive || h.floor !== m.floor) continue;
+      const d = h.mesh.position.distanceTo(m.mesh.position);
+      if (d < bestDist) { bestDist = d; target = h; }
+    }
+    m.cooldown = Math.max(0, m.cooldown - dt);
+    if (target) {
+      if (bestDist <= m.range) {
+        if (m.cooldown <= 0) {
+          const dmg = m.atk + randi(-1, 2);
+          target.hp -= dmg;
+          showDamage(target.mesh.position, dmg, '#ff6060');
+          m.cooldown = m.boss ? 0.6 : 1.1;
+          if (m.kind === 'imp' || m.kind === 'shade') {
+            spawnProjectile(m.mesh.position.clone().setY(0.8), target.mesh.position.clone().setY(0.8), m.kind === 'shade' ? 0x6020a0 : 0xff4020, m.floor);
+          }
+          if (target.hp <= 0) killHero(target);
+        }
+        m.mesh.lookAt(target.mesh.position.x, m.mesh.position.y, target.mesh.position.z);
+      } else {
+        // move toward target
+        m.target = [Math.round((target.mesh.position.x / TILE) + W / 2), Math.round((target.mesh.position.z / TILE) + H / 2)];
+        if (!m.path || m.age % 2 < dt * 1.1) setPath(m);
+        moveAlongPath(m, dt);
+      }
+    }
+  }
+
+  // Projectiles
+  for (let i = game.projectiles.length - 1; i >= 0; i--) {
+    const p = game.projectiles[i];
+    p.t += dt * 4;
+    if (p.t >= 1) {
+      game.floorGroups[p.floor].remove(p.mesh);
+      game.projectiles.splice(i, 1);
+    } else {
+      p.mesh.position.lerpVectors(p.start, p.end, p.t);
+    }
+  }
+
+  // Cull dead later
+  // Damage numbers TTL handled by CSS; cleanup
+  for (let i = game.damageNumbers.length - 1; i >= 0; i--) {
+    game.damageNumbers[i].ttl -= dt;
+    if (game.damageNumbers[i].ttl <= 0) {
+      try { HOST.removeChild(game.damageNumbers[i].el); } catch (e) {}
+      game.damageNumbers.splice(i, 1);
+    }
+  }
+}
+
+function spawnProjectile(start, end, color, floorIdx) {
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2, transparent: true, opacity: 0.9 });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), mat);
+  mesh.position.copy(start);
+  game.floorGroups[floorIdx].add(mesh);
+  game.projectiles.push({ mesh, start: start.clone(), end: end.clone(), t: 0, floor: floorIdx });
+}
+
+function moveAlongPath(actor, dt) {
+  if (!actor.path || actor.pathIdx >= actor.path.length) {
+    actor.path = null;
+    return;
+  }
+  const next = actor.path[actor.pathIdx];
+  const nw = tileToWorld(next[0], next[1], 0);
+  const dx = nw.x - actor.mesh.position.x;
+  const dz = nw.z - actor.mesh.position.z;
+  const dist = Math.hypot(dx, dz);
+  const step = actor.speed * dt;
+  if (dist <= step) {
+    actor.mesh.position.set(nw.x, 0, nw.z);
+    actor.tile = [next[0], next[1]];
+    actor.pathIdx++;
+  } else {
+    actor.mesh.position.x += (dx / dist) * step;
+    actor.mesh.position.z += (dz / dist) * step;
+    actor.mesh.lookAt(nw.x, actor.mesh.position.y, nw.z);
+    // bob
+    actor.mesh.position.y = Math.abs(Math.sin(actor.age * 8)) * 0.05;
+  }
+}
+
+function killHero(h) {
+  h.alive = false;
+  h.mesh.rotation.x = -Math.PI / 2;
+  h.mesh.position.y = 0.1;
+  game.ovKills++;
+  game.totalHeroDeaths++;
+  game.ovSoul += 5;
+  game.ovMana = Math.min(game.ovManaMax, game.ovMana + 10);
+  chron('vorthak', `*${h.name} the ${h.cls} crumples. Their soul fuels me.*`);
+  // Check if all heroes dead
+  const aliveCount = game.heroes.filter(x => x.alive).length;
+  if (aliveCount === 0 && !game.bossPhase) {
+    // Wipe — start new wave after delay (next wave timer reset)
+    chron('heroes', `═══ Party wiped on Floor ${h.floor + 1}. ═══`);
+    game.waveTimer = 6; // regroup
+  }
+  if (aliveCount === 0 && game.bossPhase) {
+    triggerEnding('vorthak', `${game.overlord.name} laughs as ${game.partyName}'s last champion falls before the Demon King.`);
+  }
+}
+
+function killMonster(m, killer) {
+  m.alive = false;
+  m.mesh.rotation.x = Math.PI / 2;
+  m.mesh.position.y = 0.1;
+  game.totalMonsterDeaths++;
+  if (m.boss) {
+    chron('heroes', `★ ${killer.name} drives a final blow into the Demon King's heart! ★`);
+    triggerEnding('heroes', `${game.partyName} stand victorious atop ${game.overlord.name}'s shattered throne.`);
+    return;
+  }
+  if (chance(0.25)) chron('heroes', `${killer.name} fells the ${m.kind}.`);
+}
+
+// ---------- Boss / endings ----------
+function triggerBoss() {
+  if (game.bossPhase) return;
+  game.bossPhase = true;
+  chron('system', '═══ THE INNER SANCTUM IS BREACHED ═══');
+  chron('vorthak', `"So... you reached my throne. Then look upon despair."`);
+  chron('heroes', `${game.partyName} steel themselves before ${game.overlord.name}.`);
+  // Clear remaining heroes' path target to throne floor
+  // Spawn Demon King at throne (floor 3 exit)
+  const fl = game.floors[3];
+  const pos = [fl.exit[0], fl.exit[1]];
+  const dk = spawnMonster('demonking', 3, pos);
+  dk.target = pos;
+  game.bossSpawned = true;
+  // Move all alive heroes to floor 3 entrance
+  for (const h of game.heroes) {
+    if (!h.alive) continue;
+    if (h.floor !== 3) {
+      game.floorGroups[h.floor].remove(h.mesh);
+      h.floor = 3;
+      const ent = fl.entrance;
+      h.tile = [ent[0], ent[1] + randi(-1, 1)];
+      const wp = tileToWorld(h.tile[0], h.tile[1], 0);
+      h.mesh.position.set(wp.x, 0, wp.z);
+      game.floorGroups[3].add(h.mesh);
+      h.target = [...fl.exit];
+      setPath(h);
+    }
+  }
+  game.cameraFloor = 3;
+  game.cameraTargetY = -3 * FLOOR_GAP;
+}
+
+function triggerEnding(victor, msg) {
+  if (game.ended) return;
+  game.ended = true;
+  game.endVictor = victor;
+  game.endReason = msg;
+  game.endTimer = 10;
+  const screen = document.getElementById('endscreen');
+  const title = document.getElementById('end-title');
+  const text = document.getElementById('end-text');
+  const stats = document.getElementById('end-stats');
+  if (victor === 'vorthak') {
+    title.className = 'vorthak';
+    title.textContent = 'THE DUNGEON WINS';
+  } else {
+    title.className = 'heroes';
+    title.textContent = 'THE HEROES WIN';
+  }
+  text.textContent = msg;
+  const elapsed = ((performance.now() - game.startTime) / 1000).toFixed(1);
+  stats.textContent = `Waves survived: ${game.wave}/${game.waveMax} · Heroes slain: ${game.totalHeroDeaths} · Monsters slain: ${game.totalMonsterDeaths} · Time: ${elapsed}s`;
+  screen.classList.add('show');
+  chron('system', '═══ ' + msg + ' ═══');
+}
+
+// ---------- Emergent events ----------
+function emergentEvent() {
+  if (game.ended) return;
+  const r = Math.random();
+  if (r < 0.18) {
+    // Bard hire
+    if (game.heroes.filter(h => h.alive).length === 0) return;
+    const h = choice(game.heroes.filter(x => x.alive));
+    chron('heroes', `${h.name} pauses mid-corridor and HIRES A BARD to immortalize the run. (+1 morale)`);
+    h.atk += 2;
+  } else if (r < 0.30) {
+    // Traitor monster
+    const alive = game.monsters.filter(m => m.alive && !m.boss);
+    if (alive.length === 0) return;
+    const t = choice(alive);
+    chron('vorthak', `"WAIT — ${t.kind}? You DEFECT?!"`);
+    chron('heroes', `A ${t.kind} switches sides! "I serve the light now."`);
+    // Convert monster to ally
+    t.alive = false;
+    t.mesh.material = M.green;
+    const fl = game.floors[t.floor];
+    spawnHero('ranger', t.floor, { name: 'Turncoat ' + t.kind });
+  } else if (r < 0.42) {
+    // Dragon hatching from egg sac
+    if (game.cameraFloor !== 2) return;
+    const dragon = spawnMonster('shade', 2);
+    dragon.hp += 30;
+    dragon.atk += 3;
+    chron('system', `An egg sac on Floor 3 splits — a young drake erupts!`);
+  } else if (r < 0.55) {
+    // Time mage rewind
+    chron('system', '✶ A TIME-MAGE rewinds five seconds — wounds half-heal. ✶');
+    for (const h of game.heroes) if (h.alive) h.hp = Math.min(h.hpMax, h.hp + 12);
+    for (const m of game.monsters) if (m.alive) m.hp = Math.min(m.hpMax, m.hp + 8);
+  } else if (r < 0.68) {
+    // Dungeon collapse
+    chron('system', `*The walls of Floor ${game.cameraFloor + 1} groan and heave!*`);
+    for (const h of game.heroes) if (h.alive && h.floor === game.cameraFloor) { h.hp -= 6; showDamage(h.mesh.position, 6, '#aaa'); }
+    for (const m of game.monsters) if (m.alive && m.floor === game.cameraFloor) { m.hp -= 6; }
+  } else if (r < 0.80) {
+    // Lieutenant taunt
+    chron('vorthak', `${game.lieutenant.name}: "Master, the vermin tire. Shall I descend?"`);
+  } else {
+    // Hero banter
+    const alive = game.heroes.filter(h => h.alive);
+    if (alive.length === 0) return;
+    const h = choice(alive);
+    chron('heroes', `${h.name}: "${choice(HERO_CRIES)}"`);
+  }
+}
+
+// ---------- Main loop ----------
+let lastT = performance.now();
+let eventTimer = 0;
+function loop() {
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+
+  if (!game.ended) {
+    // mana regen
+    game.ovMana = Math.min(game.ovManaMax, game.ovMana + dt * 4);
+    // Overlord act
+    game.ovActionTimer += dt;
+    if (game.ovActionTimer >= 5) {
+      game.ovActionTimer = 0;
+      overlordAct();
+    }
+    // Wave timer
+    game.waveTimer += dt;
+    const aliveHeroes = game.heroes.filter(h => h.alive).length;
+    if (game.waveTimer >= 90 && !game.bossPhase) {
+      game.waveTimer = 0;
+      if (aliveHeroes < 2 && game.wave < game.waveMax) startWave();
+    }
+    if (aliveHeroes === 0 && !game.bossPhase && game.wave < game.waveMax) {
+      // restart wave faster after wipe
+      if (game.waveTimer > 6) {
+        game.waveTimer = 0;
+        startWave();
+      }
+    }
+    // Emergent event ~ every 18s
+    eventTimer += dt;
+    if (eventTimer >= 18) {
+      eventTimer = 0;
+      if (chance(0.7)) emergentEvent();
+    }
+    // Combat
+    tickCombat(dt);
+    updateHUD();
+  } else {
+    // Endscreen countdown
+    game.endTimer -= dt;
+    document.getElementById('end-countdown').textContent = `A new tale begins in ${Math.max(0, Math.ceil(game.endTimer))}s...`;
+    if (game.endTimer <= 0) {
+      newRun();
+    }
+  }
+
+  // Camera follow active floor
+  const desiredY = 22 + game.cameraTargetY;
+  camera.position.y += (desiredY - camera.position.y) * 0.04;
+  const lookY = game.cameraTargetY;
+  camera.lookAt(0, lookY, 0);
+
+  // Animate flames / heart / spinners
+  scene.traverse(o => {
+    if (o.userData.flame) {
+      o.scale.y = 1 + Math.sin(now * 0.012 + (o.position.x + o.position.z)) * 0.3;
+      o.scale.x = 1 + Math.cos(now * 0.014) * 0.2;
+    }
+    if (o.userData.flicker !== undefined && o.isLight) {
+      o.intensity = 0.8 + Math.sin(now * 0.008 + o.userData.flicker) * 0.3 + Math.random() * 0.1;
+    }
+    if (o.userData.heartBeat) {
+      const s = 1 + Math.sin(now * 0.005) * 0.15;
+      o.scale.set(s, s, s);
+    }
+    if (o.userData.heartLight) {
+      o.intensity = 1.5 + Math.sin(now * 0.005) * 0.8;
+    }
+    if (o.userData.spin) {
+      o.rotation.y += 0.02;
+      o.rotation.x += 0.005;
+    }
+    if (o.userData.legendaryRing) {
+      o.rotation.z += 0.05;
+    }
+    if (o.userData.wing) {
+      o.rotation.z = Math.sin(now * 0.01) * 0.4 * o.userData.wing;
+    }
+  });
+
+  // Mini scene spin
+  if (throneMiniState.group) {
+    throneMiniState.group.rotation.y += 0.005;
+  }
+
+  renderer.render(scene, camera);
+  miniRenderer.render(miniScene, miniCam);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Boot
+newRun();
+loop();
+</script>
+</body>
+</html>

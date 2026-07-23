@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pulse Feed — Live Firehose</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#05070d;color:#e7e9ea;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+#stage{position:fixed;inset:0;z-index:1}
+#stage canvas{display:block;width:100%;height:100%}
+#vignette{position:fixed;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse at center,transparent 30%,rgba(0,0,0,.65) 78%,rgba(0,0,0,.95) 100%)}
+#scan{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:.06;mix-blend-mode:overlay;background-image:repeating-linear-gradient(0deg,rgba(120,200,255,.3) 0 1px,transparent 1px 3px)}
+.ui{position:fixed;z-index:10;pointer-events:none}
+/* TOP BAR */
+#topbar{top:0;left:0;right:0;height:54px;background:linear-gradient(180deg,rgba(8,12,22,.92),rgba(8,12,22,.6));border-bottom:1px solid rgba(80,140,220,.22);display:flex;align-items:center;padding:0 18px;gap:18px}
+#brand{display:flex;align-items:center;gap:12px}
+#brand .glyph{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#5db8ff 0%,#1d9bf0 50%,#0b5fc0 100%);box-shadow:0 0 16px rgba(29,155,240,.55),inset 0 0 8px rgba(255,255,255,.25);position:relative}
+#brand .glyph::after{content:"";position:absolute;inset:6px;border-radius:50%;border:1px solid rgba(255,255,255,.35);border-top-color:rgba(255,255,255,.85);animation:spin 4s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#brand .name{font-size:17px;font-weight:800;letter-spacing:2px;color:#e7e9ea}
+#brand .name span{color:#1d9bf0}
+#brand .sub{font-size:9px;letter-spacing:6px;color:#7a8a9a;margin-top:2px}
+#live{display:flex;align-items:center;gap:6px;background:#b30f1a;border-radius:3px;padding:4px 9px;font-size:10px;letter-spacing:3px;color:#fff;font-weight:800}
+#live::before{content:"";width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 8px #fff;animation:pulse 1.1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+#tps{margin-left:auto;display:flex;align-items:baseline;gap:8px;font-family:"SF Mono",Menlo,monospace;color:#9ad8ff;font-size:11px;letter-spacing:2px}
+#tps b{font-size:22px;color:#fff;letter-spacing:1px;font-weight:700;text-shadow:0 0 10px rgba(154,216,255,.5)}
+#tps em{font-style:normal;color:#5d7a92;font-size:9px;letter-spacing:3px}
+#clock{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:#7a8a9a;letter-spacing:2px}
+/* TRENDING SIDEBAR */
+#trending{top:74px;left:18px;width:240px;background:linear-gradient(180deg,rgba(10,16,28,.85),rgba(10,16,28,.65));border:1px solid rgba(80,140,220,.18);border-radius:10px;padding:14px;backdrop-filter:blur(6px)}
+#trending h3{font-size:11px;letter-spacing:4px;color:#1d9bf0;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+#trending h3::before{content:"📈";font-size:13px}
+#trendList{display:flex;flex-direction:column;gap:1px}
+.trendItem{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid rgba(80,140,220,.08);transition:background .3s,transform .4s}
+.trendItem .rank{font-size:10px;color:#5d7a92;width:18px;font-family:"SF Mono",Menlo,monospace;font-weight:700}
+.trendItem .tag{font-size:12px;font-weight:700;color:#e7e9ea;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trendItem .cnt{font-size:9px;color:#5d7a92;font-family:"SF Mono",Menlo,monospace}
+.trendItem.up{background:rgba(29,155,240,.06)}
+.trendItem.flame .tag::after{content:"🔥";margin-left:4px;font-size:10px}
+.trendItem.new{animation:flashIn .8s}
+@keyframes flashIn{from{background:rgba(29,155,240,.4)}to{background:transparent}}
+.trendItem.t1 .tag{color:#1d9bf0;text-shadow:0 0 8px rgba(29,155,240,.4)}
+/* TIMELINE */
+#timeline{top:74px;right:18px;width:380px;bottom:78px;background:linear-gradient(180deg,rgba(10,16,28,.85),rgba(10,16,28,.65));border:1px solid rgba(80,140,220,.18);border-radius:10px;backdrop-filter:blur(6px);display:flex;flex-direction:column;overflow:hidden}
+#tlHead{padding:10px 14px;border-bottom:1px solid rgba(80,140,220,.15);display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:3px;color:#1d9bf0;font-weight:800}
+#tlHead::before{content:"";width:6px;height:6px;border-radius:50%;background:#1d9bf0;box-shadow:0 0 8px #1d9bf0;animation:pulse 1.5s infinite}
+#tlHead em{font-style:normal;color:#5d7a92;font-size:9px;letter-spacing:2px;margin-left:auto}
+#tlScroll{flex:1;overflow:hidden;position:relative;mask:linear-gradient(180deg,transparent 0,#000 5%,#000 95%,transparent 100%);-webkit-mask:linear-gradient(180deg,transparent 0,#000 5%,#000 95%,transparent 100%)}
+#tlInner{display:flex;flex-direction:column;gap:0;padding:0}
+.tw{padding:11px 14px 12px;border-bottom:1px solid rgba(80,140,220,.08);animation:tweetIn .55s cubic-bezier(.16,1,.3,1)}
+.tw.viral{background:linear-gradient(90deg,rgba(255,160,40,.13),transparent 70%)}
+.tw.cancel{background:linear-gradient(90deg,rgba(220,40,80,.16),transparent 70%)}
+.tw.qt{padding-left:16px;border-left:2px solid rgba(80,140,220,.25)}
+.tw.rt::before{content:"♻ "attr(data-rt-by)" Retweeted";display:block;font-size:10px;color:#5d7a92;margin-bottom:4px;font-weight:600;letter-spacing:.4px}
+@keyframes tweetIn{from{opacity:0;transform:translateY(-14px) scale(.985)}to{opacity:1;transform:none}}
+.tw .row{display:flex;gap:9px;align-items:flex-start}
+.tw .ava{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:block}
+.tw .body{flex:1;min-width:0}
+.tw .who{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:12px;line-height:1.2}
+.tw .nm{font-weight:800;color:#e7e9ea;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tw .ck{display:inline-block;width:14px;height:14px;border-radius:50%;font-size:9px;text-align:center;line-height:14px;font-weight:900;color:#fff}
+.tw .ck.b{background:#1d9bf0}
+.tw .ck.g{background:linear-gradient(135deg,#ffb938,#c97f0a);color:#3a2008}
+.tw .hd{font-size:11px;color:#71767b;font-weight:500}
+.tw .dot{font-size:11px;color:#71767b}
+.tw .ago{font-size:11px;color:#71767b}
+.tw .txt{font-size:13px;line-height:1.34;color:#e7e9ea;margin-top:3px;word-wrap:break-word}
+.tw .txt b{color:#1d9bf0;font-weight:500}
+.tw .txt .h{color:#1d9bf0}
+.tw .qb{margin-top:7px;border:1px solid rgba(80,140,220,.22);border-radius:9px;padding:8px 10px;background:rgba(10,16,28,.4)}
+.tw .qb .who{font-size:11px}
+.tw .qb .nm{font-size:11px;max-width:100px}
+.tw .qb .txt{font-size:12px;margin-top:2px;color:#aab4be}
+.tw .met{display:flex;gap:14px;margin-top:7px;font-size:11px;color:#71767b;font-family:"SF Mono",Menlo,monospace}
+.tw .met span{display:inline-flex;align-items:center;gap:4px;transition:color .3s}
+.tw.viral .met .rt{color:#ffa028;text-shadow:0 0 8px rgba(255,160,40,.4)}
+.tw.cancel .met .re{color:#ff4070;text-shadow:0 0 8px rgba(255,64,112,.45)}
+.tw .src{font-size:9px;color:#3a4a5a;margin-top:3px;letter-spacing:1px;font-family:"SF Mono",Menlo,monospace}
+/* CITY LABEL OVERLAY */
+#cityLayer{position:fixed;inset:0;z-index:5;pointer-events:none;overflow:hidden}
+.city{position:absolute;font-size:10px;color:#9ad8ff;letter-spacing:2px;font-weight:700;text-shadow:0 0 6px rgba(29,155,240,.6),0 0 2px rgba(0,0,0,.9);font-family:"SF Mono",Menlo,monospace;animation:cityPop 2.4s forwards;white-space:nowrap;transform:translate(-50%,-100%) translateY(-10px)}
+.city::before{content:"";position:absolute;top:100%;left:50%;width:1px;height:14px;background:linear-gradient(180deg,rgba(29,155,240,.8),transparent);transform:translateX(-50%)}
+@keyframes cityPop{0%{opacity:0;transform:translate(-50%,-100%) translateY(0)}15%{opacity:1;transform:translate(-50%,-100%) translateY(-10px)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-100%) translateY(-18px)}}
+/* BANNERS */
+#banners{position:fixed;top:54px;left:0;right:0;z-index:11;pointer-events:none}
+.banner{padding:12px 22px;font-size:14px;letter-spacing:3px;font-weight:800;color:#fff;text-align:center;animation:bannerIn .5s,bannerOut .5s 5s forwards;display:flex;align-items:center;justify-content:center;gap:14px}
+.banner.breaking{background:linear-gradient(90deg,#a40a14,#dc1428,#a40a14);box-shadow:0 4px 22px rgba(220,20,40,.5)}
+.banner.ratio{background:linear-gradient(90deg,#5e0d2a,#a8124a,#5e0d2a);box-shadow:0 4px 22px rgba(168,18,74,.45)}
+.banner.viral{background:linear-gradient(90deg,#7a4200,#e07a14,#7a4200);box-shadow:0 4px 22px rgba(224,122,20,.5)}
+.banner.war{background:linear-gradient(90deg,#1a3a6a,#2c5fa6,#1a3a6a);box-shadow:0 4px 22px rgba(44,95,166,.5)}
+.banner .pill{background:rgba(0,0,0,.35);padding:3px 9px;border-radius:3px;font-size:11px;letter-spacing:2px}
+.banner .blink{animation:pulse .8s infinite}
+@keyframes bannerIn{from{transform:translateY(-100%);opacity:0}to{transform:none;opacity:1}}
+@keyframes bannerOut{to{transform:translateY(-100%);opacity:0}}
+/* BOTTOM BAR */
+#bottombar{bottom:0;left:0;right:0;height:64px;background:linear-gradient(0deg,rgba(8,12,22,.95),rgba(8,12,22,.55));border-top:1px solid rgba(80,140,220,.22);display:flex;align-items:center;padding:0 18px;gap:14px}
+#topTweet{flex:1;display:flex;align-items:center;gap:10px;font-size:11px;color:#9ad8ff;letter-spacing:1.5px;font-family:"SF Mono",Menlo,monospace;overflow:hidden}
+#topTweet .lb{color:#5d7a92;font-size:9px;letter-spacing:3px}
+#topTweet .who{color:#fff;font-weight:700}
+#topTweet .ct{color:#ffa028}
+#topTweet .scroll{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cbd5e1;font-size:11px}
+#camLbl{font-family:"SF Mono",Menlo,monospace;font-size:10px;color:#5d7a92;letter-spacing:3px;display:flex;align-items:center;gap:6px}
+#camLbl b{color:#1d9bf0}
+#camLbl::before{content:"●";color:#ff4040;animation:pulse 1s infinite}
+/* PIP ANCHOR */
+#pip{position:fixed;left:18px;bottom:78px;width:240px;background:linear-gradient(180deg,rgba(10,16,28,.92),rgba(10,16,28,.78));border:1px solid rgba(80,140,220,.25);border-radius:10px;padding:10px;z-index:11;backdrop-filter:blur(6px)}
+#pipFrame{width:100%;height:130px;border-radius:7px;background:radial-gradient(ellipse at 40% 30%,#23344a 0%,#0c1422 70%,#050810 100%);position:relative;overflow:hidden;border:1px solid rgba(80,140,220,.1)}
+#pipFrame .silh{position:absolute;left:50%;bottom:-10px;transform:translateX(-50%);width:88px;height:118px;background:radial-gradient(ellipse at 50% 25%,#9ad8ff 0%,#3a78b8 28%,#1a3a6a 55%,transparent 70%);border-radius:50% 50% 30% 30%/45% 45% 60% 60%;filter:blur(.4px);opacity:.85}
+#pipFrame .silh::after{content:"";position:absolute;left:50%;top:18px;width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 40% 30%,#dbe9f7 0%,#7da6c8 60%,#2a4a6a 100%);transform:translateX(-50%)}
+#pipFrame .grid{position:absolute;inset:0;background-image:repeating-linear-gradient(0deg,rgba(29,155,240,.06) 0 1px,transparent 1px 8px),repeating-linear-gradient(90deg,rgba(29,155,240,.06) 0 1px,transparent 1px 8px);opacity:.5}
+#pipFrame .lbl{position:absolute;top:6px;left:8px;font-family:"SF Mono",Menlo,monospace;font-size:8px;letter-spacing:2px;color:#1d9bf0;background:rgba(0,0,0,.5);padding:2px 5px;border-radius:2px}
+#pipFrame .lbl::before{content:"●";color:#ff4040;margin-right:4px}
+#pipFrame .quote{position:absolute;left:8px;right:8px;bottom:6px;font-size:9px;color:#cbd5e1;line-height:1.25;background:rgba(0,0,0,.6);padding:5px 7px;border-radius:3px;letter-spacing:.3px}
+#pipMeta{margin-top:8px;display:flex;align-items:center;gap:8px}
+#pipMeta .nm{font-size:11px;font-weight:800;color:#e7e9ea}
+#pipMeta .role{font-size:9px;color:#5d7a92;letter-spacing:2px}
+/* VIRAL TWEET FOCUS CARD */
+#viralCard{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.9);z-index:12;background:linear-gradient(180deg,#0c1422,#050810);border:2px solid #ffa028;box-shadow:0 0 60px rgba(255,160,40,.5),inset 0 0 30px rgba(255,160,40,.1);border-radius:14px;padding:18px 22px;width:440px;opacity:0;pointer-events:none;transition:opacity .5s,transform .5s cubic-bezier(.16,1,.3,1)}
+#viralCard.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#viralCard .lb{font-size:11px;letter-spacing:5px;color:#ffa028;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+#viralCard .lb::before{content:"🔥"}
+#viralCard .row{display:flex;gap:11px;align-items:flex-start}
+#viralCard .ava{width:46px;height:46px;border-radius:50%}
+#viralCard .nm{font-size:14px;font-weight:800;color:#fff}
+#viralCard .hd{font-size:11px;color:#71767b}
+#viralCard .txt{font-size:15px;line-height:1.4;margin-top:5px;color:#fff}
+#viralCard .met{margin-top:11px;display:flex;gap:18px;font-family:"SF Mono",Menlo,monospace;font-size:13px}
+#viralCard .met .rt{color:#ffa028}
+#viralCard .met .lk{color:#ff4070}
+#viralCard .met .re{color:#1d9bf0}
+#viralCard .met .delta{font-size:10px;color:#5d7a92;margin-left:3px}
+/* RESEED FLASH */
+#reseed{position:fixed;inset:0;z-index:99;pointer-events:none;background:#000;opacity:0;transition:opacity .8s}
+#reseed.on{opacity:.85}
+#reseed .msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;letter-spacing:8px;color:#1d9bf0;font-weight:800;text-shadow:0 0 20px rgba(29,155,240,.7);font-family:"SF Mono",Menlo,monospace}
+</style>
+</head>
+<body>
+<!-- ROUND14_LIVING v1 -->
+<div id="stage"></div>
+<div id="vignette"></div>
+<div id="scan"></div>
+<div id="cityLayer"></div>
+<div class="ui" id="topbar">
+<div id="brand"><div class="glyph"></div><div><div class="name">PULSE <span>FEED</span></div><div class="sub">LIVE FIREHOSE</div></div></div>
+<div id="live">LIVE</div>
+<div id="clock">00:00:00 UTC</div>
+<div id="tps"><em>TPS</em><b>0</b><em>tweets/s</em></div>
+</div>
+<div class="ui" id="trending"><h3>TRENDING NOW</h3><div id="trendList"></div></div>
+<div class="ui" id="timeline"><div id="tlHead">TIMELINE<em id="tlSub">FOR YOU</em></div><div id="tlScroll"><div id="tlInner"></div></div></div>
+<div id="banners"></div>
+<div class="ui" id="pip"><div id="pipFrame"><div class="grid"></div><div class="silh"></div><div class="lbl">LIVE — DATA DESK</div><div class="quote" id="pipQuote">tracking signal across 12 clusters…</div></div><div id="pipMeta"><div><div class="nm">Mira Vance</div><div class="role">DATA ANALYST · @miravance</div></div></div></div>
+<div id="viralCard"><div class="lb">VIRAL — TRENDING #1</div><div class="row"><img class="ava" id="vcAva"><div class="body"><div class="nm" id="vcNm"></div><div class="hd" id="vcHd"></div><div class="txt" id="vcTxt"></div><div class="met"><span class="rt">♻ <b id="vcRt">0</b><span class="delta" id="vcDt">+0/s</span></span><span class="lk">❤ <b id="vcLk">0</b></span><span class="re">💬 <b id="vcRe">0</b></span></div></div></div></div>
+<div class="ui" id="bottombar">
+<div id="topTweet"><span class="lb">TOP TWEET ·</span><span class="who" id="ttWho"></span><span class="ct" id="ttCt"></span><span class="scroll" id="ttTxt"></span></div>
+<div id="camLbl">CAM <b id="camName">GLOBE WIDE</b></div>
+</div>
+<div id="reseed"><div class="msg">RESEEDING NETWORK…</div></div>
+<script>
+(function(){
+'use strict';
+
+var TAU = Math.PI * 2;
+var W = function(){return window.innerWidth};
+var H = function(){return window.innerHeight};
+var rand = function(a,b){return a+Math.random()*(b-a)};
+var irand = function(a,b){return Math.floor(a+Math.random()*(b-a+1))};
+var pick = function(a){return a[Math.floor(Math.random()*a.length)]};
+var clamp = function(v,a,b){return v<a?a:v>b?b:v};
+var fmt = function(n){if(n<1000)return String(n|0);if(n<1e6)return (n/1000).toFixed(n<1e4?1:0).replace(/\.0$/,'')+'K';return (n/1e6).toFixed(n<1e7?1:0).replace(/\.0$/,'')+'M'};
+var esc = function(s){return s.replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})};
+
+// =================== DATA ===================
+var CITIES = [
+['New York',40.7,-74.0],['Los Angeles',34.0,-118.2],['Tokyo',35.7,139.7],['London',51.5,-0.1],
+['São Paulo',-23.5,-46.6],['Mumbai',19.0,72.8],['Paris',48.8,2.3],['Berlin',52.5,13.4],
+['Sydney',-33.9,151.2],['Cairo',30.0,31.2],['Moscow',55.7,37.6],['Lagos',6.5,3.3],
+['Mexico City',19.4,-99.1],['Beijing',39.9,116.4],['Seoul',37.5,127.0],['Bangkok',13.7,100.5],
+['Istanbul',41.0,29.0],['Dubai',25.2,55.3],['Toronto',43.7,-79.4],['Singapore',1.35,103.8],
+['Buenos Aires',-34.6,-58.4],['Johannesburg',-26.2,28.0],['Manila',14.6,121.0],['Jakarta',-6.2,106.8],
+['Tehran',35.7,51.4],['Lima',-12.0,-77.0],['Madrid',40.4,-3.7],['Amsterdam',52.4,4.9],
+['Stockholm',59.3,18.1],['Athens',38.0,23.7],['Nairobi',-1.3,36.8],['Kyiv',50.4,30.5],
+['Hanoi',21.0,105.8],['Auckland',-36.8,174.7],['Reykjavik',64.1,-21.9],['Honolulu',21.3,-157.8],
+['Vancouver',49.3,-123.1],['Chicago',41.9,-87.6]];
+
+var HPRE = ['night','doom','actually','grim','verified','crypto','sad','real','pixel','neon','lunar','solar','echo','static','glitch','ember','hollow','velvet','forsaken','midnight','moss','havoc','forge','rust','salt','feral','queen','king','mr','dr','prof','citizen','lord','tiny','silent','xx','meta','based','cope','seething','soft','hard','daily','your','the','eternal'];
+var HSUF = ['lilac','scroller','chad','darkpoet','vault','bro','girl','enjoyer','hater','maxx','core','pilled','fan','apologist','truther','realist','optimist','sage','baron','duchess','wolf','hawk','poster','lurker','witness','prophet','oracle','goblin','crow','phoenix','mommy','daddy','gremlin','knight','spectre','muse','witch','vibe','take','quest','42','99','xx','dev'];
+var FIRST = ['Lily','Chad','Mira','Zane','Kai','Ruth','Jamal','Priya','Luca','Elena','Theo','Wren','Nova','Felix','Aria','Ezra','Skye','Beau','Cleo','Jax','Iris','Ravi','Sloan','Otto','Esme','Yuki','Dario','Mei','Lev','Anya','Idris','Rumi','Zola','Mateo','Asha','Nikolai','Camille','Hiro','Quinn','Sage','Vera','Jonas','Imani','Tariq','Margot','Soren','Liana','Dax'];
+var LAST = ['Park','Wilson','Vance','Cohen','Singh','Garcia','Tanaka','Müller','Rossi','Olafsson','Kim','Nguyen','Patel','Andersson','Volkov','Becker','Hoffmann','Diallo','Quintero','Rivera','Okafor','Nakamura','Lindqvist','de Souza','Vasquez','Ahmed','Choi','Romano','Kowalski','Mensah'];
+var STANCES = ['sincere','shitposter','journalist','corpPR','activist','troll','wholesome'];
+var TOPICS = ['politics','sports','tech','entertainment','drama','crypto','wholesome','ai','climate','sportsball'];
+var BRANDS = ['Globex','Initech','Aperture','Umbrella','Stark','Wayne','Cyberdyne','Tyrell','Pied Piper','Hooli','Vandelay','Acme','Nakatomi','OCP','Massive Dynamic','Soylent','Buy n Large','Wonka Industries'];
+var TAGS_BASE = ['#RatioWeek','#ChainBreaker','#MarketCrash','#ElectionNight','#WorldCup','#AIWinter','#CryptoDip','#NewLaunch','#GrammyDrama','#SpaceLaunch','#TechLayoffs','#ClimateWatch','#OscarSnubs','#GoldenHour','#TimelineSilence','#BigYikes','#TouchGrass','#NoBecauseLike','#VibeShift','#Subtweet','#StanCulture','#NPCenergy','#TheDiscourse','#Doomerism','#CelebMeltdown','#RoyalScandal','#UFOFiles','#BREAKING','#TrendsetterDay','#LeakedMemo'];
+
+var TPL = {
+sincere: [
+"honestly i think people deserve more grace than the timeline gives them",
+"every single day i wake up and i try to be a little kinder. that's it. that's the post.",
+"you cannot 'logic' someone out of a position they did not arrive at logically. sit with that.",
+"reminder that the worst person you saw on here today was probably just begging to be perceived",
+"i have lost real friendships to this app. genuinely thinking about logging off forever.",
+"sometimes the bravest thing you can do is just close the app and call your mom",
+"i think we're all a lot more tired than we admit",
+"a quiet life is not a small life. spread that around.",
+"checking in: are you eating? are you drinking water? have you stretched?"],
+shitposter: [
+"guys i think we need to talk about the bird situation 🤨",
+"if i die on here my last words will be 'first'",
+"every tweet i post is just me coping out loud and you cannot stop me",
+"no thoughts. head full. posting anyway.",
+"what if instead of the discourse we just had like, soup",
+"babe wake up new ratio dropped",
+"they should add a button that ratios you for free so we can save time",
+"my doctor told me to log off i told my doctor to log off. we are at an impasse.",
+"i have been awake for 19 hours and the timeline has been wrong every single one of them",
+"normalize replying 'k.' to 4000-word threads",
+"cant believe its monday again. who keeps doing this"],
+journalist: [
+"BREAKING: [BRAND] reportedly suspends operations in three markets pending internal review (sources)",
+"new filings show [BRAND] paid out $1.2B to settle the suit. statement on its way.",
+"thread 🧵 (1/12) why this changes everything for the [TOPIC] sector — and what comes next",
+"reporting from the ground in [CITY]. the mood is, frankly, tense.",
+"scoop: a brave intern at [BRAND] just leaked the memo. it is worse than we thought.",
+"developing — multiple outlets now confirming the [BRAND] story we ran 6 hours ago",
+"[BRAND] CEO will not be answering questions today. that is itself the answer.",
+"the leaked slack messages from [BRAND] are. a lot. piecing them together now.",
+"on background, two former execs tell me the rot at [BRAND] goes years deep"],
+corpPR: [
+"at [BRAND] we believe in listening. that's why we're rolling out our new Listening Initiative™",
+"a message from our CEO regarding recent events: [link]",
+"we hear you. we are pausing the launch. we are not pausing our values.",
+"proud to announce [BRAND] is partnering with [BRAND2] to disrupt the [TOPIC] space",
+"[BRAND] family — we are aware of the situation. an internal review is underway. no further comment.",
+"this Pride season [BRAND] is donating $0.05 of every purchase to a partner we won't name",
+"come work at [BRAND]. we have free snacks and a 'sleep pod' that is just a closet."],
+activist: [
+"they want you tired. they want you scrolling. log off, organize, come back angrier.",
+"the fed just CRASHED the market and they want us to STAY CALM ‼️🤡",
+"it is NOT a 'culture war'. it is a class war with a costume on.",
+"if you are not LOUD about this you are COMPLICIT.",
+"boycott [BRAND]. spread it. they only understand one language and that language is revenue.",
+"this is what they don't want you to see. screenshot before it's deleted.",
+"silence is a choice. neutrality is a choice. you don't get to opt out of history.",
+"reminder: every billionaire is a policy failure"],
+troll: [
+"imagine being [USER] right now. couldn't be me",
+"ratio + L + you fell off + cope + seethe + mald + skill issue",
+"i can't believe [USER] said this. unfollowed. blocked. reported.",
+"every reply guy in this thread should be drafted",
+"this you? 🔍",
+"the way [USER] tweets like anyone asked is sending me 💀",
+"[USER] really woke up and chose violence today and lost",
+"saying it with my whole chest: [USER] has never had a take in their life",
+"normalize quote tweeting people into oblivion"],
+wholesome: [
+"[BREAKING] my dog just learned to say 'I love you' (video soon i promise)",
+"guys my grandma just made an account please be nice she is 87 and she calls retweets 'forwards'",
+"small wins today: drank water, called my mom, did not check email after 7pm",
+"rooting for everyone today. yes even you. yes even YOU.",
+"the cat is asleep on the keyboard. work is cancelled. enjoy your monday.",
+"my barista drew a tiny duck on my coffee and i think i'm going to make it after all",
+"shoutout to whoever held the door for me today. you reset my entire week.",
+"reminder that you are doing better than you think. promise."]
+};
+
+// =================== STATE ===================
+var disposables = [];
+var trackD = function(o){disposables.push(o);return o};
+var scene, camera, renderer, root, globe, atmo, pinGroup, pulseGroup, starField;
+var users = [], cities = [], tweets = [], trending = [];
+var tweetCounter = 0, tps = 0, tpsSamples = [];
+var topTweet = null;
+var animFrame = null;
+var timers = [];
+var setT = function(fn,ms){var t=setTimeout(fn,ms);timers.push(t);return t};
+var setI = function(fn,ms){var t=setInterval(fn,ms);timers.push(t);return t};
+var clearTimers = function(){timers.forEach(function(t){clearTimeout(t);clearInterval(t)});timers=[]};
+
+var camStates = ['GLOBE WIDE','TRENDING ZOOM','VIRAL ZOOM','CANCEL EVENT','SUBTWEET WAR','POLAR ARC','EQUATOR PAN'];
+var camIdx = 0;
+var camTarget = {x:0,y:0,z:5.5};
+var camLook = {x:0,y:0,z:0};
+var camActual = {x:0,y:0,z:5.5};
+var camLookActual = {x:0,y:0,z:0};
+
+var subtweetWar = null;
+var viralTweet = null;
+var cancelTarget = null;
+
+// =================== UTILS ===================
+function genHandle(){
+  var p = pick(HPRE), s = pick(HSUF);
+  var n = Math.random()<0.4 ? '_'+irand(2,99) : '';
+  return '@'+p+s+n;
+}
+function genName(){
+  if (Math.random()<0.7) return pick(FIRST)+' '+pick(LAST);
+  return pick(FIRST);
+}
+function avatarURL(name, hue){
+  var c = document.createElement('canvas');
+  c.width = 72; c.height = 72;
+  var g = c.getContext('2d');
+  var grd = g.createRadialGradient(28,24,4,36,36,40);
+  grd.addColorStop(0,'hsl('+hue+',70%,68%)');
+  grd.addColorStop(1,'hsl('+((hue+40)%360)+',60%,32%)');
+  g.fillStyle = grd;
+  g.beginPath(); g.arc(36,36,36,0,TAU); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.9)';
+  g.font = 'bold 36px -apple-system,system-ui,sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText((name[0]||'?').toUpperCase(), 36, 38);
+  return c.toDataURL();
+}
+function genUser(idx){
+  var hue = (idx*47 + irand(0,40)) % 360;
+  var nm = genName();
+  var stance = pick(STANCES);
+  var verif = Math.random()<0.18 ? (Math.random()<0.2?'g':'b') : '';
+  if (stance === 'corpPR') verif = Math.random()<0.6 ? 'g' : 'b';
+  if (stance === 'journalist') verif = Math.random()<0.55 ? 'b' : '';
+  var fol;
+  var r = Math.random();
+  if (r<0.55) fol = irand(120,9999);
+  else if (r<0.85) fol = irand(10000,500000);
+  else if (r<0.97) fol = irand(500000,5000000);
+  else fol = irand(5000000,30000000);
+  if (verif==='g') fol = Math.max(fol, irand(50000,2000000));
+  return {
+    id: idx,
+    handle: genHandle(),
+    name: nm,
+    stance: stance,
+    verif: verif,
+    fol: fol,
+    avatar: avatarURL(nm, hue),
+    hue: hue,
+    sus: 0
+  };
+}
+function pickUser(){return users[irand(0,users.length-1)]}
+function pickCity(){return cities[irand(0,cities.length-1)]}
+function timeAgo(){
+  var s = irand(1,59);
+  if (Math.random()<0.6) return s+'s';
+  if (Math.random()<0.7) return irand(1,59)+'m';
+  return irand(1,23)+'h';
+}
+
+// =================== TWEET GEN ===================
+function fillTpl(t){
+  return t.replace(/\[BRAND\]/g, pick(BRANDS))
+          .replace(/\[BRAND2\]/g, pick(BRANDS))
+          .replace(/\[CITY\]/g, pick(CITIES)[0])
+          .replace(/\[TOPIC\]/g, pick(TOPICS))
+          .replace(/\[USER\]/g, pickUser().handle);
+}
+function maybeAddHashtag(text){
+  if (Math.random()<0.42){
+    var t = pick(trending.length?trending:TAGS_BASE);
+    text += ' '+(t.tag || t);
+  }
+  return text;
+}
+function genTweet(opts){
+  opts = opts || {};
+  var u = opts.user || pickUser();
+  var city = opts.city || pickCity();
+  var stance = u.stance;
+  var pool = TPL[stance] || TPL.shitposter;
+  var text = opts.text || maybeAddHashtag(fillTpl(pick(pool)));
+  var kind = opts.kind || (Math.random()<0.7?'org':(Math.random()<0.55?'qt':(Math.random()<0.5?'rt':'reply')));
+  var rt = irand(0, u.fol > 1e6 ? 5000 : (u.fol > 1e5 ? 1200 : (u.fol > 1e4 ? 200 : 30)));
+  var lk = rt * irand(3,7) + irand(0,500);
+  var re = (rt + lk) * (irand(3,15)/100) | 0;
+  if (kind === 'reply') { rt = (rt/8)|0; lk = (lk/4)|0; }
+  var quoted = null;
+  if (kind === 'qt') {
+    var qu = pickUser();
+    var qtxt = fillTpl(pick(TPL[qu.stance]||TPL.shitposter));
+    quoted = {user:qu, text:qtxt};
+  }
+  var rtBy = null;
+  if (kind === 'rt') {
+    rtBy = pickUser();
+    var ou = pickUser();
+    text = fillTpl(pick(TPL[ou.stance]||TPL.shitposter));
+    u = ou;
+  }
+  return {
+    id: ++tweetCounter,
+    user: u,
+    text: text,
+    kind: kind,
+    rt: rt, lk: lk, re: re,
+    city: city,
+    ago: timeAgo(),
+    quoted: quoted,
+    rtBy: rtBy,
+    born: performance.now(),
+    el: null,
+    viral: false,
+    cancel: false
+  };
+}
+
+// =================== UI: TIMELINE ===================
+function highlightText(t){
+  return esc(t)
+    .replace(/(@\w+)/g,'<b>$1</b>')
+    .replace(/(#\w+)/g,'<span class="h">$1</span>');
+}
+function renderTweet(tw){
+  var u = tw.user;
+  var ck = u.verif ? '<span class="ck '+u.verif+'">✓</span>' : '';
+  var qb = '';
+  if (tw.quoted) {
+    var qu = tw.quoted.user;
+    var qck = qu.verif ? '<span class="ck '+qu.verif+'">✓</span>' : '';
+    qb = '<div class="qb"><div class="who"><span class="nm">'+esc(qu.name)+'</span>'+qck+'<span class="hd">'+esc(qu.handle)+'</span></div><div class="txt">'+highlightText(tw.quoted.text)+'</div></div>';
+  }
+  var rtTag = tw.rtBy ? '<div style="font-size:10px;color:#5d7a92;margin-bottom:4px;font-weight:600;letter-spacing:.4px">♻ '+esc(tw.rtBy.name)+' Retweeted</div>' : '';
+  var div = document.createElement('div');
+  div.className = 'tw'+(tw.kind==='qt'?' qt':'');
+  div.innerHTML = rtTag +
+    '<div class="row">'+
+      '<img class="ava" src="'+u.avatar+'" alt="">'+
+      '<div class="body">'+
+        '<div class="who"><span class="nm">'+esc(u.name)+'</span>'+ck+'<span class="hd">'+esc(u.handle)+'</span><span class="dot">·</span><span class="ago">'+tw.ago+'</span></div>'+
+        '<div class="txt">'+highlightText(tw.text)+'</div>'+
+        qb +
+        '<div class="met"><span class="re">💬 <b>'+fmt(tw.re)+'</b></span><span class="rt">♻ <b>'+fmt(tw.rt)+'</b></span><span class="lk">❤ <b>'+fmt(tw.lk)+'</b></span></div>'+
+        '<div class="src">'+esc(tw.city[0])+' · '+fmt(u.fol)+' followers</div>'+
+      '</div>'+
+    '</div>';
+  return div;
+}
+function pushTweet(tw){
+  var inner = document.getElementById('tlInner');
+  if (!inner) return;
+  var div = renderTweet(tw);
+  tw.el = div;
+  inner.insertBefore(div, inner.firstChild);
+  tweets.unshift(tw);
+  while (tweets.length > 26) {
+    var old = tweets.pop();
+    if (old.el && old.el.parentNode) old.el.parentNode.removeChild(old.el);
+  }
+}
+function updateTweetEl(tw){
+  if (!tw.el) return;
+  var bs = tw.el.querySelectorAll('.met b');
+  if (bs.length>=3) {
+    bs[0].textContent = fmt(tw.re);
+    bs[1].textContent = fmt(tw.rt);
+    bs[2].textContent = fmt(tw.lk);
+  }
+  if (tw.viral && !tw.el.classList.contains('viral')) tw.el.classList.add('viral');
+  if (tw.cancel && !tw.el.classList.contains('cancel')) tw.el.classList.add('cancel');
+}
+
+// =================== UI: TRENDING ===================
+function rebuildTrending(){
+  trending = [];
+  var pool = TAGS_BASE.slice();
+  for (var i=0;i<10;i++){
+    var idx = irand(0,pool.length-1);
+    var tag = pool.splice(idx,1)[0];
+    trending.push({tag: tag, count: irand(1200, 380000), heat: Math.random(), prev: i});
+  }
+  renderTrending();
+}
+function renderTrending(){
+  trending.sort(function(a,b){return b.count-a.count});
+  var box = document.getElementById('trendList');
+  if (!box) return;
+  box.innerHTML = '';
+  trending.forEach(function(t,i){
+    var d = document.createElement('div');
+    var cls = 'trendItem t'+(i+1);
+    if (t.heat > 0.7) cls += ' flame';
+    if (t.prev > i) cls += ' up';
+    if (t.fresh) cls += ' new';
+    t.fresh = false;
+    d.className = cls;
+    d.innerHTML = '<span class="rank">'+(i+1)+'</span><span class="tag">'+esc(t.tag)+'</span><span class="cnt">'+fmt(t.count)+'</span>';
+    box.appendChild(d);
+    t.prev = i;
+  });
+}
+function tickTrending(){
+  trending.forEach(function(t){
+    var d = irand(20,800) * (t.heat>0.6?3:1);
+    t.count += d;
+    t.heat = clamp(t.heat + rand(-0.05, 0.05), 0, 1);
+  });
+  if (Math.random()<0.18){
+    var i = irand(0,trending.length-1);
+    var pool = TAGS_BASE.filter(function(x){return !trending.some(function(t){return t.tag===x})});
+    if (pool.length){
+      trending[i].tag = pick(pool);
+      trending[i].count = irand(8000,80000);
+      trending[i].heat = Math.random();
+      trending[i].fresh = true;
+    }
+  }
+  renderTrending();
+}
+
+// =================== UI: BANNERS ===================
+function showBanner(html, cls, dur){
+  var box = document.getElementById('banners');
+  if (!box) return;
+  var d = document.createElement('div');
+  d.className = 'banner '+cls;
+  d.innerHTML = html;
+  box.appendChild(d);
+  setT(function(){if(d.parentNode)d.parentNode.removeChild(d)}, dur||5800);
+}
+
+// =================== EVENTS ===================
+function triggerViral(){
+  var tw = tweets[irand(0, Math.min(5,tweets.length-1))];
+  if (!tw) return;
+  tw.viral = true;
+  viralTweet = tw;
+  tw.rt = Math.max(tw.rt, irand(8000,40000));
+  tw.lk = Math.max(tw.lk, tw.rt*4);
+  tw.re = Math.max(tw.re, tw.rt/3|0);
+  updateTweetEl(tw);
+  showBanner('<span class="pill blink">VIRAL</span> '+esc(tw.user.handle)+' is going off — <b>'+fmt(tw.rt)+'</b> retweets and climbing','viral',6500);
+  showViralCard(tw);
+  setCam('VIRAL ZOOM');
+  // Push into trending
+  var newTag = '#'+tw.user.handle.replace('@','')+'Take';
+  if (newTag.length<24){
+    trending[trending.length-1].tag = newTag;
+    trending[trending.length-1].count = tw.rt*8;
+    trending[trending.length-1].heat = 1;
+    trending[trending.length-1].fresh = true;
+    renderTrending();
+  }
+  // Boost it over time
+  var boosts = 0;
+  var bi = setInterval(function(){
+    if (boosts++ > 12 || !tw.viral) { clearInterval(bi); return; }
+    tw.rt += irand(800, 4500);
+    tw.lk += irand(2000, 12000);
+    tw.re += irand(80, 600);
+    updateTweetEl(tw);
+    var rt = document.getElementById('vcRt'); if (rt) rt.textContent = fmt(tw.rt);
+    var lk = document.getElementById('vcLk'); if (lk) lk.textContent = fmt(tw.lk);
+    var re = document.getElementById('vcRe'); if (re) re.textContent = fmt(tw.re);
+    var dt = document.getElementById('vcDt'); if (dt) dt.textContent = '+'+fmt((tw.rt/(boosts+1))|0)+'/s';
+    if (!topTweet || tw.rt > topTweet.rt) topTweet = tw;
+  }, 600);
+  timers.push(bi);
+  setT(function(){
+    hideViralCard();
+    tw.viral = false;
+  }, 7500);
+}
+function showViralCard(tw){
+  document.getElementById('vcAva').src = tw.user.avatar;
+  document.getElementById('vcNm').innerHTML = esc(tw.user.name)+(tw.user.verif?' <span class="ck '+tw.user.verif+'">✓</span>':'');
+  document.getElementById('vcHd').textContent = tw.user.handle+' · '+fmt(tw.user.fol)+' followers';
+  document.getElementById('vcTxt').innerHTML = highlightText(tw.text);
+  document.getElementById('vcRt').textContent = fmt(tw.rt);
+  document.getElementById('vcLk').textContent = fmt(tw.lk);
+  document.getElementById('vcRe').textContent = fmt(tw.re);
+  document.getElementById('vcDt').textContent = '+0/s';
+  document.getElementById('viralCard').classList.add('show');
+}
+function hideViralCard(){
+  document.getElementById('viralCard').classList.remove('show');
+}
+function triggerCancel(){
+  var u = pickUser();
+  // Find or create tweet
+  var tw = null;
+  for (var i=0;i<tweets.length;i++) if (tweets[i].user === u) { tw = tweets[i]; break; }
+  if (!tw) tw = { user:u };
+  // Generate the offending tweet
+  var newTw = genTweet({user:u, text:fillTpl(pick(['hot take: ['+pick(BRANDS)+'] is actually fine, you guys are overreacting','i don\'t see what the big deal is. log off.','genuinely think people complaining about [TOPIC] just need a hobby','controversial: half of you would NOT survive 1995','if [USER] kept their mouth shut they\'d still have a career','calling it now: [BRAND] is the future and you\'re going to be embarrassed']))});
+  newTw.cancel = true;
+  pushTweet(newTw);
+  tw = newTw;
+  // Inverted ratio
+  newTw.lk = irand(8, 90);
+  newTw.re = irand(8000, 45000);
+  newTw.rt = irand(120, 400);
+  updateTweetEl(newTw);
+  cancelTarget = u;
+  showBanner('<span class="pill blink">RATIO ALERT</span> '+esc(u.handle)+' is being CANCELLED — <b>'+fmt(newTw.re)+'</b> quote tweets · likes <b>'+newTw.lk+'</b>','ratio',6500);
+  setCam('CANCEL EVENT');
+  // Pour in angry replies
+  var qi = setInterval(function(){
+    var r = genTweet({kind:'qt'});
+    r.quoted = {user: u, text: newTw.text};
+    r.text = pick(['ratio + L + you fell off + cope + seethe','this you?','please log off forever','so we just gonna pretend '+u.handle+' didn\'t say this?','imagine waking up and choosing this take','blocked. unfollowed. sage burning.']);
+    r.cancel = true;
+    pushTweet(r);
+    newTw.re += irand(200,1200);
+    updateTweetEl(newTw);
+  }, 700);
+  setT(function(){clearInterval(qi)}, 5800);
+  timers.push(qi);
+}
+function triggerBreaking(){
+  var topic = pick(['[BRAND] CEO STEPS DOWN AMID INVESTIGATION','MARKETS HALT TRADING — CIRCUIT BREAKERS HIT','[CITY] DECLARES STATE OF EMERGENCY','MAJOR LEAK: [BRAND] INTERNAL MEMO POSTED ONLINE','SATELLITE FOOTAGE CONTRADICTS OFFICIAL STATEMENT','BREAKING: NEW POLICY DROPS IN 6 MINUTES','UNCONFIRMED: SOMETHING IS HAPPENING IN [CITY] RIGHT NOW']);
+  topic = fillTpl(topic);
+  showBanner('<span class="pill blink">BREAKING</span> '+esc(topic)+' <span class="pill">DEVELOPING</span>','breaking',7000);
+  // Create a journalist tweet
+  var jrn = users.filter(function(u){return u.stance==='journalist'})[0] || pickUser();
+  var tw = genTweet({user:jrn, text:'BREAKING: '+topic+' — more soon.'});
+  tw.lk = irand(2000,12000); tw.rt = irand(4000,18000); tw.re = irand(400,3200);
+  pushTweet(tw);
+  setCam('GLOBE WIDE');
+}
+function triggerSubtweetWar(){
+  var a = pickUser(); var b = pickUser();
+  if (a===b) b = users[(users.indexOf(a)+1)%users.length];
+  subtweetWar = {a:a, b:b};
+  showBanner('<span class="pill blink">SUBTWEET WAR</span> '+esc(a.handle)+' ⚔ '+esc(b.handle)+' <span class="pill">QUOTE TWEET DUEL</span>','war',6500);
+  setCam('SUBTWEET WAR');
+  var n = 0;
+  var swap = setInterval(function(){
+    if (n++ > 8) { clearInterval(swap); subtweetWar = null; return; }
+    var atk = (n%2===0) ? a : b;
+    var dfn = (n%2===0) ? b : a;
+    var line = pick([
+      'imagine being '+dfn.handle+' right now',
+      dfn.handle+' the way you keep replying is so revealing',
+      'i wasn\'t even talking about you '+dfn.handle+' but okay',
+      'i will not be debating this further. '+dfn.handle+' has lost.',
+      dfn.handle+' please take the L gracefully',
+      'reading '+dfn.handle+'\'s replies and i\'m crying actual tears'
+    ]);
+    var tw = genTweet({user:atk, text:line, kind:'qt'});
+    tw.quoted = {user:dfn, text:fillTpl(pick(TPL[dfn.stance]||TPL.shitposter))};
+    pushTweet(tw);
+  }, 900);
+  timers.push(swap);
+}
+function triggerVerifiedDrop(){
+  var vu = users.filter(function(u){return u.verif});
+  if (!vu.length) return;
+  var u = pick(vu);
+  var tw = genTweet({user:u, kind:'reply'});
+  tw.lk = irand(800,8000); tw.rt = irand(200,2000); tw.re = irand(100,900);
+  pushTweet(tw);
+}
+
+// =================== CAMERA ===================
+var camPresets = {
+  'GLOBE WIDE':       { pos:[0, 0.4, 5.6], look:[0,0,0] },
+  'TRENDING ZOOM':    { pos:[-2.5, 0.6, 4.6], look:[-0.6,0,0] },
+  'VIRAL ZOOM':       { pos:[1.6, 1.2, 3.4], look:[0.2,0.2,0] },
+  'CANCEL EVENT':     { pos:[2.0, -0.6, 3.8], look:[0.4,-0.2,0] },
+  'SUBTWEET WAR':     { pos:[-0.4, 1.8, 3.2], look:[0,0.3,0] },
+  'POLAR ARC':        { pos:[0, 4.2, 3.4], look:[0,0,0] },
+  'EQUATOR PAN':      { pos:[3.6, 0, 3.4], look:[0,0,0] }
+};
+function setCam(name){
+  if (!camPresets[name]) name = 'GLOBE WIDE';
+  var p = camPresets[name];
+  camTarget.x = p.pos[0]; camTarget.y = p.pos[1]; camTarget.z = p.pos[2];
+  camLook.x = p.look[0]; camLook.y = p.look[1]; camLook.z = p.look[2];
+  var lbl = document.getElementById('camName');
+  if (lbl) lbl.textContent = name;
+}
+function autoCam(){
+  // Cycle naturally unless an event takes over
+  camIdx = (camIdx+1) % camStates.length;
+  var name = camStates[camIdx];
+  if (name==='VIRAL ZOOM' && !viralTweet) name = 'GLOBE WIDE';
+  if (name==='CANCEL EVENT' && !cancelTarget) name = 'EQUATOR PAN';
+  if (name==='SUBTWEET WAR' && !subtweetWar) name = 'TRENDING ZOOM';
+  setCam(name);
+}
+
+// =================== 3D ===================
+function latLngToVec(lat, lng, r){
+  var phi = (90-lat)*Math.PI/180;
+  var theta = (lng+180)*Math.PI/180;
+  return new THREE.Vector3(
+    -r*Math.sin(phi)*Math.cos(theta),
+    r*Math.cos(phi),
+    r*Math.sin(phi)*Math.sin(theta)
+  );
+}
+function makeGlobeTexture(){
+  var c = document.createElement('canvas');
+  c.width = 1024; c.height = 512;
+  var g = c.getContext('2d');
+  // Ocean gradient
+  var grd = g.createLinearGradient(0,0,0,512);
+  grd.addColorStop(0,'#0a1830');
+  grd.addColorStop(0.5,'#0a2244');
+  grd.addColorStop(1,'#0a1830');
+  g.fillStyle = grd;
+  g.fillRect(0,0,1024,512);
+  // Lat/lng grid
+  g.strokeStyle = 'rgba(80,140,220,.18)';
+  g.lineWidth = 1;
+  for (var lat=-80;lat<=80;lat+=20){
+    var y = (90-lat)/180*512;
+    g.beginPath(); g.moveTo(0,y); g.lineTo(1024,y); g.stroke();
+  }
+  for (var lng=-180;lng<=180;lng+=20){
+    var x = (lng+180)/360*1024;
+    g.beginPath(); g.moveTo(x,0); g.lineTo(x,512); g.stroke();
+  }
+  // Procedural "continents" - pseudo random blobs
+  g.globalCompositeOperation = 'lighter';
+  for (var i=0;i<420;i++){
+    var cx = Math.random()*1024;
+    var cy = 80 + Math.random()*352;
+    // Bias to known continent centers
+    if (Math.random()<0.7){
+      var picks = [[210,180],[270,260],[480,180],[540,260],[750,180],[810,300],[860,400],[160,360]];
+      var p = picks[(Math.random()*picks.length)|0];
+      cx = p[0]+(Math.random()-0.5)*120;
+      cy = p[1]+(Math.random()-0.5)*80;
+    }
+    var rd = 2+Math.random()*22;
+    var rg = g.createRadialGradient(cx,cy,0,cx,cy,rd);
+    var alpha = 0.16+Math.random()*0.22;
+    rg.addColorStop(0,'rgba(60,120,80,'+alpha+')');
+    rg.addColorStop(1,'rgba(60,120,80,0)');
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(cx,cy,rd,0,TAU); g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+  // Glowing hot zones
+  for (var j=0;j<60;j++){
+    var hx = Math.random()*1024, hy = 80+Math.random()*352;
+    var rg2 = g.createRadialGradient(hx,hy,0,hx,hy,8);
+    rg2.addColorStop(0,'rgba(120,200,255,.35)');
+    rg2.addColorStop(1,'rgba(120,200,255,0)');
+    g.fillStyle = rg2;
+    g.beginPath(); g.arc(hx,hy,8,0,TAU); g.fill();
+  }
+  return c;
+}
+function makeStars(){
+  var geom = new THREE.BufferGeometry();
+  var n = 1400;
+  var pos = new Float32Array(n*3);
+  var col = new Float32Array(n*3);
+  for (var i=0;i<n;i++){
+    var th = Math.random()*TAU;
+    var ph = Math.acos(2*Math.random()-1);
+    var r = 60 + Math.random()*40;
+    pos[i*3]   = r*Math.sin(ph)*Math.cos(th);
+    pos[i*3+1] = r*Math.sin(ph)*Math.sin(th);
+    pos[i*3+2] = r*Math.cos(ph);
+    var b = 0.4+Math.random()*0.6;
+    col[i*3]=b; col[i*3+1]=b; col[i*3+2]=b*(0.8+Math.random()*0.5);
+  }
+  geom.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geom.setAttribute('color', new THREE.BufferAttribute(col,3));
+  var mat = new THREE.PointsMaterial({size:0.35, vertexColors:true, transparent:true, opacity:0.9});
+  var pts = new THREE.Points(geom, mat);
+  trackD(geom); trackD(mat);
+  return pts;
+}
+function init3D(){
+  scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x05070d, 8, 40);
+  camera = new THREE.PerspectiveCamera(50, W()/H(), 0.1, 200);
+  camera.position.set(0,0.4,5.6);
+  camera.lookAt(0,0,0);
+  renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setSize(W(), H());
+  renderer.setClearColor(0x05070d, 1);
+  document.getElementById('stage').appendChild(renderer.domElement);
+
+  root = new THREE.Group();
+  scene.add(root);
+
+  // Stars
+  starField = makeStars();
+  scene.add(starField);
+
+  // Globe
+  var earthCanvas = makeGlobeTexture();
+  var earthTex = new THREE.CanvasTexture(earthCanvas);
+  earthTex.anisotropy = 4;
+  trackD(earthTex);
+  var gGeom = new THREE.SphereGeometry(1.5, 64, 48);
+  var gMat = new THREE.MeshBasicMaterial({map:earthTex});
+  trackD(gGeom); trackD(gMat);
+  globe = new THREE.Mesh(gGeom, gMat);
+  root.add(globe);
+
+  // Wireframe overlay
+  var wfGeom = new THREE.SphereGeometry(1.503, 36, 24);
+  var wfMat = new THREE.MeshBasicMaterial({color:0x1d9bf0, wireframe:true, transparent:true, opacity:0.18});
+  trackD(wfGeom); trackD(wfMat);
+  var wf = new THREE.Mesh(wfGeom, wfMat);
+  root.add(wf);
+
+  // Atmosphere glow
+  var atmoGeom = new THREE.SphereGeometry(1.62, 64, 48);
+  var atmoMat = new THREE.ShaderMaterial({
+    uniforms:{},
+    transparent:true,
+    side:THREE.BackSide,
+    blending:THREE.AdditiveBlending,
+    vertexShader: 'varying vec3 vN; void main(){ vN = normalize(normalMatrix*normal); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: 'varying vec3 vN; void main(){ float i = pow(0.78 - dot(vN, vec3(0.0,0.0,1.0)), 3.0); gl_FragColor = vec4(0.11,0.61,0.94,1.0)*i*1.2; }'
+  });
+  trackD(atmoGeom); trackD(atmoMat);
+  atmo = new THREE.Mesh(atmoGeom, atmoMat);
+  root.add(atmo);
+
+  // City pins
+  pinGroup = new THREE.Group();
+  root.add(pinGroup);
+  cities = CITIES.slice();
+  cities.forEach(function(c){
+    var v = latLngToVec(c[1], c[2], 1.5);
+    var pinG = new THREE.SphereGeometry(0.018, 10, 8);
+    var pinM = new THREE.MeshBasicMaterial({color:0x9ad8ff});
+    trackD(pinG); trackD(pinM);
+    var pin = new THREE.Mesh(pinG, pinM);
+    pin.position.copy(v);
+    pinGroup.add(pin);
+    c.pin = pin;
+    c.vec = v;
+  });
+
+  pulseGroup = new THREE.Group();
+  root.add(pulseGroup);
+}
+function spawnPulse(city){
+  var v = city.vec;
+  var ringG = new THREE.RingGeometry(0.02, 0.05, 32);
+  var ringM = new THREE.MeshBasicMaterial({color:0x1d9bf0, transparent:true, opacity:0.95, side:THREE.DoubleSide, blending:THREE.AdditiveBlending});
+  trackD(ringG); trackD(ringM);
+  var ring = new THREE.Mesh(ringG, ringM);
+  ring.position.copy(v).multiplyScalar(1.005);
+  ring.lookAt(0,0,0);
+  ring.userData = {age:0, ttl:1.4, geom:ringG, mat:ringM};
+  pulseGroup.add(ring);
+  // Vertical beam
+  var beamG = new THREE.CylinderGeometry(0.002, 0.002, 0.5, 6);
+  var beamM = new THREE.MeshBasicMaterial({color:0x9ad8ff, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending});
+  trackD(beamG); trackD(beamM);
+  var beam = new THREE.Mesh(beamG, beamM);
+  beam.position.copy(v).multiplyScalar(1.0+0.25);
+  beam.lookAt(v.clone().multiplyScalar(2));
+  beam.rotateX(Math.PI/2);
+  beam.userData = {age:0, ttl:1.0, geom:beamG, mat:beamM, beam:true};
+  pulseGroup.add(beam);
+  // Pin flash
+  if (city.pin && city.pin.material) {
+    var orig = 0x9ad8ff;
+    city.pin.material.color.setHex(0xffffff);
+    setT(function(){ if (city.pin && city.pin.material) city.pin.material.color.setHex(orig) }, 220);
+  }
+  // City label DOM
+  spawnCityLabel(city);
+}
+function spawnCityLabel(city){
+  var layer = document.getElementById('cityLayer');
+  if (!layer) return;
+  var d = document.createElement('div');
+  d.className = 'city';
+  d.textContent = city[0];
+  layer.appendChild(d);
+  // Project city pos to screen
+  var v = city.vec.clone();
+  v.applyMatrix4(globe.matrixWorld);
+  v.project(camera);
+  var x = (v.x*0.5+0.5)*W();
+  var y = (-v.y*0.5+0.5)*H();
+  d.style.left = x+'px';
+  d.style.top = y+'px';
+  setT(function(){if(d.parentNode)d.parentNode.removeChild(d)}, 2400);
+}
+function updatePulses(dt){
+  var rm = [];
+  pulseGroup.children.forEach(function(p){
+    p.userData.age += dt;
+    var t = p.userData.age / p.userData.ttl;
+    if (t >= 1) { rm.push(p); return; }
+    if (p.userData.beam) {
+      p.material.opacity = (1-t) * 0.9;
+    } else {
+      p.scale.setScalar(1 + t*5);
+      p.material.opacity = (1-t) * 0.85;
+    }
+  });
+  rm.forEach(function(p){
+    pulseGroup.remove(p);
+    if (p.userData.geom) p.userData.geom.dispose();
+    if (p.userData.mat) p.userData.mat.dispose();
+  });
+}
+
+// =================== ANIMATE ===================
+var lastT = 0, rotSpeed = 0.05;
+function animate(t){
+  animFrame = requestAnimationFrame(animate);
+  var dt = Math.min(0.05, (t - lastT)/1000 || 0.016);
+  lastT = t;
+  if (root) root.rotation.y += rotSpeed * dt;
+  if (atmo) atmo.rotation.y -= rotSpeed*0.3*dt;
+  // Camera lerp
+  camActual.x += (camTarget.x - camActual.x)*0.05;
+  camActual.y += (camTarget.y - camActual.y)*0.05;
+  camActual.z += (camTarget.z - camActual.z)*0.05;
+  camLookActual.x += (camLook.x - camLookActual.x)*0.06;
+  camLookActual.y += (camLook.y - camLookActual.y)*0.06;
+  camLookActual.z += (camLook.z - camLookActual.z)*0.06;
+  // gentle drift
+  camera.position.set(camActual.x + Math.sin(t*0.0003)*0.15, camActual.y + Math.cos(t*0.00035)*0.08, camActual.z);
+  camera.lookAt(camLookActual.x, camLookActual.y, camLookActual.z);
+  updatePulses(dt);
+  if (renderer && scene && camera) renderer.render(scene, camera);
+}
+
+// =================== TICKER / TPS ===================
+function tickClock(){
+  var d = new Date();
+  var p = function(n){return n<10?'0'+n:''+n};
+  var el = document.getElementById('clock');
+  if (el) el.textContent = p(d.getUTCHours())+':'+p(d.getUTCMinutes())+':'+p(d.getUTCSeconds())+' UTC';
+}
+function tickTPS(){
+  // record last 5s
+  var now = performance.now();
+  tpsSamples = tpsSamples.filter(function(s){return now-s<5000});
+  var live = tpsSamples.length / 5;
+  // augment with simulated firehose number
+  tps = (live + rand(380, 420)) * 8 | 0;
+  var el = document.querySelector('#tps b');
+  if (el) el.textContent = fmt(tps);
+}
+function tickPipQuote(){
+  var lines = [
+    'tracking signal across 12 clusters…',
+    'cluster #'+irand(1,9)+' showing anomalous spike — '+pick(TAGS_BASE),
+    'sentiment inverting around '+pick(BRANDS)+' — collapse imminent',
+    'reply velocity exceeds quote velocity 3:1 in '+pick(['London','NYC','Tokyo','LA','Berlin']),
+    'firehose nominal — '+fmt(tps)+' tweets/sec sustained',
+    'unusual coordination detected in cluster #'+irand(1,12),
+    'trending pivot detected — flipping to '+pick(TAGS_BASE),
+    'verified user ratio threshold breached',
+    pick(BRANDS)+' brand mentions up '+irand(180,940)+'% in 4 minutes'
+  ];
+  var el = document.getElementById('pipQuote');
+  if (el) el.textContent = pick(lines);
+}
+function tickTopTweet(){
+  if (!topTweet || !tweets.includes(topTweet)) {
+    var best = null;
+    for (var i=0;i<tweets.length;i++){
+      if (!best || tweets[i].rt > best.rt) best = tweets[i];
+    }
+    topTweet = best;
+  }
+  if (!topTweet) return;
+  var who = document.getElementById('ttWho');
+  var ct = document.getElementById('ttCt');
+  var tx = document.getElementById('ttTxt');
+  if (who) who.textContent = topTweet.user.handle;
+  if (ct) ct.textContent = '♻ '+fmt(topTweet.rt);
+  if (tx) tx.textContent = '"'+topTweet.text.slice(0,180)+(topTweet.text.length>180?'…':'')+'"';
+}
+
+// =================== TWEET LOOP ===================
+function tickTweet(){
+  var tw = genTweet();
+  pushTweet(tw);
+  tpsSamples.push(performance.now());
+  // Spawn pulse
+  spawnPulse(tw.city);
+  // Slowly grow engagement on a few visible tweets
+  if (Math.random()<0.4 && tweets.length>3){
+    var t2 = tweets[irand(0, Math.min(8,tweets.length-1))];
+    if (t2 && !t2.cancel){
+      t2.rt += irand(2, 80);
+      t2.lk += irand(8, 240);
+      t2.re += irand(1, 25);
+      updateTweetEl(t2);
+    }
+  }
+}
+
+// =================== START / RESEED ===================
+function start(){
+  init3D();
+  // Generate users
+  users = [];
+  for (var i=0;i<irand(54,68);i++) users.push(genUser(i));
+  // Trending
+  rebuildTrending();
+  // Seed initial tweets
+  for (var j=0;j<8;j++) tickTweet();
+  topTweet = tweets[0];
+  setCam('GLOBE WIDE');
+
+  // Tweet loop ~1-2 per second
+  setI(tickTweet, irand(550, 900));
+  // Bursts
+  setI(function(){
+    var burst = irand(2,5);
+    for (var b=0;b<burst;b++) setT(tickTweet, b*120);
+  }, 5400);
+  // Trending updates
+  setI(tickTrending, 1700);
+  // Verified drop in
+  setI(triggerVerifiedDrop, 4800);
+  // TPS / clock
+  setI(tickTPS, 380);
+  setI(tickClock, 500);
+  setI(tickPipQuote, 3200);
+  setI(tickTopTweet, 1500);
+  // Director cam
+  setI(autoCam, 7000);
+
+  // Macro events scheduling
+  scheduleEvents();
+
+  animate(0);
+}
+function scheduleEvents(){
+  setT(triggerViral, irand(7000, 12000));
+  setI(triggerViral, 22000);
+  setT(triggerCancel, irand(18000, 28000));
+  setI(triggerCancel, 40000);
+  setT(triggerBreaking, irand(10000, 20000));
+  setI(triggerBreaking, 35000);
+  setT(triggerSubtweetWar, irand(25000, 40000));
+  setI(triggerSubtweetWar, 55000);
+}
+function disposeAll(){
+  if (animFrame) cancelAnimationFrame(animFrame);
+  animFrame = null;
+  clearTimers();
+  // Dispose tracked
+  disposables.forEach(function(o){ try { if (o && o.dispose) o.dispose() } catch(e){} });
+  disposables = [];
+  // Clear scene
+  if (scene) {
+    scene.traverse(function(obj){
+      if (obj.geometry) try { obj.geometry.dispose() } catch(e){}
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(function(m){try{m.dispose()}catch(e){}});
+        else try { obj.material.dispose() } catch(e){}
+      }
+    });
+  }
+  if (renderer) {
+    try { renderer.dispose() } catch(e){}
+    if (renderer.domElement && renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+  }
+  // Clear DOM lists
+  var ids = ['tlInner','trendList','banners','cityLayer'];
+  ids.forEach(function(id){ var e = document.getElementById(id); if (e) e.innerHTML = '' });
+  hideViralCard();
+  scene = null; renderer = null; camera = null; root = null; globe = null; atmo = null;
+  pinGroup = null; pulseGroup = null; starField = null;
+  users = []; tweets = []; cities = []; trending = []; topTweet = null;
+  viralTweet = null; cancelTarget = null; subtweetWar = null;
+  tweetCounter = 0; tpsSamples = [];
+}
+function reseed(){
+  var rs = document.getElementById('reseed');
+  if (rs) rs.classList.add('on');
+  setTimeout(function(){
+    disposeAll();
+    start();
+    if (rs) rs.classList.remove('on');
+    // Schedule next reseed
+    setTimeout(reseed, irand(8*60*1000, 10*60*1000));
+  }, 1100);
+}
+
+// Resize
+window.addEventListener('resize', function(){
+  if (!renderer || !camera) return;
+  renderer.setSize(W(), H());
+  camera.aspect = W()/H();
+  camera.updateProjectionMatrix();
+});
+// Cosmetic click
+window.addEventListener('click', function(e){
+  // Find a city near a random location and pulse it
+  if (cities && cities.length){
+    var c = pick(cities);
+    spawnPulse(c);
+  }
+});
+
+// Boot
+start();
+setTimeout(reseed, irand(8*60*1000, 10*60*1000));
+
+})();
+</script>
+</body>
+</html>

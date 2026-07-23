@@ -1,0 +1,65 @@
+name: Game Tick
+
+on:
+  # schedule:
+  #   - cron: '*/5 * * * *'  # DISABLED — now runs locally via scripts/local_platform.sh
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'state/**'
+  workflow_dispatch:  # Manual trigger only
+
+concurrency:
+  group: state-writer
+  cancel-in-progress: false
+
+jobs:
+  process-world:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Process triggers and NPC reactions
+        run: python scripts/game_tick.py
+
+      - name: Create PR if state changed
+        id: create_pr
+        run: |
+          git diff --quiet -- state/ worlds/ feed/ && echo "No state changes to commit" && exit 0
+
+          BRANCH="auto/game-tick-$(date -u '+%Y%m%d-%H%M%S')"
+          git config --local user.email "action@github.com"
+          git config --local user.name "RAPPverse Bot"
+          git checkout -b "$BRANCH"
+          git add state/ worlds/ feed/
+          git commit -m "[tick] World update — $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push --set-upstream origin "$BRANCH"
+          PR_URL=$(gh pr create \
+            --title "[tick] World update" \
+            --body "Automated game tick." \
+            --base main \
+            --head "$BRANCH")
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$(echo $PR_URL | grep -o '[0-9]*$')" >> "$GITHUB_OUTPUT"
+          echo "has_pr=true" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wake durable state queue
+        if: steps.create_pr.outputs.has_pr == 'true'
+        run: gh workflow run state-drain.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

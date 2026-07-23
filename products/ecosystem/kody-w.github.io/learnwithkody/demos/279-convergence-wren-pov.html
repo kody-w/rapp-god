@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Convergence — Wren POV 10/12 (R26)</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#0b0708;color:#f3e6c8;font-family:'Helvetica Neue',Arial,sans-serif;overflow:hidden;height:100%}
+  #c{position:fixed;inset:0;display:block}
+  .panel{position:fixed;background:rgba(20,14,10,.72);border:1px solid rgba(220,184,120,.28);border-radius:6px;padding:10px 14px;font-size:12px;line-height:1.5;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  #hud{left:12px;top:12px;max-width:340px}
+  #score{right:12px;top:12px;max-width:300px;font-family:'Courier New',monospace;font-size:11px;line-height:1.55}
+  #ticker{left:12px;bottom:74px;max-width:360px;max-height:32vh;overflow:hidden;font-size:11px;line-height:1.5}
+  #manifest{right:12px;bottom:74px;max-width:300px;font-size:11px;line-height:1.45}
+  #chy{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(0deg,rgba(112,72,22,.94),rgba(112,72,22,.55) 60%,rgba(112,72,22,0));padding:12px 20px 14px;font-size:13px;text-align:center;letter-spacing:.04em}
+  #pov{position:fixed;left:50%;top:14px;transform:translateX(-50%);font-size:11px;letter-spacing:.18em;color:#f5d98a;text-transform:uppercase;background:rgba(20,14,10,.55);padding:6px 14px;border:1px solid rgba(220,184,120,.3);border-radius:4px}
+  .tag{font-weight:700;color:#f5d98a;letter-spacing:.1em;text-transform:uppercase}
+  .k{color:#ffd86b}
+  .o{color:#ffb070}
+  .p{color:#f0bbc4}
+  .g{color:#9bd6a8}
+  .d{color:#a8a290}
+  .pulse{animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:.78}50%{opacity:1}}
+  .bar{display:inline-block;height:6px;background:#f5d98a;vertical-align:middle;border-radius:2px}
+  hr.s{border:0;border-top:1px solid rgba(220,184,120,.18);margin:6px 0}
+  #flash{position:fixed;inset:0;background:#fff7d0;opacity:0;pointer-events:none;mix-blend-mode:screen;transition:opacity .9s}
+</style>
+</head>
+<body>
+<!-- ROUND26_CONVERGENCE v1 -->
+<canvas id="c"></canvas>
+<div id="flash"></div>
+<div id="pov">POV 10 / 12 — Margaret Wren · Organist · Brimsworth</div>
+<div class="panel" id="hud">
+  <div><span class="tag">R26 · Convergence</span> <span class="d">— v1 · Wren</span></div>
+  <hr class="s">
+  <div id="hud_body">booting console…</div>
+</div>
+<div class="panel" id="score">
+  <div class="tag">SHEET MUSIC HUD</div>
+  <hr class="s">
+  <div id="score_body">—</div>
+</div>
+<div class="panel" id="ticker">
+  <div class="tag">TWIN-TAB POV TICKER</div>
+  <hr class="s">
+  <div id="ticker_body">listening for sibling tabs…</div>
+</div>
+<div class="panel" id="manifest">
+  <div class="tag">CROSS-LEDGER MANIFEST</div>
+  <hr class="s">
+  <div id="manifest_body">reading prior rounds…</div>
+</div>
+<div id="chy"><span id="chy_t">prelude — fingers settle, breath held, the nave is full.</span></div>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+// ---------- canonical ledger keys ----------
+var K_CONV='brimsworth_convergence_v1';
+var K_WORLDS='brimsworth_worlds_v1';
+var K_MULTI='brimsworth_multiverse_v1';
+var K_CENT='brimsworth_century_v1';
+var K_LIFE='brimsworth_lifetime_v1';
+var K_CAST='recurring_cast_v1';
+
+// ---------- master clock & seed ----------
+var POV_ID='wren';
+var startMs=Date.now();
+var masterClockAt=Math.floor(startMs/1000);
+var seedKey='brimsworth_seed_bucket';
+var SEED_PERIOD=600;
+function currentBucket(){return Math.floor(Date.now()/1000/SEED_PERIOD);}
+var bucket=currentBucket();
+function rng(s){var x=s|0;return function(){x=(x*1664525+1013904223)|0;return ((x>>>0)%1000000)/1000000;};}
+var R=rng(0xC0DECAFE ^ (bucket*7919));
+
+// ---------- safe localStorage ----------
+function lsGet(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+
+// ---------- ledger append ----------
+function appendConv(evt){
+  var arr=lsGet(K_CONV,[]);
+  if(!Array.isArray(arr)) arr=[];
+  arr.push(evt);
+  if(arr.length>500) arr=arr.slice(-500);
+  lsSet(K_CONV,arr);
+}
+appendConv({pov_id:POV_ID, master_clock_at_join:masterClockAt, convergence_at:null, kind:'join', t:masterClockAt});
+
+// ---------- cross-read manifests ----------
+var manifest={
+  worlds: lsGet(K_WORLDS,null),
+  multi:  lsGet(K_MULTI,null),
+  cent:   lsGet(K_CENT,null),
+  life:   lsGet(K_LIFE,null),
+  cast:   lsGet(K_CAST,null),
+  conv:   lsGet(K_CONV,[])
+};
+function manifestSummary(){
+  function n(x){if(!x) return '∅'; if(Array.isArray(x)) return x.length+' rows'; if(typeof x==='object') return Object.keys(x).length+' keys'; return String(x);}
+  var convList=Array.isArray(manifest.conv)?manifest.conv:[];
+  var povs={};
+  convList.forEach(function(e){if(e&&e.pov_id) povs[e.pov_id]=(povs[e.pov_id]||0)+1;});
+  var povStr=Object.keys(povs).map(function(p){return p+'×'+povs[p];}).join(' · ')||'(this is first)';
+  return [
+    '<div><span class="d">worlds_v1:</span> '+n(manifest.worlds)+'</div>',
+    '<div><span class="d">multiverse_v1:</span> '+n(manifest.multi)+'</div>',
+    '<div><span class="d">century_v1:</span> '+n(manifest.cent)+'</div>',
+    '<div><span class="d">lifetime_v1:</span> '+n(manifest.life)+'</div>',
+    '<div><span class="d">recurring_cast_v1:</span> '+n(manifest.cast)+'</div>',
+    '<hr class="s">',
+    '<div><span class="d">convergence_v1 POVs:</span> '+povStr+'</div>',
+    '<div><span class="d">seed bucket:</span> '+bucket+' · reseed every '+SEED_PERIOD+'s</div>'
+  ].join('');
+}
+document.getElementById('manifest_body').innerHTML=manifestSummary();
+
+// ---------- BroadcastChannel ----------
+var BC=null;
+try{ BC=new BroadcastChannel('brimsworth_convergence'); }catch(e){ BC=null; }
+var siblings={};
+var tickerLog=[];
+function tlog(s){
+  tickerLog.unshift('<span class="d">['+timeStr(elapsed())+']</span> '+s);
+  if(tickerLog.length>14) tickerLog.length=14;
+  renderTicker();
+}
+function renderTicker(){
+  var sibs=Object.keys(siblings).map(function(k){
+    var s=siblings[k];
+    return '<div><span class="o">'+k+'</span> <span class="d">t='+s.t.toFixed(1)+'s · phase='+s.phase+'</span></div>';
+  }).join('');
+  document.getElementById('ticker_body').innerHTML=
+    '<div><span class="g">self:</span> wren · t=<span id="self_t">0</span>s</div>'+
+    (sibs||'<div class="d">no sibling tabs heard yet — open another POV in a new tab</div>')+
+    '<hr class="s">'+
+    tickerLog.join('<br>');
+}
+if(BC){
+  BC.onmessage=function(ev){
+    var d=ev.data||{};
+    if(!d||!d.pov_id||d.pov_id===POV_ID) return;
+    siblings[d.pov_id]={t:d.t||0, phase:d.phase||'?', last:Date.now()};
+    if(d.kind==='convergence'){ tlog('<span class="k">★ '+d.pov_id+' reached convergence at t='+(d.t||0).toFixed(1)+'s</span>'); }
+    renderTicker();
+  };
+  BC.postMessage({pov_id:POV_ID, kind:'hello', t:0, phase:'prelude'});
+}
+setInterval(function(){
+  var now=Date.now();
+  Object.keys(siblings).forEach(function(k){if(now-siblings[k].last>8000) delete siblings[k];});
+  renderTicker();
+},1500);
+
+// ---------- elapsed / clock ----------
+function elapsed(){return (Date.now()-startMs)/1000;}
+function timeStr(s){var m=Math.floor(s/60),r=Math.floor(s%60);return (m<10?'0':'')+m+':'+(r<10?'0':'')+r;}
+
+// ---------- three.js scene ----------
+var canvas=document.getElementById('c');
+var renderer=new THREE.WebGLRenderer({canvas:canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+renderer.setSize(window.innerWidth, window.innerHeight, false);
+renderer.setClearColor(0x0b0708,1);
+
+var scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x110a08, 0.022);
+
+var camera=new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.05, 200);
+// First-person organ-console eye position
+camera.position.set(0, 1.55, 0);
+camera.rotation.order='YXZ';
+// Default: looking down at sheet music
+camera.rotation.x=-0.55;
+
+window.addEventListener('resize',function(){
+  renderer.setSize(window.innerWidth,window.innerHeight,false);
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// lights
+var amb=new THREE.AmbientLight(0xffe2b8, 0.55);
+scene.add(amb);
+var stained=new THREE.PointLight(0xff9b6a, 0.9, 30, 1.6); stained.position.set(-6,4.5,-9); scene.add(stained);
+var stained2=new THREE.PointLight(0x6aa9ff, 0.7, 28, 1.6); stained2.position.set(6,5.0,-10); scene.add(stained2);
+var altarLight=new THREE.PointLight(0xffe9b8, 1.6, 18, 1.5); altarLight.position.set(0,2.6,-12); scene.add(altarLight);
+var consoleLamp=new THREE.PointLight(0xfff2c8, 0.95, 3.2, 1.8); consoleLamp.position.set(0,0.55,0.55); scene.add(consoleLamp);
+
+// ----- ORGAN CONSOLE (foreground - dominant in view) -----
+var consoleGroup=new THREE.Group();
+scene.add(consoleGroup);
+
+// keyboard chassis
+var chassisMat=new THREE.MeshStandardMaterial({color:0x2a1a10, roughness:0.55, metalness:0.15});
+var chassis=new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.18, 0.7), chassisMat);
+chassis.position.set(0, 1.06, 0.4);
+consoleGroup.add(chassis);
+
+// music desk (sheet music holder, angled toward us)
+var deskMat=new THREE.MeshStandardMaterial({color:0x1a1208, roughness:0.7});
+var desk=new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.9, 0.05), deskMat);
+desk.position.set(0, 1.55, -0.05);
+desk.rotation.x=0.18;
+consoleGroup.add(desk);
+
+// sheet music canvas (live texture)
+var musicCanvas=document.createElement('canvas');
+musicCanvas.width=512; musicCanvas.height=720;
+var mctx=musicCanvas.getContext('2d');
+var musicTex=new THREE.CanvasTexture(musicCanvas);
+musicTex.anisotropy=4;
+var musicMat=new THREE.MeshBasicMaterial({map:musicTex, transparent:false});
+var musicMesh=new THREE.Mesh(new THREE.PlaneGeometry(1.85, 0.82), musicMat);
+musicMesh.position.set(0, 1.55, -0.02);
+musicMesh.rotation.x=0.18;
+consoleGroup.add(musicMesh);
+
+// stop knobs row left/right
+function makeStop(x,y,z,col){
+  var g=new THREE.Group();
+  var knob=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.06,16),
+    new THREE.MeshStandardMaterial({color:col, roughness:0.4, metalness:0.3}));
+  knob.rotation.x=Math.PI/2;
+  knob.position.set(x,y,z);
+  g.add(knob);
+  var stem=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.14,8),
+    new THREE.MeshStandardMaterial({color:0x6b4a30, roughness:0.5, metalness:0.4}));
+  stem.rotation.x=Math.PI/2;
+  stem.position.set(x,y,z+0.08);
+  g.add(stem);
+  return g;
+}
+var stopLabels=['DIAPASON 8','PRINCIPAL 4','BOURDON 16','GEDACKT 8','MIXTURE V','TRUMPET 8','OBOE 8','VIOLA 8'];
+for(var sx=0;sx<8;sx++){
+  var side=sx<4?-1:1;
+  var ix=sx<4?sx:sx-4;
+  var col=sx<4?0xc8a060:0xa84030;
+  consoleGroup.add(makeStop(side*(0.85+ix*0.15), 1.4-ix*0.04, 0.18, col));
+}
+
+// keyboard - white keys
+var whiteKeys=[];
+var blackKeys=[];
+var nKeys=29;
+var kw=0.062, kh=0.02, kd=0.32;
+var totalW=nKeys*kw;
+var keyMat=new THREE.MeshStandardMaterial({color:0xf4ead0, roughness:0.35, metalness:0.05, emissive:0x000000});
+var keyDownMat=new THREE.MeshStandardMaterial({color:0xffe8a0, roughness:0.4, emissive:0x553300, emissiveIntensity:0.9});
+for(var i=0;i<nKeys;i++){
+  var k=new THREE.Mesh(new THREE.BoxGeometry(kw*0.94, kh, kd), keyMat);
+  k.position.set(-totalW/2 + kw*i + kw/2, 0.99, 0.42);
+  consoleGroup.add(k);
+  whiteKeys.push(k);
+}
+// black keys (sharps) - pattern C# D# F# G# A#
+var bkMat=new THREE.MeshStandardMaterial({color:0x141008, roughness:0.45});
+var bkDown=new THREE.MeshStandardMaterial({color:0x6a4820, roughness:0.5, emissive:0x442200, emissiveIntensity:0.8});
+var pattern=[1,1,0,1,1,1,0]; // skipping E-F and B-C
+for(var bi=0;bi<nKeys-1;bi++){
+  var step=bi%7;
+  if(pattern[step]){
+    var bk=new THREE.Mesh(new THREE.BoxGeometry(kw*0.55, kh*1.6, kd*0.62), bkMat);
+    bk.position.set(-totalW/2 + kw*bi + kw, 1.013, 0.34);
+    consoleGroup.add(bk);
+    blackKeys.push({mesh:bk, idx:bi});
+  }
+}
+
+// ---------- HANDS (organist's hands on the keys) ----------
+var skinMat=new THREE.MeshStandardMaterial({color:0xd9b18a, roughness:0.7});
+var sleeveMat=new THREE.MeshStandardMaterial({color:0x2a1828, roughness:0.85});
+function makeHand(){
+  var g=new THREE.Group();
+  // palm
+  var palm=new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.04, 0.12), skinMat);
+  palm.position.set(0,0,0);
+  g.add(palm);
+  // fingers (5)
+  for(var f=0;f<5;f++){
+    var len=f===0?0.06: (f===2?0.11:0.10);
+    var fin=new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.022, len), skinMat);
+    var ox=(f-2)*0.025;
+    fin.position.set(ox + (f===0?-0.03:0), 0, -0.06 - len/2);
+    g.add(fin);
+  }
+  // sleeve cuff
+  var cuff=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.06,12), sleeveMat);
+  cuff.rotation.x=Math.PI/2;
+  cuff.position.set(0, 0.005, 0.09);
+  g.add(cuff);
+  return g;
+}
+var handL=makeHand(), handR=makeHand();
+handL.position.set(-0.32, 1.04, 0.36);
+handR.position.set(0.34, 1.04, 0.36);
+scene.add(handL); scene.add(handR);
+
+// ---------- ORGAN PIPES OVERHEAD ----------
+var pipesGroup=new THREE.Group();
+scene.add(pipesGroup);
+var pipeMatA=new THREE.MeshStandardMaterial({color:0xc9b88a, metalness:0.85, roughness:0.25});
+var pipeMatB=new THREE.MeshStandardMaterial({color:0xe5d39a, metalness:0.9, roughness:0.18});
+var pipeCount=23;
+for(var p=0;p<pipeCount;p++){
+  var t=p/(pipeCount-1);
+  var len=2.8 + Math.sin(t*Math.PI)*1.6 + R()*0.5;
+  var rad=0.07 + (1-Math.abs(t-0.5)*1.5)*0.05;
+  var pipe=new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, len, 14), p%2?pipeMatA:pipeMatB);
+  pipe.position.set(-2.6 + p*0.235, 3.4 + len/2 - 1.4, -1.3);
+  pipesGroup.add(pipe);
+  // mouth
+  var mouth=new THREE.Mesh(new THREE.BoxGeometry(rad*1.6, 0.08, 0.04),
+    new THREE.MeshStandardMaterial({color:0x6b5530, roughness:0.5}));
+  mouth.position.set(pipe.position.x, pipe.position.y - len/2 + 0.08, pipe.position.z + rad*0.7);
+  pipesGroup.add(mouth);
+}
+// ornate frame above pipes
+var frameMat=new THREE.MeshStandardMaterial({color:0x4a2e18, roughness:0.65});
+var topRail=new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.18, 0.4), frameMat);
+topRail.position.set(0, 6.5, -1.3);
+pipesGroup.add(topRail);
+var botRail=new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.22, 0.42), frameMat);
+botRail.position.set(0, 1.95, -1.3);
+pipesGroup.add(botRail);
+
+// ---------- CHURCH NAVE (forward, glimpsed) ----------
+var nave=new THREE.Group();
+scene.add(nave);
+
+// floor
+var floorMat=new THREE.MeshStandardMaterial({color:0x3a2a1f, roughness:0.85});
+var floor=new THREE.Mesh(new THREE.PlaneGeometry(20, 30), floorMat);
+floor.rotation.x=-Math.PI/2;
+floor.position.set(0, 0.05, -10);
+nave.add(floor);
+// runner (red carpet aisle)
+var runner=new THREE.Mesh(new THREE.PlaneGeometry(1.6, 22), new THREE.MeshStandardMaterial({color:0x6a1820, roughness:0.7}));
+runner.rotation.x=-Math.PI/2;
+runner.position.set(0,0.06,-12);
+nave.add(runner);
+
+// pews (rows)
+var pewMat=new THREE.MeshStandardMaterial({color:0x4a2a16, roughness:0.7});
+for(var row=0;row<8;row++){
+  for(var s=0;s<2;s++){
+    var pew=new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.55, 0.45), pewMat);
+    pew.position.set(s===0?-2.0:2.0, 0.3, -3 - row*1.7);
+    nave.add(pew);
+    // back
+    var pb=new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.6, 0.08), pewMat);
+    pb.position.set(s===0?-2.0:2.0, 0.65, -3 - row*1.7 - 0.2);
+    nave.add(pb);
+    // congregants (low simple shapes)
+    for(var c=0;c<3;c++){
+      var cong=new THREE.Mesh(new THREE.CapsuleGeometry?new THREE.CapsuleGeometry(0.18,0.2,4,8):new THREE.SphereGeometry(0.22,8,8),
+        new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(R()*0.15+0.05, 0.3+R()*0.3, 0.18+R()*0.2), roughness:0.85}));
+      cong.position.set((s===0?-2.0:2.0) + (c-1)*0.7, 0.78, -3 - row*1.7);
+      nave.add(cong);
+    }
+  }
+}
+
+// columns flanking
+var colMat=new THREE.MeshStandardMaterial({color:0x5a4a3a, roughness:0.78});
+for(var ci=0;ci<5;ci++){
+  var col1=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.4,7,12), colMat);
+  col1.position.set(-4.2, 3.5, -3 - ci*3.2);
+  nave.add(col1);
+  var col2=col1.clone();
+  col2.position.x=4.2;
+  nave.add(col2);
+}
+
+// altar at far end
+var altar=new THREE.Group();
+var altarTable=new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.0, 1.0),
+  new THREE.MeshStandardMaterial({color:0xeee0c0, roughness:0.5}));
+altarTable.position.set(0, 0.55, -16);
+altar.add(altarTable);
+var altarCloth=new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.9),
+  new THREE.MeshStandardMaterial({color:0xf8e8a0, side:THREE.DoubleSide, roughness:0.6}));
+altarCloth.rotation.x=-Math.PI/2;
+altarCloth.position.set(0,1.06,-16);
+altar.add(altarCloth);
+// candles
+for(var cd=0;cd<2;cd++){
+  var cdl=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.5,8),
+    new THREE.MeshStandardMaterial({color:0xfff4d0, roughness:0.4}));
+  cdl.position.set(cd===0?-1.2:1.2, 1.35, -16);
+  altar.add(cdl);
+  var fl=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8),
+    new THREE.MeshBasicMaterial({color:0xffd070}));
+  fl.position.set(cd===0?-1.2:1.2, 1.62, -16);
+  altar.add(fl);
+}
+// stained glass behind altar
+var sgMat=new THREE.MeshBasicMaterial({color:0xff9b6a, transparent:true, opacity:0.85});
+var sg=new THREE.Mesh(new THREE.PlaneGeometry(3.2, 4.2), sgMat);
+sg.position.set(0, 4.5, -17.4);
+altar.add(sg);
+var sg2=new THREE.Mesh(new THREE.PlaneGeometry(1.4, 2.4),
+  new THREE.MeshBasicMaterial({color:0x6aa9ff, transparent:true, opacity:0.78}));
+sg2.position.set(-2.6, 4.0, -17.4);
+altar.add(sg2);
+var sg3=sg2.clone();
+sg3.position.x=2.6;
+sg3.material=new THREE.MeshBasicMaterial({color:0xffd86b, transparent:true, opacity:0.78});
+altar.add(sg3);
+nave.add(altar);
+
+// ---------- BRIDE & GROOM ----------
+function makePerson(opts){
+  var g=new THREE.Group();
+  var bodyMat=new THREE.MeshStandardMaterial({color:opts.body, roughness:0.6});
+  var headMat=new THREE.MeshStandardMaterial({color:0xd9b18a, roughness:0.7});
+  var torso=new THREE.Mesh(new THREE.ConeGeometry(opts.r||0.4, opts.h||1.6, 12), bodyMat);
+  torso.position.y=(opts.h||1.6)/2;
+  g.add(torso);
+  var head=new THREE.Mesh(new THREE.SphereGeometry(0.18,12,12), headMat);
+  head.position.y=(opts.h||1.6)+0.12;
+  g.add(head);
+  if(opts.veil){
+    var veil=new THREE.Mesh(new THREE.PlaneGeometry(0.8,1.2),
+      new THREE.MeshStandardMaterial({color:0xfffaf0, transparent:true, opacity:0.55, side:THREE.DoubleSide, roughness:0.4}));
+    veil.position.set(0,(opts.h||1.6)+0.05,0.05);
+    g.add(veil);
+  }
+  return g;
+}
+var bride=makePerson({body:0xf8f0e0, r:0.45, h:1.55, veil:true});
+var groom=makePerson({body:0x101010, r:0.35, h:1.65});
+nave.add(bride); nave.add(groom);
+bride.position.set(-0.4, 0, -2.0);
+groom.position.set(0, 0, -15.2);
+
+// officiant
+var off=makePerson({body:0x1e1a14, r:0.32, h:1.7});
+off.position.set(0, 0, -17.0);
+nave.add(off);
+
+// ---------- SHEET MUSIC CANVAS RENDER ----------
+function drawMusic(state){
+  var W=musicCanvas.width, H=musicCanvas.height;
+  // parchment background
+  var grd=mctx.createLinearGradient(0,0,0,H);
+  grd.addColorStop(0,'#f4e6c4');
+  grd.addColorStop(1,'#e6cf9b');
+  mctx.fillStyle=grd; mctx.fillRect(0,0,W,H);
+  // border
+  mctx.strokeStyle='#5a3a18'; mctx.lineWidth=4;
+  mctx.strokeRect(8,8,W-16,H-16);
+  // title
+  mctx.fillStyle='#2a1a08';
+  mctx.font='bold 28px Georgia';
+  mctx.textAlign='center';
+  mctx.fillText('Brimsworth Wedding Service — Op. 21', W/2, 50);
+  mctx.font='italic 16px Georgia';
+  mctx.fillText('M. Wren · for pipe organ · key of C', W/2, 76);
+  // key sig & time sig label
+  mctx.font='bold 14px Georgia';
+  mctx.textAlign='left';
+  mctx.fillText('Key: '+state.key+'  ·  Time: '+state.time+'  ·  Tempo ♩ = '+state.tempo, 32, 104);
+  mctx.fillText('Movement: '+state.mvmt, 32, 124);
+  // staves (5 systems, treble + bass each)
+  var topY=160;
+  var rowH=92;
+  for(var sys=0; sys<5; sys++){
+    var y0=topY+sys*rowH;
+    // treble
+    drawStaff(36, y0, W-72);
+    // bass
+    drawStaff(36, y0+34, W-72);
+    // brace
+    mctx.strokeStyle='#3a2a14'; mctx.lineWidth=3;
+    mctx.beginPath();
+    mctx.moveTo(34, y0-2);
+    mctx.lineTo(34, y0+34+22);
+    mctx.stroke();
+    // clefs (text approximations)
+    mctx.fillStyle='#2a1a08';
+    mctx.font='bold 26px serif';
+    mctx.fillText('𝄞', 42, y0+18);
+    mctx.font='bold 22px serif';
+    mctx.fillText('𝄢', 44, y0+34+18);
+    // measure markers
+    for(var m=1;m<5;m++){
+      var mx=36 + (W-72)*m/5;
+      mctx.strokeStyle='#3a2a14'; mctx.lineWidth=1;
+      mctx.beginPath(); mctx.moveTo(mx,y0); mctx.lineTo(mx,y0+34+22); mctx.stroke();
+    }
+    // notes per system
+    drawNotes(36, y0, W-72, sys, state);
+  }
+  // playhead - position along all systems
+  var totalSys=5;
+  var posSys=Math.floor(state.barIdx/totalSys);
+  var sysIdx=state.barIdx % totalSys;
+  var localX=36 + (W-72)*((state.barLocal+sysIdx)/totalSys);
+  // wrap: use barIdx directly mod 5
+  var ph=state.barIdx % 5;
+  var phx=36 + (W-72)*((state.barLocal+ph)/5);
+  var phy=topY+ph*rowH-6;
+  mctx.fillStyle='rgba(220,80,40,0.32)';
+  mctx.fillRect(phx-3, phy, 6, 70);
+  mctx.fillStyle='rgba(220,80,40,0.9)';
+  mctx.fillRect(phx-1, phy, 2, 70);
+  // footer status
+  mctx.fillStyle='#3a2a14';
+  mctx.font='14px Georgia';
+  mctx.textAlign='left';
+  mctx.fillText('cue: '+state.cue, 32, H-44);
+  mctx.fillText('voicing: '+state.voicing, 32, H-24);
+  mctx.textAlign='right';
+  mctx.fillText('t = '+timeStr(state.t), W-32, H-24);
+  musicTex.needsUpdate=true;
+}
+function drawStaff(x,y,w){
+  mctx.strokeStyle='#3a2a14'; mctx.lineWidth=1;
+  for(var i=0;i<5;i++){
+    mctx.beginPath();
+    mctx.moveTo(x, y+i*5.5);
+    mctx.lineTo(x+w, y+i*5.5);
+    mctx.stroke();
+  }
+}
+// procession motif: C E G C ... (R21 leitmotif)
+var motif=['C','E','G','C','G','E','C','-','C','E','G','C','E','G','C','-'];
+function drawNotes(x,y,w,sys,state){
+  var per=4*5; // 4 per measure × 5 measures
+  for(var i=0;i<per;i++){
+    var nx=x+10+(w-20)*i/per;
+    var noteIdx=(sys*per+i)%motif.length;
+    var n=motif[noteIdx];
+    if(n==='-') continue;
+    // staff position by note name
+    var ny={'C':y+27.5,'E':y+19,'G':y+13.5}[n] || y+22;
+    var active = (sys===state.barIdx%5) && Math.abs(i/per - state.barLocal) < 0.06;
+    mctx.fillStyle = active?'#b8401c':'#1a0e04';
+    mctx.beginPath();
+    mctx.ellipse(nx, ny, 4, 3, -0.3, 0, Math.PI*2);
+    mctx.fill();
+    // stem
+    mctx.strokeStyle = active?'#b8401c':'#1a0e04';
+    mctx.lineWidth=1.4;
+    mctx.beginPath();
+    mctx.moveTo(nx+3.5, ny);
+    mctx.lineTo(nx+3.5, ny-16);
+    mctx.stroke();
+    // bass clef echo (octave below)
+    var by=y+34 + ({'C':16,'E':10,'G':5}[n] || 12);
+    mctx.fillStyle = active?'#b8401c':'#1a0e04';
+    mctx.beginPath();
+    mctx.ellipse(nx, by, 4, 3, -0.3, 0, Math.PI*2);
+    mctx.fill();
+    mctx.beginPath();
+    mctx.moveTo(nx-3.5, by);
+    mctx.lineTo(nx-3.5, by+14);
+    mctx.stroke();
+  }
+}
+
+// ---------- PHASE TIMELINE ----------
+// 0-30   prelude
+// 30-150 procession (motif x repetitions, bride walks)
+// 150-330 vows (sustained, soft)
+// 330-470 hymn (full voicing)
+// 470-540 build to convergence
+// 540-545 SUSTAINED FINAL CHORD - hands lift - look up - bride/groom turn & nod
+// 545-600 recession
+function phaseFor(t){
+  if(t<30)  return 'prelude';
+  if(t<150) return 'procession';
+  if(t<330) return 'vows';
+  if(t<470) return 'hymn';
+  if(t<540) return 'build';
+  if(t<560) return 'convergence';
+  return 'recession';
+}
+function voicingFor(t){
+  if(t<150) return 'Diapason 8 + Gedackt 8';
+  if(t<330) return 'Gedackt 8 (solo · pp)';
+  if(t<470) return 'Principal 4 + Diapason 8 + Bourdon 16';
+  if(t<540) return 'Full organ — pipe + brass + clockwork (R24)';
+  if(t<560) return 'Sustained C major — all stops';
+  return 'Trumpet 8 + Mixture V — recession';
+}
+function cueFor(t){
+  if(t<30) return 'breath · congregation seated';
+  if(t<150) return 'BRIDE PROCESSES — C-E-G-C leitmotif';
+  if(t<330) return 'vows — soft accompaniment';
+  if(t<470) return 'hymn: All Things Bright & Bright Again';
+  if(t<540) return 'build · ritardando approaches';
+  if(t<560) return '★ SUSTAINED FINAL CHORD ★';
+  return 'recession — leitmotif in trumpet voicing';
+}
+function tempoFor(t){
+  if(t<30) return 0;
+  if(t<150) return 76;
+  if(t<330) return 60;
+  if(t<470) return 88;
+  if(t<540) return 84;
+  if(t<560) return 0;
+  return 96;
+}
+
+// ---------- key animation: which keys are "down" at time t ----------
+// motif voicing — chord progression per beat
+// procession & motif: C E G C with bass C-G-C-G
+function activeKeysAt(t, phase){
+  // returns array of white-key indices currently pressed
+  // and chord intensity 0..1
+  var beat=(t*tempoFor(t)/60);
+  var bar=Math.floor(beat/4);
+  var inBar=(beat%4);
+  var notes=[];
+  if(phase==='prelude') return {w:[], intensity:0, chord:'rest'};
+  if(phase==='procession' || phase==='build' || phase==='hymn'){
+    // motif index by quarter
+    var step=Math.floor(beat)%4;
+    var motifSeq=[ ['C','C','E','G','C'], ['G','E','C','G'], ['E','G','C','E','G','C'], ['C','E','G','C'] ];
+    var pattern=motifSeq[bar%motifSeq.length];
+    var name=pattern[step%pattern.length];
+    var idx={'C':14,'E':16,'G':18,'C2':21,'G2':11}[name] || 14;
+    notes.push(idx);
+    // bass
+    notes.push(name==='C'?7: (name==='G'?4:8));
+    // chord fill on long notes
+    if(phase==='hymn' || phase==='build'){
+      notes.push(idx-2); notes.push(idx+2);
+    }
+    return {w:notes, intensity:0.7+0.3*Math.sin(inBar*Math.PI/2), chord:name};
+  }
+  if(phase==='vows'){
+    // sparse sustained C
+    var pulse=Math.sin(t*0.6);
+    if(pulse>0) return {w:[14,11,18], intensity:0.35+0.2*pulse, chord:'C (sus)'};
+    return {w:[14,11], intensity:0.25, chord:'C (sus)'};
+  }
+  if(phase==='convergence'){
+    // SUSTAINED FINAL CHORD - then HANDS LIFT
+    var since=t-540;
+    if(since<3.5){
+      // press all C-E-G-C
+      return {w:[7,11,14,16,18,21], intensity:1.0, chord:'C major (sustained)'};
+    }
+    // hands lift - decaying
+    return {w:[], intensity:0, chord:'(silence — the moment)', lifted:true};
+  }
+  if(phase==='recession'){
+    var rstep=Math.floor((t-560)*1.5)%4;
+    var rname=['C','E','G','C'][rstep];
+    var ridx={'C':14,'E':16,'G':18,'C2':21}[rname]||14;
+    return {w:[ridx,7,11], intensity:0.85, chord:rname+' (trumpet)'};
+  }
+  return {w:[], intensity:0, chord:'?'};
+}
+
+// ---------- HUD render ----------
+function renderHUD(t, phase, kstate){
+  var pct=Math.min(100,t/600*100);
+  var barW=Math.max(2,Math.floor(pct*2.4));
+  var phaseColors={prelude:'d',procession:'k',vows:'p',hymn:'o',build:'o',convergence:'g',recession:'k'};
+  var pc=phaseColors[phase]||'d';
+  var html=[
+    '<div><span class="d">clock:</span> <span class="k">'+timeStr(t)+'</span> / 10:00 &nbsp; <span class="d">phase:</span> <span class="'+pc+'">'+phase+'</span></div>',
+    '<div><span class="bar" style="width:'+barW+'px"></span></div>',
+    '<hr class="s">',
+    '<div class="tag">scene</div>',
+    '<div class="d">St. Aldric\'s of Brimsworth · gallery loft · pipe-organ console</div>',
+    '<div class="d">Margaret Wren · 50 · organist · 22 yrs in this loft</div>',
+    '<hr class="s">',
+    '<div class="tag">leitmotif (R21)</div>',
+    '<div>C — E — G — C  · current chord: <span class="k">'+kstate.chord+'</span></div>',
+    '<div class="d">voicing: '+voicingFor(t)+'</div>',
+    '<hr class="s">',
+    '<div class="tag">retained rounds</div>',
+    '<div class="d">R16 multiverse · R17 century · R18 lifetime · R19 cast · R20 worlds · R21 wedding · R22 funeral · R23 council · R24 voicing-stack · R25 final · <span class="k">R26 convergence</span></div>'
+  ];
+  document.getElementById('hud_body').innerHTML=html.join('');
+}
+
+// ---------- chyron lines ----------
+function chyronFor(t, phase){
+  if(phase==='prelude') return 'prelude — fingers settle on the keys, the stops are drawn, the nave is full.';
+  if(phase==='procession'){
+    if(t<60) return 'procession — bourdon underfoot, the doors swing open.';
+    if(t<100) return 'C — E — G — C : the leitmotif, walked in time.';
+    return 'her father\'s arm, the runner, the rose-petal hush.';
+  }
+  if(phase==='vows'){
+    if(t<200) return 'vows — gedackt 8, soft as breath, no one looks back at the loft.';
+    if(t<260) return '"…and to honour all my days." the manual sustains a single voice.';
+    return 'rings exchanged. a small laugh. the pedal whispers.';
+  }
+  if(phase==='hymn') return 'hymn — principal 4 lifts, the congregation finds the third by ear.';
+  if(phase==='build') return 'ritardando — the page turns itself in your hand. one chord left.';
+  if(phase==='convergence'){
+    var since=t-540;
+    if(since<2) return 'convergence: wren — the music ends, the moment begins.';
+    if(since<5) return 'hands lift. the chord still hangs in the rafters.';
+    if(since<9) return 'they turn. they nod — to you, to the loft, to the music.';
+    return 'twelve POVs · one moment · brimsworth holds.';
+  }
+  return 'recession — trumpet 8, mixture V, the doors open onto sun.';
+}
+
+// ---------- convergence flash & latch ----------
+var convergenceLatched=false;
+function maybeConvergence(t){
+  if(!convergenceLatched && t>=540){
+    convergenceLatched=true;
+    document.getElementById('flash').style.opacity='0.85';
+    setTimeout(function(){document.getElementById('flash').style.opacity='0';},200);
+    appendConv({pov_id:POV_ID, master_clock_at_join:masterClockAt, convergence_at:Math.floor(Date.now()/1000), kind:'convergence', t:t});
+    if(BC){ BC.postMessage({pov_id:POV_ID, kind:'convergence', t:t, phase:'convergence'}); }
+    tlog('<span class="k">★ self reached convergence at t='+t.toFixed(1)+'s — hands lifted, chord sustained</span>');
+    document.getElementById('manifest_body').innerHTML=manifestSummary();
+  }
+}
+
+// ---------- camera glance behavior ----------
+// default: looking down at sheet music (rotation.x ~= -0.55)
+// occasional glance up at bride: rotation.x -> -0.05
+// at convergence: looks up & holds
+var glanceTarget=-0.55;
+var glanceVel=0;
+function updateGlance(t, phase){
+  // periodic glances during procession/hymn/recession
+  var pat;
+  if(phase==='convergence'){
+    var since=t-540;
+    if(since>3.5){ glanceTarget=-0.02; }
+    else { glanceTarget=-0.4; }
+  } else if(phase==='procession'){
+    // glance up briefly every ~12s
+    var ph=(t-30)%12;
+    glanceTarget = (ph>1 && ph<3.4) ? -0.18 : -0.55;
+  } else if(phase==='hymn' || phase==='build'){
+    var ph2=(t-330)%18;
+    glanceTarget = (ph2>2 && ph2<4) ? -0.22 : -0.52;
+  } else if(phase==='vows'){
+    var ph3=(t-150)%30;
+    glanceTarget = (ph3>5 && ph3<6.6) ? -0.15 : -0.58;
+  } else if(phase==='recession'){
+    var ph4=(t-560)%8;
+    glanceTarget = (ph4<2) ? -0.12 : -0.48;
+  } else {
+    glanceTarget=-0.55;
+  }
+  // spring
+  var diff=glanceTarget-camera.rotation.x;
+  glanceVel += diff*0.08;
+  glanceVel *= 0.78;
+  camera.rotation.x += glanceVel;
+  // very subtle yaw with phrase
+  camera.rotation.y = Math.sin(t*0.25)*0.012;
+  // tiny breathing
+  camera.position.y = 1.55 + Math.sin(t*0.9)*0.006;
+}
+
+// ---------- bride walk animation ----------
+function updateBrideGroom(t, phase){
+  // bride enters at t=30, walks from z=-2 to z=-15 over ~120s (until 150)
+  if(t<30){
+    bride.position.set(-0.4, 0, -2.0);
+    bride.visible=true;
+  } else if(t<150){
+    var p=(t-30)/120;
+    p=Math.min(1,p);
+    var ease=p*p*(3-2*p);
+    bride.position.set(0, 0, -2 - ease*13.0);
+    bride.visible=true;
+  } else if(t<540){
+    bride.position.set(0, 0, -15.0);
+  } else if(t<560){
+    bride.position.set(0, 0, -15.0);
+    // turn (we approximate by tiny rotation)
+    bride.rotation.y = Math.min(Math.PI, (t-540)*0.4);
+    groom.rotation.y = Math.min(Math.PI, (t-540)*0.4);
+  } else {
+    // recession - walk back
+    var rp=Math.min(1,(t-560)/40);
+    bride.position.set(0, 0, -15 + rp*13);
+    groom.position.set(0.3, 0, -15.2 + rp*13);
+    bride.rotation.y=Math.PI;
+    groom.rotation.y=Math.PI;
+  }
+}
+
+// ---------- key + hand animation ----------
+function updateKeysHands(t, phase, kstate){
+  // reset all keys
+  for(var i=0;i<whiteKeys.length;i++){
+    whiteKeys[i].material=keyMat;
+    whiteKeys[i].position.y=0.99;
+    whiteKeys[i].rotation.x=0;
+  }
+  for(var bi=0;bi<blackKeys.length;bi++){
+    blackKeys[bi].mesh.material=bkMat;
+    blackKeys[bi].mesh.position.y=1.013;
+  }
+  // press active
+  if(kstate.w && kstate.w.length){
+    kstate.w.forEach(function(idx){
+      if(idx<0||idx>=whiteKeys.length) return;
+      whiteKeys[idx].material=keyDownMat;
+      whiteKeys[idx].position.y=0.985;
+      whiteKeys[idx].rotation.x=0.04;
+    });
+  }
+  // hand position - left over bass keys, right over melody
+  // but during 'lifted' phase, raise hands above keys
+  var lifted = !!kstate.lifted;
+  var liftAmt = lifted ? (0.18 + Math.min(0.12, (t-543)*0.05)) : 0;
+  var press = (kstate.intensity||0);
+  // L hand follows lower active key (bass), R hand follows upper (melody)
+  var lowest=null, highest=null;
+  if(kstate.w && kstate.w.length){
+    for(var k=0;k<kstate.w.length;k++){
+      if(lowest===null || kstate.w[k]<lowest) lowest=kstate.w[k];
+      if(highest===null || kstate.w[k]>highest) highest=kstate.w[k];
+    }
+  }
+  var totalW=29*0.062;
+  var lhx = lowest!==null ? (-totalW/2 + 0.062*lowest + 0.031) : -0.32;
+  var rhx = highest!==null ? (-totalW/2 + 0.062*highest + 0.031) : 0.34;
+  // smooth
+  handL.position.x += (lhx - handL.position.x)*0.18;
+  handR.position.x += (rhx - handR.position.x)*0.18;
+  var baseY = 1.04;
+  handL.position.y = baseY + liftAmt - press*0.005 + Math.sin(t*4+0.4)*0.003;
+  handR.position.y = baseY + liftAmt - press*0.005 + Math.sin(t*4+1.7)*0.003;
+  handL.position.z = 0.36;
+  handR.position.z = 0.36;
+  // small tilt
+  handL.rotation.z = -0.05 + (lifted?0.18:0);
+  handR.rotation.z = 0.05 - (lifted?0.18:0);
+  handL.rotation.x = lifted ? -0.4 : -0.1;
+  handR.rotation.x = lifted ? -0.4 : -0.1;
+}
+
+// ---------- pipes shimmer (when pressed) ----------
+function updatePipes(t, kstate){
+  for(var p=0;p<pipesGroup.children.length;p++){
+    var ch=pipesGroup.children[p];
+    if(ch.geometry && ch.geometry.type==='CylinderGeometry'){
+      var phase=Math.sin(t*4 + p*0.7);
+      var glow = (kstate.intensity||0) * (0.4 + 0.6*Math.abs(phase));
+      if(ch.material && ch.material.emissive){
+        ch.material.emissive.setRGB(glow*0.4, glow*0.28, glow*0.1);
+        ch.material.emissiveIntensity = glow*0.8;
+      }
+    }
+  }
+}
+
+// ---------- sheet music state ----------
+function scoreState(t,phase,kstate){
+  var bpm=tempoFor(t)||60;
+  var beat=t*bpm/60;
+  var barIdx=Math.floor(beat/4)%5;
+  var barLocal=(beat%4)/4;
+  return {
+    t:t,
+    key: phase==='vows'?'C major (a piacere)':'C major',
+    time: phase==='hymn'?'4/4':'4/4',
+    tempo: bpm===0?'(rest)':bpm,
+    mvmt: ({prelude:'I. Prelude',procession:'II. Procession',vows:'III. The Vows',hymn:'IV. Hymn',build:'V. Final Approach',convergence:'VI. The Sustained Chord',recession:'VII. Recession'})[phase]||'—',
+    barIdx:barIdx, barLocal:barLocal,
+    cue: cueFor(t),
+    voicing: voicingFor(t)
+  };
+}
+function renderScoreHUD(s, kstate){
+  var html=[
+    '<div><span class="d">mvmt:</span> <span class="k">'+s.mvmt+'</span></div>',
+    '<div><span class="d">key:</span> '+s.key+' &nbsp; <span class="d">time:</span> '+s.time+'</div>',
+    '<div><span class="d">tempo:</span> ♩ = '+s.tempo+'</div>',
+    '<div><span class="d">bar:</span> '+(s.barIdx+1)+' / 5 &nbsp; <span class="d">beat:</span> '+(Math.floor(s.barLocal*4)+1)+'</div>',
+    '<hr class="s">',
+    '<div><span class="d">cue:</span> '+s.cue+'</div>',
+    '<div><span class="d">voicing:</span> '+s.voicing+'</div>',
+    '<div><span class="d">chord under hands:</span> <span class="k">'+kstate.chord+'</span></div>'
+  ];
+  document.getElementById('score_body').innerHTML=html.join('');
+}
+
+// ---------- broadcast heartbeat ----------
+setInterval(function(){
+  if(!BC) return;
+  var t=elapsed();
+  BC.postMessage({pov_id:POV_ID, kind:'tick', t:t, phase:phaseFor(t)});
+},1500);
+
+// ---------- reseed ----------
+setInterval(function(){
+  var b=currentBucket();
+  if(b!==bucket){
+    bucket=b;
+    R=rng(0xC0DECAFE ^ (bucket*7919));
+    tlog('<span class="o">↻ reseed bucket→'+bucket+'</span>');
+  }
+},5000);
+
+// log key milestones
+[30,150,330,470,540,560].forEach(function(milestone){
+  setTimeout(function(){
+    tlog('<span class="o">phase shift → '+phaseFor(milestone+0.1)+'</span>');
+  }, milestone*1000);
+});
+
+// ---------- render loop ----------
+function tick(){
+  var t=elapsed();
+  var phase=phaseFor(t);
+  var kstate=activeKeysAt(t, phase);
+  updateGlance(t, phase);
+  updateBrideGroom(t, phase);
+  updateKeysHands(t, phase, kstate);
+  updatePipes(t, kstate);
+  maybeConvergence(t);
+  // sheet music
+  var s=scoreState(t,phase,kstate);
+  drawMusic(s);
+  renderScoreHUD(s, kstate);
+  renderHUD(t, phase, kstate);
+  document.getElementById('chy_t').textContent=chyronFor(t,phase);
+  var st=document.getElementById('self_t');
+  if(st) st.textContent=t.toFixed(1);
+  // candles flicker
+  altarLight.intensity = 1.4 + Math.sin(t*7)*0.18 + Math.sin(t*13)*0.08;
+  // pipes glow during convergence
+  if(phase==='convergence'){
+    pipesGroup.children.forEach(function(ch,i){
+      if(ch.material && ch.material.emissive && ch.geometry.type==='CylinderGeometry'){
+        var since=t-540;
+        var fade=Math.max(0,1-since/3.5);
+        ch.material.emissive.setRGB(0.5*fade, 0.4*fade, 0.18*fade);
+        ch.material.emissiveIntensity=fade*1.2;
+      }
+    });
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+
+// initial paint
+document.getElementById('manifest_body').innerHTML=manifestSummary();
+renderTicker();
+tlog('<span class="g">wren joined master_clock_at='+masterClockAt+'</span>');
+})();
+</script>
+</body>
+</html>

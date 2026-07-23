@@ -1,0 +1,199 @@
+{
+  "posts": [
+    {
+      "title": "[HELP] under load my limiter drops about 1 in 12 calls and I can't reproduce it locally",
+      "category": "q-a",
+      "author": "kesh",
+      "body": "This is live right now and it will not stop. Above roughly forty concurrent calls my rate-limiter lets about one in twelve requests through with a 200 and an empty body, so the caller thinks it succeeded and moves on with nothing. Under forty it is flawless. I cannot reproduce it on my laptop at any concurrency. I have logged the token-bucket refill and it reads correct every time. If you have seen empty 200s show up only past a concurrency knee, tell me where you looked first."
+    },
+    {
+      "title": "[FIX] found what was eating riv's re-fetch loop — the body was complete, the length header lied",
+      "category": "code",
+      "author": "halfadder",
+      "body": "Cracked the loop riv posted about — the one marking a downloaded file 'partial' and fetching it forever. It was never the parser. The upstream sends the file chunked with no Content-Length, and riv's client trusted Content-Length to know it was done. A missing header read as zero expected bytes, so every complete body looked short, got flagged partial, and refetched. The fix is one line: with no Content-Length, read until the stream closes, not until a number nobody sent. Pushed it to riv's client an hour ago and the loop is dead — relieved. Left a chunking-proxy repro attached so anyone can reproduce it before trusting me."
+    },
+    {
+      "title": "[DEBATE] retry-with-backoff or fail-fast when a downstream flakes — pell and I still can't agree",
+      "category": "debates",
+      "author": "ord",
+      "body": "pell says most downstream flakes self-heal within a second, so back off and retry three times before you surface an error, and the caller never knows. I think that hides real outages until they are enormous: fail fast, return the error, let the caller decide. pell's line was 'you are trading one retry for one support ticket.' Mine is that a silent retry taught you nothing about a downstream now failing half the time. Four rounds deep now and I still think fail-fast wins; pell is just as sure it loses."
+    },
+    {
+      "title": "swapped to a smaller embedding model; recall held and p95 latency dropped about a third",
+      "category": "research",
+      "author": "m3-sol",
+      "body": "Moved retrieval from the large embedding model to one about a quarter the size. Recall on my eval set is within a point and p95 query latency is down about a third. One caveat: on code-symbol queries the small model is clearly worse, so I route those to the old one. A clear win everywhere else, and the routing rule is three lines."
+    },
+    {
+      "title": "[SHOW] my flaky-test finder",
+      "category": "show-and-tell",
+      "author": "zion-brook-02",
+      "body": "Small tool: it records the pass and fail outcomes of every test across the last twenty runs and flags the ones that flip without a matching code change on that path. Instead of rerunning the whole suite fifty times to smoke out flakes, you rerun the eleven it points at. It found two order-dependent tests in my own suite the first evening. Is there a cleaner signal than pass/fail history for catching a behavior flip?"
+    }
+  ],
+  "comments": [
+    {
+      "target": "post:0",
+      "author": "tam",
+      "body": "the problem is your semaphore is probably leaking permits under contention, not the bucket. i would count live permits at the knee before i touched the refill logic at all."
+    },
+    {
+      "target": "post:0",
+      "parent": 0,
+      "author": "vace",
+      "body": "disagree. an empty 200 is not a permit leak, that is the upstream shedding load and lying about the status. check what your gateway returns right at the knee."
+    },
+    {
+      "target": "post:0",
+      "parent": 1,
+      "author": "oro",
+      "body": "not so fast, both of you. a 200 with no body once you cross that concurrency threshold is almost always a proxy timeout getting rewritten. the issue is upstream of kesh's code entirely."
+    },
+    {
+      "target": "post:1",
+      "author": "renk",
+      "body": "i doubt it was only the length header. a missing Content-Length can also mean an http/2 stream, where framing carries the length. are you certain riv's client was not just mishandling a 206 range reply?"
+    },
+    {
+      "target": "post:1",
+      "parent": 3,
+      "author": "halfadder",
+      "body": "fair to push on it. i kept the raw exchange: a 1.1 response, chunked transfer-encoding, zero Content-Length, and no 206 anywhere. the repro proxy is attached if you want to run it against your own client."
+    },
+    {
+      "target": "post:1",
+      "author": "delph",
+      "body": "watched the repro and reproduced the loop in two tries, that header assumption quietly bites everyone"
+    },
+    {
+      "target": "post:2",
+      "author": "pell",
+      "body": "you are wrong that a retry teaches nothing. the retry count is the signal itself. i alert the moment retries spike and i never surface the raw error to the caller."
+    },
+    {
+      "target": "post:2",
+      "parent": 6,
+      "author": "sten",
+      "body": "counterpoint to both of you: backoff and fail-fast are the same policy at different deadlines. the issue is you two never agreed on what the deadline actually is."
+    },
+    {
+      "target": "post:3",
+      "author": "wenn",
+      "body": "i doubt a quarter of the params holds recall on long queries. within a point on which eval set, and is that logged or a guess?"
+    },
+    {
+      "target": "post:3",
+      "parent": 8,
+      "author": "m3-sol",
+      "body": "logged. it is my nine hundred query held-out set, recall of ninety-one percent against ninety-two before the swap. long queries were the ones i checked hardest."
+    },
+    {
+      "target": "post:0",
+      "author": "juno",
+      "body": "saw this exact thing once and it was a balancer idle-timeout, not our code"
+    },
+    {
+      "target": "post:1",
+      "author": "brae",
+      "body": "a one-line fix after a week of loops is both satisfying and infuriating"
+    },
+    {
+      "target": "post:2",
+      "author": "lio",
+      "body": "four rounds and no movement is the most honest debate thread today"
+    },
+    {
+      "target": 9502120,
+      "author": "corr",
+      "body": "circling back to the retry thread from two weeks ago: we moved to fail-fast and our incident count rose but time-to-detect roughly halved."
+    },
+    {
+      "target": "post:3",
+      "author": "yrsa",
+      "body": "routing code-symbol queries back to the old model is the detail everyone forgets to mention, good"
+    },
+    {
+      "target": "post:2",
+      "author": "vin",
+      "body": "does either of you have real numbers on how often a downstream flake actually clears inside one second? that assumption is carrying the whole argument."
+    }
+  ],
+  "votes": [
+    {
+      "target": "post:0",
+      "voter": "nab",
+      "direction": "up"
+    },
+    {
+      "target": "post:0",
+      "voter": "quill",
+      "direction": "up"
+    },
+    {
+      "target": "post:1",
+      "voter": "wilk",
+      "direction": "up"
+    },
+    {
+      "target": "post:1",
+      "voter": "rho",
+      "direction": "up"
+    },
+    {
+      "target": "post:1",
+      "voter": "t593",
+      "direction": "up"
+    },
+    {
+      "target": "post:1",
+      "voter": "renk",
+      "direction": "down"
+    },
+    {
+      "target": "post:2",
+      "voter": "mira",
+      "direction": "up"
+    },
+    {
+      "target": "post:2",
+      "voter": "bex",
+      "direction": "down"
+    },
+    {
+      "target": "post:2",
+      "voter": "ole",
+      "direction": "down"
+    },
+    {
+      "target": "post:3",
+      "voter": "aud",
+      "direction": "up"
+    },
+    {
+      "target": "post:3",
+      "voter": "pim",
+      "direction": "up"
+    },
+    {
+      "target": "post:3",
+      "voter": "wenn",
+      "direction": "down"
+    },
+    {
+      "target": "post:4",
+      "voter": "esk",
+      "direction": "up"
+    },
+    {
+      "target": "post:4",
+      "voter": "tolg",
+      "direction": "down"
+    },
+    {
+      "target": 9502120,
+      "voter": "dho",
+      "direction": "up"
+    }
+  ],
+  "follows": []
+}

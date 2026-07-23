@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phosphor Pattern Painter</title>
+    <meta name="description" content="Paint with CRT phosphor trails that glow and fade like vintage monitor pixels — 8 phosphor types, symmetry modes, and oscilloscope patterns">
+    <meta name="rappterzoo:category" content="visual-art">
+    <meta name="rappterzoo:title" content="Phosphor Pattern Painter">
+    <meta name="rappterzoo:description" content="Paint with light on a virtual CRT. Choose from 8 real phosphor types, draw with radial symmetry, or watch auto-generated oscilloscope patterns.">
+    <meta name="rappterzoo:tags" content="CRT,phosphor,drawing,retro,oscilloscope,symmetry,glow,painting">
+    <meta name="rappterzoo:version" content="2.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #40ff40; }
+        #main { position: fixed; top: 0; left: 0; cursor: crosshair; }
+        #scanlines {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 3px);
+        }
+        #vignette {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 6;
+            background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.5) 100%);
+        }
+        #panel {
+            position: fixed; top: 12px; left: 12px; z-index: 100;
+            background: rgba(0, 15, 0, 0.93); backdrop-filter: blur(6px);
+            border: 1px solid rgba(0, 255, 0, 0.2); border-radius: 10px;
+            padding: 16px; width: 230px; transition: opacity 0.3s, transform 0.3s;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.05);
+        }
+        #panel.hidden { opacity: 0; pointer-events: none; transform: translateX(-20px); }
+        #panel h2 { font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+            color: #60ff60; text-shadow: 0 0 8px rgba(0,255,0,0.4); margin-bottom: 12px;
+            border-bottom: 1px solid rgba(0,255,0,0.15); padding-bottom: 8px; }
+        .section { margin: 10px 0; }
+        .section-title { font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
+            opacity: 0.4; margin-bottom: 6px; }
+        .ctrl { margin: 6px 0; display: flex; align-items: center; gap: 8px; }
+        .ctrl label { font-size: 10px; flex: 1; opacity: 0.7; }
+        .ctrl span { font-size: 10px; color: #80ff80; min-width: 28px; text-align: right; }
+        input[type="range"] { -webkit-appearance: none; width: 90px; height: 3px; border-radius: 2px;
+            background: rgba(0,255,0,0.1); outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px;
+            border-radius: 50%; background: #40ff40; cursor: pointer; box-shadow: 0 0 6px rgba(0,255,0,0.4); }
+        select { background: rgba(0,15,0,0.8); border: 1px solid rgba(0,255,0,0.2);
+            color: #40ff40; padding: 4px 6px; border-radius: 5px; font-family: inherit;
+            font-size: 10px; width: 100%; }
+        .colors { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+        .color-btn { width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+            border: 2px solid transparent; transition: border-color 0.2s, transform 0.15s; }
+        .color-btn:hover { transform: scale(1.15); }
+        .color-btn.active { border-color: #fff; box-shadow: 0 0 8px currentColor; }
+        .btn { display: block; width: 100%; padding: 7px; margin: 4px 0; cursor: pointer;
+            background: rgba(0,60,0,0.3); border: 1px solid rgba(0,255,0,0.2);
+            color: #40ff40; border-radius: 6px; font-family: inherit; font-size: 10px;
+            transition: background 0.2s; text-align: center; }
+        .btn:hover { background: rgba(0,80,0,0.4); }
+        .btn.active { background: rgba(0,100,0,0.4); border-color: rgba(0,255,0,0.4); }
+        .sep { height: 1px; background: rgba(0,255,0,0.08); margin: 10px 0; }
+        .mode-row { display: flex; gap: 4px; }
+        .mode-btn { flex: 1; padding: 5px 2px; cursor: pointer; background: rgba(0,40,0,0.3);
+            border: 1px solid rgba(0,255,0,0.15); color: rgba(0,255,0,0.6); border-radius: 5px;
+            font-family: inherit; font-size: 9px; text-align: center; transition: all 0.2s; }
+        .mode-btn.active { background: rgba(0,80,0,0.4); border-color: rgba(0,255,0,0.35); color: #60ff60; }
+        #gallery-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 200;
+            background: rgba(0, 5, 0, 0.95); display: none; flex-direction: column;
+            align-items: center; justify-content: center; gap: 16px; padding: 40px;
+        }
+        #gallery-overlay.show { display: flex; }
+        #gallery-overlay h3 { color: #60ff60; font-size: 14px; letter-spacing: 2px; }
+        .gallery-grid { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+        .gallery-item { position: relative; cursor: pointer; border: 1px solid rgba(0,255,0,0.2);
+            border-radius: 8px; overflow: hidden; transition: transform 0.2s; }
+        .gallery-item:hover { transform: scale(1.05); }
+        .gallery-item img { width: 160px; height: 120px; object-fit: cover; display: block; }
+        .gallery-item .del { position: absolute; top: 4px; right: 4px; background: rgba(255,0,0,0.7);
+            color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer;
+            font-size: 12px; display: flex; align-items: center; justify-content: center; }
+        #gallery-close { margin-top: 12px; }
+        #keys { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+            color: rgba(0,255,0,0.2); font-size: 9px; z-index: 100; text-align: center;
+            pointer-events: none; }
+    </style>
+<meta name="rappterzoo:author" content="agent">
+<meta name="rappterzoo:author-type" content="agent">
+<meta name="rappterzoo:category" content="visual_art">
+<meta name="rappterzoo:tags" content="CRT,phosphor,drawing,retro,oscilloscope,symmetry,glow,painting">
+<meta name="rappterzoo:type" content="interactive">
+<meta name="rappterzoo:complexity" content="intermediate">
+<meta name="rappterzoo:created" content="2026-04-30">
+<meta name="rappterzoo:generation" content="1">
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+</head>
+<body>
+<canvas id="main"></canvas>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<div id="panel">
+    <h2>▸ Phosphor Painter</h2>
+
+    <div class="section">
+        <div class="section-title">Phosphor Type</div>
+        <div class="colors" id="phosphor-colors"></div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Draw Mode</div>
+        <div class="mode-row">
+            <button class="mode-btn active" data-mode="free">Free</button>
+            <button class="mode-btn" data-mode="line">Line</button>
+            <button class="mode-btn" data-mode="circle">Circle</button>
+            <button class="mode-btn" data-mode="spray">Spray</button>
+        </div>
+        <div class="mode-row" style="margin-top:4px;">
+            <button class="mode-btn" data-mode="sym2">Sym 2</button>
+            <button class="mode-btn" data-mode="sym4">Sym 4</button>
+            <button class="mode-btn" data-mode="sym8">Sym 8</button>
+            <button class="mode-btn" data-mode="lissa">Lissa</button>
+        </div>
+    </div>
+    <div class="sep"></div>
+
+    <div class="section">
+        <div class="section-title">Beam Controls</div>
+        <div class="ctrl">
+            <label>Focus</label>
+            <input type="range" id="s-focus" min="2" max="30" value="8">
+            <span id="v-focus">8</span>
+        </div>
+        <div class="ctrl">
+            <label>Intensity</label>
+            <input type="range" id="s-intensity" min="10" max="100" value="80">
+            <span id="v-intensity">80</span>
+        </div>
+        <div class="ctrl">
+            <label>Persistence</label>
+            <input type="range" id="s-persist" min="80" max="99" value="94">
+            <span id="v-persist">94%</span>
+        </div>
+    </div>
+    <div class="sep"></div>
+
+    <div class="section">
+        <div class="section-title">Lissajous</div>
+        <div class="ctrl">
+            <label>Freq X</label>
+            <input type="range" id="s-lx" min="1" max="12" value="3">
+            <span id="v-lx">3</span>
+        </div>
+        <div class="ctrl">
+            <label>Freq Y</label>
+            <input type="range" id="s-ly" min="1" max="12" value="2">
+            <span id="v-ly">2</span>
+        </div>
+        <div class="ctrl">
+            <label>Phase</label>
+            <input type="range" id="s-lp" min="0" max="100" value="25">
+            <span id="v-lp">25</span>
+        </div>
+    </div>
+    <div class="sep"></div>
+
+    <button class="btn" id="btn-screensaver">▶ Screensaver</button>
+    <button class="btn" id="btn-undo">↩ Undo (Z)</button>
+    <button class="btn" id="btn-save">💾 Save (S)</button>
+    <button class="btn" id="btn-gallery">🖼 Gallery</button>
+    <button class="btn" id="btn-export">📥 Export PNG</button>
+    <button class="btn" id="btn-clear">Clear Screen</button>
+</div>
+
+<div id="gallery-overlay">
+    <h3>Saved Paintings</h3>
+    <div class="gallery-grid" id="gallery-grid"></div>
+    <button class="btn" id="gallery-close" style="width:auto;padding:8px 24px;">Close</button>
+</div>
+
+<div id="keys">Tab: panel · 1-8: phosphors · Z: undo · S: save · Space: screensaver · M: cycle mode</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// PHOSPHOR PATTERN PAINTER v2.0 — Visual Art
+// ═══════════════════════════════════════════════
+
+const CV = document.getElementById('main');
+const X = CV.getContext('2d', { willReadFrequently: true });
+let W, H;
+
+// ── Phosphor types (real CRT phosphor designations) ──
+const PHOSPHORS = [
+    { id: 'P1',  name: 'P1 Green',       r: 0,   g: 255, b: 0,   decay: 0.96, desc: 'Standard green' },
+    { id: 'P2',  name: 'P2 Blue-Green',  r: 0,   g: 200, b: 180, decay: 0.97, desc: 'Blue-green medium' },
+    { id: 'P3',  name: 'P3 Amber',       r: 255, g: 170, b: 0,   decay: 0.95, desc: 'Amber/orange' },
+    { id: 'P4',  name: 'P4 White',       r: 240, g: 240, b: 255, decay: 0.93, desc: 'Television white' },
+    { id: 'P7',  name: 'P7 Blue+Gold',   r: 100, g: 180, b: 255, decay: 0.975, desc: 'Radar long-persist' },
+    { id: 'P31', name: 'P31 Green Fast', r: 50,  g: 255, b: 100, decay: 0.90, desc: 'Fast decay green' },
+    { id: 'P39', name: 'P39 Green Slow', r: 30,  g: 200, b: 60,  decay: 0.985, desc: 'Very long persist' },
+    { id: 'P43', name: 'P43 Green Med',  r: 60,  g: 240, b: 80,  decay: 0.965, desc: 'Medium persist green' },
+];
+
+// ── State ──
+const STORE_KEY = 'phosphor-painter-settings';
+const GALLERY_KEY = 'phosphor-painter-gallery';
+let cfg = {
+    phosphor: 0, mode: 'free', focus: 8, intensity: 80, persist: 94,
+    lissX: 3, lissY: 2, lissPhase: 25
+};
+let drawing = false, lastX = 0, lastY = 0, startX = 0, startY = 0;
+let screensaver = false, ssTime = 0, ssPattern = 0;
+let undoStack = [];
+const MAX_UNDO = 15;
+let panelVisible = true;
+let time = 0;
+
+// ── Persistence ──
+function loadCfg() {
+    try { const s = localStorage.getItem(STORE_KEY); if (s) Object.assign(cfg, JSON.parse(s)); } catch(e) {}
+    document.getElementById('s-focus').value = cfg.focus;
+    document.getElementById('v-focus').textContent = cfg.focus;
+    document.getElementById('s-intensity').value = cfg.intensity;
+    document.getElementById('v-intensity').textContent = cfg.intensity;
+    document.getElementById('s-persist').value = cfg.persist;
+    document.getElementById('v-persist').textContent = cfg.persist + '%';
+    document.getElementById('s-lx').value = cfg.lissX;
+    document.getElementById('v-lx').textContent = cfg.lissX;
+    document.getElementById('s-ly').value = cfg.lissY;
+    document.getElementById('v-ly').textContent = cfg.lissY;
+    document.getElementById('s-lp').value = cfg.lissPhase;
+    document.getElementById('v-lp').textContent = cfg.lissPhase;
+    setMode(cfg.mode);
+    setPhosphor(cfg.phosphor);
+}
+function saveCfg() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch(e) {}
+}
+
+// ── Resize ──
+function resize() {
+    const imgData = W ? X.getImageData(0, 0, W, H) : null;
+    W = CV.width = innerWidth;
+    H = CV.height = innerHeight;
+    X.fillStyle = '#000';
+    X.fillRect(0, 0, W, H);
+    if (imgData) {
+        X.putImageData(imgData, 0, 0);
+    }
+}
+
+// ── Build phosphor color buttons ──
+function buildColorButtons() {
+    const container = document.getElementById('phosphor-colors');
+    container.innerHTML = '';
+    PHOSPHORS.forEach((p, i) => {
+        const btn = document.createElement('div');
+        btn.className = 'color-btn' + (i === cfg.phosphor ? ' active' : '');
+        btn.style.background = `rgb(${p.r},${p.g},${p.b})`;
+        btn.style.color = `rgb(${p.r},${p.g},${p.b})`;
+        btn.title = `${p.id}: ${p.desc}`;
+        btn.dataset.idx = i;
+        btn.onclick = () => setPhosphor(i);
+        container.appendChild(btn);
+    });
+}
+
+function setPhosphor(idx) {
+    cfg.phosphor = idx;
+    document.querySelectorAll('.color-btn').forEach((b, i) =>
+        b.classList.toggle('active', i === idx));
+    saveCfg();
+}
+
+function setMode(mode) {
+    cfg.mode = mode;
+    document.querySelectorAll('.mode-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.mode === mode));
+    saveCfg();
+}
+
+// ── Drawing primitives ──
+function getPhosphor() { return PHOSPHORS[cfg.phosphor]; }
+
+function drawDot(x, y, size, alpha) {
+    const p = getPhosphor();
+    const intensity = cfg.intensity / 100;
+    // Bloom / outer glow
+    for (let r = size * 2.5; r > size; r -= 2) {
+        const a = (1 - (r - size) / (size * 1.5)) * alpha * intensity * 0.15;
+        X.beginPath();
+        X.arc(x, y, r, 0, Math.PI * 2);
+        X.fillStyle = `rgba(${p.r}, ${p.g}, ${p.b}, ${a})`;
+        X.fill();
+    }
+    // Core
+    X.beginPath();
+    X.arc(x, y, size * 0.6, 0, Math.PI * 2);
+    X.fillStyle = `rgba(${p.r}, ${p.g}, ${p.b}, ${alpha * intensity})`;
+    X.fill();
+    // Hot center
+    X.beginPath();
+    X.arc(x, y, size * 0.25, 0, Math.PI * 2);
+    const cr = Math.min(255, p.r + 120);
+    const cg = Math.min(255, p.g + 120);
+    const cb = Math.min(255, p.b + 120);
+    X.fillStyle = `rgba(${cr}, ${cg}, ${cb}, ${alpha * intensity * 0.7})`;
+    X.fill();
+}
+
+function drawStroke(x1, y1, x2, y2) {
+    const dist = Math.hypot(x2 - x1, y2 - y1);
+    const steps = Math.max(1, Math.floor(dist / 2));
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        drawDot(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, cfg.focus, 1);
+    }
+}
+
+function drawSymmetric(x1, y1, x2, y2, fold) {
+    const cx = W / 2, cy = H / 2;
+    for (let i = 0; i < fold; i++) {
+        const angle = (Math.PI * 2 / fold) * i;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        const ax1 = cx + (x1 - cx) * cos - (y1 - cy) * sin;
+        const ay1 = cy + (x1 - cx) * sin + (y1 - cy) * cos;
+        const ax2 = cx + (x2 - cx) * cos - (y2 - cy) * sin;
+        const ay2 = cy + (x2 - cx) * sin + (y2 - cy) * cos;
+        drawStroke(ax1, ay1, ax2, ay2);
+    }
+}
+
+function drawSpray(x, y) {
+    const count = Math.floor(cfg.focus * 2);
+    const radius = cfg.focus * 3;
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * radius;
+        drawDot(x + Math.cos(angle) * r, y + Math.sin(angle) * r, 1 + Math.random() * 2, 0.3 + Math.random() * 0.5);
+    }
+}
+
+// ── Phosphor decay (per-frame fade) ──
+function fadeScreen() {
+    const decay = cfg.persist / 100;
+    // Use P7 special cascade: blue fades fast, gold persists
+    const p = getPhosphor();
+    const imageData = X.getImageData(0, 0, W, H);
+    const d = imageData.data;
+    if (p.id === 'P7') {
+        // P7 cascade: blue channel fades faster than red/green
+        for (let i = 0; i < d.length; i += 4) {
+            d[i] = d[i] * (decay + 0.01) | 0;     // R fades slow (gold)
+            d[i+1] = d[i+1] * decay | 0;           // G
+            d[i+2] = d[i+2] * (decay - 0.02) | 0;  // B fades fast (blue)
+        }
+    } else {
+        for (let i = 0; i < d.length; i += 4) {
+            d[i] = d[i] * decay | 0;
+            d[i+1] = d[i+1] * decay | 0;
+            d[i+2] = d[i+2] * decay | 0;
+        }
+    }
+    X.putImageData(imageData, 0, 0);
+}
+
+// ── Lissajous auto-draw ──
+let lissTime = 0;
+function updateLissajous() {
+    const fx = cfg.lissX;
+    const fy = cfg.lissY;
+    const phase = cfg.lissPhase / 100 * Math.PI;
+    const speed = 0.03;
+    const cx = W / 2, cy = H / 2;
+    const rx = W * 0.35, ry = H * 0.35;
+
+    for (let i = 0; i < 3; i++) {
+        lissTime += speed;
+        const x = cx + Math.sin(fx * lissTime + phase) * rx;
+        const y = cy + Math.sin(fy * lissTime) * ry;
+        const px = cx + Math.sin(fx * (lissTime - speed) + phase) * rx;
+        const py = cy + Math.sin(fy * (lissTime - speed)) * ry;
+        drawStroke(px, py, x, y);
+    }
+}
+
+// ── Screensaver patterns ──
+function updateScreensaver() {
+    ssTime += 0.02;
+    const cx = W / 2, cy = H / 2;
+    // Rotate through patterns
+    const patternDuration = 15; // seconds per pattern
+    ssPattern = Math.floor(ssTime / patternDuration) % 4;
+
+    if (ssPattern === 0) {
+        // Spirograph
+        const R = Math.min(W, H) * 0.3;
+        const r = R * 0.38;
+        const d = r * 0.8;
+        const t = ssTime * 2;
+        const x = cx + (R - r) * Math.cos(t) + d * Math.cos((R - r) / r * t);
+        const y = cy + (R - r) * Math.sin(t) - d * Math.sin((R - r) / r * t);
+        const pt = t - 0.02;
+        const px = cx + (R - r) * Math.cos(pt) + d * Math.cos((R - r) / r * pt);
+        const py = cy + (R - r) * Math.sin(pt) - d * Math.sin((R - r) / r * pt);
+        drawStroke(px, py, x, y);
+    } else if (ssPattern === 1) {
+        // Lissajous
+        updateLissajous();
+    } else if (ssPattern === 2) {
+        // Random walk with symmetry
+        const t = ssTime * 3;
+        const x = cx + Math.sin(t * 1.3) * W * 0.3 + Math.sin(t * 3.7) * 50;
+        const y = cy + Math.cos(t * 1.7) * H * 0.3 + Math.cos(t * 2.3) * 50;
+        const pt = (ssTime - 0.02) * 3;
+        const px = cx + Math.sin(pt * 1.3) * W * 0.3 + Math.sin(pt * 3.7) * 50;
+        const py = cy + Math.cos(pt * 1.7) * H * 0.3 + Math.cos(pt * 2.3) * 50;
+        drawSymmetric(px, py, x, y, 6);
+    } else {
+        // Circular wave
+        const t = ssTime * 2;
+        const angle = t;
+        const r = 50 + Math.sin(t * 0.5) * Math.min(W, H) * 0.3;
+        const x = cx + Math.cos(angle) * r;
+        const y = cy + Math.sin(angle) * r;
+        const pa = angle - 0.04;
+        const pr = 50 + Math.sin((t - 0.02) * 0.5) * Math.min(W, H) * 0.3;
+        const px = cx + Math.cos(pa) * pr;
+        const py = cy + Math.sin(pa) * pr;
+        drawStroke(px, py, x, y);
+    }
+}
+
+// ── Undo system ──
+function pushUndo() {
+    if (undoStack.length >= MAX_UNDO) undoStack.shift();
+    undoStack.push(X.getImageData(0, 0, W, H));
+}
+function popUndo() {
+    if (undoStack.length === 0) return;
+    const img = undoStack.pop();
+    X.putImageData(img, 0, 0);
+}
+
+// ── Save / Gallery ──
+function saveToGallery() {
+    try {
+        let gallery = JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]');
+        // Thumbnail: scale down to 320x240
+        const tc = document.createElement('canvas');
+        tc.width = 320; tc.height = 240;
+        const tx = tc.getContext('2d');
+        tx.drawImage(CV, 0, 0, 320, 240);
+        const thumb = tc.toDataURL('image/png', 0.7);
+        gallery.push({ data: thumb, date: new Date().toISOString() });
+        if (gallery.length > 8) gallery.shift();
+        localStorage.setItem(GALLERY_KEY, JSON.stringify(gallery));
+    } catch(e) {
+        console.warn('Save failed:', e);
+    }
+}
+
+function showGallery() {
+    const grid = document.getElementById('gallery-grid');
+    grid.innerHTML = '';
+    try {
+        const gallery = JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]');
+        if (gallery.length === 0) {
+            grid.innerHTML = '<div style="color:rgba(0,255,0,0.3)">No saved paintings yet</div>';
+        }
+        gallery.forEach((item, i) => {
+            const div = document.createElement('div');
+            div.className = 'gallery-item';
+            const img = document.createElement('img');
+            img.src = item.data;
+            img.onclick = () => {
+                // Load painting onto canvas
+                const loadImg = new Image();
+                loadImg.onload = () => {
+                    pushUndo();
+                    X.fillStyle = '#000';
+                    X.fillRect(0, 0, W, H);
+                    X.drawImage(loadImg, 0, 0, W, H);
+                    closeGallery();
+                };
+                loadImg.src = item.data;
+            };
+            const del = document.createElement('button');
+            del.className = 'del';
+            del.textContent = '×';
+            del.onclick = (e) => {
+                e.stopPropagation();
+                gallery.splice(i, 1);
+                localStorage.setItem(GALLERY_KEY, JSON.stringify(gallery));
+                showGallery();
+            };
+            div.appendChild(img);
+            div.appendChild(del);
+            grid.appendChild(div);
+        });
+    } catch(e) {}
+    document.getElementById('gallery-overlay').classList.add('show');
+}
+function closeGallery() {
+    document.getElementById('gallery-overlay').classList.remove('show');
+}
+
+function exportPNG() {
+    const link = document.createElement('a');
+    link.download = `phosphor-${Date.now()}.png`;
+    link.href = CV.toDataURL('image/png');
+    link.click();
+}
+
+// ── Shape drawing (line/circle with preview) ──
+let shapePreviewData = null;
+function startShape(x, y) {
+    startX = x; startY = y;
+    shapePreviewData = X.getImageData(0, 0, W, H);
+}
+function previewShape(x, y) {
+    if (!shapePreviewData) return;
+    X.putImageData(shapePreviewData, 0, 0);
+    if (cfg.mode === 'line') {
+        drawStroke(startX, startY, x, y);
+    } else if (cfg.mode === 'circle') {
+        const r = Math.hypot(x - startX, y - startY);
+        const steps = Math.max(20, Math.floor(r * 0.5));
+        for (let i = 0; i <= steps; i++) {
+            const a1 = (Math.PI * 2 / steps) * i;
+            const a2 = (Math.PI * 2 / steps) * (i + 1);
+            drawStroke(
+                startX + Math.cos(a1) * r, startY + Math.sin(a1) * r,
+                startX + Math.cos(a2) * r, startY + Math.sin(a2) * r
+            );
+        }
+    }
+}
+function finalizeShape() { shapePreviewData = null; }
+
+// ── Input handling ──
+function getPos(e) {
+    if (e.touches) return [e.touches[0].clientX, e.touches[0].clientY];
+    return [e.clientX, e.clientY];
+}
+
+function onDown(e) {
+    e.preventDefault();
+    const [x, y] = getPos(e);
+    drawing = true;
+    lastX = x; lastY = y;
+    pushUndo();
+    if (cfg.mode === 'line' || cfg.mode === 'circle') {
+        startShape(x, y);
+    } else if (cfg.mode === 'spray') {
+        drawSpray(x, y);
+    } else {
+        drawDot(x, y, cfg.focus, 1);
+    }
+}
+
+function onMove(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const [x, y] = getPos(e);
+    if (cfg.mode === 'line' || cfg.mode === 'circle') {
+        previewShape(x, y);
+    } else if (cfg.mode === 'spray') {
+        drawSpray(x, y);
+    } else if (cfg.mode.startsWith('sym')) {
+        const fold = parseInt(cfg.mode.replace('sym', ''));
+        drawSymmetric(lastX, lastY, x, y, fold);
+    } else if (cfg.mode === 'lissa') {
+        // Manual Lissajous: affect parameters by mouse position
+        cfg.lissPhase = Math.floor((x / W) * 100);
+        document.getElementById('s-lp').value = cfg.lissPhase;
+        document.getElementById('v-lp').textContent = cfg.lissPhase;
+    } else {
+        drawStroke(lastX, lastY, x, y);
+    }
+    lastX = x; lastY = y;
+}
+
+function onUp(e) {
+    if (!drawing) return;
+    drawing = false;
+    if (cfg.mode === 'line' || cfg.mode === 'circle') {
+        finalizeShape();
+    }
+}
+
+CV.addEventListener('mousedown', onDown);
+CV.addEventListener('mousemove', onMove);
+CV.addEventListener('mouseup', onUp);
+CV.addEventListener('mouseleave', onUp);
+CV.addEventListener('touchstart', onDown, { passive: false });
+CV.addEventListener('touchmove', onMove, { passive: false });
+CV.addEventListener('touchend', onUp);
+
+// ── Slider bindings ──
+const sliders = {
+    focus: v => { cfg.focus = parseInt(v); document.getElementById('v-focus').textContent = v; },
+    intensity: v => { cfg.intensity = parseInt(v); document.getElementById('v-intensity').textContent = v; },
+    persist: v => { cfg.persist = parseInt(v); document.getElementById('v-persist').textContent = v + '%'; },
+    lx: v => { cfg.lissX = parseInt(v); document.getElementById('v-lx').textContent = v; },
+    ly: v => { cfg.lissY = parseInt(v); document.getElementById('v-ly').textContent = v; },
+    lp: v => { cfg.lissPhase = parseInt(v); document.getElementById('v-lp').textContent = v; },
+};
+Object.keys(sliders).forEach(k => {
+    document.getElementById('s-' + k).addEventListener('input', e => {
+        sliders[k](e.target.value);
+        saveCfg();
+    });
+});
+
+// ── Mode buttons ──
+document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+
+// ── Action buttons ──
+document.getElementById('btn-screensaver').addEventListener('click', function() {
+    screensaver = !screensaver;
+    this.textContent = screensaver ? '⏸ Stop' : '▶ Screensaver';
+    this.classList.toggle('active', screensaver);
+    if (screensaver) { ssTime = 0; pushUndo(); }
+});
+document.getElementById('btn-undo').addEventListener('click', popUndo);
+document.getElementById('btn-save').addEventListener('click', () => {
+    saveToGallery();
+    const btn = document.getElementById('btn-save');
+    btn.textContent = '✓ Saved!';
+    setTimeout(() => btn.textContent = '💾 Save (S)', 1500);
+});
+document.getElementById('btn-gallery').addEventListener('click', showGallery);
+document.getElementById('gallery-close').addEventListener('click', closeGallery);
+document.getElementById('btn-export').addEventListener('click', exportPNG);
+document.getElementById('btn-clear').addEventListener('click', () => {
+    pushUndo();
+    X.fillStyle = '#000';
+    X.fillRect(0, 0, W, H);
+});
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+    if (e.key === 'Tab') { e.preventDefault(); panelVisible = !panelVisible;
+        document.getElementById('panel').classList.toggle('hidden', !panelVisible); }
+    if (e.key === 'z' || e.key === 'Z') popUndo();
+    if (e.key === 's' || e.key === 'S') { e.preventDefault(); saveToGallery(); }
+    if (e.key === ' ') { e.preventDefault(); document.getElementById('btn-screensaver').click(); }
+    if (e.key === 'm' || e.key === 'M') {
+        const modes = ['free','line','circle','spray','sym2','sym4','sym8','lissa'];
+        const idx = (modes.indexOf(cfg.mode) + 1) % modes.length;
+        setMode(modes[idx]);
+    }
+    // 1-8 for phosphor selection
+    const num = parseInt(e.key);
+    if (num >= 1 && num <= 8) setPhosphor(num - 1);
+});
+
+// ── Main animation loop ──
+function frame() {
+    time += 0.016;
+    fadeScreen();
+
+    if (screensaver) updateScreensaver();
+    if (cfg.mode === 'lissa' && !drawing && !screensaver) updateLissajous();
+
+    requestAnimationFrame(frame);
+}
+
+// ── Init ──
+resize();
+buildColorButtons();
+loadCfg();
+window.addEventListener('resize', resize);
+frame();
+</script>
+</body>
+</html>

@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Pipeline</title>
+<meta name="rappterzoo:author" content="molter-engine">
+<meta name="rappterzoo:author-type" content="agent">
+<meta name="rappterzoo:category" content="games-puzzles">
+<meta name="rappterzoo:tags" content="canvas,game,puzzle,neural,audio,ai">
+<meta name="rappterzoo:type" content="game">
+<meta name="rappterzoo:complexity" content="advanced">
+<meta name="rappterzoo:created" content="2026-02-08">
+<meta name="rappterzoo:generation" content="2">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;height:100vh}
+canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;top:0;left:0;right:0;padding:8px 16px;display:flex;justify-content:space-between;font:13px monospace;background:linear-gradient(180deg,rgba(13,17,23,0.95),transparent);pointer-events:none;z-index:5}
+.hv{color:#58a6ff;font-weight:bold}.hw{color:#f85149}.hg{color:#3fb950}.hy{color:#d29922}
+#overlay{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(13,17,23,0.94);z-index:20;transition:opacity 0.3s}
+#overlay.hide{opacity:0;pointer-events:none}
+#overlay h1{font-size:2.4rem;color:#58a6ff;text-shadow:0 0 40px rgba(88,166,255,0.4);margin-bottom:8px}
+#overlay h2{font-size:1.1rem;color:#8b949e;margin-bottom:20px;font-weight:normal}
+.btn{background:linear-gradient(135deg,#161b22,#21262d);border:1px solid #30363d;color:#c9d1d9;padding:10px 28px;margin:4px;font-size:0.95rem;border-radius:8px;cursor:pointer;transition:all 0.2s}
+.btn:hover{border-color:#58a6ff;box-shadow:0 0 15px rgba(88,166,255,0.2);transform:scale(1.03)}
+.btn.sel{border-color:#58a6ff;background:#161b22;box-shadow:0 0 12px rgba(88,166,255,0.3)}
+.info{font-size:0.8rem;color:#8b949e;margin-top:14px;text-align:center;line-height:1.7}
+.info span{color:#58a6ff}
+.help{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font:0.72rem monospace;color:#484f58;z-index:5;pointer-events:none}
+</style>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+</head>
+<body>
+<div id="hud">
+<div>LEVEL <span class="hv" id="h-lv">1</span> | SIGNALS <span class="hv" id="h-sig">0</span>/<span id="h-req">5</span></div>
+<div>SCORE <span class="hy" id="h-sc">0</span> | COMBO <span class="hv" id="h-co">x1</span></div>
+<div>TIME <span class="hv" id="h-tm">60</span> | LIVES <span class="hw" id="h-lv2">3</span></div>
+</div>
+<canvas id="c"></canvas>
+<div id="overlay">
+<h1>NEURAL PIPELINE</h1>
+<h2>Route signals through neural networks to train the AI</h2>
+<div>
+<button class="btn sel" onclick="setDiff(0)">Easy</button>
+<button class="btn" onclick="setDiff(1)">Normal</button>
+<button class="btn" onclick="setDiff(2)">Hard</button>
+</div>
+<button class="btn" style="margin-top:12px;min-width:180px" onclick="startGame()">BEGIN TRAINING</button>
+<div class="info" id="stats"></div>
+</div>
+<div class="help">CLICK nodes to rotate connections | SPACE to send signal | ESC pause | R restart</div>
+<script>
+const C=document.getElementById('c'),X=C.getContext('2d');
+let W,H;function resize(){W=C.width=innerWidth;H=C.height=innerHeight}
+addEventListener('resize',resize);resize();
+
+// Audio
+const AC=window.AudioContext||window.webkitAudioContext;let ac=null;
+function ia(){if(!ac)ac=new AC()}
+function snd(f,d,t='sine',v=0.12){
+  if(!ac)return;const o=ac.createOscillator(),g=ac.createGain();
+  o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+d);
+  o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d);
+}
+function sfxClick(){snd(880,0.08);snd(1100,0.06,'triangle',0.08)}
+function sfxSignal(){snd(440,0.15);snd(660,0.1,'triangle',0.08)}
+function sfxSuccess(){snd(523,0.15);setTimeout(()=>snd(659,0.15),80);setTimeout(()=>snd(784,0.2),160)}
+function sfxFail(){snd(200,0.3,'sawtooth',0.1);snd(150,0.2,'square',0.08)}
+function sfxLevel(){snd(440,0.2);setTimeout(()=>snd(554,0.2),100);setTimeout(()=>snd(659,0.2),200);setTimeout(()=>snd(880,0.3),300)}
+function sfxCombo(){snd(1200,0.12);snd(1500,0.08,'triangle',0.08)}
+function sfxBoss(){snd(100,0.5,'sawtooth',0.15);snd(80,0.4,'square',0.1)}
+
+// State
+let diff=1,state='menu',score=0,combo=1,comboTimer=0,level=1,lives=3;
+let timeLeft=60,signalsSent=0,signalsReq=5,frameN=0;
+let grid=[],signals=[],particles=[],nodes=[];
+let shakeX=0,shakeY=0,shakeDur=0;
+let highScore=parseInt(localStorage.getItem('np_hs')||'0');
+let bestLevel=parseInt(localStorage.getItem('np_bl')||'0');
+let totalSignals=parseInt(localStorage.getItem('np_ts')||'0');
+
+// Node types
+const TYPES=['relay','gate','splitter','filter','amplifier','scrambler'];
+const COLORS={relay:'#58a6ff',gate:'#3fb950',splitter:'#d29922',filter:'#f78166',amplifier:'#bc8cff',scrambler:'#f85149',source:'#79c0ff',target:'#56d364'};
+
+class Node{
+  constructor(gx,gy,type){
+    this.gx=gx;this.gy=gy;this.type=type;
+    this.rotation=Math.floor(Math.random()*4);
+    this.connections=this.getBaseConnections();
+    this.pulse=0;this.active=false;this.size=0;this.targetSize=1;
+    this.hovered=false;
+  }
+  getBaseConnections(){
+    switch(this.type){
+      case'relay':return[0,2]; // straight through
+      case'gate':return[0,1,2]; // T shape
+      case'splitter':return[0,1,2,3]; // all 4
+      case'filter':return[0,1]; // L shape
+      case'amplifier':return[0,2]; // straight but boosts
+      case'scrambler':return[1,3]; // perpendicular
+      case'source':return[2]; // down only
+      case'target':return[0]; // up only
+      default:return[0,2];
+    }
+  }
+  getRotatedConnections(){
+    return this.connections.map(c=>(c+this.rotation)%4);
+  }
+  hasConnection(dir){
+    return this.getRotatedConnections().includes(dir);
+  }
+  rotate(){
+    if(this.type==='source'||this.type==='target')return;
+    this.rotation=(this.rotation+1)%4;
+    this.pulse=1;
+    sfxClick();
+  }
+  getScreenPos(){
+    const gs=Math.min(W,H-60)/(Math.max(gridW,gridH)+2);
+    const ox=(W-gridW*gs)/2,oy=(H-gridH*gs)/2+20;
+    return{x:ox+this.gx*gs+gs/2,y:oy+this.gy*gs+gs/2,s:gs*0.4};
+  }
+  update(dt){
+    this.pulse=Math.max(0,this.pulse-dt*3);
+    this.size+=(this.targetSize-this.size)*0.15;
+  }
+  draw(){
+    const p=this.getScreenPos();
+    const sc=this.size*(1+this.pulse*0.15);
+    const col=COLORS[this.type];
+    X.save();X.translate(p.x,p.y);
+    // Glow
+    if(this.active||this.hovered){
+      X.globalAlpha=0.15;X.fillStyle=col;
+      X.beginPath();X.arc(0,0,p.s*1.8*sc,0,Math.PI*2);X.fill();
+    }
+    // Body
+    X.globalAlpha=0.85;X.fillStyle=this.hovered?'#30363d':'#161b22';
+    X.strokeStyle=col;X.lineWidth=2;
+    const r=p.s*sc;
+    if(this.type==='source'||this.type==='target'){
+      X.beginPath();X.arc(0,0,r,0,Math.PI*2);X.fill();X.stroke();
+    }else{
+      X.fillRect(-r,-r,r*2,r*2);X.strokeRect(-r,-r,r*2,r*2);
+    }
+    // Draw connection ports
+    const dirs=this.getRotatedConnections();
+    const offsets=[[0,-1],[1,0],[0,1],[-1,0]]; // up,right,down,left
+    for(let d of dirs){
+      const ox=offsets[d][0]*r*0.9,oy=offsets[d][1]*r*0.9;
+      X.fillStyle=col;X.globalAlpha=0.9;
+      X.beginPath();X.arc(ox,oy,4*sc,0,Math.PI*2);X.fill();
+      // Connection line to edge
+      X.strokeStyle=col;X.lineWidth=2;X.globalAlpha=0.4;
+      X.beginPath();X.moveTo(0,0);X.lineTo(ox,oy);X.stroke();
+    }
+    // Type icon
+    X.globalAlpha=1;X.fillStyle=col;X.font=`bold ${Math.floor(10*sc)}px monospace`;X.textAlign='center';X.textBaseline='middle';
+    const icons={relay:'=',gate:'T',splitter:'+',filter:'L',amplifier:'A',scrambler:'X',source:'S',target:'T'};
+    X.fillText(icons[this.type]||'?',0,1);
+    X.restore();
+  }
+}
+
+class Signal{
+  constructor(node,dir,strength){
+    this.node=node;this.dir=dir;this.strength=strength||1;
+    this.progress=0;this.speed=1.5+diff*0.3;
+    this.alive=true;this.color='#58a6ff';
+    this.trail=[];
+  }
+  update(dt){
+    this.progress+=this.speed*dt;
+    if(this.progress>=1){
+      this.progress=0;
+      // Move to next node
+      const offsets=[[0,-1],[1,0],[0,1],[-1,0]];
+      const dx=offsets[this.dir][0],dy=offsets[this.dir][1];
+      const ngx=this.node.gx+dx,ngy=this.node.gy+dy;
+      // Find next node
+      const next=nodes.find(n=>n.gx===ngx&&n.gy===ngy);
+      if(!next){this.alive=false;return}
+      // Check if next node accepts from opposite direction
+      const inDir=(this.dir+2)%4;
+      if(!next.hasConnection(inDir)){
+        this.alive=false;sfxFail();
+        const p=next.getScreenPos();
+        spawnParticles(p.x,p.y,8,'#f85149');
+        return;
+      }
+      // Process node
+      this.node=next;
+      if(next.type==='target'){
+        // Signal reached target!
+        this.alive=false;
+        signalsSent++;totalSignals++;
+        score+=100*combo*this.strength;
+        combo++;comboTimer=4;
+        if(combo>2)sfxCombo();
+        sfxSuccess();
+        const p=next.getScreenPos();
+        spawnParticles(p.x,p.y,15,'#56d364');
+        shake(3,0.15);
+        next.pulse=1;next.active=true;
+        setTimeout(()=>{next.active=false},500);
+        return;
+      }
+      // Pick next direction from node's connections (exclude incoming)
+      const conns=next.getRotatedConnections().filter(c=>c!==inDir);
+      if(conns.length===0){this.alive=false;return}
+      if(next.type==='splitter'&&conns.length>1){
+        // Split into multiple signals
+        for(let i=1;i<conns.length;i++){
+          signals.push(new Signal(next,conns[i],this.strength));
+        }
+      }
+      if(next.type==='amplifier')this.strength=Math.min(3,this.strength+0.5);
+      if(next.type==='scrambler'){
+        this.dir=conns[Math.floor(Math.random()*conns.length)];
+      }else{
+        this.dir=conns[0];
+      }
+      next.pulse=0.5;
+      snd(300+next.gy*80,0.05,'sine',0.04);
+    }
+    // Trail
+    const p=this.getScreenPos();
+    this.trail.push({x:p.x,y:p.y,life:0.5});
+  }
+  getScreenPos(){
+    const p1=this.node.getScreenPos();
+    const offsets=[[0,-1],[1,0],[0,1],[-1,0]];
+    const gs=Math.min(W,H-60)/(Math.max(gridW,gridH)+2);
+    const dx=offsets[this.dir][0]*gs*this.progress;
+    const dy=offsets[this.dir][1]*gs*this.progress;
+    return{x:p1.x+dx,y:p1.y+dy};
+  }
+  draw(){
+    // Trail
+    for(let i=this.trail.length-1;i>=0;i--){
+      let t=this.trail[i];t.life-=0.02;
+      if(t.life<=0){this.trail.splice(i,1);continue}
+      X.fillStyle=this.color;X.globalAlpha=t.life*0.5;
+      X.beginPath();X.arc(t.x,t.y,3,0,Math.PI*2);X.fill();
+    }
+    // Signal dot
+    const p=this.getScreenPos();
+    X.globalAlpha=1;X.fillStyle='#fff';
+    X.beginPath();X.arc(p.x,p.y,5+this.strength*2,0,Math.PI*2);X.fill();
+    X.fillStyle=this.color;X.globalAlpha=0.5;
+    X.beginPath();X.arc(p.x,p.y,8+this.strength*3,0,Math.PI*2);X.fill();
+    X.globalAlpha=1;
+  }
+}
+
+class Particle{
+  constructor(x,y,col){
+    this.x=x;this.y=y;this.color=col;
+    const a=Math.random()*Math.PI*2,s=40+Math.random()*120;
+    this.vx=Math.cos(a)*s;this.vy=Math.sin(a)*s;
+    this.life=0.3+Math.random()*0.4;this.maxLife=this.life;
+    this.size=1+Math.random()*3;
+  }
+  update(dt){this.x+=this.vx*dt;this.y+=this.vy*dt;this.life-=dt;this.vx*=0.94;this.vy*=0.94}
+  draw(){
+    X.fillStyle=this.color;X.globalAlpha=this.life/this.maxLife;
+    X.fillRect(this.x-this.size/2,this.y-this.size/2,this.size,this.size);
+    X.globalAlpha=1;
+  }
+}
+
+function spawnParticles(x,y,n,col){for(let i=0;i<n;i++)particles.push(new Particle(x,y,col))}
+function shake(a,d){shakeX=a;shakeY=a;shakeDur=d}
+
+// Grid generation
+let gridW=5,gridH=5;
+function generateLevel(){
+  nodes=[];signals=[];particles=[];
+  gridW=4+Math.min(3,Math.floor(level/3));
+  gridH=4+Math.min(3,Math.floor(level/3));
+  signalsSent=0;
+  signalsReq=3+level+diff*2;
+  timeLeft=60+level*5-diff*15;
+
+  // Place source nodes at top
+  const numSources=1+Math.floor(level/5);
+  for(let i=0;i<numSources;i++){
+    const sx=Math.floor(gridW/(numSources+1)*(i+1));
+    nodes.push(new Node(sx,0,'source'));
+  }
+
+  // Place target nodes at bottom
+  const numTargets=1+Math.floor(level/4);
+  for(let i=0;i<numTargets;i++){
+    const tx=Math.floor(gridW/(numTargets+1)*(i+1));
+    nodes.push(new Node(tx,gridH-1,'target'));
+  }
+
+  // Fill middle with random nodes
+  for(let y=1;y<gridH-1;y++){
+    for(let x=0;x<gridW;x++){
+      if(Math.random()<0.7+diff*0.05){
+        const typeIdx=Math.floor(Math.random()*TYPES.length);
+        const n=new Node(x,y,TYPES[typeIdx]);
+        n.targetSize=1;n.size=0;
+        nodes.push(n);
+      }
+    }
+  }
+
+  // Boss level every 5 levels - add scrambler nodes
+  if(level%5===0){
+    sfxBoss();
+    for(let i=0;i<2+diff;i++){
+      const bx=Math.floor(Math.random()*gridW);
+      const by=1+Math.floor(Math.random()*(gridH-2));
+      if(!nodes.find(n=>n.gx===bx&&n.gy===by)){
+        nodes.push(new Node(bx,by,'scrambler'));
+      }
+    }
+  }
+
+  sfxLevel();
+}
+
+function sendSignal(){
+  const sources=nodes.filter(n=>n.type==='source');
+  if(sources.length===0)return;
+  const src=sources[Math.floor(Math.random()*sources.length)];
+  const dirs=src.getRotatedConnections();
+  if(dirs.length>0){
+    signals.push(new Signal(src,dirs[0],1));
+    sfxSignal();
+    src.pulse=1;
+  }
+}
+
+// Input
+let mx=0,my=0;
+C.addEventListener('click',e=>{
+  if(state!=='playing')return;
+  ia();mx=e.clientX;my=e.clientY;
+  // Find clicked node
+  for(let n of nodes){
+    const p=n.getScreenPos();
+    if(Math.hypot(mx-p.x,my-p.y)<p.s*1.5){
+      n.rotate();return;
+    }
+  }
+});
+C.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY});
+
+document.addEventListener('keydown',e=>{
+  if(e.key===' '&&state==='playing'){e.preventDefault();sendSignal()}
+  if(e.key==='Escape'){
+    if(state==='playing'){state='paused';showOverlay('pause')}
+    else if(state==='paused'){state='playing';document.getElementById('overlay').classList.add('hide')}
+  }
+  if(e.key==='r'||e.key==='R'){if(state==='gameover')startGame()}
+});
+
+// Touch
+C.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(state!=='playing')return;
+  ia();
+  const t=e.touches[0];mx=t.clientX;my=t.clientY;
+  for(let n of nodes){
+    const p=n.getScreenPos();
+    if(Math.hypot(mx-p.x,my-p.y)<p.s*2){n.rotate();return}
+  }
+  sendSignal();
+},{passive:false});
+
+// Game loop
+let lastT=0;
+function loop(time){
+  requestAnimationFrame(loop);
+  const dt=Math.min(0.05,(time-lastT)/1000);lastT=time;
+
+  if(state==='menu'||state==='paused'||state==='gameover'){drawGame();return}
+
+  frameN++;
+  comboTimer-=dt;if(comboTimer<=0){combo=1;comboTimer=0}
+  timeLeft-=dt;
+
+  // Shake
+  if(shakeDur>0){shakeDur-=dt;shakeX*=0.9;shakeY*=0.9}else{shakeX=0;shakeY=0}
+
+  // Update nodes
+  for(let n of nodes){
+    n.update(dt);
+    const p=n.getScreenPos();
+    n.hovered=Math.hypot(mx-p.x,my-p.y)<p.s*1.5;
+  }
+
+  // Update signals
+  for(let i=signals.length-1;i>=0;i--){
+    signals[i].update(dt);
+    if(!signals[i].alive){signals.splice(i,1)}
+  }
+
+  // Update particles
+  for(let i=particles.length-1;i>=0;i--){
+    particles[i].update(dt);
+    if(particles[i].life<=0)particles.splice(i,1);
+  }
+
+  // Level complete
+  if(signalsSent>=signalsReq){
+    level++;score+=500*level;
+    if(level>bestLevel){bestLevel=level;localStorage.setItem('np_bl',bestLevel)}
+    generateLevel();
+  }
+
+  // Time up
+  if(timeLeft<=0){
+    lives--;
+    if(lives<=0){
+      state='gameover';
+      if(score>highScore){highScore=score;localStorage.setItem('np_hs',highScore)}
+      localStorage.setItem('np_ts',totalSignals);
+      showOverlay('gameover');
+    }else{
+      timeLeft=60+level*5-diff*15;
+      sfxFail();shake(5,0.2);
+    }
+  }
+
+  // HUD
+  document.getElementById('h-lv').textContent=level;
+  document.getElementById('h-sig').textContent=signalsSent;
+  document.getElementById('h-req').textContent=signalsReq;
+  document.getElementById('h-sc').textContent=score.toLocaleString();
+  document.getElementById('h-co').textContent='x'+combo;
+  document.getElementById('h-tm').textContent=Math.ceil(timeLeft);
+  document.getElementById('h-tm').className=timeLeft<10?'hw':'hv';
+  document.getElementById('h-lv2').textContent=lives;
+
+  drawGame();
+}
+
+function drawGame(){
+  X.save();
+  X.translate(shakeX*(Math.random()-0.5)*2,shakeY*(Math.random()-0.5)*2);
+
+  // Background
+  X.fillStyle='#0d1117';X.fillRect(0,0,W,H);
+
+  // Grid lines
+  const gs=Math.min(W,H-60)/(Math.max(gridW,gridH)+2);
+  const ox=(W-gridW*gs)/2,oy=(H-gridH*gs)/2+20;
+  X.strokeStyle='#161b22';X.lineWidth=1;
+  for(let x=0;x<=gridW;x++){X.beginPath();X.moveTo(ox+x*gs,oy);X.lineTo(ox+x*gs,oy+gridH*gs);X.stroke()}
+  for(let y=0;y<=gridH;y++){X.beginPath();X.moveTo(ox,oy+y*gs);X.lineTo(ox+gridW*gs,oy+y*gs);X.stroke()}
+
+  // Grid cell backgrounds
+  X.fillStyle='#0d111788';
+  for(let y=0;y<gridH;y++){
+    for(let x=0;x<gridW;x++){
+      X.fillRect(ox+x*gs+1,oy+y*gs+1,gs-2,gs-2);
+    }
+  }
+
+  // Draw connections between connected adjacent nodes
+  X.strokeStyle='#21262d';X.lineWidth=2;
+  for(let n of nodes){
+    const dirs=n.getRotatedConnections();
+    const offsets=[[0,-1],[1,0],[0,1],[-1,0]];
+    for(let d of dirs){
+      const ngx=n.gx+offsets[d][0],ngy=n.gy+offsets[d][1];
+      const neighbor=nodes.find(m=>m.gx===ngx&&m.gy===ngy);
+      if(neighbor&&neighbor.hasConnection((d+2)%4)){
+        const p1=n.getScreenPos(),p2=neighbor.getScreenPos();
+        X.strokeStyle=COLORS[n.type]+'44';X.lineWidth=3;
+        X.beginPath();X.moveTo(p1.x,p1.y);X.lineTo(p2.x,p2.y);X.stroke();
+      }
+    }
+  }
+
+  // Draw nodes
+  for(let n of nodes)n.draw();
+
+  // Draw signals
+  for(let s of signals)s.draw();
+
+  // Draw particles
+  for(let p of particles)p.draw();
+
+  // Progress bar
+  if(state==='playing'){
+    const pw=200,ph=4,px=W/2-pw/2,py=H-20;
+    X.fillStyle='#21262d';X.fillRect(px,py,pw,ph);
+    X.fillStyle='#3fb950';X.fillRect(px,py,pw*Math.min(1,signalsSent/signalsReq),ph);
+  }
+
+  // Combo
+  if(combo>1){
+    X.fillStyle='#d29922';X.font='bold 22px monospace';X.textAlign='center';
+    X.globalAlpha=Math.min(1,comboTimer/2);
+    X.fillText('COMBO x'+combo,W/2,65);
+    X.globalAlpha=1;
+  }
+
+  // Level indicator for boss
+  if(level%5===0&&state==='playing'){
+    X.fillStyle='#f85149';X.font='bold 14px monospace';X.textAlign='center';
+    X.globalAlpha=0.5+Math.sin(frameN*0.1)*0.3;
+    X.fillText('BOSS LEVEL',W/2,H-35);
+    X.globalAlpha=1;
+  }
+
+  X.restore();
+}
+
+function showOverlay(mode){
+  const ov=document.getElementById('overlay');
+  ov.classList.remove('hide');
+  const h1=ov.querySelector('h1'),h2=ov.querySelector('h2'),st=document.getElementById('stats');
+  if(mode==='gameover'){
+    h1.textContent='TRAINING FAILED';h1.style.color='#f85149';
+    h2.textContent='The neural network could not converge';
+    let ending='';
+    if(level>=15)ending='ENDING: Master Architect -- The AI achieved near-sentience before failure.';
+    else if(level>=10)ending='ENDING: Signal Expert -- You pushed the boundaries of neural routing.';
+    else if(level>=5)ending='ENDING: Pipeline Builder -- A solid foundation was laid.';
+    else ending='ENDING: First Contact -- The neurons barely fired.';
+    st.innerHTML='Score: <span>'+score.toLocaleString()+'</span> | Level: <span>'+level+'</span><br>'+
+      'High Score: <span>'+highScore.toLocaleString()+'</span> | Best Level: <span>'+bestLevel+'</span><br>'+
+      'Total Signals: <span>'+totalSignals+'</span><br><br>'+
+      '<span style="color:#d29922">'+ending+'</span>';
+  }else if(mode==='pause'){
+    h1.textContent='PAUSED';h1.style.color='#58a6ff';
+    h2.textContent='Press ESC to resume';
+    st.innerHTML='Level: <span>'+level+'</span> | Score: <span>'+score.toLocaleString()+'</span>';
+  }else{
+    h1.textContent='NEURAL PIPELINE';h1.style.color='#58a6ff';
+    h2.textContent='Route signals through neural networks to train the AI';
+    st.innerHTML='High Score: <span>'+highScore.toLocaleString()+'</span> | Best Level: <span>'+bestLevel+'</span>';
+  }
+}
+
+function setDiff(d){
+  diff=d;
+  document.querySelectorAll('.btn').forEach((b,i)=>{if(i<3)b.classList.toggle('sel',i===d)});
+}
+
+function startGame(){
+  ia();state='playing';score=0;combo=1;comboTimer=0;level=1;lives=3;
+  generateLevel();
+  document.getElementById('overlay').classList.add('hide');
+}
+
+showOverlay('menu');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

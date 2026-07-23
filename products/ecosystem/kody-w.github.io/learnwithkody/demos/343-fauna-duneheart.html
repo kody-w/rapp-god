@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<title>Duneheart · Learn with Kody · Fauna</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cellipse cx='16' cy='17' rx='8' ry='10' fill='%23e8b45a'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --sand:#e9c88a; --amber:#ff9d3c; --ink:#0c0805; --dust:#c79a5c;
+    --glass:rgba(24,16,9,.62); --line:rgba(233,200,138,.22);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;width:100%;overflow:hidden;background:#0c0805;color:#f2e4c8;
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;-webkit-font-smoothing:antialiased}
+  #stage{position:fixed;inset:0;display:block}
+  /* ── HUD ─────────────────────────────────────────── */
+  .hud{position:fixed;top:16px;left:16px;z-index:5;max-width:min(92vw,420px);
+    pointer-events:none;text-shadow:0 1px 12px rgba(0,0,0,.9)}
+  .title{font-size:26px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+    background:linear-gradient(95deg,#ffe6a3,#ff9d3c 60%,#c56a3a);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 2px 10px rgba(255,157,60,.35))}
+  .sub{margin-top:5px;font-size:11.5px;letter-spacing:.05em;color:#e9c88a;opacity:.92}
+  .sub .id{color:#fff;background:rgba(255,157,60,.14);padding:1px 6px;border-radius:5px;
+    border:1px solid var(--line)}
+  .sub .rar{text-transform:uppercase;letter-spacing:.16em;font-weight:700}
+  .caption{margin-top:9px;font-size:10.5px;line-height:1.5;color:#c79a5c;opacity:.85;
+    max-width:360px;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+  /* ── controls ────────────────────────────────────── */
+  .controls{position:fixed;top:16px;right:16px;z-index:6;display:flex;gap:8px;flex-wrap:wrap;
+    justify-content:flex-end;max-width:70vw}
+  button.ctl{pointer-events:auto;font:inherit;font-size:12px;letter-spacing:.03em;cursor:pointer;
+    color:#f2e4c8;background:var(--glass);border:1px solid var(--line);border-radius:10px;
+    padding:9px 13px;backdrop-filter:blur(8px);transition:transform .12s,border-color .2s,background .2s}
+  button.ctl:hover{border-color:var(--amber);background:rgba(255,157,60,.16);transform:translateY(-1px)}
+  button.ctl:active{transform:translateY(0) scale(.97)}
+  button.ctl.primary{border-color:rgba(255,157,60,.5);background:rgba(255,157,60,.14);color:#ffe6a3}
+  /* ── load popover ────────────────────────────────── */
+  #loadPanel{position:fixed;top:64px;right:16px;z-index:9;width:min(92vw,360px);
+    background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:12px;
+    backdrop-filter:blur(10px);display:none;box-shadow:0 18px 50px rgba(0,0,0,.55)}
+  #loadPanel.open{display:block}
+  #loadPanel h4{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#e9c88a;margin-bottom:8px}
+  #eggIn{width:100%;height:78px;resize:vertical;font:11px ui-monospace,monospace;color:#f2e4c8;
+    background:rgba(0,0,0,.4);border:1px solid var(--line);border-radius:8px;padding:8px;
+    word-break:break-all}
+  .loadRow{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap}
+  .loadRow input[type=file]{font-size:10.5px;color:#c79a5c;max-width:170px}
+  #loadMsg{font-size:10.5px;color:#ff9d3c;min-height:14px;margin-top:6px;word-break:break-all}
+  /* ── DNA panel ───────────────────────────────────── */
+  details.dna{position:fixed;left:16px;bottom:16px;z-index:5;width:min(92vw,360px);
+    background:var(--glass);border:1px solid var(--line);border-radius:12px;
+    backdrop-filter:blur(10px);overflow:hidden}
+  details.dna>summary{cursor:pointer;list-style:none;padding:10px 13px;font-size:11px;
+    letter-spacing:.1em;text-transform:uppercase;color:#e9c88a;user-select:none}
+  details.dna>summary::-webkit-details-marker{display:none}
+  details.dna>summary::after{content:"▸";float:right;transition:transform .2s;color:var(--amber)}
+  details.dna[open]>summary::after{transform:rotate(90deg)}
+  pre#dna{margin:0 13px 12px;max-height:38vh;overflow:auto;font-size:10.5px;line-height:1.45;
+    color:#d8c7ad;white-space:pre-wrap;word-break:break-word}
+  .foot{position:fixed;right:14px;bottom:12px;z-index:4;font-size:9.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:#7a5c34;pointer-events:none}
+  @media(max-width:640px){
+    .title{font-size:21px}.caption{display:none}.controls{gap:6px}
+    button.ctl{padding:8px 10px;font-size:11px}
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div class="hud">
+  <div class="title">Duneheart</div>
+  <div class="sub"><span class="id" id="hudId">············</span>
+    &nbsp;·&nbsp;<span class="rar" id="hudRar">—</span></div>
+  <div class="caption" id="hudCap">A particle-swarm sand golem — thousands of grains read the genome's
+    shape as an attractor field, gather into a body that breathes, then dissolve to dust and reassemble.</div>
+</div>
+
+<div class="controls">
+  <button class="ctl primary" id="btnNew">✦ New Duneheart</button>
+  <button class="ctl" id="btnSave">🥚 Save .egg</button>
+  <button class="ctl" id="btnLoad">Load .egg</button>
+</div>
+
+<div id="loadPanel">
+  <h4>Load a .egg</h4>
+  <textarea id="eggIn" placeholder="paste a rappter .egg string here…" spellcheck="false"></textarea>
+  <div class="loadRow">
+    <button class="ctl primary" id="btnRender">Render</button>
+    <input type="file" id="eggFile" accept=".egg,text/plain"/>
+  </div>
+  <div id="loadMsg"></div>
+</div>
+
+<details class="dna">
+  <summary>Genome · DNA</summary>
+  <pre id="dna">…</pre>
+</details>
+<div class="foot">Learn with Kody · fauna 343</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   FAUNA-EGG CORE — verified byte-exact against openrappter-vui / genome.js.
+   Embed VERBATIM in each demo. Do NOT edit: genomeId must stay reproducible
+   or the .egg will not load in rapp·go. (Verified: genomeId of the reference
+   egg === "fb18657910a5", and re-encode reproduces the original bytes.)
+   ══════════════════════════════════════════════════════════════════════════ */
+const EGG = (() => {
+  const b64enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const b64dec = s => { s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); };
+  async function sha256hex(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  function canonical(v){
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v!==null&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  async function genomeId(genome){ return (await sha256hex(canonical(genome))).slice(0,12); }
+  // xmur3 → mulberry32 deterministic PRNG (byte-identical to genome.js mkRng)
+  function mkRng(seed){ let h=1779033703^seed.length; for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),3432918353);h=h<<13|h>>>19;} h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); let s=(h^=h>>>16)>>>0; return function(){s+=0x6D2B79F5;let t=Math.imul(s^s>>>15,1|s);t=(t+Math.imul(t^t>>>7,61|t))^t;return((t^t>>>14)>>>0)/4294967296;}; }
+  // geohash encode (precision 6) so each egg carries a plausible born.coord
+  function geohash(lat,lng,precision=6){ const B='0123456789bcdefghjkmnpqrstuvwxyz'; let even=true,hash='',bits=0,hc=0; const la=[-90,90],lo=[-180,180]; while(hash.length<precision){ if(even){const m=(lo[0]+lo[1])/2; if(lng>m){hc=(hc<<1)|1;lo[0]=m;}else{hc<<=1;lo[1]=m;}} else {const m=(la[0]+la[1])/2; if(lat>m){hc=(hc<<1)|1;la[0]=m;}else{hc<<=1;la[1]=m;}} even=!even; if(++bits===5){hash+=B[hc];bits=0;hc=0;} } return hash; }
+
+  // Pack a genome into a canonical .egg payload (matches openrappter-vui exactly).
+  async function pack(genome, meta={}){
+    const id = await genomeId(genome);
+    const rng = mkRng(id);
+    const payload = {
+      genome, id,
+      born: meta.born || { coord: geohash((rng()*140)-70, (rng()*360)-180), t: 0 },
+      title: meta.title || 'a rappter',
+      rarity: meta.rarity || 'uncommon',
+      source: meta.source || 'learnwithkody-fauna'
+    };
+    return { egg: b64enc(JSON.stringify(payload)), id, payload };
+  }
+  function unpack(b64){ return JSON.parse(b64dec(b64.trim())); }
+  function download(b64, id){ const a=document.createElement('a'); a.href='data:application/octet-stream;base64,'+btoa(b64); /* raw text egg */ a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(b64); a.download=`rappter-${String(id).slice(0,8)}.egg`; document.body.appendChild(a); a.click(); a.remove(); }
+  return { b64enc, b64dec, genomeId, mkRng, geohash, pack, unpack, download };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DUNEHEART — the species. A particle-swarm sand golem.
+   ══════════════════════════════════════════════════════════════════════════ */
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const r3=v=>Math.round(v*1000)/1000;
+const TAU=Math.PI*2;
+
+// Warm sand palettes: [highlight, mid, shadow, glow-accent]. Default identity is
+// warm dune; variants shift toward red waste, oasis teal-accent, rose dusk, bone.
+const SAND_PALETTES=[
+  ['#f2d49b','#d59a4e','#8a4f22','#ff9d3c'], // classic dune
+  ['#f0b48a','#c56a3a','#7a2f1e','#ff6b3d'], // red desert
+  ['#ffe6a3','#e0a83c','#8f5a12','#ffcf5c'], // golden waste
+  ['#d8c7ad','#9c8467','#4d3d2d','#e8b06a'], // ashen dune
+  ['#e9d29a','#c39a4e','#6f5a2a','#39d6b0'], // oasis (teal glow)
+  ['#f0c9a8','#c98a7a','#7a4a52','#ff8fb0'], // rose dusk
+  ['#f5ecd6','#cbb488','#7d6b4a','#f2c96b']  // bone pale
+];
+
+function wpick(r,pairs){ let t=0; for(const p of pairs)t+=p[1]; let x=r()*t; for(const p of pairs){ if((x-=p[1])<=0)return p[0]; } return pairs[pairs.length-1][0]; }
+function hexToRgb(h){ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+
+// ── Genome minting: biased toward the Duneheart identity, unique every load ──
+function generateGenome(seed){
+  const r=EGG.mkRng(seed);
+  const shape=wpick(r,[['blob',0.5],['star',0.3],['ring',0.2]]);
+  const symmetry=r()<0.62?'radial':'bilateral';
+  const limbs=shape==='ring'?Math.floor(r()*4):2+Math.floor(r()*6);   // 0..8
+  const segments=3+Math.floor(r()*10);                                // 3..12 lobes/points
+  const body_r=r3(0.30+r()*0.25);                                     // .30-.55
+  const limb_len=r3(0.15+r()*0.40);                                   // .15-.55
+  const palette=SAND_PALETTES[Math.floor(r()*SAND_PALETTES.length)].slice();
+  const pattern=wpick(r,[['glow',0.4],['spot',0.3],['stripe',0.2],['solid',0.1]]);
+  const glow=r3(0.35+r()*0.60);
+  const opacity=r3(0.85+r()*0.12);
+
+  const form={role:'form',k:40,shape,limbs,segments,symmetry,body_r,limb_len,
+              cohesion:r3(0.40+r()*0.50)};                 // ext: grain clustering tightness
+  const surface={role:'surface',k:45+Math.floor(r()*26),  // k drives grain COUNT
+                 palette,pattern,glow,opacity,
+                 grain:1+Math.floor(r()*2),                // ext: grain px size
+                 sparkle:r3(0.30+r()*0.60)};               // ext: glint fraction
+  const motion={role:'motion',k:50,breathe:r3(0.35+r()*0.50),drift:r3(0.20+r()*0.60),
+                pulse:r3(0.30+r()*0.50),reach:r3(0.30+r()*0.60),
+                dissolve:r3(0.30+r()*0.60)};               // ext: dissolve cadence/violence
+  return {layers:[form,surface,motion],compose:{windows:[[0,1,2]],loop:true}};
+}
+
+function rarityFor(g){
+  const f=g.layers[0], s=g.layers[1];
+  let sc=0;
+  if(f.shape==='star')sc+=2; else if(f.shape==='ring')sc+=1;
+  sc+=f.limbs>=6?2:f.limbs>=4?1:0;
+  if(s.glow>0.7)sc+=1;
+  if(f.symmetry==='bilateral')sc+=1;
+  if(s.pattern==='glow')sc+=1;
+  if(f.segments>=9)sc+=1;
+  return sc>=7?'legendary':sc>=5?'epic':sc>=3?'rare':sc>=2?'uncommon':'common';
+}
+
+// ── Silhouette: form.shape read as an attractor field ────────────────────────
+function shapeRadius(shape,theta,segs,amp){
+  if(shape==='ring')return 1;
+  if(shape==='star'){
+    const x=(theta*segs/TAU);
+    const tri=Math.abs(2*(x-Math.floor(x+0.5)));           // 0..1 cusped
+    return 0.42+0.58*Math.pow(tri,0.65);                   // points outward
+  }
+  // blob: lumpy circle (two harmonics for organic mass)
+  return 1+amp*Math.sin(segs*theta)+amp*0.5*Math.sin((segs+2)*theta+1.7);
+}
+function colorIdx(r,pattern,theta,shell){
+  if(shell&&r()<0.6)return 0;                              // crisp bright rim
+  if(pattern==='stripe')return (Math.floor((theta/TAU)*8)%2===0)?1:2;
+  if(pattern==='glow')  return r()<0.42?0:(r()<0.72?1:2);
+  if(pattern==='spot')  return r()<0.20?0:(r()<0.58?1:2);
+  return r()<0.15?0:(r()<0.75?1:2);                        // solid
+}
+
+// Build one POSE: a full target cloud for `count` grains from the genome.
+// Same genome + different seed = same species silhouette, fresh pose.
+function buildPose(g,count,seed){
+  const r=EGG.mkRng(seed);
+  const f=g.layers[0], s=g.layers[1];
+  const {shape,segments,symmetry,body_r,limb_len}=f;
+  const amp=shape==='blob'?0.14+f.cohesion*0.12:0.10;
+  const grainBase=s.grain, sparkle=s.sparkle;
+  const targets=new Array(count);
+  const eyeAnchors = symmetry==='bilateral'
+      ? [[-0.17*body_r,-0.30*body_r],[0.17*body_r,-0.30*body_r]]
+      : [[0,-0.06*body_r]];
+  const eyeR=0.085*body_r;
+
+  const hasLimbs=f.limbs>0;
+  const bodyN=hasLimbs?Math.floor(count*0.70):count;
+  let idx=0;
+
+  const put=(bx,by,theta,shell,limb,phase)=>{
+    const ci=limb?(r()<0.4?1:2):colorIdx(r,s.pattern,theta,shell);
+    let eye=false;
+    for(const a of eyeAnchors){ if(Math.hypot(bx-a[0],by-a[1])<eyeR){eye=true;break;} }
+    const shade=0.72+r()*0.55;
+    const glow=eye||(ci===0&&r()<sparkle)||(limb&&r()<sparkle*0.4);
+    targets[idx++]={bx,by,ci,shade,eye,glow,limb,phase,
+      size:grainBase+(r()<0.14?1:0)+(eye?1:0)};
+  };
+
+  // ── body fill (shape as attractor boundary) ──
+  for(let i=0;i<bodyN;i++){
+    const theta=r()*TAU;
+    const R=shapeRadius(shape,theta,segments,amp);
+    let u;
+    const shell=r()<0.32;                                  // rim emphasis
+    if(shape==='ring'){
+      const inner=0.60;
+      u=(inner+(1-inner)*(shell?0.85+r()*0.15:r()));
+    }else{
+      u=shell?(0.86+r()*0.14):Math.sqrt(r());              // even area fill
+    }
+    const rr=R*u*body_r;
+    let bx=Math.cos(theta)*rr, by=Math.sin(theta)*rr;
+    if(symmetry==='bilateral')by*=1.12;                    // gentle head/tail axis
+    put(bx,by,theta,shell,false,0);
+  }
+
+  // ── limbs (tendrils radiating from the body edge) ──
+  if(hasLimbs){
+    const angles=[];
+    if(symmetry==='radial'){
+      for(let i=0;i<f.limbs;i++)angles.push(i/f.limbs*TAU - Math.PI/2);
+    }else{
+      const pairs=Math.ceil(f.limbs/2);
+      for(let k=0;k<pairs;k++){
+        const frac=(k+0.5)/pairs;
+        const alpha=(-0.7+1.4*frac);                       // right side spread
+        angles.push(alpha); angles.push(Math.PI-alpha);    // mirror across vertical
+      }
+      angles.length=f.limbs;
+    }
+    const limbN=count-bodyN;
+    const per=Math.max(6,Math.floor(limbN/angles.length));
+    for(let li=0;li<angles.length&&idx<count;li++){
+      const a=angles[li], dx=Math.cos(a), dy=Math.sin(a);
+      const px=-dy, py=dx;
+      const start=body_r*0.82;
+      for(let n=0;n<per&&idx<count;n++){
+        const t=n/per;
+        const rr=start+t*limb_len;
+        const thick=(1-t)*0.07*body_r+0.006;
+        const off=(r()*2-1)*thick*3;
+        const jit=(r()*2-1)*0.01;
+        const bx=dx*(rr+jit)+px*off, by=dy*(rr+jit)+py*off;
+        put(bx,by,a,t<0.12,true,a+t*2);
+      }
+    }
+    while(idx<count){                                      // top up remainder into body
+      const theta=r()*TAU;
+      const rr=shapeRadius(shape,theta,segments,amp)*Math.sqrt(r())*body_r;
+      put(Math.cos(theta)*rr,Math.sin(theta)*rr,theta,false,false,0);
+    }
+  }
+
+  let maxE=0.001;
+  for(let i=0;i<count;i++){ const t=targets[i]; const e=Math.hypot(t.bx,t.by); if(e>maxE)maxE=e; }
+  return {targets,maxExtent:maxE};
+}
+
+// ── flow field: cheap organic turbulence for shimmer & the dust cloud ──
+function flow(x,y,t){
+  return [ Math.sin(x*0.008+t*0.6)+Math.sin(y*0.011-t*0.4),
+           Math.cos(y*0.009-t*0.5)+Math.cos(x*0.012+t*0.35) ];
+}
+
+// ── the swarm ────────────────────────────────────────────────────────────────
+class Swarm{
+  constructor(g,pose,palette,count,makePose){
+    this.g=g; this.pose=pose; this.pal=palette; this.n=count; this.makePose=makePose;
+    const m=g.layers[2];
+    this.breatheAmt=0.03+m.breathe*0.085;
+    this.breatheSpeed=1.05+m.pulse*1.6;
+    this.reach=m.reach; this.drift=m.drift;
+    this.rotDir=m.drift<0.5?1:-1;
+    this.holdTime=5+(1-m.dissolve)*8;      // 5..13s settled
+    this.dissolveTime=1.7+m.dissolve*0.9;  // burst length
+    this.formTime=2.3;
+    this.phase='form'; this.phaseT=0;
+    this.grains=new Array(count);
+    for(let i=0;i<count;i++)this.grains[i]={x:0,y:0,vx:0,vy:0,cr:0,cg:0,cb:0,glow:false,size:1,eye:false};
+    this.needScatter=true;
+    this.applyColors();
+  }
+  applyColors(){
+    const T=this.pose.targets, P=this.pal;
+    for(let i=0;i<this.n;i++){
+      const t=T[i], gr=this.grains[i];
+      const c=t.eye?P[3]:P[t.ci];
+      gr.cr=Math.min(255,c[0]*t.shade); gr.cg=Math.min(255,c[1]*t.shade); gr.cb=Math.min(255,c[2]*t.shade);
+      gr.glow=t.glow; gr.size=t.size; gr.eye=t.eye;
+    }
+  }
+  layout(W,H){
+    this.W=W; this.H=H; this.cx=W/2; this.cy=H/2;
+    this.scale=0.36*Math.min(W,H)/this.pose.maxExtent;
+    if(this.needScatter){
+      const R=Math.min(W,H)*0.55;
+      for(const gr of this.grains){
+        const a=Math.random()*TAU, d=R*(0.4+Math.random()*0.8);
+        gr.x=this.cx+Math.cos(a)*d; gr.y=this.cy+Math.sin(a)*d;
+      }
+      this.needScatter=false;
+    }
+  }
+  worldTarget(t,T){
+    let bx=t.bx, by=t.by;
+    if(t.limb){
+      const sw=this.reach*0.16*Math.sin(T*1.4+t.phase*2.0);
+      const c=Math.cos(sw), s=Math.sin(sw);
+      const nx=bx*c-by*s, ny=bx*s+by*c; bx=nx; by=ny;
+    }
+    const breath=1+this.breatheAmt*Math.sin(T*this.breatheSpeed);
+    const rot=T*0.05*this.rotDir, c=Math.cos(rot), s=Math.sin(rot);
+    const rx=bx*c-by*s, ry=bx*s+by*c;
+    const bob=Math.sin(T*0.5)*this.drift*0.02*Math.min(this.W,this.H);
+    return {x:this.cx+rx*this.scale*breath+bob, y:this.cy+ry*this.scale*breath};
+  }
+  startDissolve(){
+    this.phase='dissolve'; this.phaseT=0;
+    const dv=this.g.layers[2].dissolve;
+    for(const gr of this.grains){
+      const dx=gr.x-this.cx, dy=gr.y-this.cy, d=Math.hypot(dx,dy)||1;
+      const sp=2.0+Math.random()*3+dv*2.5;
+      gr.vx+=dx/d*sp+(Math.random()-0.5)*2.6;
+      gr.vy+=dy/d*sp-Math.random()*1.6-0.6;
+    }
+  }
+  reform(){ this.setPose(this.makePose()); this.phase='form'; this.phaseT=0; }
+  setPose(p){ this.pose=p; this.scale=0.36*Math.min(this.W,this.H)/p.maxExtent; this.applyColors(); }
+
+  step(T,dtSec,ds){
+    this.phaseT+=dtSec;
+    if(this.phase==='form'&&this.phaseT>this.formTime){this.phase='live';this.phaseT=0;}
+    else if(this.phase==='live'&&this.phaseT>this.holdTime){this.startDissolve();}
+    else if(this.phase==='dissolve'&&this.phaseT>this.dissolveTime){this.reform();}
+
+    const attract=this.phase!=='dissolve';
+    const stiff=this.phase==='live'?0.12:0.075;
+    const turb=this.phase==='dissolve'?(0.7+this.g.layers[2].dissolve*0.6):(0.08+0.22*this.drift);
+    const T2=this.pose.targets;
+    for(let i=0;i<this.n;i++){
+      const gr=this.grains[i];
+      if(attract){
+        const tp=this.worldTarget(T2[i],T);
+        gr.vx+=(tp.x-gr.x)*stiff*ds;
+        gr.vy+=(tp.y-gr.y)*stiff*ds;
+      }
+      const fl=flow(gr.x,gr.y,T);
+      gr.vx+=fl[0]*turb*ds; gr.vy+=fl[1]*turb*ds;
+      if(this.phase==='dissolve')gr.vy+=0.05*ds;           // faint settle
+      gr.vx*=0.88; gr.vy*=0.88;
+      gr.x+=gr.vx*ds; gr.y+=gr.vy*ds;
+    }
+  }
+
+  draw(ctx){
+    const {W,H}=this;
+    // short dusty trail
+    ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle='rgba(12,8,5,0.30)';
+    ctx.fillRect(0,0,W,H);
+
+    // luminance envelope by phase
+    let lum = this.phase==='live'?1
+            : this.phase==='form'?clamp(0.35+this.phaseT/this.formTime,0.35,1)
+            : clamp(1-this.phaseT/this.dissolveTime,0.25,1);
+
+    // ambient heat-haze behind a settled body
+    if(lum>0.5){
+      const grd=ctx.createRadialGradient(this.cx,this.cy,0,this.cx,this.cy,Math.min(W,H)*0.5);
+      grd.addColorStop(0,`rgba(${this.pal[3][0]},${this.pal[3][1]},${this.pal[3][2]},${0.05*(lum-0.5)})`);
+      grd.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle=grd; ctx.fillRect(0,0,W,H);
+    }
+
+    // base grain pass (solid sand)
+    ctx.globalCompositeOperation='source-over';
+    const a=(0.65+0.3*lum);
+    for(let i=0;i<this.n;i++){
+      const gr=this.grains[i];
+      if(gr.glow)continue;
+      const s=gr.size;
+      ctx.fillStyle=`rgba(${gr.cr|0},${gr.cg|0},${gr.cb|0},${a})`;
+      ctx.fillRect(gr.x-s*0.5,gr.y-s*0.5,s,s);
+    }
+    // glow pass (glints + eyes, additive)
+    ctx.globalCompositeOperation='lighter';
+    const ga=0.5+0.5*lum;
+    for(let i=0;i<this.n;i++){
+      const gr=this.grains[i];
+      if(!gr.glow)continue;
+      const s=gr.size+(gr.eye?1.2:0.6);
+      ctx.fillStyle=`rgba(${gr.cr|0},${gr.cg|0},${gr.cb|0},${gr.eye?ga:ga*0.75})`;
+      ctx.fillRect(gr.x-s*0.5,gr.y-s*0.5,s,s);
+    }
+    ctx.globalCompositeOperation='source-over';
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   APP
+   ══════════════════════════════════════════════════════════════════════════ */
+const cv=document.getElementById('stage');
+const ctx=cv.getContext('2d',{alpha:false});
+let W=0,H=0,dpr=1;
+let genome=null,currentId='',currentEggB64='',currentRarity='',swarm=null,grainCount=0,poseSeed=0;
+
+function resize(){
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth; H=window.innerHeight;
+  cv.width=Math.floor(W*dpr); cv.height=Math.floor(H*dpr);
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle='#0c0805'; ctx.fillRect(0,0,W,H);
+  if(swarm)swarm.layout(W,H);
+}
+window.addEventListener('resize',resize);
+
+function applyCreature(g,id,egg,rarity){
+  genome=g; currentId=id; currentEggB64=egg; currentRarity=rarity;
+  const pal=g.layers[1].palette.map(hexToRgb);
+  grainCount=clamp(Math.round(g.layers[1].k*38),900,3400);   // COUNT from surface.k
+  poseSeed=0;
+  const makePose=()=>buildPose(g,grainCount,id+'-p'+(++poseSeed));
+  const pose=buildPose(g,grainCount,id+'-p0');
+  swarm=new Swarm(g,pose,pal,grainCount,makePose);
+  swarm.layout(W,H);
+  updateHud();
+}
+
+function updateHud(){
+  document.getElementById('hudId').textContent=currentId;
+  const rar=document.getElementById('hudRar');
+  rar.textContent=currentRarity;
+  const col={common:'#c79a5c',uncommon:'#e9c88a',rare:'#79d0ff',epic:'#c78bff',legendary:'#ffcf5c'}[currentRarity]||'#e9c88a';
+  rar.style.color=col;
+  document.getElementById('dna').textContent=JSON.stringify(genome,null,2);
+}
+
+async function mint(seed){
+  const g=generateGenome(seed);
+  const rarity=rarityFor(g);
+  const {egg,id}=await EGG.pack(g,{title:'Duneheart',rarity,source:'learnwithkody-fauna'});
+  applyCreature(g,id,egg,rarity);
+  return id;
+}
+async function loadEggStr(b64){
+  const p=EGG.unpack(b64);
+  if(!p||!p.genome||!Array.isArray(p.genome.layers))throw new Error('not a rappter genome');
+  applyCreature(p.genome,p.id||(await EGG.genomeId(p.genome)),String(b64).trim(),p.rarity||'uncommon');
+  return currentId;
+}
+function randSeed(){ return 'dune-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10); }
+
+// ── animation loop ──
+let T=0,last=performance.now();
+function loop(now){
+  const dtMs=now-last; last=now;
+  const dtSec=Math.min(0.05,dtMs/1000);
+  const ds=clamp(dtMs/16.67,0.4,2.2);
+  T+=dtSec;
+  if(swarm){ swarm.step(T,dtSec,ds); swarm.draw(ctx); }
+  if(window.FAUNA)window.FAUNA.frame++;
+  requestAnimationFrame(loop);
+}
+
+// ── controls ──
+const loadPanel=document.getElementById('loadPanel');
+const loadMsg=document.getElementById('loadMsg');
+document.getElementById('btnNew').addEventListener('click',async()=>{
+  loadMsg.textContent=''; await mint(randSeed());
+});
+document.getElementById('btnSave').addEventListener('click',()=>{
+  if(currentEggB64)EGG.download(currentEggB64,currentId);
+});
+document.getElementById('btnLoad').addEventListener('click',()=>{
+  loadPanel.classList.toggle('open');
+});
+document.getElementById('btnRender').addEventListener('click',async()=>{
+  const v=document.getElementById('eggIn').value.trim();
+  if(!v){loadMsg.textContent='paste a .egg string first';return;}
+  try{ const id=await loadEggStr(v); loadMsg.textContent='loaded '+id; }
+  catch(e){ loadMsg.textContent='invalid egg: '+e.message; }
+});
+document.getElementById('eggFile').addEventListener('change',ev=>{
+  const file=ev.target.files&&ev.target.files[0]; if(!file)return;
+  const fr=new FileReader();
+  fr.onload=async()=>{
+    try{ document.getElementById('eggIn').value=String(fr.result).trim();
+         const id=await loadEggStr(String(fr.result)); loadMsg.textContent='loaded '+id; }
+    catch(e){ loadMsg.textContent='invalid egg: '+e.message; }
+  };
+  fr.readAsText(file);
+});
+
+// ── boot ──
+(async function boot(){
+  resize();
+  await mint(randSeed());
+  window.FAUNA={
+    title:'Duneheart',
+    get genome(){return genome;},
+    get id(){return currentId;},
+    get eggB64(){return currentEggB64;},
+    newCreature:async()=>{ await mint(randSeed()); return currentId; },
+    loadEgg:async(b64)=>{ return await loadEggStr(b64); },
+    frame:0
+  };
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

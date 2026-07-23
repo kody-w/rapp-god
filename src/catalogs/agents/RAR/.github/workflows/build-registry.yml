@@ -1,0 +1,60 @@
+name: Build Agent Registry
+
+on:
+  push:
+    paths:
+      - 'agents/**/*.py'
+      - 'agents/**/*.py.card'
+      - 'build_registry.py'
+      - 'rar.config.json'
+      - '.github/workflows/build-registry.yml'
+  pull_request:
+    paths:
+      - 'agents/**/*.py'
+      - 'agents/**/*.py.card'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify changed agent receipts
+        if: github.event_name == 'push'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/check_notarized_changes.py --base "$BASE_SHA"
+      
+      - name: Reject kebab-case agent filenames
+        run: |
+          BAD=$(find agents -name '*-*' -name '*.py' ! -path '*/.*' || true)
+          if [ -n "$BAD" ]; then
+            echo "❌ Agent filenames must be snake_case (no dashes):"
+            echo "$BAD"
+            exit 1
+          fi
+
+      - name: Security scan agents
+        run: python security_scan.py
+
+      - name: Build registry
+        run: python build_registry.py
+
+      - name: Commit registry.json
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "RAPP Registry Bot"
+          git config user.email "rapp-bot@users.noreply.github.com"
+          git add registry.json
+          git diff --cached --quiet || git commit -m "Auto-build registry.json [skip ci]"
+          git push

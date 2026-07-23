@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fork Bomb Orchestra — Self-Organizing Browser Ensemble</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #05060c; color: #e8edff;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    user-select: none; -webkit-user-select: none;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at center, #0a0f1f 0%, #02030a 100%);
+    cursor: crosshair;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud {
+    position: fixed; top: 14px; left: 14px;
+    font-size: 11px; line-height: 1.55; color: #8aa2c8;
+    text-shadow: 0 0 8px rgba(0,0,0,0.8);
+    pointer-events: none; z-index: 10;
+  }
+  #hud b { color: #e8edff; font-weight: 600; }
+  #hud .acc { color: #6df0c0; }
+  #counter {
+    position: fixed; top: 14px; right: 14px;
+    font-size: 11px; color: #8aa2c8; text-align: right;
+    text-shadow: 0 0 8px rgba(0,0,0,0.8);
+    pointer-events: none; z-index: 10;
+  }
+  #counter b { color: #ffd166; font-size: 20px; display: block; line-height: 1; }
+  #legend {
+    position: fixed; bottom: 14px; left: 14px;
+    font-size: 10px; color: #6c81a3;
+    text-shadow: 0 0 6px rgba(0,0,0,0.8);
+    pointer-events: none; z-index: 10;
+    display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  #legend span { display: inline-flex; align-items: center; gap: 6px; }
+  #legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  #overlay {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(2,3,10,0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 100;
+    transition: opacity 0.6s ease;
+  }
+  #overlay.gone { opacity: 0; pointer-events: none; }
+  #overlay .card {
+    text-align: center; max-width: 540px; padding: 36px;
+  }
+  #overlay h1 {
+    font-size: 28px; font-weight: 700; letter-spacing: -0.5px;
+    background: linear-gradient(90deg, #6df0c0, #8a9bff, #ffd166);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 14px;
+  }
+  #overlay p {
+    color: #b6c5e0; font-size: 13px; line-height: 1.7;
+    margin-bottom: 8px;
+  }
+  #overlay .pulse {
+    margin-top: 28px; font-size: 14px; color: #6df0c0;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.04); }
+  }
+  #help {
+    position: fixed; bottom: 14px; right: 14px;
+    font-size: 10px; color: #6c81a3;
+    text-shadow: 0 0 6px rgba(0,0,0,0.8);
+    pointer-events: none; z-index: 10; text-align: right;
+  }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div id="hud">
+  <div><b>Fork Bomb Orchestra</b></div>
+  <div>key: <span id="hudKey" class="acc">—</span> · tempo: <span class="acc">100 bpm</span></div>
+  <div>roles: <span id="hudRoles">bass:0 pad:0 lead:0 perc:0 tex:0</span></div>
+  <div>chord: <span id="hudChord" class="acc">—</span></div>
+</div>
+
+<div id="counter">
+  <b id="cnt">0</b>
+  <div>agents</div>
+</div>
+
+<div id="legend">
+  <span><i style="background:#ff6b9d"></i>bass</span>
+  <span><i style="background:#8a9bff"></i>pad</span>
+  <span><i style="background:#6df0c0"></i>lead</span>
+  <span><i style="background:#ffd166"></i>perc</span>
+  <span><i style="background:#c79bff"></i>texture</span>
+</div>
+
+<div id="help">click anywhere to spawn an agent · 50+ for a coherent piece</div>
+
+<div id="overlay">
+  <div class="card">
+    <h1>Fork Bomb Orchestra</h1>
+    <p>A self-organizing ensemble. Each click spawns an autonomous musician that <i>listens</i> to the existing audio (FFT chromagram), detects the key, and chooses a role &amp; rhythm that complements the others.</p>
+    <p>Bass · pad · lead · percussion · texture. By 50 agents it should sound like music.</p>
+    <div class="pulse">Click anywhere to begin</div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ============================================================================
+//  Fork Bomb Orchestra
+//  Pure Web Audio + Canvas. No samples, no libraries.
+// ============================================================================
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const hudKey = document.getElementById('hudKey');
+const hudRoles = document.getElementById('hudRoles');
+const hudChord = document.getElementById('hudChord');
+const cnt = document.getElementById('cnt');
+
+let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---------- Audio context ----------
+let audio = null;
+let masterGain, masterAnalyser, masterCompressor, masterReverb, masterDelay;
+let analyserBuf, freqBuf;
+const SAMPLE_RATE_HINT = 44100;
+
+// ---------- Music globals ----------
+const BPM = 100;
+const SPB = 60 / BPM;          // seconds per beat
+const STEPS_PER_BEAT = 4;      // 16th notes
+const STEPS_PER_BAR = 16;
+const STEP_DUR = SPB / STEPS_PER_BEAT;
+
+// Pitch classes
+const PC_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+// Scale templates (semitone offsets from root)
+const SCALES = {
+  major:        [0,2,4,5,7,9,11],
+  minor:        [0,2,3,5,7,8,10],
+  dorian:       [0,2,3,5,7,9,10],
+  mixolydian:   [0,2,4,5,7,9,10],
+  pentaMaj:     [0,2,4,7,9],
+  pentaMin:     [0,3,5,7,10],
+};
+
+// Krumhansl-Schmuckler key profiles (normalized)
+const KS_MAJOR = [6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+const KS_MINOR = [6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+
+let globalRoot = 0;            // 0..11, set by first click
+let globalScaleName = 'minor'; // 'major' | 'minor' | etc.
+let chordProgression = null;   // array of root pitch classes
+let barIndex = 0;
+
+// ---------- Agents ----------
+const agents = [];
+const ROLES = ['bass','pad','lead','perc','tex'];
+const ROLE_COLORS = {
+  bass: '#ff6b9d', pad: '#8a9bff', lead: '#6df0c0',
+  perc: '#ffd166', tex: '#c79bff'
+};
+const ROLE_LIMIT = { bass: 4, pad: 12, lead: 10, perc: 10, tex: 14 };
+
+// ---------- Visual ----------
+const ripples = [];
+let lastFrame = performance.now();
+
+// ============================================================================
+//  Audio init
+// ============================================================================
+
+function initAudio() {
+  if (audio) return;
+  audio = new (window.AudioContext || window.webkitAudioContext)();
+
+  masterGain = audio.createGain();
+  masterGain.gain.value = 0.85;
+
+  masterCompressor = audio.createDynamicsCompressor();
+  masterCompressor.threshold.value = -14;
+  masterCompressor.knee.value = 22;
+  masterCompressor.ratio.value = 6;
+  masterCompressor.attack.value = 0.005;
+  masterCompressor.release.value = 0.18;
+
+  masterAnalyser = audio.createAnalyser();
+  masterAnalyser.fftSize = 4096;
+  masterAnalyser.smoothingTimeConstant = 0.55;
+  analyserBuf = new Float32Array(masterAnalyser.fftSize);
+  freqBuf = new Float32Array(masterAnalyser.frequencyBinCount);
+
+  // Reverb (impulse generated, no sample loading)
+  masterReverb = audio.createConvolver();
+  masterReverb.buffer = makeImpulse(2.4, 2.6);
+  const revWet = audio.createGain(); revWet.gain.value = 0.22;
+  const revDry = audio.createGain(); revDry.gain.value = 1.0;
+
+  // Delay
+  masterDelay = audio.createDelay(1.0);
+  masterDelay.delayTime.value = STEP_DUR * 3; // dotted 8th-ish
+  const delayFb = audio.createGain(); delayFb.gain.value = 0.32;
+  const delayWet = audio.createGain(); delayWet.gain.value = 0.18;
+  masterDelay.connect(delayFb).connect(masterDelay);
+
+  // Routing: master -> compressor -> analyser -> destination
+  // wet sends from masterGain
+  masterGain.connect(revWet).connect(masterReverb).connect(masterCompressor);
+  masterGain.connect(delayWet).connect(masterDelay).connect(masterCompressor);
+  masterGain.connect(revDry).connect(masterCompressor);
+  masterCompressor.connect(masterAnalyser);
+  masterAnalyser.connect(audio.destination);
+
+  // Scheduler
+  schedulerStart();
+}
+
+function makeImpulse(duration, decay) {
+  const sr = audio.sampleRate;
+  const len = Math.floor(sr * duration);
+  const buf = audio.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    }
+  }
+  return buf;
+}
+
+// ============================================================================
+//  Chromagram analysis  (FFT -> 12-bin pitch class profile)
+// ============================================================================
+
+function computeChromagram() {
+  if (!masterAnalyser) return null;
+  masterAnalyser.getFloatFrequencyData(freqBuf);
+  const sr = audio.sampleRate;
+  const binHz = sr / masterAnalyser.fftSize;
+  const chroma = new Float32Array(12);
+
+  // Aggregate magnitudes onto pitch classes (40 Hz - 4 kHz range)
+  const minBin = Math.max(1, Math.floor(40 / binHz));
+  const maxBin = Math.min(freqBuf.length - 1, Math.floor(4000 / binHz));
+  for (let i = minBin; i < maxBin; i++) {
+    const f = i * binHz;
+    if (f <= 0) continue;
+    // dB -> linear, floor at -90 dB
+    const db = freqBuf[i];
+    if (db < -85) continue;
+    const mag = Math.pow(10, db / 20);
+    const midi = 69 + 12 * Math.log2(f / 440);
+    const pc = ((Math.round(midi) % 12) + 12) % 12;
+    chroma[pc] += mag;
+  }
+  // normalize
+  let sum = 0; for (let i = 0; i < 12; i++) sum += chroma[i];
+  if (sum > 0) for (let i = 0; i < 12; i++) chroma[i] /= sum;
+  return chroma;
+}
+
+// Krumhansl correlation: returns {root, mode}
+function detectKey(chroma) {
+  if (!chroma) return { root: 0, mode: 'major', score: 0 };
+  let best = { root: 0, mode: 'major', score: -Infinity };
+  for (let r = 0; r < 12; r++) {
+    let cMaj = 0, cMin = 0;
+    let mC = 0, mMaj = 0, mMin = 0, sumC = 0, sumMaj = 0, sumMin = 0;
+    for (let i = 0; i < 12; i++) {
+      mC += chroma[(r + i) % 12];
+      mMaj += KS_MAJOR[i];
+      mMin += KS_MINOR[i];
+    }
+    mC /= 12; mMaj /= 12; mMin /= 12;
+    let nMaj = 0, nMin = 0, dC = 0, dMaj = 0, dMin = 0;
+    for (let i = 0; i < 12; i++) {
+      const c = chroma[(r + i) % 12] - mC;
+      const a = KS_MAJOR[i] - mMaj;
+      const b = KS_MINOR[i] - mMin;
+      nMaj += c * a; nMin += c * b;
+      dC += c * c; dMaj += a * a; dMin += b * b;
+    }
+    const corrMaj = nMaj / Math.sqrt(dC * dMaj || 1);
+    const corrMin = nMin / Math.sqrt(dC * dMin || 1);
+    if (corrMaj > best.score) best = { root: r, mode: 'major', score: corrMaj };
+    if (corrMin > best.score) best = { root: r, mode: 'minor', score: corrMin };
+  }
+  return best;
+}
+
+// ============================================================================
+//  Music helpers
+// ============================================================================
+
+function midiToHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+function pcToMidi(pc, octave) { return 12 * (octave + 1) + pc; }
+
+function buildScale(rootPc, scaleName, octave) {
+  const tmpl = SCALES[scaleName] || SCALES.minor;
+  const out = [];
+  for (let o = 0; o < 4; o++) {
+    for (let i = 0; i < tmpl.length; i++) {
+      out.push(pcToMidi(rootPc, octave + o) + tmpl[i]);
+    }
+  }
+  return out;
+}
+
+function pickProgression(rootPc, scaleName) {
+  // Choose a tasteful 4-chord loop based on scale.
+  // Each chord = root pitch class for triad.
+  if (scaleName === 'major' || scaleName === 'mixolydian' || scaleName === 'pentaMaj') {
+    // I - V - vi - IV  (classic)
+    return [rootPc, (rootPc + 7) % 12, (rootPc + 9) % 12, (rootPc + 5) % 12];
+  } else {
+    // i - VI - III - VII  (epic minor) OR  i - iv - VII - III
+    const variants = [
+      [rootPc, (rootPc + 8) % 12, (rootPc + 3) % 12, (rootPc + 10) % 12],
+      [rootPc, (rootPc + 5) % 12, (rootPc + 10) % 12, (rootPc + 3) % 12],
+      [rootPc, (rootPc + 7) % 12, (rootPc + 10) % 12, (rootPc + 5) % 12],
+    ];
+    return variants[Math.floor(Math.random() * variants.length)];
+  }
+}
+
+function chordTones(rootPc, scaleName, octave) {
+  // Triad in scale
+  const tmpl = SCALES[scaleName] || SCALES.minor;
+  const root = pcToMidi(rootPc, octave);
+  // major triad if scale is major-ish, minor triad if minor-ish
+  const isMajor = (scaleName === 'major' || scaleName === 'mixolydian' || scaleName === 'pentaMaj');
+  if (isMajor) {
+    return [root, root + 4, root + 7];
+  } else {
+    return [root, root + 3, root + 7];
+  }
+}
+
+function chordName(pc, mode) {
+  return PC_NAMES[pc] + (mode === 'major' ? '' : 'm');
+}
+
+// ============================================================================
+//  Agent  — autonomous musician
+// ============================================================================
+
+class Agent {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.bornAt = audio.currentTime;
+    this.id = agents.length;
+
+    // 1. ANALYZE: get current chromagram, detect key
+    const chroma = computeChromagram();
+    const detected = detectKey(chroma);
+
+    // First agent SETS the global key. Others may shift it slightly if very confident.
+    if (agents.length === 0) {
+      globalRoot = detected.root || Math.floor(Math.random() * 12);
+      // Lean toward minor for more interesting harmony
+      globalScaleName = (detected.score > 0.4 && detected.mode === 'major') ? 'major' : 'minor';
+      // First agent randomization for variety across loads
+      if (detected.score < 0.1) {
+        globalRoot = [0, 2, 5, 7, 9][Math.floor(Math.random() * 5)]; // C, D, F, G, A
+        globalScaleName = Math.random() < 0.65 ? 'minor' : 'major';
+      }
+      chordProgression = pickProgression(globalRoot, globalScaleName);
+      hudKey.textContent = PC_NAMES[globalRoot] + ' ' + globalScaleName;
+    }
+
+    // 2. ROLE: pick most underrepresented role (within limits)
+    const roleCounts = countRoles();
+    let role = null;
+    // Force first agent to be bass for foundation; second to pad
+    if (agents.length === 0) role = 'bass';
+    else if (agents.length === 1) role = 'pad';
+    else if (agents.length === 2) role = 'perc';
+    else {
+      // Compute a "need" score: target ratio per role
+      const targetRatio = { bass: 0.10, pad: 0.30, lead: 0.20, perc: 0.20, tex: 0.20 };
+      const total = agents.length;
+      let bestNeed = -Infinity, bestRole = 'pad';
+      for (const r of ROLES) {
+        if (roleCounts[r] >= ROLE_LIMIT[r]) continue;
+        const have = roleCounts[r] / total;
+        const need = targetRatio[r] - have + (Math.random() * 0.06 - 0.03);
+        if (need > bestNeed) { bestNeed = need; bestRole = r; }
+      }
+      role = bestRole;
+    }
+    this.role = role;
+
+    // 3. RHYTHM: pick a 16-step pattern that complements existing agents
+    this.pattern = pickPattern(this.role);
+    this.patternLen = this.pattern.length;
+
+    // 4. PITCH STRATEGY (per role)
+    this.octave = pickOctave(this.role);
+    this.scaleNotes = buildScale(globalRoot, globalScaleName, this.octave);
+
+    // 5. SYNTH: pick a synthesis method
+    this.synth = pickSynth(this.role);
+
+    // 6. VISUAL
+    this.color = ROLE_COLORS[this.role];
+    const cx = W / 2, cy = H / 2;
+    this.orbitR = Math.hypot(x - cx, y - cy) * (0.6 + Math.random() * 0.6) + 40;
+    this.orbitR = Math.min(this.orbitR, Math.min(W, H) * 0.42);
+    this.orbitAngle = Math.atan2(y - cy, x - cx);
+    this.orbitSpeed = (Math.random() < 0.5 ? 1 : -1) *
+                     (0.05 + Math.random() * 0.18) *
+                     (this.role === 'perc' ? 1.6 : this.role === 'lead' ? 1.2 : 0.7);
+    this.size = ({ bass: 11, pad: 9, lead: 7, perc: 6, tex: 5 })[this.role];
+    this.lastTrigger = 0;
+    this.activity = 0;       // 0..1, decays over time, spikes when trigger
+    this.scope = new Float32Array(64); // mini waveform readout
+    this.scopeIdx = 0;
+
+    // 7. PER-AGENT VOLUME (smaller as ensemble grows)
+    this.gainBase = ({ bass: 0.32, pad: 0.18, lead: 0.20, perc: 0.28, tex: 0.10 })[this.role];
+
+    // 8. PAN: spread across stereo field based on x position
+    this.panValue = ((x / W) - 0.5) * 1.6; // -0.8..0.8
+
+    // create persistent panner for delay routing
+    try { this.panner = audio.createStereoPanner(); this.panner.pan.value = this.panValue; }
+    catch (e) { this.panner = audio.createGain(); }
+    this.outBus = audio.createGain();
+    this.outBus.gain.value = 1;
+    this.panner.connect(this.outBus).connect(masterGain);
+
+    // visual ripple on birth
+    ripples.push({ x, y, r: 0, life: 1, color: this.color });
+  }
+
+  // Called once per 16th step
+  step(stepIdx, when) {
+    if (!this.pattern[stepIdx % this.patternLen]) return;
+
+    // pick a pitch from current chord
+    const beatInBar = stepIdx % STEPS_PER_BAR;
+    const chordIdx = Math.floor(barIndex % chordProgression.length);
+    const chordRoot = chordProgression[chordIdx];
+
+    let midi;
+    if (this.role === 'perc') {
+      midi = -1; // signal
+    } else if (this.role === 'bass') {
+      midi = pcToMidi(chordRoot, this.octave);
+      // walk occasionally
+      if (Math.random() < 0.18) {
+        const offsets = SCALES[globalScaleName] || SCALES.minor;
+        const off = offsets[Math.floor(Math.random() * offsets.length)];
+        midi = pcToMidi(globalRoot, this.octave) + off;
+      }
+    } else if (this.role === 'pad') {
+      // chord tones across pad's octave
+      const tones = chordTones(chordRoot, globalScaleName, this.octave);
+      midi = tones[Math.floor(Math.random() * tones.length)];
+    } else if (this.role === 'lead') {
+      // arpeggio / scale runs: lean on chord tones, sometimes scale steps
+      if (Math.random() < 0.6) {
+        const tones = chordTones(chordRoot, globalScaleName, this.octave);
+        midi = tones[Math.floor(Math.random() * tones.length)];
+        // add an octave or 7th flavor sometimes
+        if (Math.random() < 0.2) midi += 12;
+      } else {
+        const scaleAround = buildScale(globalRoot, globalScaleName, this.octave);
+        midi = scaleAround[Math.floor(Math.random() * Math.min(7, scaleAround.length))];
+      }
+    } else {
+      // tex
+      const tones = chordTones(chordRoot, globalScaleName, this.octave);
+      midi = tones[Math.floor(Math.random() * tones.length)];
+      if (Math.random() < 0.4) midi += 12;
+    }
+
+    // velocity / dynamics: accent on beat 1 and 3
+    const isAccent = (beatInBar % 4 === 0);
+    const vel = isAccent ? 1.0 : 0.7 + Math.random() * 0.25;
+
+    this.activity = Math.min(1.5, this.activity + 0.6);
+    this.lastTrigger = when;
+
+    // dispatch to synth
+    this.synth.trigger(midi, vel, when, this);
+
+    // update HUD chord on bar change happens in scheduler
+  }
+
+  update(dt) {
+    this.activity = Math.max(0, this.activity - dt * 1.6);
+    this.orbitAngle += this.orbitSpeed * dt;
+    const cx = W / 2, cy = H / 2;
+    this.x = cx + Math.cos(this.orbitAngle) * this.orbitR;
+    this.y = cy + Math.sin(this.orbitAngle) * this.orbitR;
+  }
+
+  draw(ctx) {
+    const r = this.size + this.activity * 8;
+    const a = 0.45 + this.activity * 0.55;
+    // glow
+    const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 4);
+    grd.addColorStop(0, hexA(this.color, a * 0.65));
+    grd.addColorStop(1, hexA(this.color, 0));
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(this.x, this.y, r * 4, 0, Math.PI * 2); ctx.fill();
+    // core
+    ctx.fillStyle = hexA(this.color, a);
+    ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+    // outline
+    ctx.strokeStyle = hexA(this.color, 0.85);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(this.x, this.y, r + 1, 0, Math.PI * 2); ctx.stroke();
+  }
+}
+
+function hexA(hex, a) {
+  // hex like "#rrggbb"
+  const h = hex.replace('#','');
+  const r = parseInt(h.substr(0,2), 16);
+  const g = parseInt(h.substr(2,2), 16);
+  const b = parseInt(h.substr(4,2), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+function countRoles() {
+  const c = { bass:0, pad:0, lead:0, perc:0, tex:0 };
+  for (const a of agents) c[a.role]++;
+  return c;
+}
+
+function pickOctave(role) {
+  switch (role) {
+    case 'bass': return 1 + (Math.random() < 0.3 ? 1 : 0);
+    case 'pad':  return 3 + Math.floor(Math.random() * 2);
+    case 'lead': return 4 + Math.floor(Math.random() * 2);
+    case 'perc': return 5;
+    case 'tex':  return 5 + Math.floor(Math.random() * 2);
+  }
+  return 4;
+}
+
+// ============================================================================
+//  Rhythm pattern picker — finds a pattern that complements existing density
+// ============================================================================
+
+function pickPattern(role) {
+  // Existing density map across the existing agents of similar role
+  const density = new Array(STEPS_PER_BAR).fill(0);
+  for (const a of agents) {
+    if (a.role === role) {
+      for (let i = 0; i < a.pattern.length; i++) {
+        density[i % STEPS_PER_BAR] += a.pattern[i] ? 1 : 0;
+      }
+    }
+  }
+
+  // Candidate patterns by role
+  const candidates = patternBank(role);
+
+  // Score: lower overlap with density = better; bonus for filling gaps
+  let bestScore = -Infinity;
+  let best = candidates[0];
+  for (const c of candidates) {
+    let score = 0;
+    let hits = 0;
+    for (let i = 0; i < STEPS_PER_BAR; i++) {
+      if (c[i]) {
+        hits++;
+        score -= density[i] * 1.5;          // penalize overlap
+        if (density[i] === 0) score += 1.2; // reward filling silence
+      }
+    }
+    if (hits > 0 && hits < STEPS_PER_BAR * 0.85) score += 0.5;
+    score += Math.random() * 0.4; // tiebreaker
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return best.slice();
+}
+
+function patternBank(role) {
+  const arr16 = (...ones) => {
+    const p = new Array(STEPS_PER_BAR).fill(0);
+    for (const i of ones) p[i] = 1;
+    return p;
+  };
+  if (role === 'bass') {
+    return [
+      arr16(0, 8),
+      arr16(0, 6, 8, 14),
+      arr16(0, 4, 8, 12),
+      arr16(0, 8, 11),
+      arr16(0, 7, 8, 15),
+    ];
+  }
+  if (role === 'pad') {
+    return [
+      arr16(0),
+      arr16(0, 8),
+      arr16(0, 4, 8, 12),
+      arr16(2, 10),
+      arr16(0, 6),
+    ];
+  }
+  if (role === 'lead') {
+    return [
+      arr16(0, 3, 6, 10, 13),
+      arr16(2, 5, 8, 11, 14),
+      arr16(0, 4, 7, 10, 14),
+      arr16(1, 5, 9, 13),
+      arr16(3, 7, 11, 15),
+      arr16(0, 2, 4, 6, 8, 10, 12, 14),
+    ];
+  }
+  if (role === 'perc') {
+    return [
+      arr16(0, 4, 8, 12),                         // four-on-floor
+      arr16(2, 6, 10, 14),                        // backbeat
+      arr16(0, 3, 6, 8, 10, 14),                  // dembow-ish
+      arr16(0, 4, 7, 8, 10, 12, 14),              // breakbeat-ish
+      arr16(1, 5, 9, 13),                         // offbeat 16ths
+      arr16(0, 2, 4, 5, 8, 10, 12, 13),
+    ];
+  }
+  // tex
+  return [
+    arr16(0),
+    arr16(4),
+    arr16(8),
+    arr16(12),
+    arr16(0, 12),
+    arr16(2, 6, 10, 14),
+  ];
+}
+
+// ============================================================================
+//  Synth engines
+// ============================================================================
+
+function pickSynth(role) {
+  const opts = {
+    bass: ['sub', 'fmBass', 'sawSub'],
+    pad:  ['polyPad', 'fmPad', 'addPad'],
+    lead: ['fmLead', 'sawLead', 'amLead'],
+    perc: ['kick', 'snare', 'hat', 'rim', 'tom'],
+    tex:  ['bell', 'pluck', 'shimmer', 'chirp']
+  };
+  const list = opts[role];
+  const which = list[Math.floor(Math.random() * list.length)];
+  return SYNTHS[which];
+}
+
+const SYNTHS = {
+  // ---- BASS ----
+  sub: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const o = audio.createOscillator();
+      o.type = 'sine'; o.frequency.value = f;
+      const o2 = audio.createOscillator();
+      o2.type = 'triangle'; o2.frequency.value = f * 1.005;
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel, when + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, when + SPB * 0.95);
+      o.connect(g); o2.connect(g); g.connect(agent.panner);
+      o.start(when); o2.start(when);
+      o.stop(when + SPB); o2.stop(when + SPB);
+    }
+  },
+  fmBass: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const car = audio.createOscillator(); car.type = 'sine'; car.frequency.value = f;
+      const mod = audio.createOscillator(); mod.type = 'sine'; mod.frequency.value = f * 2;
+      const modGain = audio.createGain(); modGain.gain.value = f * 4;
+      const env = audio.createGain();
+      env.gain.setValueAtTime(0, when);
+      env.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.9, when + 0.01);
+      env.gain.exponentialRampToValueAtTime(0.001, when + 0.42);
+      mod.connect(modGain).connect(car.frequency);
+      car.connect(env).connect(agent.panner);
+      car.start(when); mod.start(when);
+      car.stop(when + 0.5); mod.stop(when + 0.5);
+    }
+  },
+  sawSub: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const o = audio.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      const lp = audio.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(180, when);
+      lp.frequency.exponentialRampToValueAtTime(420, when + 0.06);
+      lp.frequency.exponentialRampToValueAtTime(160, when + 0.4);
+      lp.Q.value = 4;
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.85, when + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.5);
+      o.connect(lp).connect(g).connect(agent.panner);
+      o.start(when); o.stop(when + 0.55);
+    }
+  },
+
+  // ---- PADS ----
+  polyPad: {
+    trigger(midi, vel, when, agent) {
+      // detuned saw stack low pass
+      const f = midiToHz(midi);
+      const detunes = [-8, -3, 3, 8];
+      const lp = audio.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.value = 1400 + Math.random() * 600;
+      lp.Q.value = 1;
+      const g = audio.createGain();
+      const len = SPB * 2.2;
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel, when + 0.4);
+      g.gain.linearRampToValueAtTime(0, when + len);
+      const oscs = [];
+      for (const d of detunes) {
+        const o = audio.createOscillator();
+        o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = d;
+        o.connect(lp);
+        oscs.push(o);
+      }
+      lp.connect(g).connect(agent.panner);
+      const t = when + 0.001;
+      oscs.forEach(o => { o.start(t); o.stop(when + len + 0.05); });
+    }
+  },
+  fmPad: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const car = audio.createOscillator(); car.type = 'sine'; car.frequency.value = f;
+      const mod = audio.createOscillator(); mod.type = 'sine'; mod.frequency.value = f * 1.5;
+      const modGain = audio.createGain(); modGain.gain.value = f * 0.6;
+      const g = audio.createGain();
+      const len = SPB * 2.0;
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 1.1, when + 0.6);
+      g.gain.linearRampToValueAtTime(0, when + len);
+      mod.connect(modGain).connect(car.frequency);
+      car.connect(g).connect(agent.panner);
+      car.start(when); mod.start(when);
+      car.stop(when + len + 0.05); mod.stop(when + len + 0.05);
+    }
+  },
+  addPad: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const partials = [1, 2, 3, 4, 5];
+      const amps = [1.0, 0.45, 0.32, 0.18, 0.12];
+      const g = audio.createGain();
+      const len = SPB * 1.8;
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.6, when + 0.4);
+      g.gain.linearRampToValueAtTime(0, when + len);
+      for (let i = 0; i < partials.length; i++) {
+        const o = audio.createOscillator();
+        o.type = 'sine'; o.frequency.value = f * partials[i];
+        const ag = audio.createGain(); ag.gain.value = amps[i];
+        o.connect(ag).connect(g);
+        o.start(when); o.stop(when + len + 0.05);
+      }
+      g.connect(agent.panner);
+    }
+  },
+
+  // ---- LEADS ----
+  fmLead: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const car = audio.createOscillator(); car.type = 'sine'; car.frequency.value = f;
+      const mod = audio.createOscillator(); mod.type = 'sine'; mod.frequency.value = f * 3;
+      const modGain = audio.createGain();
+      modGain.gain.setValueAtTime(f * 4, when);
+      modGain.gain.exponentialRampToValueAtTime(f * 0.6, when + 0.25);
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel, when + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.34);
+      mod.connect(modGain).connect(car.frequency);
+      car.connect(g).connect(agent.panner);
+      car.start(when); mod.start(when);
+      car.stop(when + 0.4); mod.stop(when + 0.4);
+    }
+  },
+  sawLead: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const o = audio.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      const o2 = audio.createOscillator(); o2.type = 'square'; o2.frequency.value = f * 1.005; o2.detune.value = 6;
+      const lp = audio.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(800, when);
+      lp.frequency.exponentialRampToValueAtTime(3500, when + 0.04);
+      lp.frequency.exponentialRampToValueAtTime(900, when + 0.32);
+      lp.Q.value = 6;
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.7, when + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.32);
+      o.connect(lp); o2.connect(lp);
+      lp.connect(g).connect(agent.panner);
+      o.start(when); o2.start(when);
+      o.stop(when + 0.36); o2.stop(when + 0.36);
+    }
+  },
+  amLead: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const car = audio.createOscillator(); car.type = 'triangle'; car.frequency.value = f;
+      const mod = audio.createOscillator(); mod.type = 'sine'; mod.frequency.value = 7;
+      const modGain = audio.createGain(); modGain.gain.value = 0.4;
+      const dc = audio.createGain(); dc.gain.value = 0.6;
+      const sum = audio.createGain();
+      mod.connect(modGain).connect(sum);
+      // bias
+      const biasOsc = audio.createConstantSource(); biasOsc.offset.value = 1; biasOsc.connect(dc).connect(sum);
+      const amp = audio.createGain(); amp.gain.value = 0;
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel, when + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.4);
+      sum.connect(amp.gain);
+      car.connect(amp).connect(g).connect(agent.panner);
+      car.start(when); mod.start(when); biasOsc.start(when);
+      car.stop(when + 0.42); mod.stop(when + 0.42); biasOsc.stop(when + 0.42);
+    }
+  },
+
+  // ---- PERCUSSION (synthesized, no samples) ----
+  kick: {
+    trigger(midi, vel, when, agent) {
+      const o = audio.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(140, when);
+      o.frequency.exponentialRampToValueAtTime(48, when + 0.10);
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 1.2, when + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.32);
+      o.connect(g).connect(agent.panner);
+      // click
+      const click = makeNoiseBuffer(0.02);
+      const cs = audio.createBufferSource(); cs.buffer = click;
+      const cg = audio.createGain(); cg.gain.value = vel * 0.18;
+      cs.connect(cg).connect(agent.panner);
+      o.start(when); o.stop(when + 0.34);
+      cs.start(when);
+    }
+  },
+  snare: {
+    trigger(midi, vel, when, agent) {
+      const noise = makeNoiseBuffer(0.18);
+      const ns = audio.createBufferSource(); ns.buffer = noise;
+      const bp = audio.createBiquadFilter(); bp.type = 'bandpass';
+      bp.frequency.value = 1800; bp.Q.value = 0.6;
+      const ng = audio.createGain();
+      ng.gain.setValueAtTime(0, when);
+      ng.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.55, when + 0.002);
+      ng.gain.exponentialRampToValueAtTime(0.001, when + 0.16);
+      ns.connect(bp).connect(ng).connect(agent.panner);
+      // body
+      const o = audio.createOscillator(); o.type = 'triangle'; o.frequency.value = 220;
+      const og = audio.createGain();
+      og.gain.setValueAtTime(0, when);
+      og.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.32, when + 0.002);
+      og.gain.exponentialRampToValueAtTime(0.001, when + 0.10);
+      o.connect(og).connect(agent.panner);
+      ns.start(when); o.start(when); o.stop(when + 0.12);
+    }
+  },
+  hat: {
+    trigger(midi, vel, when, agent) {
+      const noise = makeNoiseBuffer(0.06);
+      const ns = audio.createBufferSource(); ns.buffer = noise;
+      const hp = audio.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.3, when + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.06);
+      ns.connect(hp).connect(g).connect(agent.panner);
+      ns.start(when);
+    }
+  },
+  rim: {
+    trigger(midi, vel, when, agent) {
+      const o = audio.createOscillator(); o.type = 'square'; o.frequency.value = 800;
+      const bp = audio.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1700; bp.Q.value = 8;
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.4, when + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.05);
+      o.connect(bp).connect(g).connect(agent.panner);
+      o.start(when); o.stop(when + 0.06);
+    }
+  },
+  tom: {
+    trigger(midi, vel, when, agent) {
+      const f = 100 + Math.random() * 120;
+      const o = audio.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(f * 1.6, when);
+      o.frequency.exponentialRampToValueAtTime(f, when + 0.18);
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.7, when + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.35);
+      o.connect(g).connect(agent.panner);
+      o.start(when); o.stop(when + 0.36);
+    }
+  },
+
+  // ---- TEXTURE ----
+  bell: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const partials = [1, 2.76, 5.4, 8.93];
+      const amps = [1.0, 0.55, 0.35, 0.18];
+      const len = 1.2;
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel, when + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, when + len);
+      for (let i = 0; i < partials.length; i++) {
+        const o = audio.createOscillator(); o.type = 'sine';
+        o.frequency.value = f * partials[i];
+        const ag = audio.createGain(); ag.gain.value = amps[i];
+        o.connect(ag).connect(g);
+        o.start(when); o.stop(when + len + 0.05);
+      }
+      g.connect(agent.panner);
+    }
+  },
+  pluck: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const o = audio.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+      const o2 = audio.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = f * 2;
+      const g2 = audio.createGain(); g2.gain.value = 0.18;
+      const lp = audio.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(4500, when);
+      lp.frequency.exponentialRampToValueAtTime(700, when + 0.5);
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel, when + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.6);
+      o.connect(lp); o2.connect(g2).connect(lp);
+      lp.connect(g).connect(agent.panner);
+      o.start(when); o2.start(when);
+      o.stop(when + 0.65); o2.stop(when + 0.65);
+    }
+  },
+  shimmer: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi + 12);
+      const o = audio.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const o2 = audio.createOscillator(); o2.type = 'sine'; o2.frequency.value = f * 2.01;
+      const lfo = audio.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 5.2;
+      const lfoGain = audio.createGain(); lfoGain.gain.value = 12;
+      lfo.connect(lfoGain).connect(o.frequency);
+      const g = audio.createGain();
+      const len = 1.6;
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.8, when + 0.3);
+      g.gain.linearRampToValueAtTime(0, when + len);
+      o.connect(g); o2.connect(g);
+      g.connect(agent.panner);
+      o.start(when); o2.start(when); lfo.start(when);
+      o.stop(when + len + 0.05); o2.stop(when + len + 0.05); lfo.stop(when + len + 0.05);
+    }
+  },
+  chirp: {
+    trigger(midi, vel, when, agent) {
+      const f = midiToHz(midi);
+      const o = audio.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(f * 0.5, when);
+      o.frequency.exponentialRampToValueAtTime(f * 4, when + 0.18);
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(agent.gainBase * vel * 0.4, when + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.2);
+      o.connect(g).connect(agent.panner);
+      o.start(when); o.stop(when + 0.22);
+    }
+  }
+};
+
+// shared noise buffer cache
+const noiseCache = {};
+function makeNoiseBuffer(seconds) {
+  const key = seconds.toFixed(3);
+  if (noiseCache[key]) return noiseCache[key];
+  const sr = audio.sampleRate;
+  const len = Math.max(1, Math.floor(sr * seconds));
+  const buf = audio.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  noiseCache[key] = buf;
+  return buf;
+}
+
+// ============================================================================
+//  Scheduler (lookahead pattern)
+// ============================================================================
+
+let nextStepTime = 0;
+let currentStep = 0;
+let schedulerTimer = null;
+const LOOKAHEAD_MS = 25;
+const SCHEDULE_AHEAD = 0.12; // seconds
+
+function schedulerStart() {
+  nextStepTime = audio.currentTime + 0.06;
+  currentStep = 0;
+  barIndex = 0;
+  schedulerTick();
+}
+
+function schedulerTick() {
+  while (nextStepTime < audio.currentTime + SCHEDULE_AHEAD) {
+    // schedule each agent on this step
+    for (const a of agents) {
+      a.step(currentStep, nextStepTime);
+    }
+
+    // Advance
+    nextStepTime += STEP_DUR;
+    currentStep++;
+    if (currentStep % STEPS_PER_BAR === 0) {
+      barIndex++;
+      // Update HUD chord display for the new bar
+      if (chordProgression) {
+        const chordPc = chordProgression[barIndex % chordProgression.length];
+        const isMaj = (globalScaleName === 'major' || globalScaleName === 'mixolydian' || globalScaleName === 'pentaMaj');
+        hudChord.textContent = chordName(chordPc, isMaj ? 'major' : 'minor');
+      }
+    }
+  }
+  schedulerTimer = setTimeout(schedulerTick, LOOKAHEAD_MS);
+}
+
+// ============================================================================
+//  Render loop
+// ============================================================================
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastFrame) / 1000);
+  lastFrame = now;
+
+  // Trail effect — semi-transparent fill
+  ctx.fillStyle = 'rgba(2,3,10,0.18)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Master scope (background waveform)
+  if (masterAnalyser) {
+    masterAnalyser.getFloatTimeDomainData(analyserBuf);
+    drawMasterScope();
+    drawChromaRing();
+  }
+
+  // ripples
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.r += dt * 240;
+    r.life -= dt * 1.2;
+    if (r.life <= 0) { ripples.splice(i, 1); continue; }
+    ctx.strokeStyle = hexA(r.color, r.life * 0.45);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // connection lines between nearby agents (subtle)
+  if (agents.length > 1) {
+    ctx.lineWidth = 0.4;
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i];
+      if (a.activity < 0.2) continue;
+      for (let j = i + 1; j < agents.length; j++) {
+        const b = agents[j];
+        if (b.activity < 0.2) continue;
+        if (a.role !== b.role) continue;
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 200 * 200) {
+          const al = (1 - Math.sqrt(d2) / 200) * Math.min(a.activity, b.activity) * 0.5;
+          ctx.strokeStyle = hexA(a.color, al);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // agents
+  for (const a of agents) {
+    a.update(dt);
+    a.draw(ctx);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+function drawMasterScope() {
+  // Background waveform across full width
+  const N = analyserBuf.length;
+  const step = Math.max(1, Math.floor(N / W));
+  ctx.strokeStyle = 'rgba(141,176,232,0.18)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 0, i = 0; x < W; x++, i += step) {
+    const v = analyserBuf[i] || 0;
+    const y = H * 0.5 + v * H * 0.18;
+    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+let lastChromaUpdate = 0;
+let smoothedChroma = new Float32Array(12);
+function drawChromaRing() {
+  const now = performance.now();
+  if (now - lastChromaUpdate > 60) {
+    const c = computeChromagram();
+    if (c) {
+      for (let i = 0; i < 12; i++) {
+        smoothedChroma[i] = smoothedChroma[i] * 0.7 + c[i] * 0.3;
+      }
+    }
+    lastChromaUpdate = now;
+    // update role hud
+    const rc = countRoles();
+    hudRoles.textContent = `bass:${rc.bass} pad:${rc.pad} lead:${rc.lead} perc:${rc.perc} tex:${rc.tex}`;
+  }
+  const cx = W / 2, cy = H / 2;
+  const baseR = Math.min(W, H) * 0.07;
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2 - Math.PI / 2;
+    const isRoot = (i === globalRoot);
+    const inScale = (SCALES[globalScaleName] || []).some(s => ((globalRoot + s) % 12) === i);
+    const m = smoothedChroma[i] || 0;
+    const r1 = baseR;
+    const r2 = baseR + 6 + m * 80;
+    ctx.strokeStyle = isRoot
+      ? 'rgba(255,209,102,0.7)'
+      : (inScale ? 'rgba(141,176,232,0.4)' : 'rgba(141,176,232,0.15)');
+    ctx.lineWidth = isRoot ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+    ctx.lineTo(cx + Math.cos(ang) * r2, cy + Math.sin(ang) * r2);
+    ctx.stroke();
+    // label
+    ctx.fillStyle = isRoot ? 'rgba(255,209,102,0.85)' : 'rgba(141,176,232,0.4)';
+    ctx.font = '9px SF Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(PC_NAMES[i], cx + Math.cos(ang) * (baseR - 12), cy + Math.sin(ang) * (baseR - 12) + 3);
+  }
+}
+
+// ============================================================================
+//  Input
+// ============================================================================
+
+let started = false;
+function handleClick(e) {
+  if (!started) {
+    started = true;
+    overlay.classList.add('gone');
+    setTimeout(() => overlay.style.display = 'none', 700);
+    initAudio();
+    if (audio.state === 'suspended') audio.resume();
+  }
+  if (!audio) return;
+  if (audio.state === 'suspended') audio.resume();
+
+  // Throttle: don't allow more than 200 agents
+  if (agents.length >= 200) return;
+
+  // Accept touch or mouse
+  let x, y;
+  if (e.touches && e.touches[0]) { x = e.touches[0].clientX; y = e.touches[0].clientY; }
+  else { x = e.clientX; y = e.clientY; }
+  // Spawn agent
+  const a = new Agent(x, y);
+  agents.push(a);
+  cnt.textContent = agents.length;
+}
+
+window.addEventListener('mousedown', handleClick);
+window.addEventListener('touchstart', (e) => { e.preventDefault(); handleClick(e); }, { passive: false });
+
+// keyboard: space to spawn at random location, R to reset
+window.addEventListener('keydown', (e) => {
+  if (!started) return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    handleClick({ clientX: Math.random() * W, clientY: Math.random() * H });
+  }
+});
+
+// kick off render loop immediately so the canvas isn't blank during overlay
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>

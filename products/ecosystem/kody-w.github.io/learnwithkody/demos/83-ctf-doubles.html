@@ -1,0 +1,1476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CANYON DOUBLES — 2v2 CTF</title>
+<style>
+  html,body{margin:0;padding:0;background:#000;color:#cfd;font-family:'Consolas','Courier New',monospace;overflow:hidden;height:100%}
+  #wrap{position:relative;width:1280px;height:720px;margin:0 auto;background:#0a0d10;box-shadow:0 0 60px #000}
+  canvas{position:absolute;top:0;left:0;display:block}
+  #ui{position:absolute;inset:0;pointer-events:none;font-size:12px;letter-spacing:.5px}
+  #scorebar{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);border:1px solid #2a3540;padding:8px 18px;border-radius:4px;display:flex;align-items:center;gap:18px;box-shadow:0 0 16px #000}
+  .team{display:flex;align-items:center;gap:8px;font-size:22px;font-weight:bold;letter-spacing:2px}
+  .red{color:#ff5050;text-shadow:0 0 8px #ff5050}
+  .blue{color:#5fa8ff;text-shadow:0 0 8px #5fa8ff}
+  #timer{font-size:24px;color:#ddd;font-weight:bold;text-shadow:0 0 6px #fff;min-width:80px;text-align:center}
+  #killfeed{position:absolute;top:80px;right:10px;width:300px;display:flex;flex-direction:column;gap:3px;align-items:flex-end}
+  .kf{background:rgba(0,0,0,.65);padding:4px 8px;border-left:3px solid #888;font-size:13px;white-space:nowrap;animation:fadeIn .25s}
+  @keyframes fadeIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+  #announcer{position:absolute;top:90px;left:50%;transform:translateX(-50%);font-size:38px;font-weight:bold;letter-spacing:6px;text-align:center;text-shadow:0 0 18px currentColor,0 0 30px currentColor;pointer-events:none;opacity:0;transition:opacity .25s}
+  #subann{position:absolute;top:140px;left:50%;transform:translateX(-50%);font-size:16px;letter-spacing:3px;color:#ffe;opacity:0;transition:opacity .25s;text-align:center}
+  #mvp{position:absolute;inset:0;background:rgba(0,0,0,.85);display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;z-index:10}
+  #mvp h1{font-size:48px;margin:0 0 16px;letter-spacing:8px;text-shadow:0 0 20px gold}
+  #mvp h2{font-size:22px;margin:0 0 24px;letter-spacing:4px}
+  .scorecard{display:grid;grid-template-columns:repeat(7,minmax(70px,auto));gap:6px;background:rgba(20,30,40,.85);padding:14px 22px;border:1px solid #345;font-size:14px}
+  .scorecard .h{font-weight:bold;color:#ffd76b;border-bottom:1px solid #345;padding-bottom:4px}
+  .scorecard .nm-r{color:#ff8080;font-weight:bold}
+  .scorecard .nm-b{color:#80b0ff;font-weight:bold}
+  .scorecard .mvp-row{background:rgba(255,200,80,.12)}
+  #intro{position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center;color:#9af;font-size:32px;letter-spacing:6px;z-index:20;animation:introFade .6s ease-in forwards .4s}
+  @keyframes introFade{to{opacity:0;visibility:hidden}}
+  #broadcast{position:absolute;bottom:8px;left:10px;font-size:11px;color:#789;letter-spacing:2px;opacity:.7}
+  #liveDot{display:inline-block;width:8px;height:8px;background:#f33;border-radius:50%;margin-right:6px;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  #pickupHud{position:absolute;top:80px;left:10px;display:flex;flex-direction:column;gap:4px;font-size:12px}
+  .pkh{background:rgba(0,0,0,.55);padding:4px 8px;border-left:3px solid;display:flex;justify-content:space-between;gap:10px;min-width:160px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="ui">
+    <div id="scorebar">
+      <div class="team red"><span id="redCaps">0</span><span style="font-size:14px;opacity:.7">RED</span></div>
+      <div id="timer">8:00</div>
+      <div class="team blue"><span style="font-size:14px;opacity:.7">BLUE</span><span id="blueCaps">0</span></div>
+    </div>
+    <div id="pickupHud"></div>
+    <div id="killfeed"></div>
+    <div id="announcer"></div>
+    <div id="subann"></div>
+    <div id="broadcast"><span id="liveDot"></span>LIVE • CANYON DOUBLES • CTF</div>
+    <div id="mvp"></div>
+  </div>
+  <div id="intro">LOADING CANYON...</div>
+</div>
+<script>
+'use strict';
+/* ======================================================================
+   CANYON DOUBLES — 2v2 CTF
+   Single-file arena-shooter-flavored capture the flag broadcast simulator.
+====================================================================== */
+
+const W = 1280, H = 720;
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+
+// ------------------------- NAME POOLS -------------------------
+const RED_NAMES = ['Ace','Drift','Hex','Vex','Rook','Saber','Crash','Echo','Ghost','Reaper',
+                   'Onyx','Slate','Flash','Pyro','Nova','Knox','Kodiak','Talon','Ember','Vanta'];
+const BLUE_NAMES = ['Glint','Wraith','Atlas','Rune','Volt','Halo','Mira','Cipher','Frost','Storm',
+                    'Comet','Phoenix','Raven','Blaze','Zephyr','Titan','Nebula','Vortex','Specter','Scout'];
+
+function pick2(arr){ const a=arr.slice(); const out=[];
+  for(let i=0;i<2;i++){ out.push(a.splice(Math.floor(Math.random()*a.length),1)[0]); } return out; }
+
+// ------------------------- MAP GEOMETRY -------------------------
+const RED_BASE  = { x: 110, y: 360, w: 140, h: 220 };
+const BLUE_BASE = { x: 1030, y: 360, w: 140, h: 220 };
+const RED_FLAGSTAND  = { x: 130, y: 360 };
+const BLUE_FLAGSTAND = { x: 1150, y: 360 };
+const MID = { x: 640, y: 360 };
+
+// Obstacles for collision + LOS
+const OBSTACLES = [
+  // central rocky outcrop (smaller cluster so pickups remain accessible)
+  { type:'circle', x:640, y:360, r:42, kind:'rock' },
+  { type:'circle', x:602, y:332, r:24, kind:'rock' },
+  { type:'circle', x:678, y:388, r:26, kind:'rock' },
+  // bottom pass cover (cover-heavy)
+  { type:'rect', x:380, y:560, w:60, h:30, kind:'crate' },
+  { type:'rect', x:520, y:600, w:50, h:50, kind:'crate' },
+  { type:'rect', x:710, y:600, w:50, h:50, kind:'crate' },
+  { type:'rect', x:840, y:560, w:60, h:30, kind:'crate' },
+  { type:'rect', x:620, y:660, w:40, h:30, kind:'crate' },
+  // base walls (front edges) — shortened with wide doorway
+  { type:'rect', x:240, y:260, w:14, h:60, kind:'wall' },
+  { type:'rect', x:240, y:400, w:14, h:60, kind:'wall' },
+  { type:'rect', x:1026, y:260, w:14, h:60, kind:'wall' },
+  { type:'rect', x:1026, y:400, w:14, h:60, kind:'wall' },
+  // top pass minor cover
+  { type:'rect', x:570, y:120, w:30, h:30, kind:'crate' },
+  { type:'rect', x:680, y:140, w:30, h:30, kind:'crate' },
+];
+
+// Waypoint nodes for routing
+const WAYPOINTS = {
+  REDSPAWN: {x:140, y:360},
+  RED_TOP: {x:280, y:160},
+  RED_BOT: {x:280, y:580},
+  TOP_MID: {x:640, y:130},
+  BOT_MID: {x:640, y:600},
+  MID_TOP: {x:640, y:260},
+  MID_BOT: {x:640, y:460},
+  BLUE_TOP: {x:1000, y:160},
+  BLUE_BOT: {x:1000, y:580},
+  BLUESPAWN: {x:1140, y:360},
+  MID_LEFT: {x:520, y:360},
+  MID_RIGHT:{x:760, y:360},
+};
+
+// ------------------------- GAME STATE -------------------------
+let G;     // Active game state object
+
+function newGame(){
+  const redNames = pick2(RED_NAMES), blueNames = pick2(BLUE_NAMES);
+  const sp = [];
+  redNames.forEach((n,i)=> sp.push(makeSpartan(n,'red',i)));
+  blueNames.forEach((n,i)=> sp.push(makeSpartan(n,'blue',i)));
+
+  G = {
+    t: 0,                       // ticks
+    matchTime: 480,             // seconds remaining (8 min)
+    score: { red: 0, blue: 0 },
+    spartans: sp,
+    bullets: [],
+    rockets: [],
+    particles: [],
+    vehicles: [
+      makeVehicle('red'),
+      makeVehicle('blue'),
+    ],
+    flags: {
+      red:  { home:{...RED_FLAGSTAND}, pos:{...RED_FLAGSTAND}, atHome:true, carrier:null, droppedAt:0 },
+      blue: { home:{...BLUE_FLAGSTAND}, pos:{...BLUE_FLAGSTAND}, atHome:true, carrier:null, droppedAt:0 },
+    },
+    pickups: [
+      { id:'sniper',   x:640, y:285, type:'sniper',   label:'SR',   color:'#9cf',   respawn:90,  ready:true,  readyAt:0 },
+      { id:'rockets',  x:640, y:455, type:'rockets',  label:'RKT',  color:'#fb6',   respawn:120, ready:true,  readyAt:0 },
+      { id:'over',     x:340, y:580, type:'overshield',label:'OS',  color:'#ff3',   respawn:60,  ready:true,  readyAt:0 },
+    ],
+    killfeed: [],
+    firstBlood: false,
+    multiKillTrack: {},   // spartanId -> {count, last}
+    streakTrack: {},      // spartanId -> count
+    announcer: { msg:'', sub:'', until:0, color:'#fff' },
+    state: 'play',        // play | mvp | rematch
+    endAt: 0,
+    flashes: [],
+  };
+  drawIntro();
+}
+
+function makeSpartan(name, team, idx){
+  const home = team === 'red' ? RED_FLAGSTAND : BLUE_FLAGSTAND;
+  return {
+    id: team+'_'+idx,
+    name, team, idx,
+    role: idx === 0 ? 'offense' : 'defense',
+    pos: { x: home.x + (Math.random()*30-15), y: home.y + (Math.random()*60-30 + (idx?40:-40)) },
+    vel: { x:0, y:0 },
+    angle: team === 'red' ? 0 : Math.PI,
+    hp: 100, maxHp: 100,
+    shield: 75, maxShield: 75,
+    shieldRecharge: 0,
+    overshield: 0,
+    weapon: 'AR',
+    weaponAmmo: 0,
+    fireCD: 0,
+    meleeCD: 0,
+    target: null,
+    waypoint: null,
+    pathTimer: 0,
+    alive: true,
+    respawnAt: 0,
+    hasFlag: false,
+    inVehicle: null,         // {veh, seat:'driver'|'gunner'}
+    stats: { kills:0, deaths:0, caps:0, returns:0, vKills:0 },
+    flagDropForceUntil: 0,
+    rolePicked: 0,
+    sayDropAt: 0,
+  };
+}
+
+function makeVehicle(team){
+  const home = team==='red' ? RED_FLAGSTAND : BLUE_FLAGSTAND;
+  return {
+    team,
+    pos: { x: home.x + (team==='red'?40:-40), y: home.y + 90 },
+    vel: { x:0, y:0 },
+    angle: team==='red' ? 0 : Math.PI,
+    hp: 240, maxHp: 240,
+    alive: true,
+    respawnAt: 0,
+    driver: null,   // spartan
+    gunner: null,
+    fireCD: 0,
+    targetAngle: 0,
+    smoking: false,
+  };
+}
+
+// ------------------------- UTIL -------------------------
+const dist = (a,b)=> Math.hypot(a.x-b.x, a.y-b.y);
+const dist2 = (a,b)=>{ const dx=a.x-b.x, dy=a.y-b.y; return dx*dx+dy*dy; };
+const clamp = (v,a,b)=> v<a?a:v>b?b:v;
+const lerp = (a,b,t)=> a + (b-a)*t;
+const norm = (a)=>{ const m=Math.hypot(a.x,a.y); return m>0?{x:a.x/m,y:a.y/m}:{x:0,y:0}; };
+
+function lineOfSight(a, b){
+  // True if no obstacle between a and b
+  const dx = b.x-a.x, dy = b.y-a.y;
+  const len = Math.hypot(dx,dy);
+  if (len < 1) return true;
+  const steps = Math.ceil(len/8);
+  for (let i=1;i<steps;i++){
+    const t = i/steps;
+    const px = a.x + dx*t, py = a.y + dy*t;
+    for (const o of OBSTACLES){
+      if (o.type === 'circle'){
+        const d = Math.hypot(px-o.x, py-o.y);
+        if (d < o.r) return false;
+      } else if (o.type === 'rect'){
+        if (px > o.x && px < o.x+o.w && py > o.y && py < o.y+o.h) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function pointInObstacle(x,y,pad=0){
+  for (const o of OBSTACLES){
+    if (o.type==='circle'){
+      if (Math.hypot(x-o.x, y-o.y) < o.r+pad) return o;
+    } else {
+      if (x > o.x-pad && x < o.x+o.w+pad && y > o.y-pad && y < o.y+o.h+pad) return o;
+    }
+  }
+  return null;
+}
+
+function moveWithCollision(ent, vx, vy, radius){
+  // try X
+  let nx = ent.pos.x + vx;
+  if (!pointInObstacle(nx, ent.pos.y, radius)) ent.pos.x = nx;
+  let ny = ent.pos.y + vy;
+  if (!pointInObstacle(ent.pos.x, ny, radius)) ent.pos.y = ny;
+  ent.pos.x = clamp(ent.pos.x, radius+5, W-radius-5);
+  ent.pos.y = clamp(ent.pos.y, radius+5, H-radius-5);
+}
+
+// ------------------------- ANNOUNCER + KILLFEED -------------------------
+const annEl = document.getElementById('announcer');
+const subEl = document.getElementById('subann');
+const kfEl = document.getElementById('killfeed');
+
+function announce(text, sub, color, dur=2.6){
+  G.announcer = { msg:text, sub:sub||'', until: G.matchTime - dur, color: color||'#fff' };
+  annEl.textContent = text;
+  annEl.style.color = color || '#fff';
+  annEl.style.opacity = '1';
+  subEl.textContent = sub || '';
+  subEl.style.opacity = sub ? '1' : '0';
+}
+function tickAnnouncer(){
+  if (G.announcer.msg && G.matchTime <= G.announcer.until){
+    annEl.style.opacity='0'; subEl.style.opacity='0';
+    G.announcer.msg='';
+  }
+}
+
+function killfeedAdd(line){
+  G.killfeed.unshift(line);
+  if (G.killfeed.length > 6) G.killfeed.length = 6;
+  renderKillfeed();
+}
+function renderKillfeed(){
+  kfEl.innerHTML = '';
+  for (const k of G.killfeed){
+    const div = document.createElement('div');
+    div.className = 'kf';
+    div.style.borderLeftColor = k.team==='red' ? '#ff5050' : (k.team==='blue' ? '#5fa8ff' : '#888');
+    const killerCol = k.killerTeam==='red' ? '#ff8080' : '#80b0ff';
+    const victimCol = k.victimTeam==='red' ? '#ff8080' : '#80b0ff';
+    div.innerHTML = `<span style="color:${killerCol};font-weight:bold">${k.killer}</span>
+      <span style="color:#ccc"> [${k.weapon}] </span>
+      <span style="color:${victimCol};font-weight:bold">${k.victim}</span>`;
+    kfEl.appendChild(div);
+  }
+}
+
+// ------------------------- COMBAT -------------------------
+function applyDamage(target, amount, attacker, weapon){
+  if (!target.alive) return;
+  target.shieldRecharge = 4; // seconds delay
+  if (target.overshield > 0){
+    target.overshield = Math.max(0, target.overshield - amount);
+    return;
+  }
+  if (target.shield > 0){
+    if (target.shield >= amount){ target.shield -= amount; amount = 0; }
+    else { amount -= target.shield; target.shield = 0; }
+  }
+  target.hp -= amount;
+  if (target.hp <= 0){
+    killSpartan(target, attacker, weapon);
+  }
+}
+
+function killSpartan(victim, attacker, weapon){
+  victim.alive = false;
+  victim.hp = 0; victim.shield = 0; victim.overshield = 0;
+  victim.respawnAt = 6; // 6s respawn
+  victim.stats.deaths++;
+  // exit vehicle if any
+  if (victim.inVehicle){
+    if (victim.inVehicle.seat==='driver') victim.inVehicle.veh.driver = null;
+    else victim.inVehicle.veh.gunner = null;
+    victim.inVehicle = null;
+  }
+  // drop flag
+  if (victim.hasFlag){
+    const enemyFlag = G.flags[victim.team==='red'?'blue':'red'];
+    enemyFlag.carrier = null;
+    enemyFlag.pos = { ...victim.pos };
+    enemyFlag.atHome = false;
+    enemyFlag.droppedAt = 30; // 30 sec to return
+    victim.hasFlag = false;
+    announce('FLAG DROPPED', victim.name+' was killed', victim.team==='red'?'#5fa8ff':'#ff5050', 2.0);
+  }
+  spawnExplosion(victim.pos.x, victim.pos.y, 22, victim.team==='red'?'#ff7575':'#75aaff');
+
+  if (attacker){
+    attacker.stats.kills++;
+    // First blood
+    if (!G.firstBlood){
+      G.firstBlood = true;
+      announce('FIRST BLOOD', attacker.name+' draws first', '#ff3030', 2.4);
+    }
+    // Multikill tracking
+    const mk = G.multiKillTrack[attacker.id] = G.multiKillTrack[attacker.id] || {count:0,last:0};
+    if (G.t - mk.last < 4.5*60) mk.count++; else mk.count = 1;
+    mk.last = G.t;
+    if (mk.count === 2) announce('DOUBLE KILL', attacker.name, '#ff9b3d', 2.0);
+    else if (mk.count === 3) announce('TRIPLE KILL', attacker.name, '#ff5722', 2.2);
+    // Streak
+    const st = G.streakTrack[attacker.id] = G.streakTrack[attacker.id] || 0;
+    G.streakTrack[attacker.id] = st + 1;
+    if (G.streakTrack[attacker.id] === 5) announce('KILLING SPREE', attacker.name, '#ffd76b', 2.4);
+    else if (G.streakTrack[attacker.id] === 10) announce('RUNNING RIOT', attacker.name, '#f4a', 2.4);
+    // Reset victim streak
+    G.streakTrack[victim.id] = 0;
+  }
+  killfeedAdd({
+    killer: attacker ? attacker.name : 'World',
+    weapon, victim: victim.name,
+    killerTeam: attacker ? attacker.team : null,
+    victimTeam: victim.team,
+    team: attacker ? attacker.team : null,
+  });
+}
+
+function killVehicle(v, attacker){
+  if (!v.alive) return;
+  v.alive = false;
+  v.respawnAt = 30;
+  spawnExplosion(v.pos.x, v.pos.y, 50, '#ffaa33');
+  // eject occupants and damage them
+  const occ = [v.driver, v.gunner].filter(Boolean);
+  for (const sp of occ){
+    sp.inVehicle = null;
+    applyDamage(sp, 80, attacker, 'Hog Wreck');
+  }
+  v.driver = null; v.gunner = null;
+  if (attacker){
+    attacker.stats.vKills++;
+    killfeedAdd({
+      killer: attacker.name, weapon: 'Buggy Wreck',
+      victim: (v.team==='red'?'RED':'BLUE')+' Buggy',
+      killerTeam: attacker.team, victimTeam: v.team,
+    });
+  }
+}
+
+function spawnBullet(x,y,vx,vy,owner,dmg,type){
+  G.bullets.push({x,y,vx,vy,owner,dmg,life:type==='sniper'?80:50,type:type||'AR'});
+}
+function spawnRocket(x,y,vx,vy,owner){
+  G.rockets.push({x,y,vx,vy,owner,life:140});
+}
+function spawnExplosion(x,y,r,color){
+  G.particles.push({x,y,r:0,maxR:r,life:24,color,kind:'expl'});
+  for (let i=0;i<14;i++){
+    const a=Math.random()*Math.PI*2, s=1+Math.random()*3;
+    G.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:18+Math.random()*16,color,kind:'spark'});
+  }
+}
+function spawnFlagTrail(x,y,team){
+  G.particles.push({
+    x: x+(Math.random()*8-4), y: y+(Math.random()*8-4),
+    vx:(Math.random()*0.4-0.2), vy:(Math.random()*0.4-0.2),
+    life: 30+Math.random()*20, color: team==='red'?'#ff5050':'#5fa8ff', kind:'trail'
+  });
+}
+
+// ------------------------- AI -------------------------
+function pickRole(sp){
+  // Reassign role periodically based on situation
+  const teamMates = G.spartans.filter(s=>s.team===sp.team && s!==sp);
+  const enemyTeam = sp.team==='red'?'blue':'red';
+  const myFlag = G.flags[sp.team];
+  const enemyFlag = G.flags[enemyTeam];
+  const veh = G.vehicles.find(v=>v.team===sp.team);
+
+  // Vehicle preference (reduced so offense actually plays the objective)
+  if (veh && veh.alive && !veh.driver && !sp.inVehicle && Math.random()<0.18){
+    sp.role = 'vdriver'; return;
+  }
+  if (veh && veh.alive && veh.driver && !veh.gunner && !sp.inVehicle && Math.random()<0.25){
+    sp.role = 'vgunner'; return;
+  }
+
+  // If our flag is taken / dropped, prefer defense to chase
+  if (!myFlag.atHome){
+    sp.role = 'defense'; return;
+  }
+  // If teammate is on offense, switch
+  const offenseMate = teamMates.find(t=>t.role==='offense');
+  if (!offenseMate){ sp.role='offense'; return; }
+  // Otherwise alternate
+  sp.role = (sp.idx===0) ? 'offense' : 'defense';
+}
+
+function findEnemyTarget(sp){
+  const enemyTeam = sp.team==='red'?'blue':'red';
+  let best = null, bestD = 1e9;
+  for (const e of G.spartans){
+    if (e.team !== enemyTeam || !e.alive) continue;
+    const d = dist(sp.pos, e.pos);
+    if (d < bestD && (lineOfSight(sp.pos, e.pos) || d < 100)){
+      bestD = d; best = e;
+    }
+  }
+  return best;
+}
+
+function steerTo(sp, dest, speed){
+  const dx = dest.x - sp.pos.x, dy = dest.y - sp.pos.y;
+  const m = Math.hypot(dx,dy) || 1;
+  let vx = dx/m * speed, vy = dy/m * speed;
+  // Obstacle avoidance: probe ahead, deflect along the better-aligned perpendicular
+  const ahead = { x: sp.pos.x + vx*10, y: sp.pos.y + vy*10 };
+  const o = pointInObstacle(ahead.x, ahead.y, 14);
+  if (o){
+    let cx, cy;
+    if (o.type==='circle'){ cx=o.x; cy=o.y; }
+    else { cx = o.x+o.w/2; cy = o.y+o.h/2; }
+    // Two perpendiculars to the radial vector from obstacle center; pick the one
+    // pointing more toward the destination so we sweep consistently around.
+    const rx = sp.pos.x - cx, ry = sp.pos.y - cy;
+    const p1 = { x: -ry, y:  rx };
+    const p2 = { x:  ry, y: -rx };
+    const dot = (p)=> p.x*dx + p.y*dy;
+    const p = dot(p1) >= dot(p2) ? p1 : p2;
+    const pm = Math.hypot(p.x, p.y) || 1;
+    // Heavily weight the tangent so we actually go around
+    vx = vx*0.25 + (p.x/pm)*speed*1.05;
+    vy = vy*0.25 + (p.y/pm)*speed*1.05;
+  }
+  // Anti-stuck: if we've made almost no progress for a while, jitter
+  if (!sp._stuckPos) sp._stuckPos = { x: sp.pos.x, y: sp.pos.y, t: 0 };
+  sp._stuckPos.t++;
+  if (sp._stuckPos.t > 30){
+    const moved = Math.hypot(sp.pos.x - sp._stuckPos.x, sp.pos.y - sp._stuckPos.y);
+    if (moved < 8){
+      const a = Math.random()*Math.PI*2;
+      vx += Math.cos(a)*speed*0.8;
+      vy += Math.sin(a)*speed*0.8;
+    }
+    sp._stuckPos = { x: sp.pos.x, y: sp.pos.y, t: 0 };
+  }
+  sp.angle = Math.atan2(vy,vx);
+  moveWithCollision(sp, vx, vy, 12);
+}
+
+function carrierRouteWaypoint(sp){
+  // Choose top vs bottom path based on enemy presence
+  const enemies = G.spartans.filter(e=>e.team!==sp.team && e.alive);
+  let topDanger = 0, botDanger = 0;
+  for (const e of enemies){
+    if (e.pos.y < 360) topDanger += 1; else botDanger += 1;
+    // Boost danger if closer to that path
+  }
+  const useTop = topDanger <= botDanger;
+  const homeFS = sp.team==='red'?RED_FLAGSTAND:BLUE_FLAGSTAND;
+  const goingLeft = (sp.team==='red');
+  if (useTop){
+    if (sp.pos.x > 720 && goingLeft) return WAYPOINTS.TOP_MID;
+    if (sp.pos.x < 560 && !goingLeft) return WAYPOINTS.TOP_MID;
+    if (sp.pos.x > 360 && goingLeft) return WAYPOINTS.RED_TOP;
+    if (sp.pos.x < 920 && !goingLeft) return WAYPOINTS.BLUE_TOP;
+    return homeFS;
+  } else {
+    if (sp.pos.x > 720 && goingLeft) return WAYPOINTS.BOT_MID;
+    if (sp.pos.x < 560 && !goingLeft) return WAYPOINTS.BOT_MID;
+    if (sp.pos.x > 360 && goingLeft) return WAYPOINTS.RED_BOT;
+    if (sp.pos.x < 920 && !goingLeft) return WAYPOINTS.BLUE_BOT;
+    return homeFS;
+  }
+}
+
+function nearestPickup(sp){
+  let best=null, bestD=1e9;
+  for (const p of G.pickups){
+    if (!p.ready) continue;
+    // Skip overshield if shield full
+    if (p.type==='overshield' && sp.shield >= sp.maxShield && !sp.hasFlag) {/* still useful */}
+    const d = dist(sp.pos, p);
+    if (d<bestD){bestD=d; best=p;}
+  }
+  return best;
+}
+
+function tryFireAt(sp, target){
+  if (sp.fireCD > 0) return;
+  const d = dist(sp.pos, target.pos);
+  let range, dmg, spd, type;
+  if (sp.weapon==='sniper'){
+    range = 900; dmg = 90; spd = 18; type='sniper';
+    if (sp.fireCD <= 0 && sp.weaponAmmo > 0) sp.fireCD = 1.4;
+  } else if (sp.weapon==='rockets'){
+    range = 600; dmg = 0; spd = 6; type='rocket';
+    if (sp.fireCD <= 0 && sp.weaponAmmo > 0) sp.fireCD = 1.0;
+  } else {
+    range = 280; dmg = 7; spd = 14; type='AR';
+    if (sp.fireCD <= 0) sp.fireCD = 0.10;
+  }
+  if (d > range) return;
+  if (!lineOfSight(sp.pos, target.pos)) return;
+  // Predict
+  const tvx = target.vel ? target.vel.x : 0, tvy = target.vel ? target.vel.y : 0;
+  const tt = d/(spd*60);
+  const aim = { x: target.pos.x + tvx*tt*60, y: target.pos.y + tvy*tt*60 };
+  const dx = aim.x - sp.pos.x, dy = aim.y - sp.pos.y;
+  const m = Math.hypot(dx,dy)||1;
+  // Spread
+  const sprd = (sp.weapon==='sniper'?0.005:(sp.weapon==='rockets'?0.02:0.06));
+  const a = Math.atan2(dy,dx) + (Math.random()*2-1)*sprd;
+  const vx = Math.cos(a)*spd, vy = Math.sin(a)*spd;
+  if (sp.weapon==='rockets'){
+    spawnRocket(sp.pos.x, sp.pos.y, vx, vy, sp);
+    sp.weaponAmmo--;
+    if (sp.weaponAmmo<=0) sp.weapon='AR';
+  } else if (sp.weapon==='sniper'){
+    spawnBullet(sp.pos.x, sp.pos.y, vx, vy, sp, dmg, 'sniper');
+    sp.weaponAmmo--;
+    if (sp.weaponAmmo<=0) sp.weapon='AR';
+  } else {
+    spawnBullet(sp.pos.x, sp.pos.y, vx, vy, sp, dmg, 'AR');
+  }
+}
+
+function tryMelee(sp, target){
+  if (sp.meleeCD>0) return false;
+  const d = dist(sp.pos, target.pos);
+  if (d < 28){
+    applyDamage(target, 80, sp, 'Melee');
+    sp.meleeCD = 1.0;
+    spawnExplosion(target.pos.x, target.pos.y, 8, '#fff');
+    return true;
+  }
+  return false;
+}
+
+function aiSpartan(sp, dt){
+  if (!sp.alive){
+    sp.respawnAt -= dt;
+    if (sp.respawnAt <= 0){
+      const home = sp.team==='red'?RED_FLAGSTAND:BLUE_FLAGSTAND;
+      sp.pos.x = home.x + (Math.random()*40-20);
+      sp.pos.y = home.y + (Math.random()*120-60);
+      sp.alive = true;
+      sp.hp = sp.maxHp;
+      sp.shield = sp.maxShield;
+      sp.overshield = 0;
+      sp.weapon = 'AR';
+      sp.weaponAmmo = 0;
+      sp.fireCD = 0;
+      pickRole(sp);
+    }
+    return;
+  }
+
+  sp.fireCD = Math.max(0, sp.fireCD - dt);
+  sp.meleeCD = Math.max(0, sp.meleeCD - dt);
+
+  // Shield recharge
+  if (sp.shieldRecharge > 0){
+    sp.shieldRecharge -= dt;
+  } else if (sp.shield < sp.maxShield){
+    sp.shield = Math.min(sp.maxShield, sp.shield + 28*dt);
+  }
+  if (sp.overshield > 0) sp.overshield = Math.max(0, sp.overshield - 6*dt);
+
+  // Periodic role re-pick
+  sp.rolePicked -= dt;
+  if (sp.rolePicked <= 0){
+    sp.rolePicked = 4 + Math.random()*4;
+    pickRole(sp);
+  }
+
+  // If in vehicle, vehicle AI handles motion
+  if (sp.inVehicle) return;
+
+  const enemyTeam = sp.team==='red'?'blue':'red';
+  const myFlag = G.flags[sp.team];
+  const enemyFlag = G.flags[enemyTeam];
+  const enemyTarget = findEnemyTarget(sp);
+  // Threat track velocity for prediction
+  for (const e of G.spartans){
+    if (!e._lastPos) e._lastPos = {...e.pos};
+    e.vel = { x: (e.pos.x - e._lastPos.x), y:(e.pos.y - e._lastPos.y) };
+    e._lastPos = {...e.pos};
+  }
+
+  // FLAG CARRIER LOGIC
+  if (sp.hasFlag){
+    spawnFlagTrail(sp.pos.x, sp.pos.y, sp.team);
+    // Dropped flag manually after long period if pinned (rare)
+    sp.flagDropForceUntil -= dt;
+    // Route home
+    const wp = carrierRouteWaypoint(sp);
+    steerTo(sp, wp, 1.9);
+    // Melee if close enemy
+    if (enemyTarget) tryMelee(sp, enemyTarget);
+    // Try capture
+    const homeFS = sp.team==='red'?RED_FLAGSTAND:BLUE_FLAGSTAND;
+    if (dist(sp.pos, homeFS) < 30 && myFlag.atHome){
+      // Capture!
+      G.score[sp.team]++;
+      sp.stats.caps++;
+      const team = sp.team==='red'?'red':'blue';
+      announce('FLAG SCORE', sp.name+' captures for '+team.toUpperCase(),
+               sp.team==='red'?'#ff5050':'#5fa8ff', 3.0);
+      // Reset enemy flag
+      enemyFlag.atHome = true;
+      enemyFlag.pos = { ...enemyFlag.home };
+      enemyFlag.carrier = null;
+      enemyFlag.droppedAt = 0;
+      sp.hasFlag = false;
+      updateScoreUI();
+      checkWin();
+    }
+    return;
+  }
+
+  // VEHICLE DRIVER ROLE: head to vehicle if possible
+  const myVeh = G.vehicles.find(v=>v.team===sp.team);
+  if (sp.role==='vdriver' && myVeh && myVeh.alive && !myVeh.driver){
+    if (dist(sp.pos, myVeh.pos) < 30){
+      myVeh.driver = sp; sp.inVehicle = { veh: myVeh, seat:'driver' };
+    } else {
+      steerTo(sp, myVeh.pos, 1.6);
+      return;
+    }
+  }
+  if (sp.role==='vgunner' && myVeh && myVeh.alive && !myVeh.gunner && myVeh.driver){
+    if (dist(sp.pos, myVeh.pos) < 30){
+      myVeh.gunner = sp; sp.inVehicle = { veh: myVeh, seat:'gunner' };
+    } else {
+      steerTo(sp, myVeh.pos, 1.6);
+      return;
+    }
+  }
+
+  // OFFENSE: try grab enemy flag, use power weapons
+  if (sp.role === 'offense'){
+    const tflag = enemyFlag;
+    // Prioritize flag if close; only detour to a power weapon if it's roughly on the way
+    const tflagD = dist(sp.pos, tflag.pos);
+    const pk = nearestPickup(sp);
+    const pkUseful = pk && (
+      (pk.type==='sniper' && sp.weapon==='AR') ||
+      (pk.type==='rockets' && sp.weapon==='AR') ||
+      (pk.type==='overshield' && sp.overshield<=0)
+    );
+    if (pkUseful && dist(sp.pos, pk) < 180 && dist(sp.pos, pk) < tflagD - 80){
+      steerTo(sp, pk, 1.6);
+      if (enemyTarget) tryFireAt(sp, enemyTarget);
+      return;
+    }
+    // Get enemy flag
+    if (!tflag.carrier){
+      if (dist(sp.pos, tflag.pos) < 22 && tflag.atHome){
+        tflag.atHome = false;
+        tflag.carrier = sp;
+        sp.hasFlag = true;
+        announce('FLAG TAKEN', sp.name+' has the flag', sp.team==='red'?'#ff5050':'#5fa8ff', 2.2);
+        return;
+      } else if (!tflag.atHome && dist(sp.pos, tflag.pos) < 22){
+        tflag.carrier = sp;
+        sp.hasFlag = true;
+        announce('FLAG TAKEN', sp.name+' picks it up', sp.team==='red'?'#ff5050':'#5fa8ff', 2.0);
+        return;
+      }
+      // Suppress enemies in path; keep moving toward flag
+      if (enemyTarget && dist(sp.pos, enemyTarget.pos) < 220) tryFireAt(sp, enemyTarget);
+      steerTo(sp, tflag.pos, 1.75);
+      return;
+    } else {
+      // Enemy has our flag carried (or our offensive target has it). Switch to chase.
+      if (enemyTarget) tryFireAt(sp, enemyTarget);
+    }
+    // Default: roam toward enemy base
+    steerTo(sp, enemyTarget ? enemyTarget.pos : tflag.home, 1.5);
+    if (enemyTarget) tryFireAt(sp, enemyTarget);
+    return;
+  }
+
+  // DEFENSE: chase enemy carrier or hold flag area; return dropped flag
+  if (sp.role === 'defense'){
+    // If our flag dropped, return it
+    if (!myFlag.atHome && !myFlag.carrier){
+      if (dist(sp.pos, myFlag.pos) < 22){
+        myFlag.atHome = true;
+        myFlag.pos = { ...myFlag.home };
+        myFlag.droppedAt = 0;
+        sp.stats.returns++;
+        announce('FLAG RETURNED', sp.name+' resets it', sp.team==='red'?'#ff5050':'#5fa8ff', 2.0);
+        return;
+      }
+      steerTo(sp, myFlag.pos, 1.7);
+      if (enemyTarget) tryFireAt(sp, enemyTarget);
+      return;
+    }
+    // If enemy has our flag, chase carrier
+    if (myFlag.carrier){
+      steerTo(sp, myFlag.carrier.pos, 1.9);
+      // try shoot or melee carrier
+      if (lineOfSight(sp.pos, myFlag.carrier.pos)){
+        tryFireAt(sp, myFlag.carrier);
+      }
+      if (dist(sp.pos, myFlag.carrier.pos)<30) tryMelee(sp, myFlag.carrier);
+      return;
+    }
+    // Hold near flag, engage
+    if (enemyTarget){
+      // keep between flag and enemy
+      const fs = sp.team==='red'?RED_FLAGSTAND:BLUE_FLAGSTAND;
+      const guardSpot = { x:(fs.x+enemyTarget.pos.x)/2, y:(fs.y+enemyTarget.pos.y)/2 };
+      // grab pickup if very close
+      const pk = nearestPickup(sp);
+      if (pk && dist(sp.pos, pk) < 200){ steerTo(sp, pk, 1.5); }
+      else steerTo(sp, guardSpot, 1.4);
+      tryFireAt(sp, enemyTarget);
+      return;
+    }
+    // patrol around base
+    const fs = sp.team==='red'?RED_FLAGSTAND:BLUE_FLAGSTAND;
+    if (!sp.patrolTarget || dist(sp.pos, sp.patrolTarget) < 20){
+      sp.patrolTarget = { x: fs.x + (Math.random()*200 - (sp.team==='red'?0:200)), y: fs.y + (Math.random()*200-100) };
+    }
+    steerTo(sp, sp.patrolTarget, 1.0);
+    return;
+  }
+}
+
+// ------------------------- VEHICLE AI -------------------------
+function aiVehicle(v, dt){
+  if (!v.alive){
+    v.respawnAt -= dt;
+    if (v.respawnAt <= 0){
+      const home = v.team==='red'?RED_FLAGSTAND:BLUE_FLAGSTAND;
+      v.alive = true;
+      v.hp = v.maxHp;
+      v.pos = { x: home.x + (v.team==='red'?40:-40), y: home.y + 90 };
+      v.angle = v.team==='red'?0:Math.PI;
+      v.smoking = false;
+    }
+    return;
+  }
+  if (v.hp <= v.maxHp*0.3) v.smoking = true;
+
+  v.fireCD = Math.max(0, v.fireCD - dt);
+
+  if (!v.driver){
+    // idle, slow drift to a stop
+    v.vel.x *= 0.9; v.vel.y *= 0.9;
+    v.pos.x += v.vel.x*dt*60; v.pos.y += v.vel.y*dt*60;
+    return;
+  }
+  // Find target priority: enemy carrier > nearest enemy in range
+  const enemyTeam = v.team==='red'?'blue':'red';
+  const enemyFlag = G.flags[enemyTeam==='red'?'blue':'red']; // their flag is ours? no:
+  const myFlag = G.flags[v.team];
+  let target = null;
+  if (myFlag.carrier && myFlag.carrier.alive) target = myFlag.carrier;
+  else {
+    let best=null, bd=1e9;
+    for (const e of G.spartans){
+      if (e.team!==enemyTeam || !e.alive) continue;
+      if (e.inVehicle) continue;
+      const d = dist(v.pos, e.pos);
+      if (d<bd){bd=d; best=e;}
+    }
+    target = best;
+  }
+  // Driver steering: aim at target, keep some distance
+  if (target){
+    const dx = target.pos.x - v.pos.x, dy = target.pos.y - v.pos.y;
+    const desired = Math.atan2(dy,dx);
+    let da = desired - v.angle;
+    while (da>Math.PI) da-=Math.PI*2; while (da<-Math.PI) da+=Math.PI*2;
+    v.angle += clamp(da, -0.04, 0.04);
+    const d = Math.hypot(dx,dy);
+    let speed = 2.6;
+    if (d < 200) speed = 1.6;
+    if (d < 120) speed = -1.0; // back up
+    v.vel.x = Math.cos(v.angle)*speed;
+    v.vel.y = Math.sin(v.angle)*speed;
+  } else {
+    // Roam toward mid
+    const dx = MID.x - v.pos.x, dy = MID.y - v.pos.y;
+    const desired = Math.atan2(dy,dx);
+    let da = desired - v.angle;
+    while (da>Math.PI) da-=Math.PI*2; while (da<-Math.PI) da+=Math.PI*2;
+    v.angle += clamp(da, -0.03, 0.03);
+    v.vel.x = Math.cos(v.angle)*1.6;
+    v.vel.y = Math.sin(v.angle)*1.6;
+  }
+  // Move with collision against obstacles
+  const probe = {x: v.pos.x + v.vel.x*8, y: v.pos.y + v.vel.y*8};
+  if (pointInObstacle(probe.x, probe.y, 18)){
+    v.angle += 0.2;
+    v.vel.x = Math.cos(v.angle)*1.5;
+    v.vel.y = Math.sin(v.angle)*1.5;
+  }
+  moveWithCollision(v, v.vel.x, v.vel.y, 18);
+
+  // Splatter check: ramming an enemy
+  for (const e of G.spartans){
+    if (!e.alive || e.team===v.team) continue;
+    if (e.inVehicle) continue;
+    if (dist(v.pos, e.pos) < 24 && Math.hypot(v.vel.x,v.vel.y) > 1.4){
+      applyDamage(e, 200, v.driver, 'Buggy Splatter');
+    }
+  }
+
+  // Gunner fires
+  if (v.gunner && target && v.fireCD<=0 && lineOfSight(v.pos, target.pos)){
+    const d = dist(v.pos, target.pos);
+    if (d < 360){
+      const dx = target.pos.x - v.pos.x, dy = target.pos.y - v.pos.y;
+      const a = Math.atan2(dy,dx) + (Math.random()*0.08-0.04);
+      spawnBullet(v.pos.x, v.pos.y, Math.cos(a)*16, Math.sin(a)*16, v.gunner, 9, 'turret');
+      v.fireCD = 0.08;
+      // sync sync occupant pos
+    }
+  }
+  // sync occupant positions
+  if (v.driver){ v.driver.pos.x = v.pos.x - Math.cos(v.angle)*8; v.driver.pos.y = v.pos.y - Math.sin(v.angle)*8; v.driver.angle = v.angle; }
+  if (v.gunner){ v.gunner.pos.x = v.pos.x + Math.cos(v.angle+0.6)*4; v.gunner.pos.y = v.pos.y + Math.sin(v.angle+0.6)*4; v.gunner.angle = v.angle; }
+}
+
+// ------------------------- BULLET / ROCKET STEP -------------------------
+function stepBullets(dt){
+  for (let i=G.bullets.length-1;i>=0;i--){
+    const b = G.bullets[i];
+    b.x += b.vx; b.y += b.vy;
+    b.life--;
+    if (b.life<=0 || b.x<0||b.x>W||b.y<0||b.y>H){ G.bullets.splice(i,1); continue; }
+    // hit obstacle
+    if (pointInObstacle(b.x, b.y, 0)){ G.bullets.splice(i,1); continue; }
+    // check spartans
+    let hit = false;
+    for (const sp of G.spartans){
+      if (!sp.alive || sp===b.owner || sp.team===b.owner.team) continue;
+      if (sp.inVehicle) continue;
+      if (dist(sp.pos, b) < 13){
+        applyDamage(sp, b.dmg, b.owner, b.type==='sniper'?'SR':(b.type==='turret'?'Hog Turret':'AR'));
+        hit = true; break;
+      }
+    }
+    if (hit){ G.bullets.splice(i,1); continue; }
+    // check vehicles
+    for (const v of G.vehicles){
+      if (!v.alive || v.team===b.owner.team) continue;
+      if (dist(v.pos, b) < 24){
+        v.hp -= b.dmg*0.7;
+        if (v.hp <= 0) killVehicle(v, b.owner);
+        hit = true; break;
+      }
+    }
+    if (hit){ G.bullets.splice(i,1); }
+  }
+}
+function stepRockets(dt){
+  for (let i=G.rockets.length-1;i>=0;i--){
+    const r = G.rockets[i];
+    r.x += r.vx; r.y += r.vy;
+    r.life--;
+    G.particles.push({x:r.x, y:r.y, life:18, color:'#fb6', kind:'smoke', vx:0, vy:0});
+    let detonate = false;
+    if (r.life<=0 || r.x<0||r.x>W||r.y<0||r.y>H) detonate = true;
+    if (pointInObstacle(r.x, r.y, 0)) detonate = true;
+    for (const sp of G.spartans){
+      if (!sp.alive || sp===r.owner || sp.team===r.owner.team) continue;
+      if (dist(sp.pos, r) < 14){ detonate = true; break; }
+    }
+    for (const v of G.vehicles){
+      if (!v.alive || v.team===r.owner.team) continue;
+      if (dist(v.pos, r) < 22){ detonate = true; break; }
+    }
+    if (detonate){
+      spawnExplosion(r.x, r.y, 60, '#ff8030');
+      // AOE
+      for (const sp of G.spartans){
+        if (!sp.alive || sp.team===r.owner.team) continue;
+        const d = dist(sp.pos, r);
+        if (d < 70){
+          const dmg = 200 * (1 - d/70);
+          applyDamage(sp, dmg, r.owner, 'Rockets');
+        }
+      }
+      for (const v of G.vehicles){
+        if (!v.alive || v.team===r.owner.team) continue;
+        const d = dist(v.pos, r);
+        if (d < 80){
+          v.hp -= 160 * (1 - d/80);
+          if (v.hp<=0) killVehicle(v, r.owner);
+        }
+      }
+      G.rockets.splice(i,1);
+    }
+  }
+}
+
+// ------------------------- PARTICLE STEP -------------------------
+function stepParticles(dt){
+  for (let i=G.particles.length-1;i>=0;i--){
+    const p = G.particles[i];
+    p.life--;
+    if (p.kind==='spark'){ p.x+=p.vx; p.y+=p.vy; p.vx*=0.94; p.vy*=0.94; }
+    if (p.kind==='trail'){ p.x+=p.vx; p.y+=p.vy; }
+    if (p.kind==='expl'){ p.r = (1-p.life/24)*p.maxR; }
+    if (p.life<=0) G.particles.splice(i,1);
+  }
+}
+
+// ------------------------- PICKUPS + FLAG STEP -------------------------
+function stepPickups(dt){
+  for (const p of G.pickups){
+    if (!p.ready){
+      p.readyAt -= dt;
+      if (p.readyAt <= 0){ p.ready = true; }
+      continue;
+    }
+    // check pickup
+    for (const sp of G.spartans){
+      if (!sp.alive) continue;
+      if (sp.hasFlag) continue; // carriers can't pick up
+      if (dist(sp.pos, p) < 22){
+        if (p.type==='sniper'){ sp.weapon='sniper'; sp.weaponAmmo = 6; }
+        else if (p.type==='rockets'){ sp.weapon='rockets'; sp.weaponAmmo = 4; }
+        else if (p.type==='overshield'){ sp.overshield = 100; sp.shield = sp.maxShield; }
+        p.ready = false;
+        p.readyAt = p.respawn;
+        announce(p.type==='sniper'?'SNIPER UP':(p.type==='rockets'?'ROCKETS UP':'OVERSHIELD UP'),
+                 sp.name+' grabbed '+(p.type.toUpperCase()),
+                 p.color, 1.5);
+        break;
+      }
+    }
+  }
+}
+
+function stepFlags(dt){
+  for (const team of ['red','blue']){
+    const f = G.flags[team];
+    if (f.carrier){
+      // disable carrier weapon
+      const c = f.carrier;
+      if (c.weapon !== 'AR') { c.weapon='AR'; c.weaponAmmo=0; }
+      f.pos = { ...c.pos };
+      f.atHome = false;
+    } else if (!f.atHome){
+      f.droppedAt -= dt;
+      if (f.droppedAt <= 0){
+        f.atHome = true;
+        f.pos = { ...f.home };
+        announce('FLAG RETURNED', team.toUpperCase()+' flag auto-reset', team==='red'?'#ff5050':'#5fa8ff', 1.8);
+      }
+    }
+  }
+}
+
+// ------------------------- WIN / END -------------------------
+function checkWin(){
+  if (G.score.red >= 3){ endMatch('red'); }
+  else if (G.score.blue >= 3){ endMatch('blue'); }
+}
+function endMatch(winner){
+  if (G.state !== 'play') return;
+  G.state = 'mvp';
+  G.endAt = 6.0;
+  showMVP(winner);
+}
+
+function showMVP(winner){
+  const el = document.getElementById('mvp');
+  el.style.display = 'flex';
+  // pick MVP: highest (caps*5 + kills + returns*2 + vKills*3 - deaths)
+  const score = (s)=> s.stats.caps*5 + s.stats.kills + s.stats.returns*2 + s.stats.vKills*3 - s.stats.deaths;
+  const sorted = [...G.spartans].sort((a,b)=> score(b)-score(a));
+  const mvp = sorted[0];
+  let html = `<h1 style="color:${winner==='red'?'#ff5050':(winner==='blue'?'#5fa8ff':'#ffd76b')}">${winner==='draw'?'TIME — DRAW':(winner.toUpperCase()+' WINS')}</h1>
+    <h2 style="color:#ffd76b">MVP — ${mvp.name} <span style="opacity:.6">(${mvp.team.toUpperCase()})</span></h2>
+    <div class="scorecard">
+      <div class="h">Player</div><div class="h">Caps</div><div class="h">Returns</div>
+      <div class="h">Kills</div><div class="h">Deaths</div><div class="h">Veh Kills</div><div class="h">Score</div>`;
+  for (const s of sorted){
+    const cls = s.team==='red'?'nm-r':'nm-b';
+    const isMvp = s===mvp ? 'mvp-row' : '';
+    html += `<div class="${cls} ${isMvp}">${s.name}${s===mvp?' ★':''}</div>
+      <div class="${isMvp}">${s.stats.caps}</div>
+      <div class="${isMvp}">${s.stats.returns}</div>
+      <div class="${isMvp}">${s.stats.kills}</div>
+      <div class="${isMvp}">${s.stats.deaths}</div>
+      <div class="${isMvp}">${s.stats.vKills}</div>
+      <div class="${isMvp}">${score(s)}</div>`;
+  }
+  html += `</div><div style="margin-top:18px;color:#789;letter-spacing:3px">REMATCHING IN <span id="rematchT">6</span>...</div>`;
+  el.innerHTML = html;
+}
+function hideMVP(){ document.getElementById('mvp').style.display='none'; }
+
+function updateScoreUI(){
+  document.getElementById('redCaps').textContent = G.score.red;
+  document.getElementById('blueCaps').textContent = G.score.blue;
+}
+
+// ------------------------- RENDERING -------------------------
+function drawIntro(){
+  ctx.fillStyle='#0a0d10'; ctx.fillRect(0,0,W,H);
+}
+
+function drawMap(){
+  // ground halves
+  const grad = ctx.createLinearGradient(0,0,W,0);
+  grad.addColorStop(0,'#3a1a18');
+  grad.addColorStop(0.25,'#5b3b27');
+  grad.addColorStop(0.45,'#5a6a3a');
+  grad.addColorStop(0.55,'#5a6a3a');
+  grad.addColorStop(0.75,'#27395b');
+  grad.addColorStop(1,'#181a3a');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
+  // texture noise (subtle)
+  ctx.globalAlpha=.10;
+  for (let i=0;i<60;i++){
+    ctx.fillStyle = i%2?'#000':'#fff';
+    ctx.fillRect(Math.random()*W, Math.random()*H, 2, 2);
+  }
+  ctx.globalAlpha=1;
+  // base zones
+  ctx.fillStyle = 'rgba(255,80,80,0.16)';
+  ctx.fillRect(RED_BASE.x-30, RED_BASE.y-RED_BASE.h/2-20, RED_BASE.w+30, RED_BASE.h+40);
+  ctx.fillStyle = 'rgba(80,160,255,0.16)';
+  ctx.fillRect(BLUE_BASE.x, BLUE_BASE.y-BLUE_BASE.h/2-20, BLUE_BASE.w+30, BLUE_BASE.h+40);
+  // base walls/structures
+  ctx.fillStyle = '#5a2620';
+  ctx.fillRect(RED_BASE.x+10, RED_BASE.y-90, 16, 180);
+  ctx.fillStyle = '#7a3530';
+  ctx.fillRect(RED_BASE.x+10, RED_BASE.y-90, 16, 30);
+  ctx.fillRect(RED_BASE.x+10, RED_BASE.y+60, 16, 30);
+  ctx.fillStyle = '#1f3a6b';
+  ctx.fillRect(BLUE_BASE.x+BLUE_BASE.w-26, BLUE_BASE.y-90, 16, 180);
+  ctx.fillStyle = '#2c4d8a';
+  ctx.fillRect(BLUE_BASE.x+BLUE_BASE.w-26, BLUE_BASE.y-90, 16, 30);
+  ctx.fillRect(BLUE_BASE.x+BLUE_BASE.w-26, BLUE_BASE.y+60, 16, 30);
+
+  // base label
+  ctx.fillStyle='rgba(255,80,80,0.65)';
+  ctx.font='bold 20px Consolas';
+  ctx.textAlign='center';
+  ctx.fillText('RED BASE', RED_BASE.x+50, RED_BASE.y-110);
+  ctx.fillStyle='rgba(80,160,255,0.65)';
+  ctx.fillText('BLUE BASE', BLUE_BASE.x+90, BLUE_BASE.y-110);
+  ctx.textAlign='left';
+
+  // path lines (light)
+  ctx.strokeStyle='rgba(255,255,255,0.04)';
+  ctx.lineWidth=40;
+  ctx.beginPath();
+  ctx.moveTo(180,160); ctx.lineTo(W-180,160);
+  ctx.moveTo(180,580); ctx.lineTo(W-180,580);
+  ctx.stroke();
+  ctx.lineWidth=1;
+
+  // obstacles
+  for (const o of OBSTACLES){
+    if (o.kind==='rock'){
+      ctx.fillStyle='#5a4a36';
+      ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#3a2c20';
+      ctx.beginPath(); ctx.arc(o.x-o.r*0.3,o.y-o.r*0.3,o.r*0.3,0,Math.PI*2); ctx.fill();
+    } else if (o.kind==='crate'){
+      ctx.fillStyle='#3d3325';
+      ctx.fillRect(o.x,o.y,o.w,o.h);
+      ctx.strokeStyle='#5a4732'; ctx.strokeRect(o.x,o.y,o.w,o.h);
+    } else if (o.kind==='wall'){
+      ctx.fillStyle='#2a2a2a';
+      ctx.fillRect(o.x,o.y,o.w,o.h);
+    }
+  }
+}
+
+function drawFlagstand(p, team){
+  const col = team==='red'?'#ff5050':'#5fa8ff';
+  ctx.strokeStyle = col;
+  ctx.fillStyle='rgba(0,0,0,0.4)';
+  ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Math.PI*2); ctx.fillStyle=col; ctx.globalAlpha=0.4; ctx.fill(); ctx.globalAlpha=1;
+}
+
+function drawFlag(f, team){
+  if (f.carrier) return; // drawn on carrier
+  const col = team==='red'?'#ff5050':'#5fa8ff';
+  const x = f.pos.x, y = f.pos.y;
+  // glow
+  const glow = ctx.createRadialGradient(x,y,2,x,y,28);
+  glow.addColorStop(0, col);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(x,y,28,0,Math.PI*2); ctx.fill();
+  // pole
+  ctx.strokeStyle='#eee'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(x, y+10); ctx.lineTo(x, y-18); ctx.stroke();
+  // flag triangle
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(x, y-18); ctx.lineTo(x+14, y-12); ctx.lineTo(x, y-6);
+  ctx.closePath(); ctx.fill();
+  // dropped indicator
+  if (!f.atHome){
+    ctx.fillStyle='#fff';
+    ctx.font='10px Consolas'; ctx.textAlign='center';
+    ctx.fillText(Math.ceil(f.droppedAt)+'s', x, y+22);
+  }
+}
+
+function drawPickups(){
+  for (const p of G.pickups){
+    if (p.ready){
+      const t = G.t/30;
+      const r = 14 + Math.sin(t)*2;
+      const glow = ctx.createRadialGradient(p.x,p.y,2,p.x,p.y,r+10);
+      glow.addColorStop(0, p.color);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(p.x,p.y,r+10,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#000';
+      ctx.font='bold 11px Consolas'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(p.label, p.x, p.y+1);
+    } else {
+      ctx.strokeStyle = p.color; ctx.globalAlpha=0.5;
+      ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha=1;
+      ctx.fillStyle='#000a';
+      ctx.fillRect(p.x-18, p.y+12, 36, 12);
+      ctx.fillStyle = p.color;
+      ctx.font='bold 11px Consolas'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(Math.ceil(p.readyAt)+'s', p.x, p.y+18);
+    }
+  }
+  ctx.textBaseline='alphabetic';
+}
+
+function drawSpartan(sp){
+  if (!sp.alive){
+    // marker briefly
+    return;
+  }
+  if (sp.inVehicle) return; // drawn with vehicle
+  const team = sp.team==='red'?'#ff5050':'#5fa8ff';
+  // shield aura
+  if (sp.overshield > 0){
+    const a = sp.overshield/100;
+    ctx.fillStyle = 'rgba(255,255,80,'+(0.15+a*0.25)+')';
+    ctx.beginPath(); ctx.arc(sp.pos.x, sp.pos.y, 18, 0, Math.PI*2); ctx.fill();
+  } else if (sp.shield > 0){
+    ctx.fillStyle = 'rgba(140,200,255,'+(0.05 + sp.shield/sp.maxShield*0.18)+')';
+    ctx.beginPath(); ctx.arc(sp.pos.x, sp.pos.y, 16, 0, Math.PI*2); ctx.fill();
+  }
+  // body
+  ctx.save();
+  ctx.translate(sp.pos.x, sp.pos.y);
+  ctx.rotate(sp.angle);
+  ctx.fillStyle = team;
+  ctx.beginPath();
+  ctx.arc(0,0,11,0,Math.PI*2); ctx.fill();
+  // visor
+  ctx.fillStyle = '#0a4';
+  ctx.beginPath();
+  ctx.arc(4,0,4,0,Math.PI*2); ctx.fill();
+  // weapon
+  ctx.fillStyle = sp.hasFlag ? 'transparent' : (sp.weapon==='sniper'?'#9cf':(sp.weapon==='rockets'?'#fb6':'#ddd'));
+  ctx.fillRect(8,-2,10,4);
+  ctx.restore();
+  // flag carrier visualization
+  if (sp.hasFlag){
+    const opp = sp.team==='red'?'#5fa8ff':'#ff5050';
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(sp.pos.x+6, sp.pos.y-12); ctx.lineTo(sp.pos.x+6, sp.pos.y-26); ctx.stroke();
+    ctx.fillStyle = opp;
+    ctx.beginPath();
+    ctx.moveTo(sp.pos.x+6, sp.pos.y-26);
+    ctx.lineTo(sp.pos.x+18, sp.pos.y-22);
+    ctx.lineTo(sp.pos.x+6, sp.pos.y-18);
+    ctx.closePath(); ctx.fill();
+  }
+  // bars
+  drawHpShield(sp.pos.x, sp.pos.y-22, sp);
+  // name
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px Consolas';
+  ctx.textAlign='center';
+  ctx.strokeStyle='#000'; ctx.lineWidth=3; ctx.strokeText(sp.name, sp.pos.x, sp.pos.y-30);
+  ctx.fillText(sp.name, sp.pos.x, sp.pos.y-30);
+}
+
+function drawHpShield(x,y,sp){
+  const w = 28;
+  // shield
+  ctx.fillStyle='#001628';
+  ctx.fillRect(x-w/2, y, w, 3);
+  ctx.fillStyle = sp.overshield>0?'#ff3':'#5fc8ff';
+  const sw = (sp.shield + sp.overshield) / (sp.maxShield + (sp.overshield>0?100:0)) * w;
+  ctx.fillRect(x-w/2, y, sw, 3);
+  // hp
+  ctx.fillStyle='#220';
+  ctx.fillRect(x-w/2, y+4, w, 3);
+  ctx.fillStyle = sp.hp>50?'#5fcf5f':(sp.hp>25?'#ddc040':'#dd4040');
+  ctx.fillRect(x-w/2, y+4, sp.hp/sp.maxHp*w, 3);
+}
+
+function drawVehicle(v){
+  if (!v.alive){
+    // wreck mark briefly
+    return;
+  }
+  ctx.save();
+  ctx.translate(v.pos.x, v.pos.y);
+  ctx.rotate(v.angle);
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(2,3, 28, 14, 0, 0, Math.PI*2); ctx.fill();
+  // chassis (chevron)
+  ctx.fillStyle = v.team==='red'?'#a83030':'#3060a8';
+  ctx.beginPath();
+  ctx.moveTo(28,0); ctx.lineTo(-18,-14); ctx.lineTo(-22,0); ctx.lineTo(-18,14);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#222'; ctx.lineWidth=2; ctx.stroke();
+  // seats
+  ctx.fillStyle = v.driver ? (v.team==='red'?'#ff7777':'#77aaff') : '#444';
+  ctx.beginPath(); ctx.arc(-2,-4,4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = v.gunner ? '#ddd' : '#444';
+  ctx.beginPath(); ctx.arc(8,4,4,0,Math.PI*2); ctx.fill();
+  // turret
+  if (v.gunner){
+    ctx.fillStyle='#888';
+    ctx.fillRect(8,-2,12,4);
+  }
+  // smoke if low hp
+  if (v.smoking){
+    G.particles.push({x:v.pos.x+(Math.random()*16-8), y:v.pos.y+(Math.random()*16-8),
+                      vx:0,vy:-0.3,life:30,color:'#666',kind:'smoke'});
+  }
+  ctx.restore();
+  // hp bar
+  ctx.fillStyle='#000a';
+  ctx.fillRect(v.pos.x-22, v.pos.y-26, 44, 4);
+  ctx.fillStyle = v.hp>v.maxHp*0.5?'#5fcf5f':(v.hp>v.maxHp*0.25?'#ddc040':'#dd4040');
+  ctx.fillRect(v.pos.x-22, v.pos.y-26, Math.max(0,v.hp/v.maxHp*44), 4);
+  // label
+  ctx.fillStyle='#fff';
+  ctx.font='bold 10px Consolas'; ctx.textAlign='center';
+  ctx.fillText('BUGGY', v.pos.x, v.pos.y-30);
+  // respawn timer if dead — drawn elsewhere
+}
+
+function drawDeadVehicleMarkers(){
+  for (const v of G.vehicles){
+    if (v.alive) continue;
+    const home = v.team==='red'?RED_FLAGSTAND:BLUE_FLAGSTAND;
+    ctx.fillStyle=v.team==='red'?'rgba(255,80,80,0.2)':'rgba(80,160,255,0.2)';
+    ctx.beginPath(); ctx.arc(home.x+(v.team==='red'?40:-40), home.y+90, 18, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 10px Consolas'; ctx.textAlign='center';
+    ctx.fillText('HOG '+Math.ceil(v.respawnAt)+'s', home.x+(v.team==='red'?40:-40), home.y+92);
+  }
+}
+
+function drawDeadSpartanMarkers(){
+  for (const sp of G.spartans){
+    if (sp.alive) continue;
+    const home = sp.team==='red'?RED_FLAGSTAND:BLUE_FLAGSTAND;
+    ctx.fillStyle = sp.team==='red'?'rgba(255,80,80,0.4)':'rgba(80,160,255,0.4)';
+    ctx.font='bold 10px Consolas'; ctx.textAlign='center';
+    ctx.fillText(sp.name+' '+Math.ceil(sp.respawnAt)+'s', home.x+(sp.team==='red'?20:-20), home.y-50 + sp.idx*14);
+  }
+}
+
+function drawBullets(){
+  for (const b of G.bullets){
+    if (b.type==='sniper'){
+      ctx.strokeStyle='#9cf'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x-b.vx*1.5, b.y-b.vy*1.5); ctx.stroke();
+      ctx.lineWidth=1;
+    } else if (b.type==='turret'){
+      ctx.fillStyle='#fa3';
+      ctx.fillRect(b.x-1,b.y-1,3,3);
+    } else {
+      ctx.fillStyle='#ffd';
+      ctx.fillRect(b.x-1,b.y-1,2,2);
+    }
+  }
+}
+function drawRockets(){
+  for (const r of G.rockets){
+    ctx.fillStyle='#fa4';
+    ctx.beginPath(); ctx.arc(r.x,r.y,3,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#fb6';
+    ctx.beginPath(); ctx.moveTo(r.x,r.y); ctx.lineTo(r.x-r.vx*2,r.y-r.vy*2); ctx.stroke();
+  }
+}
+function drawParticles(){
+  for (const p of G.particles){
+    if (p.kind==='expl'){
+      ctx.strokeStyle=p.color;
+      ctx.globalAlpha=p.life/24;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha=1;
+    } else if (p.kind==='spark'){
+      ctx.fillStyle=p.color; ctx.globalAlpha=p.life/30;
+      ctx.fillRect(p.x-1,p.y-1,2,2); ctx.globalAlpha=1;
+    } else if (p.kind==='smoke'){
+      ctx.fillStyle=p.color; ctx.globalAlpha=p.life/40;
+      ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=1;
+    } else if (p.kind==='trail'){
+      ctx.fillStyle=p.color; ctx.globalAlpha=p.life/50*0.7;
+      ctx.fillRect(p.x-1,p.y-1,2,2); ctx.globalAlpha=1;
+    }
+  }
+}
+
+function render(){
+  drawMap();
+  // flagstands
+  drawFlagstand(RED_FLAGSTAND, 'red');
+  drawFlagstand(BLUE_FLAGSTAND, 'blue');
+  // pickups
+  drawPickups();
+  // dead markers (background)
+  drawDeadVehicleMarkers();
+  drawDeadSpartanMarkers();
+  // particles bg trails
+  drawParticles();
+  // flags on ground
+  drawFlag(G.flags.red, 'red');
+  drawFlag(G.flags.blue, 'blue');
+  // bullets
+  drawBullets();
+  drawRockets();
+  // entities
+  for (const v of G.vehicles) drawVehicle(v);
+  for (const sp of G.spartans) drawSpartan(sp);
+}
+
+// ------------------------- HUD -------------------------
+const pkHud = document.getElementById('pickupHud');
+function renderPickupHud(){
+  pkHud.innerHTML = '';
+  for (const p of G.pickups){
+    const div = document.createElement('div');
+    div.className = 'pkh';
+    div.style.borderLeftColor = p.color;
+    div.style.color = p.color;
+    const status = p.ready ? '<span style="color:#7f9">READY</span>' : '<span style="color:#aaa">'+Math.ceil(p.readyAt)+'s</span>';
+    div.innerHTML = `<span>${p.type==='sniper'?'SNIPER':p.type==='rockets'?'ROCKETS':'OVERSHIELD'}</span>${status}`;
+    pkHud.appendChild(div);
+  }
+}
+
+function fmtTime(s){
+  s = Math.max(0, Math.floor(s));
+  const m = Math.floor(s/60);
+  const ss = s%60;
+  return m+':'+(ss<10?'0':'')+ss;
+}
+
+// ------------------------- GAME LOOP -------------------------
+let last = performance.now();
+let acc = 0;
+const STEP = 1/60;
+
+function loop(now){
+  const dtReal = Math.min(0.05, (now-last)/1000);
+  last = now;
+  if (G.state === 'play'){
+    acc += dtReal;
+    while (acc >= STEP){
+      step(STEP);
+      acc -= STEP;
+    }
+  } else if (G.state === 'mvp'){
+    G.endAt -= dtReal;
+    const t = Math.ceil(G.endAt);
+    const el = document.getElementById('rematchT');
+    if (el) el.textContent = Math.max(0,t);
+    if (G.endAt <= 0){
+      hideMVP();
+      newGame();
+    }
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+
+function step(dt){
+  G.t++;
+  G.matchTime -= dt;
+  document.getElementById('timer').textContent = fmtTime(G.matchTime);
+  if (G.matchTime <= 0){
+    if (G.score.red === G.score.blue){
+      // tie — fall back to score score
+      const scR = G.spartans.filter(s=>s.team==='red').reduce((a,s)=>a+s.stats.kills,0);
+      const scB = G.spartans.filter(s=>s.team==='blue').reduce((a,s)=>a+s.stats.kills,0);
+      endMatch(scR>scB?'red':(scB>scR?'blue':'draw'));
+    } else {
+      endMatch(G.score.red>G.score.blue?'red':'blue');
+    }
+    return;
+  }
+  // AI
+  for (const sp of G.spartans) aiSpartan(sp, dt);
+  for (const v of G.vehicles) aiVehicle(v, dt);
+  stepBullets(dt);
+  stepRockets(dt);
+  stepParticles(dt);
+  stepPickups(dt);
+  stepFlags(dt);
+  tickAnnouncer();
+  if (G.t % 30 === 0) renderPickupHud();
+}
+
+// ------------------------- BOOT -------------------------
+newGame();
+updateScoreUI();
+renderPickupHud();
+requestAnimationFrame(loop);
+setTimeout(()=>{ document.getElementById('intro').remove(); }, 1000);
+</script>
+</body>
+</html>

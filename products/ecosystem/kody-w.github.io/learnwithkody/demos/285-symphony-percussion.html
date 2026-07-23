@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Brimsworth Symphony — Mvt. IV Scherzo: Percussion Section</title>
+<style>
+  html,body{margin:0;padding:0;background:#0a0612;color:#f7e9c8;font-family:'Courier New',monospace;overflow:hidden;height:100%;}
+  #stage{position:fixed;inset:0;}
+  canvas{display:block;}
+  /* HUD */
+  #hud{position:fixed;top:10px;left:10px;z-index:5;background:rgba(12,8,18,.66);border:1px solid #c89b3c;
+       padding:8px 12px;border-radius:6px;font-size:12px;line-height:1.5;backdrop-filter:blur(4px);}
+  #hud h1{margin:0 0 4px 0;font-size:13px;color:#ffd86b;letter-spacing:1px;}
+  #hud .row{display:flex;gap:10px;}
+  #hud .k{color:#a89070;}#hud .v{color:#ffeec0;font-weight:bold;}
+  #wf{display:block;margin-top:4px;border:1px solid #6b4a18;background:#000;}
+  /* PIP strip */
+  #pip{position:fixed;bottom:10px;left:10px;right:10px;z-index:5;display:flex;gap:6px;justify-content:center;
+        background:rgba(12,8,18,.55);border-top:1px solid #c89b3c;padding:6px;border-radius:6px;}
+  .ppad{flex:1;max-width:140px;text-align:center;font-size:11px;padding:6px 4px;border:1px solid #6b4a18;
+        border-radius:5px;background:#181020;cursor:pointer;user-select:none;transition:all .08s;}
+  .ppad.live{border-color:#ffd86b;box-shadow:0 0 12px #ffd86b;background:#3a2008;color:#fff;}
+  .ppad b{display:block;font-size:13px;color:#ffd86b;letter-spacing:1px;}
+  .ppad small{color:#9c8366;}
+  /* Title card */
+  #title{position:fixed;top:10px;right:10px;z-index:5;text-align:right;background:rgba(12,8,18,.6);
+         border:1px solid #c89b3c;padding:8px 12px;border-radius:6px;font-size:11px;}
+  #title h2{margin:0;font-size:13px;color:#ffd86b;letter-spacing:2px;}
+  #title small{color:#a89070;}
+  #tutti{display:none;position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);z-index:6;
+         font-size:42px;color:#fff;text-shadow:0 0 24px #ffb830,0 0 60px #ff5020;letter-spacing:6px;
+         animation:tuttiPulse .35s ease-in-out infinite alternate;pointer-events:none;}
+  @keyframes tuttiPulse{from{transform:translate(-50%,-50%) scale(1);}to{transform:translate(-50%,-50%) scale(1.08);}}
+  #start{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;background:#3a2008;color:#ffd86b;
+         border:2px solid #ffd86b;padding:14px 28px;font-family:inherit;font-size:14px;letter-spacing:2px;cursor:pointer;
+         border-radius:8px;box-shadow:0 0 24px rgba(255,184,48,.35);}
+  #start:hover{background:#5a3010;}
+  #footer{position:fixed;bottom:62px;left:0;right:0;z-index:4;text-align:center;font-size:10px;color:#7a6648;
+          pointer-events:none;text-shadow:0 0 4px #000;}
+  .fic{color:#7a6648;font-style:italic;}
+</style>
+</head>
+<body>
+<!-- ROUND27_SYMPHONY v1 -->
+<div id="stage"></div>
+
+<div id="hud">
+  <h1>♩ MVT. IV — SCHERZO</h1>
+  <div class="row"><span class="k">SECTION:</span><span class="v">PERCUSSION</span></div>
+  <div class="row"><span class="k">TEMPO:</span><span class="v" id="hBpm">144</span><span class="k">BPM</span></div>
+  <div class="row"><span class="k">MEAS:</span><span class="v" id="hMeas">001</span><span class="k">BEAT:</span><span class="v" id="hBeat">1</span></div>
+  <div class="row"><span class="k">TIME:</span><span class="v" id="hTime">0.0s</span></div>
+  <canvas id="wf" width="220" height="42"></canvas>
+</div>
+
+<div id="title">
+  <h2>BRIMSWORTH SYMPHONY</h2>
+  <small>R27 · Otto-POV Reception · Scherzo</small><br/>
+  <small class="fic">FICTIONAL · CANON v27</small>
+</div>
+
+<div id="tutti">— TUTTI —</div>
+
+<div id="pip">
+  <div class="ppad" data-i="timpani"><b>TIMP</b><small>sub C</small></div>
+  <div class="ppad" data-i="cymbals"><b>CYMB</b><small>crash</small></div>
+  <div class="ppad" data-i="snare"><b>SNAR</b><small>tight</small></div>
+  <div class="ppad" data-i="triangle"><b>TRGL</b><small>ring</small></div>
+</div>
+
+<div id="footer">low-angle · golden retriever POV · guests dancing · ALL FICTIONAL</div>
+
+<button id="start">▶ JOIN ORCHESTRA</button>
+
+<!-- three.js r0.160 IIFE -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+"use strict";
+(function(){
+  // ===================== CANON LEDGER =====================
+  const LEDGER_KEY = "brimsworth_symphony_v1";
+  function readCanon(){
+    try{ const r=JSON.parse(localStorage.getItem(LEDGER_KEY)||"[]"); return Array.isArray(r)?r:[]; }
+    catch(e){ return []; }
+  }
+  function writeCanon(arr){
+    try{ localStorage.setItem(LEDGER_KEY, JSON.stringify(arr.slice(-512))); }catch(e){}
+  }
+  function appendLedger(entry){
+    const arr=readCanon(); arr.push(entry); writeCanon(arr); return arr;
+  }
+  // R16-R26 cross-read — surface counts to UI footer
+  const canonOnLoad = readCanon();
+
+  // ===================== MASTER-TEMPO SYNC =====================
+  // BroadcastChannel('brimsworth_symphony')
+  const BPM_DEFAULT = 144; // allegro vivace scherzo
+  let masterBpm = BPM_DEFAULT;
+  let masterT0  = performance.now()/1000; // shared "song start" reference
+  let masterBpmAtJoin = BPM_DEFAULT;
+  let bc = null;
+  try{ bc = new BroadcastChannel("brimsworth_symphony"); }catch(e){ bc=null; }
+  if(bc){
+    bc.onmessage = (ev)=>{
+      const m = ev.data||{};
+      if(m.type==="tempo" && typeof m.bpm==="number"){
+        masterBpm = m.bpm;
+        if(typeof m.t0==="number") masterT0 = m.t0;
+      } else if(m.type==="hello-request"){
+        // someone joined — share our master
+        bc.postMessage({type:"tempo", bpm:masterBpm, t0:masterT0, from:"percussion"});
+      } else if(m.type==="tutti" && m.fire){
+        triggerTutti();
+      }
+    };
+    // request current master
+    bc.postMessage({type:"hello-request", from:"percussion"});
+    // periodically rebroadcast our tempo (percussion is timekeeper-leaning)
+    setInterval(()=>{ try{ bc.postMessage({type:"tempo", bpm:masterBpm, t0:masterT0, from:"percussion"}); }catch(e){} }, 4000);
+  }
+
+  // ===================== AUDIO ENGINE =====================
+  let audio = null, master = null, analyser = null, dataArr = null;
+  let audioReady = false;
+  function initAudio(){
+    if(audioReady) return;
+    audio = new (window.AudioContext||window.webkitAudioContext)();
+    master = audio.createGain(); master.gain.value = 0.6;
+    const compressor = audio.createDynamicsCompressor();
+    compressor.threshold.value = -16; compressor.knee.value = 24;
+    compressor.ratio.value = 4; compressor.attack.value = 0.005; compressor.release.value = 0.18;
+    master.connect(compressor); compressor.connect(audio.destination);
+
+    analyser = audio.createAnalyser(); analyser.fftSize = 512;
+    dataArr = new Uint8Array(analyser.frequencyBinCount);
+    compressor.connect(analyser);
+    audioReady = true;
+  }
+
+  // Timpani — sine sub-bass with pitch envelope + low-pass
+  function timpani(noteHz, when, vel){
+    if(!audio) return; vel = vel==null?0.85:vel;
+    const t = when ?? audio.currentTime;
+    const o = audio.createOscillator(); o.type="sine";
+    const lp = audio.createBiquadFilter(); lp.type="lowpass";
+    lp.frequency.setValueAtTime(380, t); lp.Q.value=0.9;
+    const g = audio.createGain();
+    // pitch env: starts ~ +50% of base, drops to base
+    o.frequency.setValueAtTime(noteHz*1.55, t);
+    o.frequency.exponentialRampToValueAtTime(noteHz*0.98, t+0.06);
+    o.frequency.exponentialRampToValueAtTime(noteHz*0.92, t+0.6);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vel, t+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.85);
+    o.connect(lp); lp.connect(g); g.connect(master);
+    o.start(t); o.stop(t+0.95);
+    flashPad("timpani", t-audio.currentTime);
+  }
+
+  // Cymbals — white noise burst + highpass + long decay
+  function cymbals(when, vel){
+    if(!audio) return; vel = vel==null?0.55:vel;
+    const t = when ?? audio.currentTime;
+    const dur = 1.6;
+    const buf = audio.createBuffer(1, audio.sampleRate*dur, audio.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<d.length;i++){ d[i] = (Math.random()*2-1) * (1 - i/d.length); }
+    const src = audio.createBufferSource(); src.buffer = buf;
+    const hp = audio.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=4200; hp.Q.value=0.6;
+    const peak = audio.createBiquadFilter(); peak.type="peaking"; peak.frequency.value=8200; peak.gain.value=6;
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vel, t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    src.connect(hp); hp.connect(peak); peak.connect(g); g.connect(master);
+    src.start(t); src.stop(t+dur);
+    flashPad("cymbals", t-audio.currentTime);
+  }
+
+  // Snare — white noise + lowpass + tight envelope (with body tone)
+  function snare(when, vel){
+    if(!audio) return; vel = vel==null?0.55:vel;
+    const t = when ?? audio.currentTime;
+    const dur = 0.18;
+    const buf = audio.createBuffer(1, Math.floor(audio.sampleRate*dur), audio.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<d.length;i++){ d[i] = (Math.random()*2-1); }
+    const src = audio.createBufferSource(); src.buffer = buf;
+    const lp = audio.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=5200; lp.Q.value=1.1;
+    const g  = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vel, t+0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    src.connect(lp); lp.connect(g); g.connect(master);
+    // body tone (180Hz triangle blip)
+    const o = audio.createOscillator(); o.type="triangle"; o.frequency.value=180;
+    const og = audio.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(vel*0.7, t+0.003);
+    og.gain.exponentialRampToValueAtTime(0.0001, t+0.09);
+    o.connect(og); og.connect(master);
+    src.start(t); src.stop(t+dur); o.start(t); o.stop(t+0.1);
+    flashPad("snare", t-audio.currentTime);
+  }
+
+  // Triangle — sine + ring mod
+  function triangleHit(when, vel){
+    if(!audio) return; vel = vel==null?0.35:vel;
+    const t = when ?? audio.currentTime;
+    const dur = 1.4;
+    const carrier = audio.createOscillator(); carrier.type="sine"; carrier.frequency.value=5280;
+    const modulator = audio.createOscillator(); modulator.type="sine"; modulator.frequency.value=7170;
+    const ringGain = audio.createGain(); ringGain.gain.value=0;
+    // ring mod: modulator drives gain of carrier-pass
+    const modDepth = audio.createGain(); modDepth.gain.value=1;
+    modulator.connect(modDepth); modDepth.connect(ringGain.gain);
+    const env = audio.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(vel, t+0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    carrier.connect(ringGain); ringGain.connect(env); env.connect(master);
+    carrier.start(t); modulator.start(t);
+    carrier.stop(t+dur); modulator.stop(t+dur);
+    flashPad("triangle", t-audio.currentTime);
+  }
+
+  // ===================== SCHERZO RHYTHM (C-E-G-C leitmotif beats) =====================
+  // Leitmotif notes — only used to align rhythmic accents (we are PERCUSSION; we don't play pitches except timpani)
+  const LM_HZ = { C:130.81, E:164.81, G:196.00, C2:261.63 };
+  // Pattern is 3/4, scherzo. Two-bar phrase = 6 beats. We anchor C-E-G-C across the phrase.
+  // Beats indexed 0..5 within the 2-bar scherzo phrase:
+  //  0: TIMPANI(C)+CYMB-on-downbeat-of-phrase
+  //  1: snare
+  //  2: triangle (E accent)
+  //  3: timpani (G accent — light)
+  //  4: snare
+  //  5: triangle + occasional crash on phrase end (C2 accent)
+  // Plus tutti scheduled at t≈540s.
+  let nextBeatIndex = 0;
+  let scheduleAhead = 0.18; // sec
+  let lookAhead = 25; // ms
+  let beatStartT = 0; // audio time of beat 0 of "current" phrase
+
+  function beatDur(){ return 60/masterBpm; }
+
+  function scheduleBeat(beatGlobalIdx, when){
+    const phaseInPhrase = beatGlobalIdx % 6;
+    const meas = Math.floor(beatGlobalIdx/3)+1;
+    const beatInBar = (beatGlobalIdx%3)+1;
+    // tutti window
+    const songT = when - songStartAudioT;
+    const inTutti = (songT >= 540 && songT < 548);
+    if(inTutti){
+      // Timpani roll: spawn 8 fast hits within a beat
+      const sub = beatDur()/8;
+      for(let i=0;i<8;i++){ timpani(LM_HZ.C, when + i*sub, 0.8 + Math.random()*0.15); }
+      if(phaseInPhrase===5 && songT > 547){
+        cymbals(when+beatDur()*0.5, 0.95);
+        timpani(LM_HZ.C2, when+beatDur()*0.5, 1.0);
+      }
+      return [meas,beatInBar];
+    }
+    if(phaseInPhrase===0){
+      timpani(LM_HZ.C, when, 0.9);
+      // light cymbal on phrase downbeat every other phrase
+      if(((beatGlobalIdx/6)|0)%2===0) cymbals(when, 0.28);
+    } else if(phaseInPhrase===1){
+      snare(when, 0.45);
+    } else if(phaseInPhrase===2){
+      triangleHit(when, 0.32);
+      if(Math.random()<0.4) snare(when+beatDur()*0.5, 0.2); // ghost note
+    } else if(phaseInPhrase===3){
+      timpani(LM_HZ.G, when, 0.55);
+    } else if(phaseInPhrase===4){
+      snare(when, 0.55);
+      if(Math.random()<0.3) triangleHit(when+beatDur()*0.66, 0.25);
+    } else if(phaseInPhrase===5){
+      triangleHit(when, 0.42);
+      // every 4th phrase, a sparkle crash
+      if(((beatGlobalIdx/6)|0)%4===3) cymbals(when, 0.22);
+    }
+    return [meas, beatInBar];
+  }
+
+  let songStartAudioT = 0;
+  let globalBeatCounter = 0;
+  let nextNoteTime = 0;
+  let measOut = 1, beatOut = 1;
+  function audioScheduler(){
+    if(!audio) return;
+    while(nextNoteTime < audio.currentTime + scheduleAhead){
+      const r = scheduleBeat(globalBeatCounter, nextNoteTime);
+      measOut = r[0]; beatOut = r[1];
+      nextNoteTime += beatDur();
+      globalBeatCounter++;
+    }
+  }
+
+  // ===================== TUTTI 540s =====================
+  let tuttiFired = false;
+  function triggerTutti(){
+    if(tuttiFired) return;
+    tuttiFired = true;
+    document.getElementById("tutti").style.display="block";
+    setTimeout(()=>{ document.getElementById("tutti").style.display="none"; }, 9000);
+    // append ledger
+    appendLedger({
+      movement_id:"percussion",
+      instrument:"percussion-section",
+      master_bpm_at_join: masterBpmAtJoin,
+      tutti_at: (audio? (audio.currentTime - songStartAudioT) : 540),
+      ts: Date.now()
+    });
+    if(bc){ try{ bc.postMessage({type:"tutti", fire:true, from:"percussion"}); }catch(e){} }
+  }
+
+  // ===================== PIP STRIP FLASH =====================
+  function flashPad(id, delay){
+    const el = document.querySelector('.ppad[data-i="'+id+'"]');
+    if(!el) return;
+    setTimeout(()=>{
+      el.classList.add("live");
+      setTimeout(()=>el.classList.remove("live"), 110);
+    }, Math.max(0, delay*1000));
+  }
+  // Manual pad triggers
+  document.querySelectorAll(".ppad").forEach(p=>{
+    p.addEventListener("click", ()=>{
+      if(!audioReady) return;
+      const i = p.getAttribute("data-i");
+      const t = audio.currentTime + 0.01;
+      if(i==="timpani") timpani(LM_HZ.C, t, 0.9);
+      else if(i==="cymbals") cymbals(t, 0.7);
+      else if(i==="snare") snare(t, 0.7);
+      else if(i==="triangle") triangleHit(t, 0.55);
+    });
+  });
+
+  // ===================== THREE.JS — OTTO POV RECEPTION =====================
+  const stage = document.getElementById("stage");
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x140820);
+  scene.fog = new THREE.Fog(0x140820, 8, 36);
+
+  const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.05, 200);
+  // Otto POV — low angle dog view (~0.55m), bobbing
+  camera.position.set(0, 0.55, 0);
+  camera.lookAt(0, 1.2, -3);
+
+  const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  stage.appendChild(renderer.domElement);
+
+  // Floor — wooden ballroom planks with reflective sheen
+  const floorGeo = new THREE.PlaneGeometry(60,60,1,1);
+  const floorMat = new THREE.MeshStandardMaterial({color:0x2a160a, roughness:0.55, metalness:0.05});
+  const floor = new THREE.Mesh(floorGeo, floorMat); floor.rotation.x=-Math.PI/2; scene.add(floor);
+
+  // Plank stripes via repeated thin meshes
+  for(let i=-30;i<=30;i+=1.6){
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(60,0.05),
+       new THREE.MeshBasicMaterial({color:0x1a0d05}));
+    p.rotation.x=-Math.PI/2; p.position.set(0,0.001,i); scene.add(p);
+  }
+
+  // Ceiling chandelier glow (just a point light + sprite)
+  const ambient = new THREE.AmbientLight(0xffe6b0, 0.45); scene.add(ambient);
+  const chand = new THREE.PointLight(0xffd86b, 1.6, 28, 1.4);
+  chand.position.set(0, 6, -2); scene.add(chand);
+  const chand2 = new THREE.PointLight(0xff8a30, 0.9, 18, 1.3);
+  chand2.position.set(-4, 4.5, -6); scene.add(chand2);
+  const chand3 = new THREE.PointLight(0xffaa55, 0.9, 18, 1.3);
+  chand3.position.set(4, 4.5, -6); scene.add(chand3);
+
+  // Walls (back, sides) — warm reception
+  function wallMesh(w,h,color){
+    return new THREE.Mesh(new THREE.PlaneGeometry(w,h),
+       new THREE.MeshStandardMaterial({color, roughness:0.95}));
+  }
+  const wb = wallMesh(60,12, 0x2a1a30); wb.position.set(0,6,-22); scene.add(wb);
+  const wl = wallMesh(60,12, 0x231428); wl.position.set(-22,6,0); wl.rotation.y=Math.PI/2; scene.add(wl);
+  const wr = wallMesh(60,12, 0x231428); wr.position.set(22,6,0); wr.rotation.y=-Math.PI/2; scene.add(wr);
+
+  // String-light streamers — animated sparkles
+  const streamers = [];
+  for(let row=0; row<3; row++){
+    const y = 4 + row*0.6;
+    const z = -16 + row*4;
+    const count = 28;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count*3);
+    const col = new Float32Array(count*3);
+    for(let i=0;i<count;i++){
+      pos[i*3]   = -10 + (i/count)*20;
+      pos[i*3+1] = y + Math.sin(i*0.6)*0.18;
+      pos[i*3+2] = z;
+      col[i*3]=1; col[i*3+1]=0.85; col[i*3+2]=0.4;
+    }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos,3));
+    geo.setAttribute("color",    new THREE.BufferAttribute(col,3));
+    const mat = new THREE.PointsMaterial({size:0.18, vertexColors:true, transparent:true, opacity:0.95});
+    const pts = new THREE.Points(geo, mat); scene.add(pts); streamers.push({pts, y, z, count});
+  }
+
+  // === DANCING GUESTS (low-poly, viewed from below) ===
+  const guests = [];
+  function makeGuest(x,z, palette){
+    const g = new THREE.Group();
+    // legs (two cylinders)
+    const legGeo = new THREE.CylinderGeometry(0.09,0.07,0.95,8);
+    const trouserMat = new THREE.MeshStandardMaterial({color:palette.trousers, roughness:0.8});
+    const lL = new THREE.Mesh(legGeo, trouserMat); lL.position.set(-0.12,0.475,0); g.add(lL);
+    const lR = new THREE.Mesh(legGeo, trouserMat); lR.position.set( 0.12,0.475,0); g.add(lR);
+    // torso (gown / suit)
+    const torsoGeo = new THREE.CylinderGeometry(0.28,0.22,0.85,12);
+    const torsoMat = new THREE.MeshStandardMaterial({color:palette.torso, roughness:0.7, metalness:0.1});
+    const torso = new THREE.Mesh(torsoGeo, torsoMat); torso.position.set(0,1.35,0); g.add(torso);
+    // head
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.18,12,10),
+       new THREE.MeshStandardMaterial({color:palette.skin, roughness:0.6}));
+    head.position.set(0,1.92,0); g.add(head);
+    // arms (raised, dancing)
+    const armGeo = new THREE.CylinderGeometry(0.06,0.05,0.7,8);
+    const armMat = new THREE.MeshStandardMaterial({color:palette.torso, roughness:0.7});
+    const aL = new THREE.Mesh(armGeo, armMat); aL.position.set(-0.32,1.55,0); aL.rotation.z=0.6; g.add(aL);
+    const aR = new THREE.Mesh(armGeo, armMat); aR.position.set( 0.32,1.55,0); aR.rotation.z=-0.6; g.add(aR);
+    g.position.set(x,0,z);
+    g.userData = { baseX:x, baseZ:z, phase:Math.random()*Math.PI*2, aL, aR, torso, head };
+    return g;
+  }
+  const palettes = [
+    {trousers:0x222238, torso:0x551b1b, skin:0xe2b48a},
+    {trousers:0x1a1a1a, torso:0xb52a2a, skin:0xd9a07a},
+    {trousers:0x3a2a18, torso:0xe2c75a, skin:0xf2d4a6},
+    {trousers:0x1c1c2c, torso:0x2a4d8a, skin:0xc99070},
+    {trousers:0x101010, torso:0x6a2d8a, skin:0xeac0a0},
+    {trousers:0x402020, torso:0x308a5a, skin:0xd6a380},
+    {trousers:0x101010, torso:0xc04088, skin:0xfadcb2},
+    {trousers:0x141432, torso:0xefe2c4, skin:0xb8825c},
+    {trousers:0x202020, torso:0x892c54, skin:0xcca080},
+  ];
+  // Place guests in arc around dance floor in front of camera
+  const guestPositions = [
+    [-2.4,-3], [-1.0,-3.6], [0.5,-3.8], [2.0,-3.2], [3.2,-2.0],
+    [-3.4,-1.6], [-3.8,-0.2], [3.8,-0.6], [-1.7,-2.0], [1.4,-2.2],
+    [-0.4,-5.0], [1.8,-5.4], [-2.6,-5.0]
+  ];
+  guestPositions.forEach((p,i)=>{
+    const g = makeGuest(p[0], p[1], palettes[i%palettes.length]);
+    scene.add(g); guests.push(g);
+  });
+
+  // === GOLDEN RETRIEVER (Otto's snout & paws — first-person bobbing) ===
+  // Visible: snout + ears flopping into bottom of frame
+  const otto = new THREE.Group();
+  // snout
+  const snoutMat = new THREE.MeshStandardMaterial({color:0xe6b770, roughness:0.7});
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.18,0.12,0.32), snoutMat);
+  snout.position.set(0,-0.05,-0.22); otto.add(snout);
+  const noseTip = new THREE.Mesh(new THREE.SphereGeometry(0.05,10,8),
+       new THREE.MeshStandardMaterial({color:0x1a0a08, roughness:0.4}));
+  noseTip.position.set(0,-0.04,-0.4); otto.add(noseTip);
+  // ears (floppy)
+  const earMat = new THREE.MeshStandardMaterial({color:0xcf9655, roughness:0.85});
+  const earL = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.18,0.04), earMat);
+  earL.position.set(-0.2,0.0,-0.05); earL.rotation.z=0.4; otto.add(earL);
+  const earR = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.18,0.04), earMat);
+  earR.position.set( 0.2,0.0,-0.05); earR.rotation.z=-0.4; otto.add(earR);
+  // tongue (sliver)
+  const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.02,0.1),
+       new THREE.MeshStandardMaterial({color:0xff7090, roughness:0.5}));
+  tongue.position.set(0,-0.12,-0.3); otto.add(tongue);
+  camera.add(otto);
+  scene.add(camera);
+
+  // Tables in background (dimly silhouetted)
+  for(let i=0;i<6;i++){
+    const angle = (-0.45 + (i/5)*0.9);
+    const r = 12;
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.7,0.05,16),
+       new THREE.MeshStandardMaterial({color:0x3a2a16, roughness:0.85}));
+    t.position.set(Math.sin(angle)*r, 1.0, -Math.cos(angle)*r - 4);
+    scene.add(t);
+    // candle
+    const cand = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.18,8),
+       new THREE.MeshStandardMaterial({color:0xeae0c0, emissive:0xff9030, emissiveIntensity:0.6}));
+    cand.position.set(t.position.x, 1.15, t.position.z); scene.add(cand);
+    const candLight = new THREE.PointLight(0xff9540, 0.45, 4, 2);
+    candLight.position.copy(cand.position); candLight.position.y += 0.1; scene.add(candLight);
+  }
+
+  // Tiny floating note sprites (visualize percussion hits)
+  const noteSprites = [];
+  function spawnNote(color){
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.08,8,6),
+       new THREE.MeshBasicMaterial({color, transparent:true, opacity:1}));
+    m.position.set((Math.random()-0.5)*4, 0.8, -2 - Math.random()*2.5);
+    m.userData = { vy: 0.018+Math.random()*0.02, life:1.0 };
+    scene.add(m); noteSprites.push(m);
+    if(noteSprites.length>40){
+      const old = noteSprites.shift(); scene.remove(old); old.geometry.dispose(); old.material.dispose();
+    }
+  }
+
+  // ===================== MAIN LOOP =====================
+  const clock = new THREE.Clock();
+  let elapsed = 0;
+  const wfCanvas = document.getElementById("wf");
+  const wfCtx = wfCanvas.getContext("2d");
+
+  function tick(){
+    const dt = clock.getDelta();
+    elapsed += dt;
+
+    // audio scheduler
+    if(audioReady) audioScheduler();
+
+    // beat phase for visuals
+    const songT = audioReady ? (audio.currentTime - songStartAudioT) : elapsed;
+    const beatT = (songT % beatDur()) / beatDur(); // 0..1
+    const onDownbeat = beatT < 0.12;
+
+    // Otto bob — to scherzo rhythm
+    const bobY = 0.55 + Math.sin(songT * Math.PI * 2 * (masterBpm/60)) * 0.045 + (onDownbeat?0.02:0);
+    camera.position.y = bobY;
+    // gentle head turn
+    const yaw = Math.sin(songT*0.6)*0.18;
+    camera.rotation.y = yaw;
+    // snout follow downbeat micro-tilt
+    otto.rotation.x = -0.05 + Math.sin(songT * Math.PI * 2 * (masterBpm/60))*0.04;
+    earL.rotation.z =  0.4 + Math.sin(songT*9)*0.18;
+    earR.rotation.z = -0.4 - Math.sin(songT*9 + 0.4)*0.18;
+
+    // Guests dancing — simple sway + arm wave to scherzo
+    guests.forEach((g,i)=>{
+      const ph = g.userData.phase + songT*Math.PI*2*(masterBpm/60);
+      const sway = Math.sin(ph)*0.18;
+      g.rotation.z = sway*0.18;
+      g.position.y = Math.abs(Math.sin(ph))*0.06;
+      g.userData.aL.rotation.z = 0.6 + Math.sin(ph*1.0)*0.5;
+      g.userData.aR.rotation.z = -0.6 - Math.sin(ph*1.0+0.7)*0.5;
+      g.userData.head.rotation.y = Math.sin(ph*0.7)*0.4;
+      // step
+      g.position.x = g.userData.baseX + Math.sin(ph*0.5)*0.12;
+      g.position.z = g.userData.baseZ + Math.cos(ph*0.4)*0.08;
+    });
+
+    // streamers shimmer — pulse on downbeat
+    streamers.forEach(s=>{
+      const c = s.pts.geometry.attributes.color;
+      for(let i=0;i<s.count;i++){
+        const flick = 0.55 + Math.sin(songT*4 + i)*0.45;
+        const boost = onDownbeat? 1.0 : 0.7;
+        c.array[i*3]   = 1.0 * boost;
+        c.array[i*3+1] = 0.78 * flick * boost;
+        c.array[i*3+2] = 0.22 * flick * boost;
+      }
+      c.needsUpdate = true;
+    });
+
+    // chand pulse
+    chand.intensity = 1.6 + (onDownbeat?0.7:0);
+    chand2.intensity = 0.9 + Math.sin(songT*2)*0.2;
+    chand3.intensity = 0.9 + Math.cos(songT*2.4)*0.2;
+
+    // note sprites rise/fade
+    for(let i=noteSprites.length-1;i>=0;i--){
+      const m = noteSprites[i];
+      m.position.y += m.userData.vy;
+      m.userData.life -= dt*0.55;
+      m.material.opacity = Math.max(0,m.userData.life);
+      if(m.userData.life<=0){ scene.remove(m); m.geometry.dispose(); m.material.dispose(); noteSprites.splice(i,1); }
+    }
+    // spawn a note on downbeat occasionally
+    if(audioReady && onDownbeat && Math.random()<0.18){
+      spawnNote(0xffd86b);
+    }
+
+    // tutti window
+    if(audioReady){
+      const t = audio.currentTime - songStartAudioT;
+      if(t >= 540 && !tuttiFired) triggerTutti();
+    }
+
+    // HUD updates
+    document.getElementById("hBpm").textContent  = masterBpm.toFixed(0);
+    document.getElementById("hMeas").textContent = String(measOut).padStart(3,"0");
+    document.getElementById("hBeat").textContent = String(beatOut);
+    document.getElementById("hTime").textContent = (audioReady? (audio.currentTime - songStartAudioT) : 0).toFixed(1)+"s";
+
+    // Waveform
+    if(analyser){
+      analyser.getByteTimeDomainData(dataArr);
+      wfCtx.fillStyle = "#000"; wfCtx.fillRect(0,0,wfCanvas.width,wfCanvas.height);
+      wfCtx.strokeStyle = "#ffd86b"; wfCtx.lineWidth = 1;
+      wfCtx.beginPath();
+      const step = wfCanvas.width / dataArr.length;
+      for(let i=0;i<dataArr.length;i++){
+        const y = (dataArr[i]/255)*wfCanvas.height;
+        if(i===0) wfCtx.moveTo(i*step, y);
+        else wfCtx.lineTo(i*step, y);
+      }
+      wfCtx.stroke();
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+
+  window.addEventListener("resize", ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ===================== START / JOIN =====================
+  document.getElementById("start").addEventListener("click", ()=>{
+    initAudio();
+    if(audio.state==="suspended") audio.resume();
+    songStartAudioT = audio.currentTime;
+    nextNoteTime = audio.currentTime + 0.05;
+    masterBpmAtJoin = masterBpm;
+    // Append join entry to canon ledger
+    appendLedger({
+      movement_id:"percussion",
+      instrument:"percussion-section",
+      master_bpm_at_join: masterBpmAtJoin,
+      tutti_at: null,
+      ts: Date.now(),
+      event:"join"
+    });
+    // begin scheduler poll
+    setInterval(audioScheduler, lookAhead);
+    document.getElementById("start").style.display="none";
+  });
+
+  // tick now (visual loop runs even before audio)
+  tick();
+})();
+</script>
+</body>
+</html>

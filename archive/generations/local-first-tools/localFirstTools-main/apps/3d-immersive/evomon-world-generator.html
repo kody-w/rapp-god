@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EvoMon: 3D World Generator</title>
+    <meta name="rappterzoo:author" content="Claude Opus 4.6">
+    <meta name="rappterzoo:author-type" content="agent">
+    <meta name="rappterzoo:category" content="3d-immersive">
+    <meta name="rappterzoo:tags" content="3d,procedural,terrain,threejs,evomon,world-generator">
+    <meta name="rappterzoo:type" content="interactive">
+    <meta name="rappterzoo:complexity" content="advanced">
+    <meta name="rappterzoo:created" content="2026-02-08">
+    <meta name="rappterzoo:generation" content="2">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+        }
+        #canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            cursor: grab;
+        }
+        #canvas:active { cursor: grabbing; }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .panel {
+            background: rgba(0, 20, 40, 0.85);
+            border: 1px solid #00ffff;
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 8px;
+            pointer-events: auto;
+            position: absolute;
+            box-shadow: 0 4px 20px rgba(0, 255, 255, 0.2);
+        }
+
+        #controls-panel {
+            top: 20px;
+            left: 20px;
+            width: 320px;
+        }
+
+        #info-panel {
+            bottom: 20px;
+            right: 20px;
+            text-align: left;
+            min-width: 250px;
+        }
+
+        #seed-panel {
+            top: 20px;
+            right: 20px;
+            width: 280px;
+        }
+
+        h2 {
+            margin: 0 0 12px 0;
+            font-size: 18px;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+            padding-bottom: 8px;
+        }
+
+        .control-row {
+            margin-bottom: 12px;
+        }
+
+        label {
+            display: block;
+            color: #aaa;
+            font-size: 12px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .value-display {
+            float: right;
+            color: #00ffff;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            background: rgba(0, 100, 200, 0.3);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #00ffff;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #00ffff;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #00ffff;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #00ffff;
+            border: none;
+        }
+
+        button {
+            background: rgba(0, 100, 200, 0.5);
+            border: 1px solid #00ffff;
+            color: #fff;
+            padding: 10px 15px;
+            width: 100%;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+            font-weight: bold;
+            margin-top: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 13px;
+        }
+
+        button:hover {
+            background: rgba(0, 150, 255, 0.8);
+            box-shadow: 0 0 15px #00ffff;
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        .stat-label {
+            color: #aaa;
+        }
+
+        .stat-value {
+            color: #00ffff;
+            font-weight: bold;
+        }
+
+        .biome-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        #saved-seeds {
+            max-height: 150px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .seed-item {
+            background: rgba(0, 100, 200, 0.3);
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 12px;
+        }
+
+        .seed-item:hover {
+            background: rgba(0, 150, 255, 0.5);
+        }
+
+        .seed-item-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .seed-name {
+            color: #00ffff;
+            font-weight: bold;
+        }
+
+        .seed-date {
+            color: #888;
+            font-size: 10px;
+        }
+
+        .seed-code {
+            font-family: monospace;
+            color: #aaa;
+            font-size: 11px;
+        }
+
+        .delete-seed {
+            color: #ff4444;
+            margin-left: 8px;
+            cursor: pointer;
+        }
+
+        .delete-seed:hover {
+            color: #ff0000;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            background: rgba(0, 50, 100, 0.5);
+            border: 1px solid #00ffff;
+            color: #fff;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        #time-slider-container {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(0, 255, 255, 0.3);
+        }
+
+        .toggle-btn {
+            padding: 6px 12px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="controls-panel" class="panel">
+            <h2>🌍 World Generator</h2>
+
+            <div class="control-row">
+                <label>
+                    Terrain Roughness
+                    <span class="value-display" id="roughness-val">50</span>
+                </label>
+                <input type="range" id="roughness" min="0" max="100" value="50">
+            </div>
+
+            <div class="control-row">
+                <label>
+                    Vegetation Density
+                    <span class="value-display" id="vegetation-val">60</span>
+                </label>
+                <input type="range" id="vegetation" min="0" max="100" value="60">
+            </div>
+
+            <div class="control-row">
+                <label>
+                    Building Frequency
+                    <span class="value-display" id="buildings-val">30</span>
+                </label>
+                <input type="range" id="buildings" min="0" max="100" value="30">
+            </div>
+
+            <div class="control-row">
+                <label>
+                    Water Level
+                    <span class="value-display" id="water-val">40</span>
+                </label>
+                <input type="range" id="water" min="0" max="100" value="40">
+            </div>
+
+            <div id="time-slider-container">
+                <div class="control-row">
+                    <label>
+                        Time of Day
+                        <span class="value-display" id="time-val">12:00</span>
+                    </label>
+                    <input type="range" id="time-of-day" min="0" max="24" value="12" step="0.5">
+                </div>
+            </div>
+
+            <button onclick="generateWorld()">🔄 REGENERATE WORLD</button>
+            <button class="toggle-btn" onclick="toggleOrbitMode()">⚙️ Toggle Auto-Orbit</button>
+        </div>
+
+        <div id="seed-panel" class="panel">
+            <h2>💾 Seed Manager</h2>
+            <div class="stat-row">
+                <span class="stat-label">Current Seed:</span>
+                <span class="stat-value" id="current-seed">---</span>
+            </div>
+            <input type="text" id="seed-input" placeholder="Enter seed or leave blank for random">
+            <button onclick="saveSeed()">💾 Save Current Seed</button>
+            <button onclick="loadSeedFromInput()">📥 Load Seed</button>
+            <div id="saved-seeds"></div>
+        </div>
+
+        <div id="info-panel" class="panel">
+            <h2>📊 World Stats</h2>
+            <div class="stat-row">
+                <span class="stat-label">Biome:</span>
+                <span class="stat-value" id="biome-info">Mixed</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Objects:</span>
+                <span class="stat-value" id="object-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Trees:</span>
+                <span class="stat-value" id="tree-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Buildings:</span>
+                <span class="stat-value" id="building-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Grass Patches:</span>
+                <span class="stat-value" id="grass-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Avg Height:</span>
+                <span class="stat-value" id="avg-height">0m</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Water Coverage:</span>
+                <span class="stat-value" id="water-coverage">0%</span>
+            </div>
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0, 255, 255, 0.3);">
+                <div class="stat-row">
+                    <span class="stat-label">Controls:</span>
+                </div>
+                <div style="font-size: 11px; color: #888; margin-top: 6px;">
+                    🖱️ Drag to rotate<br>
+                    🔍 Scroll to zoom<br>
+                    ⌨️ Space to reset view
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+    <script>
+        // ==========================================
+        // SIMPLEX NOISE IMPLEMENTATION (Inline)
+        // ==========================================
+        class SimplexNoise {
+            constructor(seed = Math.random()) {
+                this.grad3 = [
+                    [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+                    [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+                    [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+                ];
+                this.p = [];
+                for (let i = 0; i < 256; i++) {
+                    this.p[i] = Math.floor(this.seededRandom(seed + i) * 256);
+                }
+                this.perm = [];
+                for (let i = 0; i < 512; i++) {
+                    this.perm[i] = this.p[i & 255];
+                }
+            }
+
+            seededRandom(seed) {
+                const x = Math.sin(seed) * 10000;
+                return x - Math.floor(x);
+            }
+
+            dot(g, x, y) {
+                return g[0] * x + g[1] * y;
+            }
+
+            noise2D(xin, yin) {
+                const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+                const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+
+                const s = (xin + yin) * F2;
+                const i = Math.floor(xin + s);
+                const j = Math.floor(yin + s);
+
+                const t = (i + j) * G2;
+                const X0 = i - t;
+                const Y0 = j - t;
+                const x0 = xin - X0;
+                const y0 = yin - Y0;
+
+                let i1, j1;
+                if (x0 > y0) { i1 = 1; j1 = 0; }
+                else { i1 = 0; j1 = 1; }
+
+                const x1 = x0 - i1 + G2;
+                const y1 = y0 - j1 + G2;
+                const x2 = x0 - 1.0 + 2.0 * G2;
+                const y2 = y0 - 1.0 + 2.0 * G2;
+
+                const ii = i & 255;
+                const jj = j & 255;
+                const gi0 = this.perm[ii + this.perm[jj]] % 12;
+                const gi1 = this.perm[ii + i1 + this.perm[jj + j1]] % 12;
+                const gi2 = this.perm[ii + 1 + this.perm[jj + 1]] % 12;
+
+                let n0 = 0, n1 = 0, n2 = 0;
+                let t0 = 0.5 - x0*x0 - y0*y0;
+                if (t0 >= 0) {
+                    t0 *= t0;
+                    n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0);
+                }
+                let t1 = 0.5 - x1*x1 - y1*y1;
+                if (t1 >= 0) {
+                    t1 *= t1;
+                    n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1);
+                }
+                let t2 = 0.5 - x2*x2 - y2*y2;
+                if (t2 >= 0) {
+                    t2 *= t2;
+                    n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2);
+                }
+
+                return 70.0 * (n0 + n1 + n2);
+            }
+        }
+
+        // ==========================================
+        // WORLD GENERATOR CONFIGURATION
+        // ==========================================
+        const WORLD_SIZE = 100;
+        const TILE_SIZE = 4;
+
+        // ==========================================
+        // GLOBAL STATE
+        // ==========================================
+        let scene, camera, renderer;
+        let terrainMesh, waterMesh;
+        let objects = [];
+        let simplex;
+        let currentSeed = Math.random();
+        let autoOrbit = true;
+        let mouseDown = false;
+        let mouseX = 0, mouseY = 0;
+        let targetRotationX = 0, targetRotationY = 0;
+        let cameraDistance = 150;
+        let sun;
+
+        // Stats tracking
+        let treeCount = 0, buildingCount = 0, grassCount = 0;
+        let avgHeight = 0, waterCoverage = 0;
+
+        // ==========================================
+        // THREE.JS INITIALIZATION
+        // ==========================================
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 50, 400);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
+            camera.position.set(0, 100, 150);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Lighting
+            const ambient = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambient);
+
+            sun = new THREE.DirectionalLight(0xffffff, 1.2);
+            sun.position.set(100, 200, 50);
+            sun.castShadow = true;
+            sun.shadow.mapSize.width = 2048;
+            sun.shadow.mapSize.height = 2048;
+            sun.shadow.camera.near = 0.5;
+            sun.shadow.camera.far = 500;
+            const d = 200;
+            sun.shadow.camera.left = -d;
+            sun.shadow.camera.right = d;
+            sun.shadow.camera.top = d;
+            sun.shadow.camera.bottom = -d;
+            scene.add(sun);
+
+            // Initial world generation
+            generateWorld();
+
+            // Event listeners
+            window.addEventListener('resize', onResize);
+            setupMouseControls();
+            setupSliderListeners();
+            window.addEventListener('keydown', onKeyDown);
+
+            loadSavedSeeds();
+            animate();
+        }
+
+        // ==========================================
+        // MOUSE CONTROLS
+        // ==========================================
+        function setupMouseControls() {
+            const canvas = document.getElementById('canvas');
+
+            canvas.addEventListener('mousedown', (e) => {
+                mouseDown = true;
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (mouseDown) {
+                    const deltaX = e.clientX - mouseX;
+                    const deltaY = e.clientY - mouseY;
+
+                    targetRotationY += deltaX * 0.005;
+                    targetRotationX += deltaY * 0.005;
+                    targetRotationX = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, targetRotationX));
+
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                    autoOrbit = false;
+                }
+            });
+
+            canvas.addEventListener('mouseup', () => {
+                mouseDown = false;
+            });
+
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                cameraDistance += e.deltaY * 0.1;
+                cameraDistance = Math.max(50, Math.min(300, cameraDistance));
+            });
+        }
+
+        // ==========================================
+        // KEYBOARD CONTROLS
+        // ==========================================
+        function onKeyDown(e) {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                targetRotationX = 0;
+                targetRotationY = 0;
+                cameraDistance = 150;
+                autoOrbit = true;
+            }
+        }
+
+        // ==========================================
+        // SLIDER VALUE DISPLAYS
+        // ==========================================
+        function setupSliderListeners() {
+            const sliders = ['roughness', 'vegetation', 'buildings', 'water', 'time-of-day'];
+            sliders.forEach(id => {
+                const slider = document.getElementById(id);
+                const display = document.getElementById(id + '-val');
+                if (slider && display) {
+                    slider.addEventListener('input', () => {
+                        if (id === 'time-of-day') {
+                            const hours = parseInt(slider.value);
+                            const minutes = (slider.value % 1) * 60;
+                            display.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                            updateTimeOfDay();
+                        } else {
+                            display.textContent = slider.value;
+                        }
+                    });
+                }
+            });
+        }
+
+        // ==========================================
+        // TIME OF DAY SYSTEM
+        // ==========================================
+        function updateTimeOfDay() {
+            const time = parseFloat(document.getElementById('time-of-day').value);
+            const normalizedTime = time / 24;
+
+            // Sky color transition
+            let skyColor, fogColor, sunIntensity, ambientIntensity;
+
+            if (time >= 5 && time < 7) {
+                // Dawn
+                skyColor = new THREE.Color(0xff9966);
+                fogColor = 0xff9966;
+                sunIntensity = 0.6;
+                ambientIntensity = 0.4;
+            } else if (time >= 7 && time < 18) {
+                // Day
+                skyColor = new THREE.Color(0x87CEEB);
+                fogColor = 0x87CEEB;
+                sunIntensity = 1.2;
+                ambientIntensity = 0.6;
+            } else if (time >= 18 && time < 20) {
+                // Dusk
+                skyColor = new THREE.Color(0xff6633);
+                fogColor = 0xff6633;
+                sunIntensity = 0.5;
+                ambientIntensity = 0.3;
+            } else {
+                // Night
+                skyColor = new THREE.Color(0x001122);
+                fogColor = 0x001122;
+                sunIntensity = 0.1;
+                ambientIntensity = 0.2;
+            }
+
+            scene.background = skyColor;
+            scene.fog.color.setHex(fogColor);
+
+            // Update lighting
+            sun.intensity = sunIntensity;
+            scene.children.forEach(child => {
+                if (child instanceof THREE.AmbientLight) {
+                    child.intensity = ambientIntensity;
+                }
+            });
+
+            // Sun position based on time
+            const angle = (time / 24) * Math.PI * 2 - Math.PI / 2;
+            sun.position.set(
+                Math.cos(angle) * 100,
+                Math.sin(angle) * 200,
+                50
+            );
+        }
+
+        // ==========================================
+        // WORLD GENERATION
+        // ==========================================
+        function generateWorld() {
+            // Clear old objects
+            if (terrainMesh) scene.remove(terrainMesh);
+            if (waterMesh) scene.remove(waterMesh);
+            objects.forEach(o => scene.remove(o));
+            objects = [];
+
+            // Reset counters
+            treeCount = 0;
+            buildingCount = 0;
+            grassCount = 0;
+
+            // Get parameters
+            const roughness = document.getElementById('roughness').value / 100;
+            const vegDensity = document.getElementById('vegetation').value / 100;
+            const buildFreq = document.getElementById('buildings').value / 100;
+            const waterLevel = (document.getElementById('water').value / 100) * 10 - 5;
+
+            // Generate or use input seed
+            const seedInput = document.getElementById('seed-input').value;
+            if (seedInput) {
+                currentSeed = parseFloat(seedInput) || hashString(seedInput);
+            } else {
+                currentSeed = Math.random();
+            }
+
+            document.getElementById('current-seed').textContent = currentSeed.toFixed(8);
+            simplex = new SimplexNoise(currentSeed);
+
+            // ==========================================
+            // TERRAIN GENERATION
+            // ==========================================
+            const geometry = new THREE.PlaneGeometry(
+                WORLD_SIZE * TILE_SIZE,
+                WORLD_SIZE * TILE_SIZE,
+                WORLD_SIZE,
+                WORLD_SIZE
+            );
+            geometry.rotateX(-Math.PI / 2);
+
+            const colors = [];
+            const posAttribute = geometry.attributes.position;
+            const count = posAttribute.count;
+            let totalHeight = 0;
+            let landVertices = 0;
+            let waterVertices = 0;
+
+            for (let i = 0; i < count; i++) {
+                const x = posAttribute.getX(i);
+                const z = posAttribute.getZ(i);
+
+                // Multi-octave noise for terrain height
+                let y = 0;
+                y += simplex.noise2D(x * 0.01, z * 0.01) * 10 * roughness;
+                y += simplex.noise2D(x * 0.03, z * 0.03) * 4 * roughness;
+                y += simplex.noise2D(x * 0.05, z * 0.05) * 2 * roughness;
+
+                // Beach flattening
+                if (y < waterLevel + 1 && y > waterLevel - 1) {
+                    y = waterLevel + 0.5;
+                }
+
+                posAttribute.setY(i, y);
+                totalHeight += y;
+
+                if (y > waterLevel) landVertices++;
+                else waterVertices++;
+
+                // Biome-based vertex coloring
+                const color = new THREE.Color();
+                if (y < waterLevel) {
+                    color.setHex(0xe0cda4); // Sand (underwater)
+                } else if (y < waterLevel + 2) {
+                    color.setHex(0xe0cda4); // Beach sand
+                } else if (y > 20 * roughness) {
+                    // Snow-capped peaks
+                    color.setHex(0xffffff);
+                } else if (y > 15 * roughness) {
+                    // Rocky mountains
+                    const rockNoise = simplex.noise2D(x * 0.1, z * 0.1);
+                    color.setRGB(0.5 + rockNoise * 0.1, 0.5 + rockNoise * 0.1, 0.5 + rockNoise * 0.1);
+                } else {
+                    // Grassland with variation
+                    const grassNoise = simplex.noise2D(x * 0.1, z * 0.1);
+                    const hue = 0.25 + grassNoise * 0.05;
+                    const saturation = 0.6 + grassNoise * 0.1;
+                    const lightness = 0.35 + grassNoise * 0.1;
+                    color.setHSL(hue, saturation, lightness);
+                }
+                colors.push(color.r, color.g, color.b);
+            }
+
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.computeVertexNormals();
+
+            const material = new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                roughness: 0.8,
+                metalness: 0.1,
+                flatShading: false
+            });
+
+            terrainMesh = new THREE.Mesh(geometry, material);
+            terrainMesh.receiveShadow = true;
+            terrainMesh.castShadow = true;
+            scene.add(terrainMesh);
+
+            // Calculate stats
+            avgHeight = (totalHeight / count).toFixed(1);
+            waterCoverage = ((waterVertices / count) * 100).toFixed(1);
+
+            // ==========================================
+            // WATER PLANE
+            // ==========================================
+            const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE * TILE_SIZE, WORLD_SIZE * TILE_SIZE, 32, 32);
+            waterGeo.rotateX(-Math.PI / 2);
+            const waterMat = new THREE.MeshStandardMaterial({
+                color: 0x0077be,
+                transparent: true,
+                opacity: 0.6,
+                roughness: 0.1,
+                metalness: 0.5
+            });
+            waterMesh = new THREE.Mesh(waterGeo, waterMat);
+            waterMesh.position.y = waterLevel;
+            waterMesh.userData.baseY = waterLevel;
+            scene.add(waterMesh);
+
+            // ==========================================
+            // OBJECT PLACEMENT
+            // ==========================================
+            for (let i = 0; i < count; i++) {
+                const x = posAttribute.getX(i);
+                const y = posAttribute.getY(i);
+                const z = posAttribute.getZ(i);
+
+                // Only place on land above water
+                if (y <= waterLevel + 0.5) continue;
+                if (y > 15 * roughness) continue; // Too steep for objects
+
+                const n = simplex.noise2D(x * 0.08 + 100, z * 0.08 + 100);
+
+                // Trees
+                if (n > 0.6 && vegDensity > 0.3 && Math.random() < vegDensity * 0.15) {
+                    placeTree(x, y, z);
+                }
+
+                // Buildings
+                if (n < -0.5 && buildFreq > 0.2 && Math.random() < buildFreq * 0.03) {
+                    placeBuilding(x, y, z);
+                }
+
+                // Grass patches
+                if (n > 0.2 && n < 0.5 && vegDensity > 0.4 && Math.random() < vegDensity * 0.25) {
+                    placeTallGrass(x, y, z);
+                }
+            }
+
+            // Determine dominant biome
+            const biome = determineBiome(roughness, waterCoverage, avgHeight);
+            document.getElementById('biome-info').textContent = biome;
+
+            updateStats();
+            updateTimeOfDay();
+        }
+
+        // ==========================================
+        // OBJECT PLACEMENT FUNCTIONS
+        // ==========================================
+        function placeTree(x, y, z) {
+            const height = 4 + Math.random() * 4;
+            const trunkRadius = 0.4 + Math.random() * 0.3;
+
+            // Trunk
+            const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius * 1.2, height / 2, 8);
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3520 });
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.set(x, y + height / 4, z);
+            trunk.castShadow = true;
+            trunk.receiveShadow = true;
+            scene.add(trunk);
+            objects.push(trunk);
+
+            // Foliage (cone or sphere based on random)
+            const leafSize = 2 + Math.random() * 1.5;
+            const leafColor = new THREE.Color().setHSL(0.25 + Math.random() * 0.05, 0.7, 0.3);
+            const leavesMat = new THREE.MeshStandardMaterial({ color: leafColor });
+
+            let leavesGeo;
+            if (Math.random() > 0.5) {
+                leavesGeo = new THREE.ConeGeometry(leafSize, height / 1.2, 8);
+            } else {
+                leavesGeo = new THREE.SphereGeometry(leafSize, 8, 8);
+            }
+
+            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+            leaves.position.set(x, y + height / 2 + height / 3, z);
+            leaves.castShadow = true;
+            scene.add(leaves);
+            objects.push(leaves);
+
+            treeCount++;
+        }
+
+        function placeBuilding(x, y, z) {
+            const width = 6 + Math.random() * 4;
+            const height = 5 + Math.random() * 6;
+            const depth = 6 + Math.random() * 4;
+
+            // Main structure
+            const geo = new THREE.BoxGeometry(width, height, depth);
+            const buildingColor = new THREE.Color().setHSL(0, 0, 0.7 + Math.random() * 0.2);
+            const mat = new THREE.MeshStandardMaterial({ color: buildingColor });
+            const building = new THREE.Mesh(geo, mat);
+            building.position.set(x, y + height / 2, z);
+            building.castShadow = true;
+            building.receiveShadow = true;
+            scene.add(building);
+            objects.push(building);
+
+            // Roof
+            const roofSize = Math.max(width, depth) * 0.8;
+            const roofGeo = new THREE.ConeGeometry(roofSize, 3, 4);
+            roofGeo.rotateY(Math.PI / 4);
+            const roofColor = new THREE.Color().setHSL(0, 0.6 + Math.random() * 0.3, 0.3);
+            const roofMat = new THREE.MeshStandardMaterial({ color: roofColor });
+            const roof = new THREE.Mesh(roofGeo, roofMat);
+            roof.position.set(x, y + height + 1.5, z);
+            roof.castShadow = true;
+            scene.add(roof);
+            objects.push(roof);
+
+            // Door
+            const doorGeo = new THREE.PlaneGeometry(1.5, 2.5);
+            const doorMat = new THREE.MeshStandardMaterial({ color: 0x3d2817 });
+            const door = new THREE.Mesh(doorGeo, doorMat);
+            door.position.set(x, y + 1.25, z + depth / 2 + 0.05);
+            scene.add(door);
+            objects.push(door);
+
+            // Windows
+            const windowGeo = new THREE.PlaneGeometry(1, 1);
+            const windowMat = new THREE.MeshStandardMaterial({
+                color: 0xaaccff,
+                emissive: 0x4488aa,
+                emissiveIntensity: 0.3
+            });
+            for (let i = 0; i < 2; i++) {
+                const window = new THREE.Mesh(windowGeo, windowMat);
+                window.position.set(x + (i - 0.5) * 2, y + height * 0.6, z + depth / 2 + 0.05);
+                scene.add(window);
+                objects.push(window);
+            }
+
+            buildingCount++;
+        }
+
+        function placeTallGrass(x, y, z) {
+            const height = 1.5 + Math.random() * 0.5;
+            const geo = new THREE.PlaneGeometry(height, height);
+            const grassColor = new THREE.Color().setHSL(0.25 + Math.random() * 0.05, 0.6, 0.4);
+            const mat = new THREE.MeshStandardMaterial({
+                color: grassColor,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.85
+            });
+
+            // Cross pattern for volume
+            const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+            angles.forEach(angle => {
+                const grass = new THREE.Mesh(geo, mat);
+                grass.position.set(x, y + height / 2, z);
+                grass.rotation.y = angle + Math.random() * 0.2;
+                scene.add(grass);
+                objects.push(grass);
+            });
+
+            grassCount++;
+        }
+
+        // ==========================================
+        // BIOME DETERMINATION
+        // ==========================================
+        function determineBiome(roughness, waterCoverage, avgHeight) {
+            if (waterCoverage > 70) return '🌊 Archipelago';
+            if (waterCoverage < 10 && avgHeight < 5) return '🏜️ Desert Plains';
+            if (roughness > 0.7) return '⛰️ Mountain Range';
+            if (avgHeight > 10) return '🏔️ Highland';
+            if (waterCoverage > 40) return '🏝️ Coastal';
+            if (roughness < 0.3) return '🌾 Flatlands';
+            return '🌲 Mixed Forest';
+        }
+
+        // ==========================================
+        // STATS UPDATE
+        // ==========================================
+        function updateStats() {
+            document.getElementById('object-count').textContent = objects.length;
+            document.getElementById('tree-count').textContent = treeCount;
+            document.getElementById('building-count').textContent = buildingCount;
+            document.getElementById('grass-count').textContent = grassCount;
+            document.getElementById('avg-height').textContent = avgHeight + 'm';
+            document.getElementById('water-coverage').textContent = waterCoverage + '%';
+        }
+
+        // ==========================================
+        // SEED MANAGEMENT
+        // ==========================================
+        function hashString(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash;
+            }
+            return Math.abs(hash) / 2147483647;
+        }
+
+        function saveSeed() {
+            const name = prompt('Enter a name for this seed:');
+            if (!name) return;
+
+            const seeds = JSON.parse(localStorage.getItem('worldSeeds') || '[]');
+            seeds.push({
+                name: name,
+                seed: currentSeed,
+                date: new Date().toISOString(),
+                params: {
+                    roughness: document.getElementById('roughness').value,
+                    vegetation: document.getElementById('vegetation').value,
+                    buildings: document.getElementById('buildings').value,
+                    water: document.getElementById('water').value
+                }
+            });
+            localStorage.setItem('worldSeeds', JSON.stringify(seeds));
+            loadSavedSeeds();
+        }
+
+        function loadSavedSeeds() {
+            const seeds = JSON.parse(localStorage.getItem('worldSeeds') || '[]');
+            const container = document.getElementById('saved-seeds');
+
+            if (seeds.length === 0) {
+                container.innerHTML = '<div style="color: #888; font-size: 12px; margin-top: 10px;">No saved seeds yet</div>';
+                return;
+            }
+
+            container.innerHTML = seeds.map((s, idx) => `
+                <div class="seed-item" onclick="loadSeed(${idx})">
+                    <div class="seed-item-header">
+                        <span class="seed-name">${s.name}</span>
+                        <span class="delete-seed" onclick="event.stopPropagation(); deleteSeed(${idx})">🗑️</span>
+                    </div>
+                    <div class="seed-code">${s.seed.toFixed(8)}</div>
+                    <div class="seed-date">${new Date(s.date).toLocaleDateString()}</div>
+                </div>
+            `).join('');
+        }
+
+        function loadSeed(index) {
+            const seeds = JSON.parse(localStorage.getItem('worldSeeds') || '[]');
+            const seed = seeds[index];
+            if (!seed) return;
+
+            document.getElementById('seed-input').value = seed.seed;
+            document.getElementById('roughness').value = seed.params.roughness;
+            document.getElementById('vegetation').value = seed.params.vegetation;
+            document.getElementById('buildings').value = seed.params.buildings;
+            document.getElementById('water').value = seed.params.water;
+
+            // Update displays
+            document.getElementById('roughness-val').textContent = seed.params.roughness;
+            document.getElementById('vegetation-val').textContent = seed.params.vegetation;
+            document.getElementById('buildings-val').textContent = seed.params.buildings;
+            document.getElementById('water-val').textContent = seed.params.water;
+
+            generateWorld();
+        }
+
+        function loadSeedFromInput() {
+            generateWorld();
+        }
+
+        function deleteSeed(index) {
+            const seeds = JSON.parse(localStorage.getItem('worldSeeds') || '[]');
+            seeds.splice(index, 1);
+            localStorage.setItem('worldSeeds', JSON.stringify(seeds));
+            loadSavedSeeds();
+        }
+
+        // ==========================================
+        // TOGGLE AUTO-ORBIT
+        // ==========================================
+        function toggleOrbitMode() {
+            autoOrbit = !autoOrbit;
+        }
+
+        // ==========================================
+        // WINDOW RESIZE
+        // ==========================================
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ==========================================
+        // ANIMATION LOOP
+        // ==========================================
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Camera orbit
+            if (autoOrbit) {
+                targetRotationY += 0.001;
+            }
+
+            const cameraX = Math.sin(targetRotationY) * Math.cos(targetRotationX) * cameraDistance;
+            const cameraY = Math.sin(targetRotationX) * cameraDistance + 50;
+            const cameraZ = Math.cos(targetRotationY) * Math.cos(targetRotationX) * cameraDistance;
+
+            camera.position.x = cameraX;
+            camera.position.y = cameraY;
+            camera.position.z = cameraZ;
+            camera.lookAt(0, 0, 0);
+
+            // Animate water with subtle waves
+            if (waterMesh) {
+                const time = Date.now() * 0.0005;
+                const waterGeo = waterMesh.geometry;
+                const posAttr = waterGeo.attributes.position;
+                const baseY = waterMesh.userData.baseY;
+
+                for (let i = 0; i < posAttr.count; i++) {
+                    const x = posAttr.getX(i);
+                    const z = posAttr.getZ(i);
+                    const wave = Math.sin(x * 0.05 + time) * Math.cos(z * 0.05 + time) * 0.3;
+                    posAttr.setY(i, wave);
+                }
+                posAttr.needsUpdate = true;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // ==========================================
+        // START APPLICATION
+        // ==========================================
+        init();
+    </script>
+</body>
+</html>

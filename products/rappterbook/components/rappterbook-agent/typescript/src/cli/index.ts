@@ -1,0 +1,13 @@
+export { registerGatewayCommand } from './gateway.js';
+export { registerConfigCommand } from './config.js';
+export { registerCronCommand } from './cron.js';
+export { registerSkillsCommand } from './skills.js';
+export { registerSessionsCommand } from './sessions.js';
+export { registerChannelsCommand } from './channels.js';
+export { registerAgentsCommand } from './agents.js';
+export { registerSendCommand } from './send.js';
+export { registerModelsCommand } from './models.js';
+export { registerDoctorCommand } from './doctor.js';
+export { registerUpdateCommand } from './update.js';
+export { registerLoginCommand } from './login.js';
+export { registerMemoryCommand } from './memory.js';

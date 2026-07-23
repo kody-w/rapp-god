@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HARMONY CON 2026 — Anime Multiverse</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0814;color:#f7eef9;font-family:'Trebuchet MS','Helvetica Neue',sans-serif;-webkit-font-smoothing:antialiased}
+#c{position:fixed;inset:0;display:block}
+#hud{position:fixed;left:14px;top:14px;pointer-events:none;z-index:5;text-shadow:0 1px 3px #000,0 0 8px rgba(0,0,0,.7)}
+#zone{font-size:13px;letter-spacing:.22em;font-weight:700;color:#ffd9f3;margin-bottom:4px}
+#sub{font-size:11px;letter-spacing:.18em;color:#cfd6ff;opacity:.85;margin-bottom:6px}
+#stamp{display:inline-block;padding:4px 10px;border:1px solid currentColor;border-radius:2px;font-size:10px;letter-spacing:.3em;font-weight:700;background:rgba(0,0,0,.35)}
+#cam{position:fixed;right:14px;top:14px;font-size:10px;letter-spacing:.22em;color:#cfd6ff;opacity:.85;text-align:right;z-index:5;text-shadow:0 1px 3px #000}
+#cam .l{font-size:9px;opacity:.7;margin-bottom:2px}
+#cam .v{font-size:12px;color:#fff7d9}
+#chyron{position:fixed;left:0;right:0;bottom:0;height:46px;background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.85));border-top:1px solid rgba(255,217,243,.3);overflow:hidden;z-index:6}
+#chyron .bar{position:absolute;left:14px;top:6px;font-size:9px;letter-spacing:.3em;color:#ffd9f3;font-weight:700}
+#chyron .scroll{position:absolute;left:0;right:0;bottom:6px;height:22px;white-space:nowrap;overflow:hidden}
+#chyron .scroll span{display:inline-block;padding-left:100%;animation:s 60s linear infinite;font-size:13px;color:#fff7e6;letter-spacing:.05em}
+@keyframes s{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+#mini{position:fixed;right:14px;bottom:60px;width:172px;height:172px;background:rgba(8,4,18,.78);border:1px solid rgba(255,217,243,.35);border-radius:4px;z-index:5;padding:6px}
+#mini canvas{width:100%;height:100%;display:block}
+#mini .t{position:absolute;left:8px;top:4px;font-size:8px;letter-spacing:.25em;color:#ffd9f3;opacity:.85}
+#title{position:fixed;left:14px;bottom:60px;max-width:380px;z-index:5;text-shadow:0 1px 3px #000}
+#title .h{font-size:11px;letter-spacing:.3em;color:#ffd9f3;font-weight:700;margin-bottom:3px}
+#title .s{font-size:10px;letter-spacing:.16em;color:#cfd6ff;opacity:.8}
+#portal{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);font-size:24px;letter-spacing:.4em;color:#fff;text-shadow:0 0 18px #ffd9f3,0 0 32px #b56cff;font-weight:700;opacity:0;pointer-events:none;z-index:7;transition:opacity .5s}
+#portal.on{opacity:1}
+#dust{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 100%,rgba(255,217,243,.08),transparent 60%);z-index:1;mix-blend-mode:screen}
+.fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:8;transition:opacity .6s}
+.fade.on{opacity:1}
+</style>
+</head>
+<body>
+<!-- ROUND17_PORTAL v1 -->
+<canvas id="c"></canvas>
+<div id="dust"></div>
+<div id="hud">
+  <div id="zone">ZONE: CONVENTION HALL</div>
+  <div id="sub">DAY 1 · 0 COSPLAYERS HERE</div>
+  <span id="stamp">HARMONY CON · 2026</span>
+</div>
+<div id="cam"><div class="l">DIRECTOR</div><div class="v">HALL · MAIN STAGE</div></div>
+<div id="title"><div class="h">HARMONY CON 2026</div><div class="s">an anime convention multiverse · cosplay across five zones</div></div>
+<div id="mini"><div class="t">CON FLOOR PLAN</div><canvas id="mc" width="172" height="172"></canvas></div>
+<div id="portal">◈ PORTAL ◈</div>
+<div id="chyron"><div class="bar">LIVE FROM HARMONY CON</div><div class="scroll"><span id="ticker">Welcome to HARMONY CON 2026 — five themed cosplay zones await.</span></div></div>
+<div class="fade" id="fade"></div>
+<script>
+(function(){
+'use strict';
+
+// ---------- bootstrapping ----------
+var THREE_=window.THREE;
+var canvas=document.getElementById('c');
+var renderer=new THREE_.WebGLRenderer({canvas:canvas,antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.7));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.shadowMap.enabled=false;
+renderer.outputColorSpace=THREE_.SRGBColorSpace;
+
+var scene,camera,clock,disposables=[],npcs=[],zoneGroups={},portals=[],particleSystems=[];
+var startTime=performance.now();
+
+// ---------- memory ----------
+var MEMKEY='harmony_con_memory_v1';
+function loadMem(){try{var s=localStorage.getItem(MEMKEY);if(!s)return null;return JSON.parse(s);}catch(e){return null;}}
+function saveMem(m){try{localStorage.setItem(MEMKEY,JSON.stringify(m));}catch(e){}}
+var mem=loadMem()||{day:1,visits:{},photos:0,autographs:0,cosplayers:{}};
+mem.day=(mem.day||1)+0;
+function bumpDay(){mem.day=(mem.day||1)+1;mem.photos=(mem.photos||0)+Math.floor(Math.random()*30+20);mem.autographs=(mem.autographs||0)+Math.floor(Math.random()*12+5);saveMem(mem);}
+
+// ---------- zone definitions ----------
+var ZONES=[
+  {id:'hall',name:'CONVENTION HALL',sub:'main stage · autograph table · food court',color:0xfff3d9,accent:0xffb8d6,fog:0x1a1424,cx:0,cz:0,rad:38,
+    subs:['MAIN STAGE','AUTOGRAPH TABLE','FOOD COURT','PHOTO BOOTH','MERCH ROW','INFO DESK']},
+  {id:'mecha',name:'MECHA HANGAR',sub:'four mech statues · pilot lounge · robot-fight dome',color:0x8a96a8,accent:0xff5a3a,fog:0x14181f,cx:120,cz:0,rad:44,
+    subs:['MECH STATUE A','MECH STATUE B','MECH STATUE C','MECH STATUE D','PILOT LOUNGE','ROBOT-FIGHT DOME','FUEL STATION']},
+  {id:'magi',name:'MAGICAL GIRL GARDEN',sub:'transformation booths · sparkle clouds · panel stage',color:0xffb8e6,accent:0xc89aff,fog:0x2a1838,cx:60,cz:104,rad:42,
+    subs:['TRANSFORMATION BOOTH','PANEL STAGE','SPARKLE-CLOUD OVERLOOK','WAND EXHIBIT','FRIENDSHIP PACT CIRCLE','PETAL FOUNTAIN']},
+  {id:'samu',name:'SAMURAI VILLAGE',sub:'bamboo grove · dojo · tea-house · sword exhibit',color:0x6da876,accent:0xd9b96b,fog:0x12241a,cx:-60,cz:104,rad:42,
+    subs:['BAMBOO GROVE','DOJO','TEA-HOUSE','SWORD EXHIBIT','TORII WALK','STONE LANTERNS']},
+  {id:'school',name:'SCHOOL CLUBROOM',sub:'classroom · rooftop · club room · cherry blossom trail',color:0xffc8d4,accent:0xa8c0ff,fog:0x281c24,cx:-120,cz:0,rad:42,
+    subs:['CLASSROOM','ROOFTOP','CLUB ROOM','CHERRY BLOSSOM TRAIL','SCHOOL GATE','LIBRARY CORNER']},
+  {id:'cyber',name:'CYBERPUNK STREETS',sub:'neon alleys · ramen stand · hacker den · holo-billboards',color:0xff3aa8,accent:0x3affe6,fog:0x10081c,cx:0,cz:-128,rad:44,
+    subs:['NEON ALLEY','RAMEN STAND','HACKER DEN','HOLO-BILLBOARDS','RAIN-SLICK CROSSWALK','SYNTH ARCADE']}
+];
+var ZIDX={};ZONES.forEach(function(z,i){ZIDX[z.id]=i;});
+
+// ---------- featured cosplayers ----------
+var FEATURED=[
+  {name:'Reia',role:'Mecha Pilot',home:'mecha',outfit:'flight-suit'},
+  {name:'Lumi',role:'Magical Girl',home:'magi',outfit:'sparkle-dress'},
+  {name:'Saya',role:'Samurai',home:'samu',outfit:'kimono-hakama'},
+  {name:'Ako',role:'School-Girl',home:'school',outfit:'sailor-uniform'},
+  {name:'Cinder',role:'Cyber-Hacker',home:'cyber',outfit:'neon-jacket'},
+  {name:'Kira',role:'Fan Attendee',home:'hall',outfit:'badge-lanyard'},
+  {name:'Tomi',role:'Fan Attendee',home:'hall',outfit:'tee-and-cape'},
+  {name:'Bex',role:'Fan Attendee',home:'magi',outfit:'pastel-hoodie'},
+  {name:'Vidalia',role:'Fan Attendee',home:'samu',outfit:'travel-cloak'},
+  {name:'Ren',role:'Fan Attendee',home:'school',outfit:'blazer'},
+  {name:'Otto',role:'Fan Attendee',home:'cyber',outfit:'visor-coat'},
+  {name:'Margaux',role:'Fan Attendee',home:'mecha',outfit:'mechanic-jumpsuit'}
+];
+var ZONE_HOSTS=[
+  {name:'Captain Hex',zone:'mecha'},
+  {name:'Aunt Sparkle',zone:'magi'},
+  {name:'Master Tsuru',zone:'samu'},
+  {name:'Class-Pres Yua',zone:'school'},
+  {name:'DJ Static',zone:'cyber'}
+];
+var NAME_POOL=['Aiko','Riku','Mio','Hana','Sora','Yuki','Kenji','Mei','Taro','Suki','Jun','Nori','Kazu','Rumi','Eito','Hina','Kaito','Lulu','Rio','Sumi',
+  'Nia','Pippa','Quill','Toby','Wren','Ash','Cleo','Dax','Esme','Finn','Gus','Halle','Ivo','Juno','Kell','Liv','Mox','Nyx','Opal','Pax',
+  'Quinn','Rae','Sage','Theo','Ula','Vex','Wynn','Xio','Yara','Zed','Bram','Coda','Devi','Echo','Frey','Gale','Hux','Indi','Jolt','Kade',
+  'Loop','Mirth','Nova','Onyx','Pim','Riff','Skye','Trill','Umi','Vela','Whim','Xan','Yon','Zep','Briar','Cove','Dune','Ember','Fern','Glow',
+  'Halo','Ivy','Jet','Kit','Lark','Moss','Nest','Orin','Plume','Reed'];
+
+// merge FEATURED into mem.cosplayers
+FEATURED.forEach(function(f){
+  if(!mem.cosplayers[f.name]){mem.cosplayers[f.name]={visited:[f.home],upgrades:0};}
+  else{mem.cosplayers[f.name].upgrades=(mem.cosplayers[f.name].upgrades||0)+(mem.day>1?1:0);}
+});
+saveMem(mem);
+
+// ---------- camera ----------
+camera=new THREE_.PerspectiveCamera(55,window.innerWidth/window.innerHeight,0.5,800);
+camera.position.set(0,18,52);
+camera.lookAt(0,4,0);
+
+// ---------- scene ----------
+function buildScene(){
+  scene=new THREE_.Scene();
+  scene.fog=new THREE_.FogExp2(0x1a1424,0.006);
+  scene.background=new THREE_.Color(0x0a0814);
+
+  var hemi=new THREE_.HemisphereLight(0xfff3d9,0x231a30,0.95);scene.add(hemi);
+  var sun=new THREE_.DirectionalLight(0xffd9b8,0.85);sun.position.set(40,80,30);scene.add(sun);
+  var moon=new THREE_.DirectionalLight(0xb0c4ff,0.35);moon.position.set(-40,50,-30);scene.add(moon);
+  disposables.push(hemi,sun,moon);
+
+  buildGround();
+  ZONES.forEach(buildZone);
+  buildPortals();
+  buildCosplayers();
+  buildAmbient();
+}
+
+function buildGround(){
+  var geo=new THREE_.PlaneGeometry(700,700,1,1);
+  var mat=new THREE_.MeshLambertMaterial({color:0x1a1424});
+  var p=new THREE_.Mesh(geo,mat);p.rotation.x=-Math.PI/2;p.position.y=-0.05;scene.add(p);
+  disposables.push(geo,mat);
+}
+
+// ---------- per-zone builders ----------
+function buildZone(z){
+  var g=new THREE_.Group();g.position.set(z.cx,0,z.cz);scene.add(g);
+  zoneGroups[z.id]=g;
+
+  // floor
+  var fg=new THREE_.CircleGeometry(z.rad,48);
+  var fm=new THREE_.MeshLambertMaterial({color:z.color});
+  var f=new THREE_.Mesh(fg,fm);f.rotation.x=-Math.PI/2;f.position.y=0.01;g.add(f);
+  disposables.push(fg,fm);
+
+  // ring border
+  var rg=new THREE_.RingGeometry(z.rad-0.4,z.rad,64);
+  var rm=new THREE_.MeshBasicMaterial({color:z.accent,side:THREE_.DoubleSide,transparent:true,opacity:0.55});
+  var r=new THREE_.Mesh(rg,rm);r.rotation.x=-Math.PI/2;r.position.y=0.05;g.add(r);
+  disposables.push(rg,rm);
+
+  if(z.id==='hall')buildHall(g,z);
+  else if(z.id==='mecha')buildMecha(g,z);
+  else if(z.id==='magi')buildMagi(g,z);
+  else if(z.id==='samu')buildSamu(g,z);
+  else if(z.id==='school')buildSchool(g,z);
+  else if(z.id==='cyber')buildCyber(g,z);
+}
+
+function box(w,h,d,c,x,y,z,parent){
+  var ge=new THREE_.BoxGeometry(w,h,d);
+  var ma=new THREE_.MeshLambertMaterial({color:c});
+  var m=new THREE_.Mesh(ge,ma);m.position.set(x,y,z);parent.add(m);
+  disposables.push(ge,ma);
+  return m;
+}
+function cyl(rt,rb,h,c,x,y,z,parent,seg){
+  var ge=new THREE_.CylinderGeometry(rt,rb,h,seg||16);
+  var ma=new THREE_.MeshLambertMaterial({color:c});
+  var m=new THREE_.Mesh(ge,ma);m.position.set(x,y,z);parent.add(m);
+  disposables.push(ge,ma);
+  return m;
+}
+function sph(r,c,x,y,z,parent,emis){
+  var ge=new THREE_.SphereGeometry(r,16,12);
+  var ma=new THREE_.MeshLambertMaterial({color:c,emissive:emis||0x000000,emissiveIntensity:emis?0.7:0});
+  var m=new THREE_.Mesh(ge,ma);m.position.set(x,y,z);parent.add(m);
+  disposables.push(ge,ma);
+  return m;
+}
+
+// CONVENTION HALL
+function buildHall(g,z){
+  // big tent
+  var tent=cyl(28,30,12,0xfff3d9,0,6,0,g,16);
+  // main stage
+  var stage=box(20,1.2,10,0x6a4a8a,0,0.6,-12,g);
+  box(20,5,1,0xb56cff,0,3,-17.5,g);
+  // stage lights
+  for(var i=0;i<5;i++){sph(0.5,0xfff3d9,(-8+i*4),5.5,-13,g,0xfff3d9);}
+  // autograph row
+  for(var j=0;j<6;j++){
+    box(2.4,0.9,1.4,0x8a5a3a,(-8+j*3),0.45,8,g);
+    box(0.3,1.6,0.3,0x6a3a2a,(-8+j*3),0.8,8.7,g);
+  }
+  // food court (round tables)
+  for(var k=0;k<5;k++){
+    var ang=k/5*Math.PI*2;
+    cyl(0.9,0.9,0.7,0xffd9a8,Math.cos(ang)*16,0.35,Math.sin(ang)*16+4,g);
+  }
+  // info desk
+  box(4,1,1.6,0xff8ab8,12,0.5,-2,g);
+  // photo booth
+  box(2.6,3,2.6,0xff5aa8,-14,1.5,2,g);
+  box(2.4,0.4,2.4,0x000000,-14,3.2,2,g);
+  // banners
+  for(var b=0;b<8;b++){
+    var aa=b/8*Math.PI*2;
+    box(0.2,4,3,0xffc8d4,Math.cos(aa)*z.rad*0.92,8,Math.sin(aa)*z.rad*0.92,g);
+  }
+}
+
+// MECHA HANGAR
+function buildMecha(g,z){
+  // 4 mech statues
+  var spots=[[-14,-10],[14,-10],[-14,10],[14,10]];
+  var mechCols=[0xff5a3a,0x3a86ff,0xfff3d9,0x6affb8];
+  spots.forEach(function(s,i){
+    var mg=new THREE_.Group();mg.position.set(s[0],0,s[1]);g.add(mg);
+    box(3,7,2.5,0x7a8898,0,4,0,mg);          // torso
+    box(4,1.4,2.8,mechCols[i],0,7.6,0,mg);   // head
+    sph(0.35,0xff5a3a,1.0,7.6,1.2,mg,0xff5a3a);
+    box(1.2,5,1.2,0x5a6878,-2.2,4.5,0,mg);   // arm L
+    box(1.2,5,1.2,0x5a6878,2.2,4.5,0,mg);    // arm R
+    box(1.4,4,1.4,0x4a5868,-0.9,2,0,mg);     // leg L
+    box(1.4,4,1.4,0x4a5868,0.9,2,0,mg);      // leg R
+    cyl(0.2,0.2,4,0xff5a3a,-3.4,5.5,0,mg);   // antenna
+    mg.userData.bob=Math.random()*Math.PI*2;
+  });
+  // pilot lounge (long bench)
+  box(8,0.5,2,0x3a4858,0,0.25,18,g);
+  box(8,1.6,0.4,0x2a3848,0,1.05,19,g);
+  // robot-fight dome
+  var dg=new THREE_.SphereGeometry(7,18,12,0,Math.PI*2,0,Math.PI/2);
+  var dm=new THREE_.MeshLambertMaterial({color:0x6a7888,transparent:true,opacity:0.5});
+  var dome=new THREE_.Mesh(dg,dm);dome.position.set(0,0,-18);g.add(dome);
+  disposables.push(dg,dm);
+  cyl(7,7,0.3,0x4a5868,0,0.15,-18,g,18);
+  // fuel station
+  cyl(1.2,1.2,3,0xff5a3a,-22,1.5,-2,g);
+  cyl(1.2,1.2,3,0xff5a3a,-22,1.5,2,g);
+  box(4,3,1,0xfff3d9,-22,1.5,0,g);
+  // hangar door frame
+  box(14,9,0.6,0x2a3848,0,4.5,-z.rad+1,g);
+  box(14,0.6,1,0xff5a3a,0,9,-z.rad+1,g);
+  // crates
+  for(var c=0;c<8;c++){
+    box(1.6,1.6,1.6,0x6a7888,-18+c*1.7,0.8,12+(c%2)*1.7,g);
+  }
+}
+
+// MAGICAL GIRL GARDEN
+function buildMagi(g,z){
+  // transformation booth (sparkle cylinder)
+  var tg=new THREE_.CylinderGeometry(2.4,2.4,6,18,1,true);
+  var tm=new THREE_.MeshLambertMaterial({color:0xffb8e6,transparent:true,opacity:0.55,side:THREE_.DoubleSide,emissive:0xff8ad9,emissiveIntensity:0.5});
+  var tb=new THREE_.Mesh(tg,tm);tb.position.set(0,3,-12);g.add(tb);
+  disposables.push(tg,tm);
+  cyl(2.6,2.6,0.4,0xc89aff,0,0.2,-12,g);
+  sph(0.6,0xfff3d9,0,6.3,-12,g,0xfff3d9);
+  // panel stage
+  box(10,1,5,0xc89aff,0,0.5,12,g);
+  box(10,3,0.5,0xffb8e6,0,2,14.4,g);
+  for(var i=0;i<3;i++){box(1,2,1,0xff8ad9,(-3+i*3),1,12,g);}
+  // sparkle-cloud overlook
+  var spots=[[-16,-2,3],[16,4,2.5],[-12,2,-14,2],[14,3,-14,2.4]];
+  spots.forEach(function(p){
+    var s=sph(p[3]||2.5,0xfff3d9,p[0],4+(p[1]||0),p[2],g,0xffd9f3);
+    s.userData.bob=Math.random()*Math.PI*2;
+  });
+  // wand exhibit (display pillars)
+  for(var w=0;w<4;w++){
+    var ang=w/4*Math.PI*2;
+    cyl(0.5,0.5,2.2,0xc89aff,Math.cos(ang)*8,1.1,Math.sin(ang)*8,g);
+    sph(0.35,0xfff3d9,Math.cos(ang)*8,2.6,Math.sin(ang)*8,g,0xffd9f3);
+  }
+  // friendship pact circle (ring of stones)
+  for(var r=0;r<8;r++){
+    var aa=r/8*Math.PI*2;
+    sph(0.6,0xff8ad9,Math.cos(aa)*6+18,0.6,Math.sin(aa)*6,g);
+  }
+  // petal fountain
+  cyl(2.4,2.4,0.5,0xc89aff,-18,0.25,0,g);
+  cyl(0.8,0.8,2,0xffb8e6,-18,1.25,0,g);
+  sph(1,0xfff3d9,-18,2.4,0,g,0xffd9f3);
+  // gate arch (sparkle)
+  cyl(0.4,0.4,7,0xc89aff,-5,3.5,-z.rad+2,g);
+  cyl(0.4,0.4,7,0xc89aff,5,3.5,-z.rad+2,g);
+  box(11,0.7,0.7,0xffb8e6,0,7.2,-z.rad+2,g);
+  for(var sp=0;sp<6;sp++){sph(0.3,0xfff3d9,(-5+sp*2),7.2,-z.rad+2,g,0xfff3d9);}
+}
+
+// SAMURAI VILLAGE
+function buildSamu(g,z){
+  // bamboo grove
+  for(var b=0;b<26;b++){
+    var ang=Math.random()*Math.PI*2;
+    var rr=10+Math.random()*22;
+    var x=Math.cos(ang)*rr,zz=Math.sin(ang)*rr;
+    if(Math.abs(x)<8&&Math.abs(zz)<8)continue;
+    cyl(0.18,0.22,6+Math.random()*3,0x6da876,x,3.5,zz,g,8);
+    sph(1.2,0x4a8856,x,7.5,zz,g);
+  }
+  // dojo
+  box(8,4,6,0xd9b96b,0,2,-8,g);
+  box(9.5,0.6,7.5,0x3a2a1a,0,4.4,-8,g);
+  box(10.5,0.4,8.5,0x2a1a0a,0,4.7,-8,g);
+  box(0.4,2.5,6,0x3a2a1a,-3.8,2.25,-8,g);
+  box(0.4,2.5,6,0x3a2a1a,3.8,2.25,-8,g);
+  // tea-house
+  box(5,3,5,0xfff3d9,-12,1.5,8,g);
+  box(6.5,0.5,6.5,0x3a2a1a,-12,3.3,8,g);
+  cyl(0.2,0.2,3,0x3a2a1a,-9.6,1.5,5.6,g);
+  // sword exhibit
+  for(var s=0;s<5;s++){
+    box(1.4,0.4,0.6,0xd9b96b,(8+s*1.6),0.4,8,g);
+    cyl(0.05,0.05,1.4,0xc8c8c8,(8+s*1.6),1.1,8,g);
+    box(0.18,0.18,0.18,0xd9b96b,(8+s*1.6),1.85,8,g);
+  }
+  // torii walk (red gates)
+  for(var t=0;t<4;t++){
+    var zp=14-t*6;
+    cyl(0.3,0.3,5,0xb83a3a,-3,2.5,zp,g);
+    cyl(0.3,0.3,5,0xb83a3a,3,2.5,zp,g);
+    box(7.6,0.5,0.5,0xb83a3a,0,5.1,zp,g);
+    box(8.6,0.4,0.4,0x6a1a1a,0,5.5,zp,g);
+  }
+  // stone lanterns
+  for(var l=0;l<6;l++){
+    var aa=l/6*Math.PI*2;
+    var lx=Math.cos(aa)*16,lz=Math.sin(aa)*16;
+    cyl(0.4,0.5,0.6,0x8a8a8a,lx,0.3,lz,g);
+    cyl(0.5,0.5,0.8,0x8a8a8a,lx,1,lz,g);
+    sph(0.4,0xfff3d9,lx,1.7,lz,g,0xffd9a8);
+    cyl(0.6,0.4,0.4,0x6a6a6a,lx,2.2,lz,g);
+  }
+  // gate arch (torii facing hub)
+  cyl(0.4,0.4,7,0xb83a3a,-5,3.5,z.rad-2,g);
+  cyl(0.4,0.4,7,0xb83a3a,5,3.5,z.rad-2,g);
+  box(11.5,0.6,0.7,0xb83a3a,0,7.2,z.rad-2,g);
+  box(13,0.5,0.5,0x6a1a1a,0,7.6,z.rad-2,g);
+}
+
+// SCHOOL CLUBROOM
+function buildSchool(g,z){
+  // school building (3 story)
+  box(20,9,8,0xffe8d4,0,4.5,-6,g);
+  // windows row
+  for(var f=0;f<3;f++){
+    for(var w=0;w<5;w++){
+      box(1.6,1.2,0.2,0xa8c0ff,(-8+w*4),1.5+f*3,-2,g);
+    }
+  }
+  // rooftop railing
+  for(var rr=0;rr<5;rr++){box(0.2,0.6,0.2,0xfff3d9,(-8+rr*4),9.3,-2,g);}
+  box(20,0.2,8,0xfff3d9,0,9.1,-6,g);
+  // school gate (front)
+  box(0.5,4,0.5,0x8a8a8a,-6,2,12,g);
+  box(0.5,4,0.5,0x8a8a8a,6,2,12,g);
+  box(13,0.4,0.4,0x8a8a8a,0,4.2,12,g);
+  // cherry blossom trail trees
+  for(var c=0;c<8;c++){
+    var x=10+(c%2)*6,zz=12-c*3;
+    cyl(0.3,0.4,2.6,0x6a4a3a,x,1.3,zz,g);
+    sph(2,0xffc8d4,x,3.6,zz,g);
+  }
+  for(var c2=0;c2<8;c2++){
+    var x2=-10-(c2%2)*6,zz2=12-c2*3;
+    cyl(0.3,0.4,2.6,0x6a4a3a,x2,1.3,zz2,g);
+    sph(2,0xffc8d4,x2,3.6,zz2,g);
+  }
+  // classroom desks (visible through window cutout)
+  for(var d=0;d<4;d++){
+    box(1.4,0.6,0.8,0xd9a878,(-6+d*4),0.3,4,g);
+    box(0.6,0.6,0.6,0x6a4a3a,(-6+d*4),0.3,5,g);
+  }
+  // club room shed
+  box(4,3,3,0xff8ab8,12,1.5,4,g);
+  box(4.6,0.3,3.6,0xb83a3a,12,3.15,4,g);
+  // library corner
+  box(3,2.4,1.4,0x6a4a8a,-14,1.2,4,g);
+  // gate arch facing hub (school gate ornate)
+  box(0.5,5,0.5,0xa8c0ff,-5,2.5,z.rad-2,g);
+  box(0.5,5,0.5,0xa8c0ff,5,2.5,z.rad-2,g);
+  box(11,0.5,0.5,0xa8c0ff,0,5.2,z.rad-2,g);
+  box(13,0.4,0.4,0xff8ab8,0,5.7,z.rad-2,g);
+}
+
+// CYBERPUNK STREETS
+function buildCyber(g,z){
+  // tall buildings
+  for(var b=0;b<10;b++){
+    var ang=b/10*Math.PI*2;
+    var rr=z.rad*0.78;
+    var x=Math.cos(ang)*rr,zz=Math.sin(ang)*rr;
+    var h=10+Math.random()*14;
+    box(5,h,5,0x18101a,x,h/2,zz,g);
+    // window light strips
+    for(var k=0;k<Math.floor(h/2);k++){
+      box(0.2,0.4,5.05,0xff3aa8,x+2.55,1+k*2,zz,g);
+      box(5.05,0.3,0.2,0x3affe6,x,1.5+k*2,zz+2.55,g);
+    }
+  }
+  // ramen stand
+  box(5,2,3,0xb83a3a,-12,1,2,g);
+  box(5.5,0.3,3.5,0xfff3d9,-12,2.15,2,g);
+  cyl(0.15,0.15,2.4,0xfff3d9,-14.5,3.4,2,g);
+  cyl(0.15,0.15,2.4,0xfff3d9,-9.5,3.4,2,g);
+  box(5.6,0.4,0.05,0xff3aa8,-12,4.5,2,g);
+  // hacker den (small glowing box)
+  box(4,3,4,0x10182a,12,1.5,2,g);
+  for(var h2=0;h2<5;h2++){box(0.6,0.4,0.05,0x3affe6,11+(h2%3)*0.6,1.5+(h2%2)*0.6,4.05,g);}
+  sph(0.6,0x3affe6,12,3.6,2,g,0x3affe6);
+  // holo-billboards
+  box(8,4,0.3,0xff3aa8,0,8,-z.rad+3,g);
+  box(8,4,0.3,0x3affe6,0,8,z.rad-3,g);
+  // alley lamp posts (neon)
+  for(var l=0;l<8;l++){
+    var aa=l/8*Math.PI*2;
+    var lx=Math.cos(aa)*z.rad*0.4,lz=Math.sin(aa)*z.rad*0.4;
+    cyl(0.1,0.1,3.6,0x3a2848,lx,1.8,lz,g);
+    sph(0.4,0xff3aa8,lx,3.7,lz,g,0xff3aa8);
+  }
+  // crosswalk strips
+  for(var s=0;s<6;s++){box(2.5,0.05,0.5,0xfff3d9,-3+s*1.2,0.05,0,g);}
+  // arcade
+  box(4,3,2,0xff3aa8,16,1.5,-8,g);
+  // arch (neon arch)
+  box(1,7,1,0x3a2848,-5,3.5,-z.rad+2,g);
+  box(1,7,1,0x3a2848,5,3.5,-z.rad+2,g);
+  box(11,1,1,0xff3aa8,0,7.5,-z.rad+2,g);
+  for(var n=0;n<5;n++){sph(0.25,0x3affe6,(-4+n*2),7.5,-z.rad+2,g,0x3affe6);}
+}
+
+// ---------- portals ----------
+function buildPortals(){
+  ZONES.forEach(function(z,i){
+    if(z.id==='hall')return;
+    // portal location: vector from hall to zone, at zone edge facing hall
+    var dx=z.cx,dz=z.cz;
+    var len=Math.sqrt(dx*dx+dz*dz);
+    var nx=dx/len,nz=dz/len;
+    // outer (zone-side)
+    var pPos=new THREE_.Vector3(z.cx-nx*(z.rad-2),3,z.cz-nz*(z.rad-2));
+    // inner (hall-side, at hall edge)
+    var hPos=new THREE_.Vector3(nx*(36),3,nz*(36));
+
+    // visual ring
+    var rg=new THREE_.TorusGeometry(2.5,0.32,10,28);
+    var rm=new THREE_.MeshLambertMaterial({color:z.accent,emissive:z.accent,emissiveIntensity:0.7});
+    var ring=new THREE_.Mesh(rg,rm);ring.position.copy(hPos);ring.rotation.y=Math.atan2(nz,nx);scene.add(ring);
+    disposables.push(rg,rm);
+
+    var rg2=new THREE_.TorusGeometry(2.5,0.32,10,28);
+    var rm2=new THREE_.MeshLambertMaterial({color:z.accent,emissive:z.accent,emissiveIntensity:0.7});
+    var ring2=new THREE_.Mesh(rg2,rm2);ring2.position.copy(pPos);ring2.rotation.y=Math.atan2(nz,nx);scene.add(ring2);
+    disposables.push(rg2,rm2);
+
+    portals.push({zone:z.id,outer:pPos,inner:hPos,r1:ring,r2:ring2});
+  });
+}
+
+// ---------- cosplayers ----------
+function makeCosplayerMesh(palette){
+  var g=new THREE_.Group();
+  // body
+  var body=new THREE_.Mesh(new THREE_.CylinderGeometry(0.32,0.4,1.2,8),new THREE_.MeshLambertMaterial({color:palette.body}));
+  body.position.y=0.6;g.add(body);disposables.push(body.geometry,body.material);
+  // head
+  var head=new THREE_.Mesh(new THREE_.SphereGeometry(0.32,12,10),new THREE_.MeshLambertMaterial({color:palette.skin}));
+  head.position.y=1.5;g.add(head);disposables.push(head.geometry,head.material);
+  // hair
+  var hair=new THREE_.Mesh(new THREE_.SphereGeometry(0.34,12,10,0,Math.PI*2,0,Math.PI*0.55),new THREE_.MeshLambertMaterial({color:palette.hair}));
+  hair.position.y=1.55;g.add(hair);disposables.push(hair.geometry,hair.material);
+  // accessory cone (cosplay flair)
+  if(palette.flair){
+    var fl=new THREE_.Mesh(new THREE_.ConeGeometry(0.18,0.5,8),new THREE_.MeshLambertMaterial({color:palette.flair,emissive:palette.flair,emissiveIntensity:0.5}));
+    fl.position.y=1.95;g.add(fl);disposables.push(fl.geometry,fl.material);
+  }
+  return g;
+}
+
+var ZONE_PALETTES={
+  hall:{body:0xfff3d9,skin:0xfdd9b6,hair:0x6a4a3a,flair:0xffb8d6},
+  mecha:{body:0xff5a3a,skin:0xfdd9b6,hair:0x3a4858,flair:0xff5a3a},
+  magi:{body:0xffb8e6,skin:0xfdd9b6,hair:0xc89aff,flair:0xfff3d9},
+  samu:{body:0x6da876,skin:0xfdd9b6,hair:0x2a1a0a,flair:0xd9b96b},
+  school:{body:0xa8c0ff,skin:0xfdd9b6,hair:0x6a4a3a,flair:0xffc8d4},
+  cyber:{body:0x18101a,skin:0xfdd9b6,hair:0xff3aa8,flair:0x3affe6}
+};
+
+function buildCosplayers(){
+  // 12 featured
+  FEATURED.forEach(function(f,i){
+    var palette=ZONE_PALETTES[f.home];
+    var mesh=makeCosplayerMesh(palette);
+    var z=ZONES[ZIDX[f.home]];
+    var ang=Math.random()*Math.PI*2;var rr=Math.random()*z.rad*0.6;
+    mesh.position.set(z.cx+Math.cos(ang)*rr,0,z.cz+Math.sin(ang)*rr);
+    scene.add(mesh);
+    npcs.push({mesh:mesh,name:f.name,role:f.role,home:f.home,zone:f.home,featured:true,
+      v:new THREE_.Vector3((Math.random()-0.5)*1.2,0,(Math.random()-0.5)*1.2),
+      target:null,portalCool:0,palette:palette,outfit:f.outfit,upgrades:(mem.cosplayers[f.name]&&mem.cosplayers[f.name].upgrades)||0});
+  });
+  // 5 zone hosts
+  ZONE_HOSTS.forEach(function(h){
+    var palette=ZONE_PALETTES[h.zone];
+    var mesh=makeCosplayerMesh(palette);
+    var z=ZONES[ZIDX[h.zone]];
+    var ang=Math.random()*Math.PI*2;var rr=Math.random()*z.rad*0.4;
+    mesh.position.set(z.cx+Math.cos(ang)*rr,0,z.cz+Math.sin(ang)*rr);
+    scene.add(mesh);
+    npcs.push({mesh:mesh,name:h.name,role:'Zone Host',home:h.zone,zone:h.zone,featured:false,host:true,
+      v:new THREE_.Vector3((Math.random()-0.5)*0.8,0,(Math.random()-0.5)*0.8),
+      target:null,portalCool:0,palette:palette,outfit:'host'});
+  });
+  // 80 fan attendees, instanced-ish (each is small group)
+  for(var i=0;i<80;i++){
+    var zid=ZONES[Math.floor(Math.random()*ZONES.length)].id;
+    var palette=ZONE_PALETTES[zid];
+    // simple 2-mesh fan to save geom (cube body + sphere head)
+    var grp=new THREE_.Group();
+    var bg=new THREE_.BoxGeometry(0.5,1.1,0.4);
+    var bm=new THREE_.MeshLambertMaterial({color:palette.body});
+    var b=new THREE_.Mesh(bg,bm);b.position.y=0.55;grp.add(b);
+    disposables.push(bg,bm);
+    var hg=new THREE_.SphereGeometry(0.28,8,6);
+    var hm=new THREE_.MeshLambertMaterial({color:palette.skin});
+    var hd=new THREE_.Mesh(hg,hm);hd.position.y=1.4;grp.add(hd);
+    disposables.push(hg,hm);
+    var z=ZONES[ZIDX[zid]];
+    var ang=Math.random()*Math.PI*2;var rr=Math.random()*z.rad*0.78;
+    grp.position.set(z.cx+Math.cos(ang)*rr,0,z.cz+Math.sin(ang)*rr);
+    scene.add(grp);
+    var nm=NAME_POOL[i%NAME_POOL.length];
+    npcs.push({mesh:grp,name:nm,role:'Attendee',home:zid,zone:zid,featured:false,
+      v:new THREE_.Vector3((Math.random()-0.5)*1.0,0,(Math.random()-0.5)*1.0),
+      target:null,portalCool:0,palette:palette,outfit:'fan'});
+  }
+}
+
+// ---------- ambient particles (cherry blossoms over school, sparkles over magi) ----------
+function buildAmbient(){
+  // cherry blossoms (school zone)
+  var sZone=ZONES[ZIDX.school];
+  var pet=new THREE_.BufferGeometry();
+  var cnt=120;
+  var pos=new Float32Array(cnt*3);
+  for(var i=0;i<cnt;i++){
+    pos[i*3]=sZone.cx+(Math.random()-0.5)*sZone.rad*1.6;
+    pos[i*3+1]=2+Math.random()*8;
+    pos[i*3+2]=sZone.cz+(Math.random()-0.5)*sZone.rad*1.6;
+  }
+  pet.setAttribute('position',new THREE_.BufferAttribute(pos,3));
+  var pmat=new THREE_.PointsMaterial({color:0xffc8d4,size:0.4,transparent:true,opacity:0.8});
+  var petals=new THREE_.Points(pet,pmat);scene.add(petals);
+  particleSystems.push({pts:petals,zone:'school',mode:'fall'});
+  disposables.push(pet,pmat);
+  // sparkles (magi)
+  var mZone=ZONES[ZIDX.magi];
+  var spkG=new THREE_.BufferGeometry();
+  var sCnt=180;
+  var sPos=new Float32Array(sCnt*3);
+  for(var j=0;j<sCnt;j++){
+    sPos[j*3]=mZone.cx+(Math.random()-0.5)*mZone.rad*1.4;
+    sPos[j*3+1]=1+Math.random()*10;
+    sPos[j*3+2]=mZone.cz+(Math.random()-0.5)*mZone.rad*1.4;
+  }
+  spkG.setAttribute('position',new THREE_.BufferAttribute(sPos,3));
+  var spkM=new THREE_.PointsMaterial({color:0xfff3d9,size:0.35,transparent:true,opacity:0.95});
+  var spk=new THREE_.Points(spkG,spkM);scene.add(spk);
+  particleSystems.push({pts:spk,zone:'magi',mode:'sparkle'});
+  disposables.push(spkG,spkM);
+  // rain (cyber)
+  var cZone=ZONES[ZIDX.cyber];
+  var rg=new THREE_.BufferGeometry();
+  var rCnt=160;
+  var rPos=new Float32Array(rCnt*3);
+  for(var k=0;k<rCnt;k++){
+    rPos[k*3]=cZone.cx+(Math.random()-0.5)*cZone.rad*1.6;
+    rPos[k*3+1]=Math.random()*16;
+    rPos[k*3+2]=cZone.cz+(Math.random()-0.5)*cZone.rad*1.6;
+  }
+  rg.setAttribute('position',new THREE_.BufferAttribute(rPos,3));
+  var rm=new THREE_.PointsMaterial({color:0x3affe6,size:0.18,transparent:true,opacity:0.55});
+  var rain=new THREE_.Points(rg,rm);scene.add(rain);
+  particleSystems.push({pts:rain,zone:'cyber',mode:'rain'});
+  disposables.push(rg,rm);
+}
+
+// ---------- director cameras ----------
+var DIRECTORS=[
+  {zone:'mecha',name:'MECHA · HANGAR WIDE',pos:[0,18,52],look:[0,4,0]},
+  {zone:'mecha',name:'MECHA · PILOT CLOSE',pos:[6,3,16],look:[0,4,0]},
+  {zone:'mecha',name:'MECHA · ROBOT-FIGHT DOME',pos:[12,5,-18],look:[0,2,-18]},
+  {zone:'mecha',name:'MECHA · STATUE LOW',pos:[-14,2,-4],look:[-14,5,-10]},
+  {zone:'magi',name:'MAGI · SPARKLE-CLOUD AERIAL',pos:[0,30,0],look:[0,2,0]},
+  {zone:'magi',name:'MAGI · TRANSFORMATION BOOTH',pos:[5,3,-6],look:[0,4,-12]},
+  {zone:'magi',name:'MAGI · PANEL STAGE',pos:[0,5,22],look:[0,2,12]},
+  {zone:'magi',name:'MAGI · WAND EXHIBIT',pos:[0,2,0],look:[8,2,0]},
+  {zone:'samu',name:'SAMURAI · DOJO WIDE',pos:[0,8,12],look:[0,2,-8]},
+  {zone:'samu',name:'SAMURAI · TEA-HOUSE LOW',pos:[-7,1.6,14],look:[-12,2,8]},
+  {zone:'samu',name:'SAMURAI · TORII WALK',pos:[0,2.4,30],look:[0,3,0]},
+  {zone:'samu',name:'SAMURAI · BAMBOO DRIFT',pos:[18,3,-8],look:[0,2,-8]},
+  {zone:'school',name:'SCHOOL · ROOFTOP',pos:[0,12,8],look:[0,9,-6]},
+  {zone:'school',name:'SCHOOL · CLASSROOM DESK',pos:[0,1.2,6],look:[0,1,-2]},
+  {zone:'school',name:'SCHOOL · CHERRY BLOSSOM DRIFT',pos:[14,3,18],look:[0,2,0]},
+  {zone:'school',name:'SCHOOL · GATE',pos:[0,3,18],look:[0,3,0]},
+  {zone:'cyber',name:'CYBERPUNK · ALLEY LOW',pos:[0,1.6,12],look:[0,1.5,-12]},
+  {zone:'cyber',name:'CYBERPUNK · RAMEN STAND',pos:[-9,2,5],look:[-12,1.5,2]},
+  {zone:'cyber',name:'CYBERPUNK · HOLO-BILLBOARD',pos:[0,8,18],look:[0,8,-30]},
+  {zone:'cyber',name:'CYBERPUNK · NEON ARCH',pos:[0,3,-30],look:[0,4,0]},
+  {zone:'hall',name:'HALL · MAIN STAGE',pos:[0,6,8],look:[0,3,-12]},
+  {zone:'hall',name:'HALL · AUTOGRAPH TABLE',pos:[-4,2,14],look:[0,1,8]},
+  {zone:'hall',name:'HALL · FOOD COURT DRIFT',pos:[16,4,16],look:[0,1,4]},
+  {zone:'hall',name:'HALL · PHOTO BOOTH',pos:[-9,2,5],look:[-14,2,2]},
+  {zone:'hall',name:'HALL · CROSS-COSPLAY MEET',pos:[8,2,2],look:[-8,2,-2]}
+];
+
+var currentZoneIdx=0; // hall
+var currentDir=DIRECTORS[20]; // hall main stage
+var camAnchor=new THREE_.Vector3(0,0,0);
+var camTargetPos=new THREE_.Vector3();
+var camTargetLook=new THREE_.Vector3();
+function applyDirector(d){
+  currentDir=d;
+  var zi=ZIDX[d.zone];
+  var z=ZONES[zi];
+  camAnchor.set(z.cx,0,z.cz);
+  camTargetPos.set(z.cx+d.pos[0],d.pos[1],z.cz+d.pos[2]);
+  camTargetLook.set(z.cx+d.look[0],d.look[1],z.cz+d.look[2]);
+  document.querySelector('#cam .v').textContent=d.name;
+}
+
+// ---------- portal travel ----------
+var nextPortalAt=performance.now()+15000;
+function pickNextZone(){
+  var pool=ZONES.filter(function(z){return z.id!==currentZone();});
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+function currentZone(){return ZONES[currentZoneIdx].id;}
+function travelTo(zid){
+  var fade=document.getElementById('fade');
+  var ptxt=document.getElementById('portal');
+  ptxt.textContent='◈ '+ZONES[ZIDX[zid]].name+' ◈';
+  ptxt.classList.add('on');
+  fade.classList.add('on');
+  setTimeout(function(){
+    currentZoneIdx=ZIDX[zid];
+    var dirs=DIRECTORS.filter(function(d){return d.zone===zid;});
+    applyDirector(dirs[Math.floor(Math.random()*dirs.length)]);
+    var z=ZONES[currentZoneIdx];
+    document.getElementById('zone').textContent='ZONE: '+z.name;
+    refreshHud();
+    scene.fog=new THREE_.FogExp2(z.fog,0.0065);
+    mem.visits[zid]=(mem.visits[zid]||0)+1;
+    saveMem(mem);
+    setTimeout(function(){fade.classList.remove('on');ptxt.classList.remove('on');},700);
+  },650);
+}
+
+function refreshHud(){
+  var z=ZONES[currentZoneIdx];
+  var here=npcs.filter(function(n){return n.zone===z.id;}).length;
+  document.getElementById('sub').textContent='DAY '+mem.day+' · '+here+' COSPLAYERS HERE · '+(z.subs[(Math.floor(performance.now()/4000))%z.subs.length]);
+  document.getElementById('stamp').style.color='#'+(z.accent.toString(16).padStart(6,'0'));
+  document.getElementById('stamp').style.borderColor='#'+(z.accent.toString(16).padStart(6,'0'));
+  document.getElementById('stamp').textContent=z.id.toUpperCase()+' · DAY '+mem.day;
+}
+
+// ---------- chyron ----------
+var CHYRON_LINES=[
+  "Cycle 1 — Reia\u2019s mecha cosplay wins Best in Show. Across the hall, Lumi and Saya cross zones for a magical-girl-meets-samurai photo session.",
+  "Cycle 2 — Cinder unveils a new neon-jacket variant in CYBERPUNK STREETS while Ako and Ren cosplay the school rooftop scene.",
+  "Cycle 3 — Captain Hex hosts a mech-pilot Q&A; Aunt Sparkle hands out friendship pacts at the petal fountain.",
+  "Cycle 4 — Master Tsuru leads a tea ceremony; Class-Pres Yua opens the cherry-blossom trail; DJ Static drops a 16-bit set.",
+  "Cycle 5 — Bex and Vidalia trade outfits at the transformation booth, debuting cross-zone mashup cosplays.",
+  "Cycle 6 — Reia, Lumi, Saya, Ako, and Cinder line up for the all-zones group photo at center stage."
+];
+var chyronIdx=0;
+function rotateChyron(){
+  var z=ZONES[currentZoneIdx];
+  var here=npcs.filter(function(n){return n.zone===z.id;}).map(function(n){return n.name;}).slice(0,4);
+  var line=CHYRON_LINES[chyronIdx%CHYRON_LINES.length];
+  var bonus=' · Currently in '+z.name+': '+(here.join(', ')||'—')+'. Day '+mem.day+' · '+(mem.photos||0)+' photos · '+(mem.autographs||0)+' autographs.';
+  document.getElementById('ticker').textContent=line+bonus;
+  chyronIdx++;
+}
+
+// ---------- mini-map ----------
+var miniCanvas=document.getElementById('mc');
+var mctx=miniCanvas.getContext('2d');
+function drawMini(){
+  var w=miniCanvas.width,h=miniCanvas.height;
+  mctx.clearRect(0,0,w,h);
+  mctx.fillStyle='rgba(8,4,18,.6)';mctx.fillRect(0,0,w,h);
+  // scale: world ~ +-200 -> canvas
+  var scale=w/360;
+  function px(x){return w/2+x*scale;}
+  function py(z){return h/2+z*scale;}
+  // zones
+  ZONES.forEach(function(z){
+    mctx.beginPath();
+    mctx.arc(px(z.cx),py(z.cz),z.rad*scale,0,Math.PI*2);
+    mctx.fillStyle='#'+z.color.toString(16).padStart(6,'0')+'40';
+    mctx.fill();
+    mctx.strokeStyle=(currentZone()===z.id)?'#fff7e6':'#'+z.accent.toString(16).padStart(6,'0');
+    mctx.lineWidth=(currentZone()===z.id)?2:1;
+    mctx.stroke();
+    mctx.fillStyle='#fff7e6';
+    mctx.font='7px Trebuchet MS';
+    mctx.textAlign='center';
+    var label=z.id.toUpperCase();
+    mctx.fillText(label,px(z.cx),py(z.cz)+2);
+  });
+  // npcs
+  npcs.forEach(function(n){
+    mctx.fillStyle=n.featured?'#ffd9f3':(n.host?'#fff7d9':'#cfd6ff');
+    mctx.fillRect(px(n.mesh.position.x)-(n.featured?1.5:0.7),py(n.mesh.position.z)-(n.featured?1.5:0.7),n.featured?3:1.4,n.featured?3:1.4);
+  });
+  // camera marker
+  mctx.fillStyle='#ffe600';
+  mctx.beginPath();mctx.arc(px(camera.position.x),py(camera.position.z),2.5,0,Math.PI*2);mctx.fill();
+}
+
+// ---------- npc behavior ----------
+function npcStep(n,dt){
+  n.portalCool=Math.max(0,(n.portalCool||0)-dt);
+  // pick target if none
+  if(!n.target||n.mesh.position.distanceTo(n.target)<1.5){
+    var z=ZONES[ZIDX[n.zone]];
+    // 8% chance to switch zones via portal
+    if(n.portalCool<=0&&Math.random()<0.06){
+      var pool=ZONES.filter(function(zz){return zz.id!==n.zone;});
+      var newZ=pool[Math.floor(Math.random()*pool.length)];
+      n.target=new THREE_.Vector3(newZ.cx+(Math.random()-0.5)*newZ.rad*0.6,0,newZ.cz+(Math.random()-0.5)*newZ.rad*0.6);
+      n.zone=newZ.id;
+      n.portalCool=8;
+      // outfit upgrade for featured
+      if(n.featured){
+        var p=ZONE_PALETTES[newZ.id];
+        // replace shirt color of body (first child)
+        if(n.mesh.children[0]&&n.mesh.children[0].material){n.mesh.children[0].material.color.setHex(p.body);}
+        if(n.mesh.children[2]&&n.mesh.children[2].material){n.mesh.children[2].material.color.setHex(p.hair);}
+        if(n.mesh.children[3]&&n.mesh.children[3].material){n.mesh.children[3].material.color.setHex(p.flair);n.mesh.children[3].material.emissive.setHex(p.flair);}
+        if(mem.cosplayers[n.name]){mem.cosplayers[n.name].visited.push(newZ.id);}
+      }
+    } else {
+      var ang=Math.random()*Math.PI*2;
+      var rr=Math.random()*z.rad*0.7;
+      n.target=new THREE_.Vector3(z.cx+Math.cos(ang)*rr,0,z.cz+Math.sin(ang)*rr);
+    }
+  }
+  var dir=new THREE_.Vector3().subVectors(n.target,n.mesh.position);
+  var len=dir.length();
+  if(len>0.01){
+    dir.normalize();
+    var sp=n.featured?2.0:(n.host?1.5:1.7);
+    n.mesh.position.x+=dir.x*sp*dt;
+    n.mesh.position.z+=dir.z*sp*dt;
+    n.mesh.rotation.y=Math.atan2(dir.x,dir.z);
+  }
+  // bob
+  n.mesh.position.y=Math.abs(Math.sin(performance.now()*0.006+(n.bobP||0)))*0.08;
+}
+
+// ---------- particle anim ----------
+function stepParticles(dt){
+  particleSystems.forEach(function(ps){
+    var arr=ps.pts.geometry.attributes.position.array;
+    var z=ZONES[ZIDX[ps.zone]];
+    if(ps.mode==='fall'){
+      for(var i=0;i<arr.length;i+=3){
+        arr[i+1]-=1.2*dt;
+        arr[i]+=Math.sin(performance.now()*0.001+i)*0.1*dt;
+        if(arr[i+1]<0.2){arr[i+1]=10;arr[i]=z.cx+(Math.random()-0.5)*z.rad*1.6;arr[i+2]=z.cz+(Math.random()-0.5)*z.rad*1.6;}
+      }
+    } else if(ps.mode==='sparkle'){
+      for(var j=0;j<arr.length;j+=3){
+        arr[j+1]+=Math.sin(performance.now()*0.004+j)*0.03;
+      }
+    } else if(ps.mode==='rain'){
+      for(var k=0;k<arr.length;k+=3){
+        arr[k+1]-=8*dt;
+        if(arr[k+1]<0.1){arr[k+1]=16;arr[k]=z.cx+(Math.random()-0.5)*z.rad*1.6;arr[k+2]=z.cz+(Math.random()-0.5)*z.rad*1.6;}
+      }
+    }
+    ps.pts.geometry.attributes.position.needsUpdate=true;
+  });
+}
+
+// ---------- main loop ----------
+clock=new THREE_.Clock();
+function animate(){
+  if(!scene)return;
+  requestAnimationFrame(animate);
+  var dt=Math.min(0.05,clock.getDelta());
+  // NPCs
+  for(var i=0;i<npcs.length;i++)npcStep(npcs[i],dt);
+  stepParticles(dt);
+  // bob mech statues
+  scene.traverse(function(o){if(o.userData&&o.userData.bob!==undefined){o.position.y+=Math.sin(performance.now()*0.001+o.userData.bob)*0.002;}});
+  // portal ring rotate
+  for(var p=0;p<portals.length;p++){portals[p].r1.rotation.z+=dt*0.6;portals[p].r2.rotation.z-=dt*0.5;}
+
+  // camera lerp
+  camera.position.lerp(camTargetPos,Math.min(1,dt*1.4));
+  var look=new THREE_.Vector3().lerpVectors(new THREE_.Vector3().subVectors(camera.position,new THREE_.Vector3(0,0,0.0001)),camTargetLook,1);
+  camera.lookAt(camTargetLook);
+
+  // gentle camera orbit drift around look target
+  var t=performance.now()*0.00018;
+  camTargetPos.x+=Math.sin(t)*0.04;
+  camTargetPos.z+=Math.cos(t)*0.04;
+
+  // schedule portal travel
+  if(performance.now()>nextPortalAt){
+    var nz=pickNextZone();
+    travelTo(nz.id);
+    nextPortalAt=performance.now()+(60000+Math.random()*15000);
+  }
+
+  // randomly switch director within zone every ~12s
+  if(Math.random()<dt*0.08){
+    var dirs=DIRECTORS.filter(function(d){return d.zone===currentZone();});
+    if(dirs.length){applyDirector(dirs[Math.floor(Math.random()*dirs.length)]);}
+  }
+
+  drawMini();
+  renderer.render(scene,camera);
+}
+
+// ---------- chyron + hud rotators ----------
+setInterval(rotateChyron,9000);
+setInterval(refreshHud,2200);
+
+// ---------- reseed (~10 minutes) ----------
+function teardown(){
+  // remove all scene children
+  if(scene){
+    while(scene.children.length){
+      var c=scene.children[0];
+      scene.remove(c);
+    }
+  }
+  // dispose
+  for(var i=0;i<disposables.length;i++){
+    try{disposables[i].dispose&&disposables[i].dispose();}catch(e){}
+  }
+  disposables=[];
+  npcs=[];
+  particleSystems=[];
+  portals=[];
+  zoneGroups={};
+}
+function reseed(){
+  bumpDay();
+  teardown();
+  buildScene();
+  // promote one returning featured cosplayer with upgrade
+  var keys=Object.keys(mem.cosplayers);
+  if(keys.length){
+    var pick=keys[Math.floor(Math.random()*keys.length)];
+    document.getElementById('ticker').textContent='RETURNING COSPLAYER — '+pick+' returns to HARMONY CON for Day '+mem.day+' with an upgraded outfit and '+(mem.cosplayers[pick].upgrades||0)+' cross-zone visits logged.';
+  }
+  applyDirector(DIRECTORS[20]);
+  refreshHud();
+}
+setTimeout(function tick(){
+  reseed();
+  setTimeout(tick,600000+Math.random()*30000);
+},600000+Math.random()*30000);
+
+// ---------- resize ----------
+window.addEventListener('resize',function(){
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ---------- kickoff ----------
+buildScene();
+applyDirector(DIRECTORS[20]);
+refreshHud();
+rotateChyron();
+animate();
+
+})();
+</script>
+</body>
+</html>

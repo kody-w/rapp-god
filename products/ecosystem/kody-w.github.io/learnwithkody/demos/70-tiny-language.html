@@ -1,0 +1,1440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>kodylang — a tiny language, end-to-end</title>
+<style>
+  :root {
+    --bg:        #0d1117;
+    --panel:     #11161d;
+    --panel-2:   #0a0f15;
+    --line:      #1f2630;
+    --gutter:    #161c25;
+    --gutter-fg: #4a5468;
+    --fg:        #e6edf3;
+    --muted:     #8b96a8;
+    --accent:    #7ee787;
+    --kw:        #c792ea;     /* purple */
+    --num:       #ffa657;     /* orange */
+    --str:       #79c0ff;
+    --strg:      #7ee787;     /* green */
+    --com:       #6e7681;     /* grey */
+    --op:        #56d4dd;     /* cyan */
+    --punct:     #a3acb9;
+    --builtin:   #ffd166;
+    --err:       #ff6b6b;
+    --ok:        #7ee787;
+    --warn:      #f0c674;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    display: grid;
+    grid-template-rows: 44px 1fr 180px;
+    height: 100vh;
+  }
+  /* ---- Toolbar ---- */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    background: linear-gradient(180deg, #141a23, #0c1118);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    font-weight: 700;
+    letter-spacing: 0.4px;
+  }
+  .brand .dot { color: var(--accent); }
+  .brand .sub { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: 12px; }
+  .spacer { flex: 1; }
+  select, button {
+    background: #1a212c;
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font: 13px ui-sans-serif, system-ui;
+    cursor: pointer;
+    transition: background .12s, transform .06s;
+  }
+  select:hover, button:hover { background: #222a37; }
+  button:active { transform: translateY(1px); }
+  button.primary {
+    background: linear-gradient(180deg, #2ea043, #1f7a32);
+    border-color: #1f7a32;
+    color: white;
+    font-weight: 600;
+  }
+  button.primary:hover { filter: brightness(1.1); }
+  .hint { color: var(--muted); font-size: 12px; }
+  kbd {
+    background: #0a0f15;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font: 11px ui-monospace, monospace;
+    color: var(--fg);
+  }
+
+  /* ---- Main split ---- */
+  .main {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    min-height: 0;
+  }
+  .pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+  }
+  .pane:last-child { border-right: none; background: var(--panel-2); }
+  .pane-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: #0c1118;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .pane-header .pill {
+    background: #1a212c;
+    color: var(--fg);
+    padding: 2px 8px;
+    border-radius: 999px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+  }
+
+  /* ---- Editor ---- */
+  .editor-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+  }
+  .gutter {
+    width: 48px;
+    background: var(--gutter);
+    color: var(--gutter-fg);
+    font: 13px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    text-align: right;
+    padding: 10px 8px 200px 0;
+    border-right: 1px solid var(--line);
+    overflow: hidden;
+    user-select: none;
+    white-space: pre;
+  }
+  .editor-stack {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+  }
+  .editor, .highlight {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 10px 14px 200px 14px;
+    border: 0;
+    outline: none;
+    font: 13px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    white-space: pre;
+    word-wrap: normal;
+    overflow: auto;
+    tab-size: 2;
+    -moz-tab-size: 2;
+  }
+  .highlight {
+    pointer-events: none;
+    color: var(--fg);
+    background: transparent;
+    z-index: 1;
+  }
+  .editor {
+    color: transparent;
+    background: transparent;
+    caret-color: var(--accent);
+    resize: none;
+    z-index: 2;
+  }
+  .editor::selection { background: rgba(126, 231, 135, 0.25); color: transparent; }
+
+  /* token colors */
+  .hl-kw      { color: var(--kw); font-weight: 600; }
+  .hl-num     { color: var(--num); }
+  .hl-str     { color: var(--strg); }
+  .hl-com     { color: var(--com); font-style: italic; }
+  .hl-op      { color: var(--op); }
+  .hl-punct   { color: var(--punct); }
+  .hl-builtin { color: var(--builtin); }
+  .hl-bool    { color: var(--num); font-weight: 600; }
+
+  /* ---- Console ---- */
+  .console {
+    flex: 1;
+    overflow: auto;
+    padding: 10px 14px 40px 14px;
+    font: 12.5px/1.55 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color: var(--fg);
+  }
+  .console .line { white-space: pre-wrap; word-break: break-word; }
+  .console .out  { color: var(--fg); }
+  .console .ret  { color: var(--ok); }
+  .console .err  { color: var(--err); }
+  .console .info { color: var(--muted); }
+  .console .stack { color: #c98e8e; padding-left: 12px; }
+  .console .meta { color: var(--muted); font-size: 11px; }
+  .console .sep  { color: #2a323e; }
+
+  /* ---- REPL ---- */
+  .repl {
+    background: #07090d;
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 0;
+  }
+  .repl-head {
+    padding: 5px 12px;
+    background: #0c1118;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .repl-out {
+    overflow: auto;
+    padding: 8px 12px;
+    font: 12.5px/1.55 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  .repl-out .echo { color: var(--muted); }
+  .repl-out .res  { color: var(--ok); }
+  .repl-out .err  { color: var(--err); }
+  .repl-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--line);
+    background: #0a0f15;
+  }
+  .repl-input-row .prompt { color: var(--accent); font: 13px ui-monospace, monospace; }
+  .repl-input-row input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--fg);
+    font: 13px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    caret-color: var(--accent);
+  }
+
+  /* scrollbars */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #1d2530; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2a3441; }
+
+  @media (max-width: 760px) {
+    .app { grid-template-rows: 44px 1fr 160px; }
+    .main { grid-template-columns: 1fr; grid-template-rows: 1fr 200px; }
+    .pane { border-right: none; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="toolbar">
+    <div class="brand">kody<span class="dot">.</span>lang <span class="sub">a tiny language, built end-to-end in pure JS</span></div>
+    <div class="spacer"></div>
+    <span class="hint">examples</span>
+    <select id="exampleSelect" title="Load an example">
+      <option value="hello">Hello, kodylang</option>
+      <option value="fizzbuzz">FizzBuzz</option>
+      <option value="fib_rec">Fibonacci (recursive)</option>
+      <option value="fib_iter">Fibonacci (iterative)</option>
+      <option value="quicksort">Quicksort</option>
+      <option value="closure">Closures (counter factory)</option>
+      <option value="flatten">Nested-list flatten</option>
+    </select>
+    <button id="runBtn" class="primary" title="Run (Ctrl+Enter)">▶ Run</button>
+    <span class="hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+  </div>
+
+  <div class="main">
+    <div class="pane">
+      <div class="pane-header">
+        <span>editor</span>
+        <span class="pill" id="lineCount">1 line</span>
+        <div class="spacer" style="flex:1"></div>
+        <span id="parseStatus" class="pill" style="background:#1a212c">ready</span>
+      </div>
+      <div class="editor-wrap">
+        <div class="gutter" id="gutter">1</div>
+        <div class="editor-stack">
+          <pre class="highlight" id="highlight" aria-hidden="true"></pre>
+          <textarea id="editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-header">
+        <span>console</span>
+        <span class="pill" id="runMeta">no runs yet</span>
+      </div>
+      <div class="console" id="console"></div>
+    </div>
+  </div>
+
+  <div class="repl">
+    <div class="repl-head">
+      <span>repl</span>
+      <span class="hint" style="color:var(--muted); font-size:11px; text-transform:none; letter-spacing:0;">— shares the global scope of your last <em>Run</em></span>
+    </div>
+    <div class="repl-out" id="replOut"></div>
+    <div class="repl-input-row">
+      <span class="prompt">›</span>
+      <input id="replInput" placeholder="type an expression and press Enter…  e.g. fib(20)   or   let x = 1+2" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+ * kodylang — a tiny language built end-to-end
+ *   1. Lexer    : source -> tokens
+ *   2. Parser   : tokens -> AST
+ *   3. Interp   : AST -> values, with proper lexical scoping & closures
+ *   4. UI       : highlight overlay, line numbers, console, REPL
+ * ========================================================================= */
+
+/* ---------- 1. LEXER ----------------------------------------------------- */
+
+const KEYWORDS = new Set([
+  "let","if","else","while","fn","return","true","false","nil","and","or","not"
+]);
+
+function isDigit(c)  { return c >= "0" && c <= "9"; }
+function isAlpha(c)  { return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "_"; }
+function isAlnum(c)  { return isAlpha(c) || isDigit(c); }
+
+class LexError extends Error { constructor(msg, line) { super(msg); this.line = line; } }
+
+function tokenize(src) {
+  const toks = [];
+  let i = 0, line = 1, col = 1;
+
+  function push(type, value, l = line) { toks.push({ type, value, line: l }); }
+
+  while (i < src.length) {
+    const c = src[i];
+
+    // whitespace
+    if (c === " " || c === "\t" || c === "\r") { i++; col++; continue; }
+    if (c === "\n") { i++; line++; col = 1; continue; }
+
+    // line comment: # ... or // ...
+    if (c === "#" || (c === "/" && src[i + 1] === "/")) {
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+
+    // numbers
+    if (isDigit(c)) {
+      let s = i;
+      while (i < src.length && isDigit(src[i])) i++;
+      if (src[i] === "." && isDigit(src[i + 1])) {
+        i++;
+        while (i < src.length && isDigit(src[i])) i++;
+      }
+      push("NUMBER", parseFloat(src.slice(s, i)));
+      continue;
+    }
+
+    // strings
+    if (c === '"') {
+      const startLine = line;
+      i++; let str = "";
+      while (i < src.length && src[i] !== '"') {
+        if (src[i] === "\\" && i + 1 < src.length) {
+          const n = src[i + 1];
+          str += n === "n" ? "\n" : n === "t" ? "\t" : n === "r" ? "\r"
+                : n === '"' ? '"' : n === "\\" ? "\\" : n;
+          i += 2;
+        } else {
+          if (src[i] === "\n") line++;
+          str += src[i]; i++;
+        }
+      }
+      if (src[i] !== '"') throw new LexError("unterminated string", startLine);
+      i++;
+      push("STRING", str, startLine);
+      continue;
+    }
+
+    // identifiers / keywords
+    if (isAlpha(c)) {
+      let s = i;
+      while (i < src.length && isAlnum(src[i])) i++;
+      const word = src.slice(s, i);
+      if (word === "true")  { push("BOOL", true);  continue; }
+      if (word === "false") { push("BOOL", false); continue; }
+      if (word === "nil")   { push("NIL",  null);  continue; }
+      if (KEYWORDS.has(word)) push("KEYWORD", word);
+      else push("IDENT", word);
+      continue;
+    }
+
+    // operators & punctuation
+    const two = src.slice(i, i + 2);
+    if (two === "==" || two === "!=" || two === "<=" || two === ">=" || two === "&&" || two === "||") {
+      push("OP", two); i += 2; continue;
+    }
+    if ("+-*/%<>=!".includes(c)) { push("OP", c); i++; continue; }
+    if ("(){}[],;.".includes(c)) { push("PUNCT", c); i++; continue; }
+
+    throw new LexError(`unexpected character '${c}'`, line);
+  }
+  push("EOF", null);
+  return toks;
+}
+
+/* ---------- 2. PARSER ---------------------------------------------------- */
+
+class ParseError extends Error { constructor(msg, line) { super(msg); this.line = line; } }
+
+function parse(tokens) {
+  let p = 0;
+  const peek  = (k = 0) => tokens[p + k];
+  const eat   = () => tokens[p++];
+  const check = (type, value) => {
+    const t = peek();
+    return t.type === type && (value === undefined || t.value === value);
+  };
+  const match = (type, value) => check(type, value) ? (p++, true) : false;
+  const expect = (type, value, msg) => {
+    if (!check(type, value)) {
+      const t = peek();
+      throw new ParseError(
+        `expected ${msg || (value !== undefined ? `'${value}'` : type)}, got ${t.type === "EOF" ? "end of input" : `'${t.value}'`}`,
+        t.line
+      );
+    }
+    return eat();
+  };
+
+  // node helpers
+  const N = (type, line, props) => Object.assign({ type, line }, props);
+
+  function parseProgram() {
+    const body = [];
+    while (!check("EOF")) body.push(parseStatement());
+    return N("Program", 1, { body });
+  }
+
+  function parseStatement() {
+    const t = peek();
+    if (t.type === "KEYWORD") {
+      switch (t.value) {
+        case "let":    return parseLet();
+        case "if":     return parseIf();
+        case "while":  return parseWhile();
+        case "fn":     // could be decl (fn name) or expression (fn (...))
+          if (peek(1).type === "IDENT") return parseFnDecl();
+          break;
+        case "return": return parseReturn();
+      }
+    }
+    if (t.type === "PUNCT" && t.value === "{") return parseBlock();
+    return parseExprStatement();
+  }
+
+  function parseLet() {
+    const kw = eat(); // let
+    const name = expect("IDENT", undefined, "variable name").value;
+    expect("OP", "=", "'='");
+    const value = parseExpression();
+    expect("PUNCT", ";", "';'");
+    return N("VarDecl", kw.line, { name, value });
+  }
+
+  function parseIf() {
+    const kw = eat();
+    expect("PUNCT", "(", "'('");
+    const cond = parseExpression();
+    expect("PUNCT", ")", "')'");
+    const then = parseBlock();
+    let elseBranch = null;
+    if (check("KEYWORD", "else")) {
+      eat();
+      if (check("KEYWORD", "if"))      elseBranch = parseIf();
+      else if (check("PUNCT", "{"))    elseBranch = parseBlock();
+      else throw new ParseError("expected 'if' or block after 'else'", peek().line);
+    }
+    return N("IfStmt", kw.line, { cond, then, else: elseBranch });
+  }
+
+  function parseWhile() {
+    const kw = eat();
+    expect("PUNCT", "(", "'('");
+    const cond = parseExpression();
+    expect("PUNCT", ")", "')'");
+    const body = parseBlock();
+    return N("WhileStmt", kw.line, { cond, body });
+  }
+
+  function parseFnDecl() {
+    const kw = eat(); // fn
+    const name = expect("IDENT", undefined, "function name").value;
+    const params = parseParams();
+    const body = parseBlock();
+    return N("FnDecl", kw.line, { name, params, body });
+  }
+
+  function parseParams() {
+    expect("PUNCT", "(", "'('");
+    const params = [];
+    if (!check("PUNCT", ")")) {
+      params.push(expect("IDENT", undefined, "parameter").value);
+      while (match("PUNCT", ",")) params.push(expect("IDENT", undefined, "parameter").value);
+    }
+    expect("PUNCT", ")", "')'");
+    return params;
+  }
+
+  function parseReturn() {
+    const kw = eat();
+    let value = null;
+    if (!check("PUNCT", ";")) value = parseExpression();
+    expect("PUNCT", ";", "';'");
+    return N("Return", kw.line, { value });
+  }
+
+  function parseBlock() {
+    const open = expect("PUNCT", "{", "'{'");
+    const body = [];
+    while (!check("PUNCT", "}") && !check("EOF")) body.push(parseStatement());
+    expect("PUNCT", "}", "'}'");
+    return N("Block", open.line, { body });
+  }
+
+  function parseExprStatement() {
+    const startLine = peek().line;
+    const expr = parseExpression();
+    // assignment? lhs = rhs ;
+    if (check("OP", "=")) {
+      eat();
+      const rhs = parseExpression();
+      expect("PUNCT", ";", "';'");
+      if (expr.type !== "Ident" && expr.type !== "Index" && expr.type !== "Member")
+        throw new ParseError("invalid assignment target", startLine);
+      return N("Assign", startLine, { target: expr, value: rhs });
+    }
+    expect("PUNCT", ";", "';'");
+    return N("ExprStmt", startLine, { expr });
+  }
+
+  // Pratt-ish precedence climbing for binary ops
+  const BIN_PREC = {
+    "||": 1, "or": 1,
+    "&&": 2, "and": 2,
+    "==": 3, "!=": 3,
+    "<": 4, "<=": 4, ">": 4, ">=": 4,
+    "+": 5, "-": 5,
+    "*": 6, "/": 6, "%": 6,
+  };
+
+  function parseExpression() { return parseBinary(0); }
+
+  function parseBinary(minPrec) {
+    let left = parseUnary();
+    while (true) {
+      const t = peek();
+      let op = null;
+      if (t.type === "OP" && BIN_PREC[t.value] !== undefined) op = t.value;
+      else if (t.type === "KEYWORD" && (t.value === "and" || t.value === "or")) op = t.value;
+      if (op === null) break;
+      const prec = BIN_PREC[op];
+      if (prec < minPrec) break;
+      const opTok = eat();
+      const right = parseBinary(prec + 1);
+      left = N("BinOp", opTok.line, { op, left, right });
+    }
+    return left;
+  }
+
+  function parseUnary() {
+    const t = peek();
+    if ((t.type === "OP" && (t.value === "-" || t.value === "!")) ||
+        (t.type === "KEYWORD" && t.value === "not")) {
+      const opTok = eat();
+      const arg = parseUnary();
+      return N("UnOp", opTok.line, { op: opTok.value === "not" ? "!" : opTok.value, arg });
+    }
+    return parsePostfix();
+  }
+
+  function parsePostfix() {
+    let node = parsePrimary();
+    while (true) {
+      if (check("PUNCT", "(")) {
+        const open = eat();
+        const args = [];
+        if (!check("PUNCT", ")")) {
+          args.push(parseExpression());
+          while (match("PUNCT", ",")) args.push(parseExpression());
+        }
+        expect("PUNCT", ")", "')'");
+        node = N("Call", open.line, { callee: node, args });
+      } else if (check("PUNCT", "[")) {
+        const open = eat();
+        const index = parseExpression();
+        expect("PUNCT", "]", "']'");
+        node = N("Index", open.line, { obj: node, index });
+      } else if (check("PUNCT", ".")) {
+        const dot = eat();
+        const name = expect("IDENT", undefined, "property name").value;
+        node = N("Member", dot.line, { obj: node, name });
+      } else break;
+    }
+    return node;
+  }
+
+  function parsePrimary() {
+    const t = peek();
+    if (t.type === "NUMBER") { eat(); return N("Number", t.line, { value: t.value }); }
+    if (t.type === "STRING") { eat(); return N("String", t.line, { value: t.value }); }
+    if (t.type === "BOOL")   { eat(); return N("Bool",   t.line, { value: t.value }); }
+    if (t.type === "NIL")    { eat(); return N("Nil",    t.line, {}); }
+    if (t.type === "IDENT")  { eat(); return N("Ident",  t.line, { name: t.value }); }
+    if (t.type === "KEYWORD" && t.value === "fn") {
+      const kw = eat();
+      const params = parseParams();
+      const body = parseBlock();
+      return N("FnExpr", kw.line, { params, body });
+    }
+    if (t.type === "PUNCT" && t.value === "(") {
+      eat();
+      const expr = parseExpression();
+      expect("PUNCT", ")", "')'");
+      return expr;
+    }
+    if (t.type === "PUNCT" && t.value === "[") {
+      const open = eat();
+      const items = [];
+      if (!check("PUNCT", "]")) {
+        items.push(parseExpression());
+        while (match("PUNCT", ",")) items.push(parseExpression());
+      }
+      expect("PUNCT", "]", "']'");
+      return N("ListLit", open.line, { items });
+    }
+    throw new ParseError(`unexpected ${t.type === "EOF" ? "end of input" : `'${t.value}'`}`, t.line);
+  }
+
+  return parseProgram();
+}
+
+/* ---------- 3. INTERPRETER ---------------------------------------------- */
+
+class RuntimeError extends Error {
+  constructor(msg, line, stack) { super(msg); this.line = line; this.kstack = stack || []; }
+}
+class ReturnSignal { constructor(value) { this.value = value; } }
+
+class Env {
+  constructor(parent = null) { this.vars = new Map(); this.parent = parent; }
+  define(name, value) { this.vars.set(name, value); }
+  get(name, line) {
+    for (let e = this; e; e = e.parent) if (e.vars.has(name)) return e.vars.get(name);
+    throw new RuntimeError(`undefined name '${name}'`, line);
+  }
+  set(name, value, line) {
+    for (let e = this; e; e = e.parent) {
+      if (e.vars.has(name)) { e.vars.set(name, value); return; }
+    }
+    throw new RuntimeError(`assignment to undeclared '${name}'`, line);
+  }
+  has(name) {
+    for (let e = this; e; e = e.parent) if (e.vars.has(name)) return true;
+    return false;
+  }
+}
+
+function makeFn(params, body, closure, name) {
+  return { __fn__: true, params, body, closure, name: name || "anon" };
+}
+
+function isList(v) { return Array.isArray(v); }
+function isFn(v)   { return v && typeof v === "object" && v.__fn__; }
+function typeOf(v) {
+  if (v === null || v === undefined) return "nil";
+  if (typeof v === "number")  return "number";
+  if (typeof v === "string")  return "string";
+  if (typeof v === "boolean") return "bool";
+  if (isList(v))              return "list";
+  if (isFn(v))                return "fn";
+  return "unknown";
+}
+function truthy(v) {
+  if (v === null || v === undefined || v === false) return false;
+  if (typeof v === "number") return v !== 0;
+  if (typeof v === "string") return v.length > 0;
+  if (isList(v))             return v.length > 0;
+  return true;
+}
+
+function stringify(v, raw = true) {
+  if (v === null || v === undefined) return "nil";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "number")  return Number.isInteger(v) ? String(v) : String(v);
+  if (typeof v === "string")  return raw ? v : `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  if (isList(v))   return "[" + v.map(x => stringify(x, false)).join(", ") + "]";
+  if (isFn(v))     return `<fn ${v.name}>`;
+  return String(v);
+}
+
+class Interpreter {
+  constructor(printSink) {
+    this.print = printSink || (() => {});
+    this.globals = new Env(null);
+    this.callStack = [];
+    this.maxCalls = 5000;
+    this.installBuiltins();
+    this.lastValue = null;
+  }
+
+  installBuiltins() {
+    const G = this.globals;
+    const itp = this;
+    const builtin = (name, fn, arity) => {
+      G.define(name, { __fn__: true, builtin: true, name, params: [], closure: G, arity, call: fn });
+    };
+    builtin("print", (args) => {
+      itp.print(args.map(a => stringify(a, true)).join(" "), "out");
+      return null;
+    });
+    builtin("type", (args) => typeOf(args[0]), 1);
+    builtin("len", (args) => {
+      const v = args[0];
+      if (typeof v === "string") return v.length;
+      if (isList(v)) return v.length;
+      throw new RuntimeError(`len() expects string or list, got ${typeOf(v)}`);
+    }, 1);
+    builtin("str", (args) => stringify(args[0], true), 1);
+    builtin("num", (args) => {
+      const n = Number(args[0]);
+      if (Number.isNaN(n)) throw new RuntimeError(`cannot convert ${stringify(args[0], false)} to number`);
+      return n;
+    }, 1);
+    builtin("range", (args) => {
+      let start = 0, end = 0, step = 1;
+      if (args.length === 1) end = args[0];
+      else if (args.length === 2) { start = args[0]; end = args[1]; }
+      else if (args.length >= 3) { start = args[0]; end = args[1]; step = args[2]; }
+      const out = [];
+      if (step > 0) for (let i = start; i < end; i += step) out.push(i);
+      else if (step < 0) for (let i = start; i > end; i += step) out.push(i);
+      return out;
+    });
+  }
+
+  run(programNode) {
+    this.callStack = [];
+    for (const stmt of programNode.body) this.lastValue = this.exec(stmt, this.globals);
+    return this.lastValue;
+  }
+
+  exec(node, env) {
+    switch (node.type) {
+      case "VarDecl": {
+        const v = this.evalNode(node.value, env);
+        env.define(node.name, v);
+        return null;
+      }
+      case "Assign": {
+        const v = this.evalNode(node.value, env);
+        const t = node.target;
+        if (t.type === "Ident") env.set(t.name, v, node.line);
+        else if (t.type === "Index") {
+          const obj = this.evalNode(t.obj, env);
+          const idx = this.evalNode(t.index, env);
+          if (!isList(obj)) throw new RuntimeError(`cannot index assign into ${typeOf(obj)}`, node.line);
+          if (typeof idx !== "number") throw new RuntimeError(`list index must be number, got ${typeOf(idx)}`, node.line);
+          obj[idx] = v;
+        } else {
+          throw new RuntimeError("invalid assignment target", node.line);
+        }
+        return null;
+      }
+      case "ExprStmt":   return this.evalNode(node.expr, env);
+      case "Block": {
+        const inner = new Env(env);
+        let last = null;
+        for (const s of node.body) last = this.exec(s, inner);
+        return last;
+      }
+      case "IfStmt": {
+        const c = this.evalNode(node.cond, env);
+        if (truthy(c)) return this.exec(node.then, env);
+        if (node.else) return this.exec(node.else, env);
+        return null;
+      }
+      case "WhileStmt": {
+        let last = null, guard = 0;
+        while (truthy(this.evalNode(node.cond, env))) {
+          last = this.exec(node.body, env);
+          if (++guard > 1000000) throw new RuntimeError("loop iteration limit exceeded", node.line);
+        }
+        return last;
+      }
+      case "FnDecl": {
+        const fn = makeFn(node.params, node.body, env, node.name);
+        env.define(node.name, fn);
+        return null;
+      }
+      case "Return": {
+        const v = node.value ? this.evalNode(node.value, env) : null;
+        throw new ReturnSignal(v);
+      }
+      default:
+        return this.evalNode(node, env);
+    }
+  }
+
+  evalNode(node, env) {
+    switch (node.type) {
+      case "Number": return node.value;
+      case "String": return node.value;
+      case "Bool":   return node.value;
+      case "Nil":    return null;
+      case "Ident":  return env.get(node.name, node.line);
+      case "ListLit": return node.items.map(i => this.evalNode(i, env));
+      case "FnExpr": return makeFn(node.params, node.body, env, "anon");
+      case "BinOp":  return this.evalBin(node, env);
+      case "UnOp": {
+        const v = this.evalNode(node.arg, env);
+        if (node.op === "-") {
+          if (typeof v !== "number") throw new RuntimeError(`unary - on ${typeOf(v)}`, node.line);
+          return -v;
+        }
+        if (node.op === "!") return !truthy(v);
+        throw new RuntimeError(`unknown unary op ${node.op}`, node.line);
+      }
+      case "Index": {
+        const obj = this.evalNode(node.obj, env);
+        const idx = this.evalNode(node.index, env);
+        if (isList(obj)) {
+          if (typeof idx !== "number") throw new RuntimeError(`list index must be number, got ${typeOf(idx)}`, node.line);
+          let i = idx; if (i < 0) i += obj.length;
+          if (i < 0 || i >= obj.length) throw new RuntimeError(`index ${idx} out of range (len ${obj.length})`, node.line);
+          return obj[i];
+        }
+        if (typeof obj === "string") {
+          if (typeof idx !== "number") throw new RuntimeError(`string index must be number`, node.line);
+          let i = idx; if (i < 0) i += obj.length;
+          if (i < 0 || i >= obj.length) throw new RuntimeError(`index ${idx} out of range (len ${obj.length})`, node.line);
+          return obj[i];
+        }
+        throw new RuntimeError(`cannot index ${typeOf(obj)}`, node.line);
+      }
+      case "Member": {
+        const obj = this.evalNode(node.obj, env);
+        return this.member(obj, node.name, node.line);
+      }
+      case "Call": return this.evalCall(node, env);
+      default:
+        throw new RuntimeError(`unknown node ${node.type}`, node.line || 0);
+    }
+  }
+
+  member(obj, name, line) {
+    if (isList(obj)) {
+      if (name === "length") return obj.length;
+      if (name === "push")   return { __fn__: true, builtin: true, name: "list.push", call: (args) => { for (const a of args) obj.push(a); return obj.length; } };
+      if (name === "pop")    return { __fn__: true, builtin: true, name: "list.pop",  call: () => obj.length ? obj.pop() : null };
+      throw new RuntimeError(`list has no member '${name}'`, line);
+    }
+    if (typeof obj === "string") {
+      if (name === "length") return obj.length;
+      throw new RuntimeError(`string has no member '${name}'`, line);
+    }
+    throw new RuntimeError(`cannot access '.${name}' on ${typeOf(obj)}`, line);
+  }
+
+  evalBin(node, env) {
+    const { op, left, right } = node;
+    if (op === "&&" || op === "and") {
+      const l = this.evalNode(left, env);
+      if (!truthy(l)) return l;
+      return this.evalNode(right, env);
+    }
+    if (op === "||" || op === "or") {
+      const l = this.evalNode(left, env);
+      if (truthy(l)) return l;
+      return this.evalNode(right, env);
+    }
+    const a = this.evalNode(left, env);
+    const b = this.evalNode(right, env);
+    switch (op) {
+      case "+":
+        if (typeof a === "number" && typeof b === "number") return a + b;
+        if (typeof a === "string" || typeof b === "string") return stringify(a, true) + stringify(b, true);
+        if (isList(a) && isList(b)) return a.concat(b);
+        throw new RuntimeError(`+ not defined for ${typeOf(a)} and ${typeOf(b)}`, node.line);
+      case "-": this.assertNum(a, b, op, node.line); return a - b;
+      case "*":
+        if (typeof a === "string" && typeof b === "number") return a.repeat(Math.max(0, b | 0));
+        if (typeof a === "number" && typeof b === "string") return b.repeat(Math.max(0, a | 0));
+        this.assertNum(a, b, op, node.line); return a * b;
+      case "/":
+        this.assertNum(a, b, op, node.line);
+        if (b === 0) throw new RuntimeError("division by zero", node.line);
+        return a / b;
+      case "%":
+        this.assertNum(a, b, op, node.line);
+        if (b === 0) throw new RuntimeError("modulo by zero", node.line);
+        return a - Math.floor(a / b) * b;
+      case "==": return this.eq(a, b);
+      case "!=": return !this.eq(a, b);
+      case "<":  this.assertOrd(a, b, op, node.line); return a < b;
+      case "<=": this.assertOrd(a, b, op, node.line); return a <= b;
+      case ">":  this.assertOrd(a, b, op, node.line); return a > b;
+      case ">=": this.assertOrd(a, b, op, node.line); return a >= b;
+    }
+    throw new RuntimeError(`unknown operator ${op}`, node.line);
+  }
+
+  assertNum(a, b, op, line) {
+    if (typeof a !== "number" || typeof b !== "number")
+      throw new RuntimeError(`${op} requires numbers, got ${typeOf(a)} and ${typeOf(b)}`, line);
+  }
+  assertOrd(a, b, op, line) {
+    if (typeof a === "number" && typeof b === "number") return;
+    if (typeof a === "string" && typeof b === "string") return;
+    throw new RuntimeError(`${op} requires comparable types, got ${typeOf(a)} and ${typeOf(b)}`, line);
+  }
+  eq(a, b) {
+    if (isList(a) && isList(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) if (!this.eq(a[i], b[i])) return false;
+      return true;
+    }
+    return a === b;
+  }
+
+  evalCall(node, env) {
+    const fn = this.evalNode(node.callee, env);
+    if (!isFn(fn)) throw new RuntimeError(`cannot call ${typeOf(fn)}`, node.line);
+    const args = node.args.map(a => this.evalNode(a, env));
+    if (this.callStack.length >= this.maxCalls)
+      throw new RuntimeError("call stack overflow (maybe infinite recursion?)", node.line);
+
+    this.callStack.push({ name: fn.name, line: node.line });
+    try {
+      if (fn.builtin) {
+        if (fn.arity !== undefined && fn.arity !== args.length)
+          throw new RuntimeError(`${fn.name}() expects ${fn.arity} args, got ${args.length}`, node.line);
+        return fn.call(args);
+      }
+      // user fn
+      if (fn.params.length !== args.length)
+        throw new RuntimeError(`${fn.name}() expects ${fn.params.length} args, got ${args.length}`, node.line);
+      const callEnv = new Env(fn.closure);
+      for (let i = 0; i < fn.params.length; i++) callEnv.define(fn.params[i], args[i]);
+      try {
+        this.exec(fn.body, callEnv);
+        return null;
+      } catch (e) {
+        if (e instanceof ReturnSignal) return e.value;
+        throw e;
+      }
+    } catch (e) {
+      // snapshot the call stack BEFORE finally pops the current frame,
+      // so the error carries the deepest-first trace.
+      if (e instanceof RuntimeError && (!e.kstack || !e.kstack.length))
+        e.kstack = this.callStack.slice();
+      throw e;
+    } finally {
+      this.callStack.pop();
+    }
+  }
+}
+
+/* ---------- 4. UI: editor, highlight, console, REPL --------------------- */
+
+const $ = (id) => document.getElementById(id);
+const editor      = $("editor");
+const highlight   = $("highlight");
+const gutter      = $("gutter");
+const consoleEl   = $("console");
+const replOut     = $("replOut");
+const replInput   = $("replInput");
+const lineCountEl = $("lineCount");
+const parseStatus = $("parseStatus");
+const runMeta     = $("runMeta");
+
+/* ---- examples ---- */
+const EXAMPLES = {
+  hello:
+`# Welcome to kodylang — a tiny language built end-to-end in pure JS.
+# Press Ctrl+Enter (or the Run button) to execute.
+
+let name = "world";
+print("hello,", name + "!");
+
+# functions, closures, lists, recursion all work:
+fn square(x) { return x * x; }
+print("square(7) =", square(7));
+
+let xs = [1, 2, 3, 4, 5];
+let sum = 0;
+let i = 0;
+while (i < xs.length) {
+  sum = sum + xs[i];
+  i = i + 1;
+}
+print("sum =", sum);
+`,
+
+  fizzbuzz:
+`fn fizzbuzz(n) {
+  let i = 1;
+  while (i <= n) {
+    if (i % 15 == 0)      { print("FizzBuzz"); }
+    else if (i % 3 == 0)  { print("Fizz"); }
+    else if (i % 5 == 0)  { print("Buzz"); }
+    else                  { print(i); }
+    i = i + 1;
+  }
+}
+
+fizzbuzz(20);
+`,
+
+  fib_rec:
+`# Recursive Fibonacci — exercises closures + recursion.
+fn fib(n) {
+  if (n < 2) { return n; }
+  return fib(n - 1) + fib(n - 2);
+}
+
+let i = 0;
+while (i < 12) {
+  print("fib(" + i + ") =", fib(i));
+  i = i + 1;
+}
+`,
+
+  fib_iter:
+`# Iterative Fibonacci — single pass.
+fn fib(n) {
+  let a = 0;
+  let b = 1;
+  let i = 0;
+  while (i < n) {
+    let t = a + b;
+    a = b;
+    b = t;
+    i = i + 1;
+  }
+  return a;
+}
+
+let i = 0;
+while (i <= 20) {
+  print("fib(" + i + ") =", fib(i));
+  i = i + 1;
+}
+`,
+
+  quicksort:
+`fn quicksort(arr) {
+  if (arr.length <= 1) { return arr; }
+
+  let pivot = arr[0];
+  let less  = [];
+  let more  = [];
+
+  let i = 1;
+  while (i < arr.length) {
+    if (arr[i] < pivot) { less.push(arr[i]); }
+    else                { more.push(arr[i]); }
+    i = i + 1;
+  }
+
+  let result = quicksort(less);
+  result.push(pivot);
+  let tail = quicksort(more);
+  let j = 0;
+  while (j < tail.length) {
+    result.push(tail[j]);
+    j = j + 1;
+  }
+  return result;
+}
+
+let data = [3, 6, 1, 8, 2, 9, 4, 7, 5, 0, -1, 11, 4];
+print("input :", data);
+print("sorted:", quicksort(data));
+`,
+
+  closure:
+`# Closures: each call to make_counter() produces its own private 'count'.
+fn make_counter(start) {
+  let count = start;
+  fn inc() {
+    count = count + 1;
+    return count;
+  }
+  return inc;
+}
+
+let a = make_counter(0);
+let b = make_counter(100);
+
+print(a());   # 1
+print(a());   # 2
+print(a());   # 3
+print(b());   # 101
+print(a());   # 4   — independent state
+print(b());   # 102
+`,
+
+  flatten:
+`# Recursive flatten of arbitrarily nested lists.
+fn flatten(xs) {
+  let out = [];
+  let i = 0;
+  while (i < xs.length) {
+    let x = xs[i];
+    if (type(x) == "list") {
+      let f = flatten(x);
+      let j = 0;
+      while (j < f.length) {
+        out.push(f[j]);
+        j = j + 1;
+      }
+    } else {
+      out.push(x);
+    }
+    i = i + 1;
+  }
+  return out;
+}
+
+let nested = [1, [2, [3, [4, 5]], 6], 7, [[8], 9]];
+print("nested  :", nested);
+print("flattened:", flatten(nested));
+`,
+};
+
+/* ---- syntax highlighting (re-tokenize on input) ---- */
+function escapeHTML(s) {
+  return s.replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+}
+const BUILTINS = new Set(["print", "type", "len", "str", "num", "range"]);
+
+function renderHighlight(src) {
+  let i = 0, out = "";
+  while (i < src.length) {
+    const c = src[i];
+
+    // line comment
+    if (c === "#" || (c === "/" && src[i+1] === "/")) {
+      let j = i; while (j < src.length && src[j] !== "\n") j++;
+      out += `<span class="hl-com">${escapeHTML(src.slice(i, j))}</span>`;
+      i = j; continue;
+    }
+    if (c === "\n" || c === "\t" || c === " " || c === "\r") {
+      out += c === "\n" ? "\n" : escapeHTML(c);
+      i++; continue;
+    }
+    if (c === '"') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== '"') {
+        if (src[j] === "\\" && j + 1 < src.length) j += 2;
+        else j++;
+      }
+      if (j < src.length) j++;
+      out += `<span class="hl-str">${escapeHTML(src.slice(i, j))}</span>`;
+      i = j; continue;
+    }
+    if (c >= "0" && c <= "9") {
+      let j = i;
+      while (j < src.length && ((src[j] >= "0" && src[j] <= "9") || src[j] === ".")) j++;
+      out += `<span class="hl-num">${escapeHTML(src.slice(i, j))}</span>`;
+      i = j; continue;
+    }
+    if (isAlpha(c)) {
+      let j = i;
+      while (j < src.length && isAlnum(src[j])) j++;
+      const word = src.slice(i, j);
+      let cls = "";
+      if (KEYWORDS.has(word))      cls = "hl-kw";
+      else if (word === "true" || word === "false" || word === "nil") cls = "hl-bool";
+      else if (BUILTINS.has(word)) cls = "hl-builtin";
+      out += cls ? `<span class="${cls}">${escapeHTML(word)}</span>` : escapeHTML(word);
+      i = j; continue;
+    }
+    if ("+-*/%<>=!&|".includes(c)) {
+      let j = i;
+      while (j < src.length && "+-*/%<>=!&|".includes(src[j])) j++;
+      out += `<span class="hl-op">${escapeHTML(src.slice(i, j))}</span>`;
+      i = j; continue;
+    }
+    if ("(){}[],;.".includes(c)) {
+      out += `<span class="hl-punct">${escapeHTML(c)}</span>`;
+      i++; continue;
+    }
+    out += escapeHTML(c);
+    i++;
+  }
+  // ensure trailing newline is visible (a stray newline collapses in some browsers)
+  if (src.endsWith("\n")) out += " ";
+  return out;
+}
+
+function updateGutter(src) {
+  const lines = src.split("\n").length;
+  let g = "";
+  for (let i = 1; i <= lines; i++) g += i + "\n";
+  gutter.textContent = g;
+  lineCountEl.textContent = lines + (lines === 1 ? " line" : " lines");
+}
+
+function refreshHighlight() {
+  const src = editor.value;
+  highlight.innerHTML = renderHighlight(src);
+  updateGutter(src);
+  // try a quick parse to surface ready/error in the header
+  try {
+    parse(tokenize(src));
+    parseStatus.textContent = "ready";
+    parseStatus.style.color = "var(--ok)";
+    parseStatus.style.background = "#0c2014";
+  } catch (e) {
+    parseStatus.textContent = e instanceof LexError || e instanceof ParseError
+      ? `${e.constructor.name === "LexError" ? "lex" : "parse"} error · line ${e.line || "?"}`
+      : "error";
+    parseStatus.style.color = "var(--err)";
+    parseStatus.style.background = "#2a0c0c";
+  }
+}
+
+/* ---- console output ---- */
+function appendConsole(text, cls = "out") {
+  const div = document.createElement("div");
+  div.className = "line " + cls;
+  div.textContent = text;
+  consoleEl.appendChild(div);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+function appendConsoleHTML(html, cls = "out") {
+  const div = document.createElement("div");
+  div.className = "line " + cls;
+  div.innerHTML = html;
+  consoleEl.appendChild(div);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+function clearConsole() { consoleEl.innerHTML = ""; }
+
+/* ---- the persistent interpreter (shared with REPL) ---- */
+let interpreter = null;
+function freshInterpreter() {
+  return new Interpreter((text, kind) => appendConsole(text, kind || "out"));
+}
+
+function formatStack(err, fallbackLine) {
+  const frames = (err.kstack && err.kstack.length ? err.kstack : []).slice().reverse();
+  const lines = [];
+  const line = err.line || fallbackLine || "?";
+  lines.push(`✗ ${err.message}  (line ${line})`);
+  for (const f of frames) lines.push(`   in fn ${f.name} at line ${f.line}`);
+  return lines.join("\n");
+}
+
+function runProgram() {
+  clearConsole();
+  const src = editor.value;
+  const t0 = performance.now();
+
+  appendConsoleHTML(`<span class="meta">running ${src.split("\n").length} lines…</span>`, "info");
+
+  let tokens;
+  try { tokens = tokenize(src); }
+  catch (e) {
+    appendConsole(`✗ lex error: ${e.message}  (line ${e.line})`, "err");
+    runMeta.textContent = "lex error";
+    return;
+  }
+
+  let ast;
+  try { ast = parse(tokens); }
+  catch (e) {
+    appendConsole(`✗ parse error: ${e.message}  (line ${e.line})`, "err");
+    runMeta.textContent = "parse error";
+    return;
+  }
+
+  interpreter = freshInterpreter();
+  let result;
+  try {
+    result = interpreter.run(ast);
+  } catch (e) {
+    if (e instanceof RuntimeError) {
+      // capture stack from interpreter.callStack right before pop happened? we lost it.
+      // attach the live stack snapshot if present
+      e.kstack = e.kstack && e.kstack.length ? e.kstack : interpreter.callStack.slice();
+      const trace = formatStack(e);
+      const head = trace.split("\n")[0];
+      const rest = trace.split("\n").slice(1);
+      appendConsole(head, "err");
+      for (const l of rest) appendConsole(l, "stack");
+    } else if (e instanceof ReturnSignal) {
+      // top-level return — treat as final value
+      result = e.value;
+    } else {
+      appendConsole(`✗ host error: ${e.message}`, "err");
+      console.error(e);
+    }
+    runMeta.textContent = `error · ${(performance.now() - t0).toFixed(1)}ms`;
+    return;
+  }
+
+  const dt = (performance.now() - t0).toFixed(1);
+  runMeta.textContent = `ok · ${dt}ms`;
+  if (result !== null && result !== undefined) {
+    appendConsoleHTML(`<span class="meta">→ last value:</span> ${escapeHTML(stringify(result, false))}`, "ret");
+  } else {
+    appendConsoleHTML(`<span class="meta">✓ done in ${dt}ms</span>`, "info");
+  }
+}
+
+/* ---- REPL ---- */
+function appendRepl(text, cls) {
+  const div = document.createElement("div");
+  div.className = cls || "";
+  div.textContent = text;
+  replOut.appendChild(div);
+  replOut.scrollTop = replOut.scrollHeight;
+}
+
+function runRepl(line) {
+  if (!interpreter) interpreter = freshInterpreter();
+  appendRepl("› " + line, "echo");
+  if (!line.trim()) return;
+
+  // try to parse as a single expression first
+  let src = line;
+  // ensure terminating semicolon for parser
+  if (!src.trim().endsWith(";") && !src.trim().endsWith("}")) src = src + ";";
+
+  let tokens;
+  try { tokens = tokenize(src); }
+  catch (e) { appendRepl(`✗ lex error: ${e.message} (line ${e.line})`, "err"); return; }
+
+  let ast;
+  try { ast = parse(tokens); }
+  catch (e) { appendRepl(`✗ parse error: ${e.message} (line ${e.line})`, "err"); return; }
+
+  let result = null;
+  try {
+    for (const stmt of ast.body) result = interpreter.exec(stmt, interpreter.globals);
+  } catch (e) {
+    if (e instanceof RuntimeError) {
+      e.kstack = e.kstack && e.kstack.length ? e.kstack : interpreter.callStack.slice();
+      const head = `✗ ${e.message} (line ${e.line || "?"})`;
+      appendRepl(head, "err");
+      const frames = (e.kstack || []).slice().reverse();
+      for (const f of frames) appendRepl(`   in fn ${f.name} at line ${f.line}`, "err");
+    } else if (e instanceof ReturnSignal) {
+      result = e.value;
+    } else {
+      appendRepl(`✗ host: ${e.message}`, "err");
+    }
+    return;
+  }
+
+  if (result !== null && result !== undefined)
+    appendRepl(stringify(result, false), "res");
+}
+
+/* ---- input wiring ---- */
+editor.addEventListener("input", refreshHighlight);
+editor.addEventListener("scroll", () => {
+  highlight.scrollTop  = editor.scrollTop;
+  highlight.scrollLeft = editor.scrollLeft;
+  gutter.scrollTop     = editor.scrollTop;
+});
+editor.addEventListener("keydown", (e) => {
+  // Tab inserts two spaces
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const s = editor.selectionStart, t = editor.selectionEnd;
+    editor.value = editor.value.slice(0, s) + "  " + editor.value.slice(t);
+    editor.selectionStart = editor.selectionEnd = s + 2;
+    refreshHighlight();
+    return;
+  }
+  // Ctrl+Enter / Cmd+Enter to run
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    e.preventDefault();
+    runProgram();
+  }
+});
+$("runBtn").addEventListener("click", runProgram);
+$("exampleSelect").addEventListener("change", (e) => {
+  const k = e.target.value;
+  if (EXAMPLES[k]) {
+    editor.value = EXAMPLES[k];
+    refreshHighlight();
+    editor.focus();
+  }
+});
+
+replInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const v = replInput.value;
+    replInput.value = "";
+    runRepl(v);
+  }
+});
+
+/* ---- boot ---- */
+editor.value = EXAMPLES.hello;
+refreshHighlight();
+appendConsoleHTML(`<span class="meta">kodylang ready. press <strong>Ctrl+Enter</strong> to run, or type in the REPL below.</span>`, "info");
+// auto-run on load so it's "playable within 1 second"
+setTimeout(runProgram, 50);
+</script>
+</body>
+</html>

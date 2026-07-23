@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>R26 — Brimsworth Convergence: Drone POV</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;padding:0;background:#02030a;color:#cfe6ff;font-family:'Courier New',monospace;overflow:hidden;height:100%;}
+  #stage{position:fixed;inset:0;}
+  canvas{display:block;}
+  .hud{position:fixed;pointer-events:none;font-size:11px;letter-spacing:.5px;text-shadow:0 0 4px #000;}
+  #top-left{top:10px;left:10px;}
+  #top-right{top:10px;right:10px;text-align:right;}
+  #bot-left{bottom:10px;left:10px;}
+  #bot-right{bottom:10px;right:10px;text-align:right;}
+  .badge{background:rgba(2,8,18,.55);border:1px solid #18406a;padding:6px 9px;margin-bottom:4px;border-radius:3px;backdrop-filter:blur(2px);}
+  .key{color:#7fb3ff;}
+  .val{color:#e6f2ff;}
+  .warn{color:#ff8a4a;}
+  .ok{color:#79ffb1;}
+  .alert{color:#ff5b5b;}
+  #chyron{position:fixed;bottom:24%;left:50%;transform:translateX(-50%);font-size:18px;color:#ffe9b0;background:rgba(0,0,0,.5);padding:10px 22px;border:1px solid #b88a35;letter-spacing:2px;opacity:0;transition:opacity .8s;text-align:center;max-width:80%;}
+  #chyron.show{opacity:1;}
+  #compass{width:170px;height:32px;background:rgba(2,8,18,.55);border:1px solid #18406a;position:relative;overflow:hidden;}
+  #compass-strip{position:absolute;top:0;left:0;height:100%;width:1440px;}
+  #compass-needle{position:absolute;top:0;left:50%;width:1px;height:100%;background:#ff6a4a;}
+  .compass-mark{position:absolute;top:0;height:100%;color:#cfe6ff;font-size:10px;line-height:32px;width:30px;text-align:center;}
+  #grid{position:fixed;top:50%;left:10px;transform:translateY(-50%);display:grid;grid-template-columns:repeat(3,90px);grid-template-rows:repeat(4,60px);gap:3px;pointer-events:none;}
+  .gcell{background:rgba(2,8,18,.6);border:1px solid #1c4870;border-radius:2px;position:relative;overflow:hidden;}
+  .gcell canvas{width:100%;height:100%;}
+  .glabel{position:absolute;top:1px;left:2px;font-size:8px;color:#aad3ff;text-shadow:0 0 3px #000;letter-spacing:.5px;}
+  .gtag{position:absolute;bottom:1px;right:2px;font-size:7px;color:#79ffb1;text-shadow:0 0 3px #000;}
+  #master-banner{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:34px;color:#fff;background:rgba(0,0,0,.65);padding:18px 32px;border:2px solid #ffe9b0;letter-spacing:3px;opacity:0;transition:opacity 1.2s;text-align:center;}
+  #master-banner.show{opacity:1;}
+  #scanline{position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,0) 0,rgba(255,255,255,0) 2px,rgba(180,210,255,.025) 2px,rgba(180,210,255,.025) 4px);}
+  #vignette{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 220px rgba(0,0,0,.85);}
+  #recdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff3a3a;vertical-align:middle;margin-right:5px;animation:rec 1s infinite;}
+  @keyframes rec{0%,49%{opacity:1;}50%,100%{opacity:.25;}}
+  .crosshair{position:fixed;top:50%;left:50%;width:60px;height:60px;transform:translate(-50%,-50%);pointer-events:none;}
+  .crosshair::before,.crosshair::after{content:'';position:absolute;background:rgba(255,233,176,.55);}
+  .crosshair::before{top:50%;left:0;right:0;height:1px;}
+  .crosshair::after{top:0;bottom:0;left:50%;width:1px;}
+  #cap{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1px solid #ffe9b0;border-radius:50%;pointer-events:none;}
+  .corner{position:fixed;width:24px;height:24px;border:2px solid rgba(255,233,176,.6);pointer-events:none;}
+  .c-tl{top:8px;left:8px;border-right:none;border-bottom:none;}
+  .c-tr{top:8px;right:8px;border-left:none;border-bottom:none;}
+  .c-bl{bottom:8px;left:8px;border-right:none;border-top:none;}
+  .c-br{bottom:8px;right:8px;border-left:none;border-top:none;}
+  #seedflash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .3s;}
+  #seedflash.flash{opacity:.18;}
+</style>
+</head>
+<body>
+<!-- ROUND26_CONVERGENCE v1 -->
+<div id="stage"></div>
+<div id="scanline"></div>
+<div id="vignette"></div>
+<div class="corner c-tl"></div><div class="corner c-tr"></div>
+<div class="corner c-bl"></div><div class="corner c-br"></div>
+<div class="crosshair"></div><div id="cap"></div>
+
+<div class="hud" id="top-left">
+  <div class="badge"><span id="recdot"></span><span class="key">REC</span> <span class="val" id="rec-time">00:00:00</span></div>
+  <div class="badge"><span class="key">POV</span> <span class="val">DRONE · master-shot</span></div>
+  <div class="badge"><span class="key">UUID</span> <span class="val" id="uuid-tag">—</span></div>
+  <div class="badge"><span class="key">MASTER</span> <span id="master-tag" class="ok">ELECTING…</span></div>
+  <div class="badge"><span class="key">CLOCK</span> <span class="val" id="mclock">000.00s</span></div>
+  <div class="badge"><span class="key">RESEED</span> <span class="val" id="reseed">600s</span></div>
+</div>
+
+<div class="hud" id="top-right">
+  <div class="badge"><span class="key">ALT</span> <span class="val" id="alt-tag">30.0m</span></div>
+  <div class="badge"><span class="key">GIMBAL</span> <span class="val" id="gim-tag">-90°</span></div>
+  <div class="badge"><span class="key">BATT</span> <span class="val" id="batt-tag">98%</span></div>
+  <div class="badge"><span class="key">GPS</span> <span class="val">N51.4783 W-2.0991</span></div>
+  <div class="badge"><span class="key">VENUE</span> <span class="val">St. Brimsworth · R21 wedding</span></div>
+  <div class="badge"><span class="key">SUBJECTS</span> <span class="val" id="subj-tag">11/11 tracked</span></div>
+</div>
+
+<div class="hud" id="bot-left">
+  <div class="badge"><span class="key">HEADING</span></div>
+  <div id="compass">
+    <div id="compass-strip"></div>
+    <div id="compass-needle"></div>
+  </div>
+  <div class="badge" style="margin-top:4px;"><span class="key">ARC</span> <span class="val" id="arc-tag">orbital · 18°/s</span></div>
+</div>
+
+<div class="hud" id="bot-right">
+  <div class="badge"><span class="key">CONVERGENCE</span> <span id="conv-tag" class="warn">T-540s</span></div>
+  <div class="badge"><span class="key">LEDGER</span> <span class="val" id="ledger-tag">brimsworth_convergence_v1</span></div>
+  <div class="badge"><span class="key">XREAD</span> <span class="val" id="xread-tag">— · — · — · — · —</span></div>
+  <div class="badge"><span class="key">CHANNEL</span> <span class="val">brimsworth_convergence</span></div>
+</div>
+
+<div id="chyron"></div>
+<div id="master-banner"></div>
+<div id="grid"></div>
+<div id="seedflash"></div>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---------- canonical IDs / cast ----------
+  var POV_ID = 'drone';
+  var LEDGER_KEY = 'brimsworth_convergence_v1';
+  var XREAD_KEYS = ['brimsworth_worlds_v1','brimsworth_multiverse_v1','brimsworth_century_v1','brimsworth_lifetime_v1','recurring_cast_v1'];
+  var CHANNEL = 'brimsworth_convergence';
+  var ALL_POVS = [
+    {id:'henry',    label:'HENRY',    role:'father · walks aisle'},
+    {id:'lily',     label:'LILY',     role:'bride'},
+    {id:'tomas',    label:'TOMAS',    role:'groom · altar'},
+    {id:'pemberton',label:'PEMBERTON',role:'honor seat'},
+    {id:'otto',     label:'OTTO',     role:'running boy'},
+    {id:'bytes',    label:'BYTES',    role:'cat · windowsill'},
+    {id:'crunch',   label:'CRUNCH',   role:'dog · w/ Tomas'},
+    {id:'eliza',    label:'ELIZA',    role:'photographer'},
+    {id:'wren',     label:'WREN',     role:'organist'},
+    {id:'whitford', label:'WHITFORD', role:'officiant · altar'},
+    {id:'crowd',    label:'CROWD',    role:'pews POV'}
+  ];
+
+  // ---------- uuid + master election ----------
+  function uuid(){ return 'drone-'+Math.random().toString(36).slice(2,8)+'-'+Date.now().toString(36).slice(-5); }
+  var MY_UUID = uuid();
+  var BORN_AT = Date.now();
+
+  // master-clock state
+  var masterUuid = MY_UUID;       // drone tab is preferred; we declare ourselves master
+  var masterElected = true;
+  var masterClockOrigin = BORN_AT; // ms
+  var bc = null;
+  try { bc = new BroadcastChannel(CHANNEL); } catch(e){ bc = null; }
+
+  function broadcast(msg){
+    if(!bc) return;
+    msg.from = MY_UUID;
+    msg.pov = POV_ID;
+    msg.t = Date.now();
+    try { bc.postMessage(msg); } catch(e){}
+  }
+  if(bc){
+    bc.onmessage = function(ev){
+      var m = ev.data || {};
+      // we are the preferred master — stake our claim hard
+      if(m.type === 'CLAIM_MASTER' && m.pov !== 'drone'){
+        broadcast({type:'MASTER_OVERRIDE', uuid:MY_UUID, origin:masterClockOrigin, reason:'drone-preferred'});
+      }
+      if(m.type === 'PING'){
+        broadcast({type:'MASTER_PULSE', uuid:MY_UUID, origin:masterClockOrigin, clockMs:Date.now()-masterClockOrigin});
+      }
+    };
+  }
+  // initial assert
+  setTimeout(function(){
+    broadcast({type:'MASTER_OVERRIDE', uuid:MY_UUID, origin:masterClockOrigin, reason:'drone-preferred-bootstrap'});
+  }, 60);
+  setInterval(function(){
+    broadcast({type:'MASTER_PULSE', uuid:MY_UUID, origin:masterClockOrigin, clockMs:Date.now()-masterClockOrigin, povCount:ALL_POVS.length+1});
+  }, 1500);
+
+  // ---------- ledger append ----------
+  function readJSONArray(k){
+    try { var s = localStorage.getItem(k); if(!s) return []; var v = JSON.parse(s); return Array.isArray(v)?v:[]; } catch(e){ return []; }
+  }
+  function appendLedger(){
+    var arr = readJSONArray(LEDGER_KEY);
+    arr.push({
+      pov_id: POV_ID,
+      uuid: MY_UUID,
+      master_clock_at_join: 0,
+      convergence_at: null,
+      master_clock_elected: true,
+      born_at: BORN_AT
+    });
+    try { localStorage.setItem(LEDGER_KEY, JSON.stringify(arr.slice(-128))); } catch(e){}
+  }
+  function markConvergence(masterClockMs){
+    var arr = readJSONArray(LEDGER_KEY);
+    // update the most recent record for this uuid
+    for(var i=arr.length-1;i>=0;i--){
+      if(arr[i].uuid === MY_UUID){ arr[i].convergence_at = masterClockMs; break; }
+    }
+    try { localStorage.setItem(LEDGER_KEY, JSON.stringify(arr.slice(-128))); } catch(e){}
+  }
+  appendLedger();
+
+  // cross-read
+  var xread = {};
+  XREAD_KEYS.forEach(function(k){
+    var arr = readJSONArray(k);
+    xread[k] = arr.length;
+  });
+  document.getElementById('xread-tag').textContent =
+    'worlds:'+(xread[XREAD_KEYS[0]]||0)+' · multi:'+(xread[XREAD_KEYS[1]]||0)+
+    ' · century:'+(xread[XREAD_KEYS[2]]||0)+' · life:'+(xread[XREAD_KEYS[3]]||0)+
+    ' · cast:'+(xread[XREAD_KEYS[4]]||0);
+
+  document.getElementById('uuid-tag').textContent = MY_UUID;
+  document.getElementById('master-tag').textContent = 'ELECTED · drone-preferred';
+  document.getElementById('master-tag').className = 'ok';
+
+  // ---------- seeded RNG ----------
+  function makeRng(seed){
+    var s = seed >>> 0;
+    return function(){
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+  var SEED_BASE = 0x21c0e1;
+  var seedEpoch = 0;
+  var rng = makeRng(SEED_BASE ^ seedEpoch);
+
+  // ---------- THREE scene ----------
+  var stage = document.getElementById('stage');
+  var renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.6));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x06101e, 1);
+  stage.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x07101e, 60, 220);
+
+  var camera = new THREE.PerspectiveCamera(58, window.innerWidth/window.innerHeight, 0.5, 800);
+  camera.position.set(0, 30, 0);
+  camera.lookAt(0,0,0);
+
+  // sun + ambient
+  var sun = new THREE.DirectionalLight(0xfff1cc, 1.0);
+  sun.position.set(40, 80, 30);
+  scene.add(sun);
+  scene.add(new THREE.AmbientLight(0x6a86c8, 0.55));
+  var hemi = new THREE.HemisphereLight(0xb9d6ff, 0x2b3a26, 0.45);
+  scene.add(hemi);
+
+  // ---------- ground / churchyard ----------
+  var groundGeo = new THREE.PlaneGeometry(220, 220, 12, 12);
+  var groundMat = new THREE.MeshLambertMaterial({color:0x2f4327});
+  var ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI/2;
+  scene.add(ground);
+
+  // path
+  var path = new THREE.Mesh(new THREE.PlaneGeometry(8, 60), new THREE.MeshLambertMaterial({color:0x6e6354}));
+  path.rotation.x = -Math.PI/2;
+  path.position.set(0, 0.02, 18);
+  scene.add(path);
+
+  // chapel building
+  var chapel = new THREE.Group();
+  var nave = new THREE.Mesh(new THREE.BoxGeometry(22, 11, 36), new THREE.MeshLambertMaterial({color:0xc9bba0}));
+  nave.position.y = 5.5;
+  chapel.add(nave);
+  var roof = new THREE.Mesh(new THREE.ConeGeometry(15, 7, 4), new THREE.MeshLambertMaterial({color:0x4a2a1c}));
+  roof.position.y = 11+3.5; roof.rotation.y = Math.PI/4;
+  chapel.add(roof);
+  // tower
+  var tower = new THREE.Mesh(new THREE.BoxGeometry(6, 18, 6), new THREE.MeshLambertMaterial({color:0xb8a98e}));
+  tower.position.set(0, 9, -22); chapel.add(tower);
+  var spire = new THREE.Mesh(new THREE.ConeGeometry(4.2, 8, 8), new THREE.MeshLambertMaterial({color:0x3a2418}));
+  spire.position.set(0, 22, -22); chapel.add(spire);
+  // cross on spire
+  var crossV = new THREE.Mesh(new THREE.BoxGeometry(0.3,2.4,0.3), new THREE.MeshBasicMaterial({color:0xf5e6b8}));
+  crossV.position.set(0, 27, -22); chapel.add(crossV);
+  var crossH = new THREE.Mesh(new THREE.BoxGeometry(1.4,0.3,0.3), new THREE.MeshBasicMaterial({color:0xf5e6b8}));
+  crossH.position.set(0, 27.4, -22); chapel.add(crossH);
+  // roof: open the nave so we can see down
+  // We'll cheat: keep chapel solid but place "ceremony" group on the lawn in front of it (the ceremony is outdoor in front of chapel),
+  // which makes the master shot clean from above.
+  scene.add(chapel);
+
+  // stained-glass windows accent
+  for(var w=-12;w<=12;w+=6){
+    var win = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 4), new THREE.MeshBasicMaterial({color:0x6a8ed4}));
+    win.position.set(11.05, 6, w);
+    win.rotation.y = Math.PI/2;
+    chapel.add(win);
+    var win2 = win.clone(); win2.position.x = -11.05; win2.rotation.y = -Math.PI/2; chapel.add(win2);
+  }
+
+  // ---------- ceremony layout (outdoor in front of chapel; visible from drone) ----------
+  var ceremony = new THREE.Group();
+  ceremony.position.set(0, 0, 18);
+  scene.add(ceremony);
+
+  // aisle runner
+  var runner = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 26), new THREE.MeshLambertMaterial({color:0xd9c86a}));
+  runner.rotation.x = -Math.PI/2; runner.position.y = 0.05;
+  ceremony.add(runner);
+
+  // arch (where altar is — at the far end from entrance)
+  var arch = new THREE.Group();
+  var arL = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,5,8), new THREE.MeshLambertMaterial({color:0xe9d5b5}));
+  arL.position.set(-2,2.5,-13); arch.add(arL);
+  var arR = arL.clone(); arR.position.x = 2; arch.add(arR);
+  var arT = new THREE.Mesh(new THREE.TorusGeometry(2,0.18,8,16,Math.PI), new THREE.MeshLambertMaterial({color:0xe9d5b5}));
+  arT.position.set(0,5,-13); arT.rotation.z = 0;
+  arch.add(arT);
+  // floral on arch
+  for(var fa=0; fa<8; fa++){
+    var fl = new THREE.Mesh(new THREE.SphereGeometry(0.25,8,6), new THREE.MeshLambertMaterial({color: fa%2 ? 0xe6a4c8 : 0xf5dcb0}));
+    fl.position.set(Math.cos(fa/8*Math.PI)*-2, 5+Math.sin(fa/8*Math.PI)*0.3, -13);
+    arch.add(fl);
+  }
+  ceremony.add(arch);
+
+  // pews — two columns of benches
+  function makePew(x,z){
+    var g = new THREE.Group();
+    var seat = new THREE.Mesh(new THREE.BoxGeometry(4, 0.3, 1), new THREE.MeshLambertMaterial({color:0x6b4a2a}));
+    seat.position.y = 0.6; g.add(seat);
+    var leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.6,0.8), new THREE.MeshLambertMaterial({color:0x4a2f18}));
+    leg1.position.set(-1.7,0.3,0); g.add(leg1);
+    var leg2 = leg1.clone(); leg2.position.x = 1.7; g.add(leg2);
+    g.position.set(x,0,z);
+    return g;
+  }
+  var pewZs = [-9,-6,-3,0,3,6];
+  pewZs.forEach(function(z){
+    ceremony.add(makePew(-4, z));
+    ceremony.add(makePew(4, z));
+  });
+
+  // crowd in pews (procedural figures we will look at from above)
+  var crowdFigs = [];
+  function makeFig(color, capColor){
+    var g = new THREE.Group();
+    var body = new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.45,1.4,10), new THREE.MeshLambertMaterial({color:color||0x33446a}));
+    body.position.y = 0.7; g.add(body);
+    var head = new THREE.Mesh(new THREE.SphereGeometry(0.28,12,10), new THREE.MeshLambertMaterial({color:0xf2c8a0}));
+    head.position.y = 1.7; g.add(head);
+    if(capColor){
+      var hat = new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.34,0.16,10), new THREE.MeshLambertMaterial({color:capColor}));
+      hat.position.y = 1.95; g.add(hat);
+    }
+    g.userData.body = body; g.userData.head = head;
+    return g;
+  }
+
+  // populate pews
+  pewZs.forEach(function(z, idx){
+    [ -4.6,-3.5,3.5,4.6 ].forEach(function(x, j){
+      var palette = [0x33446a,0x6a3a44,0x44663a,0x554477,0x664433,0x335577,0x553355,0x447766];
+      var hatColors = [null,null,0x222222,null,0x554433,null,null,0x332244];
+      var fig = makeFig(palette[(idx*4+j)%palette.length], hatColors[(idx+j)%hatColors.length]);
+      fig.position.set(x, 0, z);
+      fig.userData.role = 'crowd';
+      fig.userData.baseY = 0;
+      ceremony.add(fig);
+      crowdFigs.push(fig);
+    });
+  });
+
+  // ---------- 11 named subjects ----------
+  var actors = {};
+
+  // HENRY (father) — walks Lily down the aisle. Starts at entrance (z=10), walks to arch (z=-13)
+  var henry = makeFig(0x2a2a3a, 0x111122);
+  henry.position.set(-0.7, 0, 10);
+  henry.userData.role = 'henry';
+  ceremony.add(henry); actors.henry = henry;
+
+  // LILY (bride)
+  var lily = makeFig(0xffffff);
+  lily.userData.body.material.color.setHex(0xfafafa);
+  // veil
+  var veil = new THREE.Mesh(new THREE.SphereGeometry(0.42,12,8), new THREE.MeshLambertMaterial({color:0xfdfdfd, transparent:true, opacity:0.8}));
+  veil.scale.set(1,1.2,1); veil.position.y = 1.7; lily.add(veil);
+  lily.position.set(0.7, 0, 10);
+  lily.userData.role = 'lily';
+  ceremony.add(lily); actors.lily = lily;
+
+  // TOMAS (groom) — at altar
+  var tomas = makeFig(0x111111, 0x111111);
+  tomas.position.set(-0.7, 0, -12.2);
+  tomas.userData.role = 'tomas';
+  ceremony.add(tomas); actors.tomas = tomas;
+
+  // WHITFORD (officiant) — center under arch
+  var whitford = makeFig(0x121212);
+  // robe sash
+  var sash = new THREE.Mesh(new THREE.BoxGeometry(0.7,1.0,0.05), new THREE.MeshLambertMaterial({color:0x8a2a2a}));
+  sash.position.y = 0.9; whitford.add(sash);
+  whitford.position.set(0, 0, -13.2);
+  whitford.userData.role = 'whitford';
+  ceremony.add(whitford); actors.whitford = whitford;
+
+  // PEMBERTON (honor seat) — front pew, special chair
+  var pemChair = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), new THREE.MeshLambertMaterial({color:0x885a2a}));
+  pemChair.position.set(-3.4, 0.7, -10);
+  ceremony.add(pemChair);
+  var pemberton = makeFig(0x553388, 0x222244);
+  pemberton.userData.body.material.color.setHex(0x6b3a8a);
+  pemberton.position.set(-3.4, 0.6, -10);
+  pemberton.userData.role = 'pemberton';
+  ceremony.add(pemberton); actors.pemberton = pemberton;
+
+  // OTTO — running boy on the lawn
+  var otto = makeFig(0xe6c25a);
+  otto.scale.set(0.7,0.7,0.7);
+  otto.position.set(8, 0, 5);
+  otto.userData.role = 'otto';
+  ceremony.add(otto); actors.otto = otto;
+
+  // BYTES — cat on chapel windowsill (we'll place on chapel side)
+  var bytes = new THREE.Group();
+  var bbody = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.25, 0.3), new THREE.MeshLambertMaterial({color:0x222222}));
+  bbody.position.y = 0.15; bytes.add(bbody);
+  var bhead = new THREE.Mesh(new THREE.BoxGeometry(0.28,0.28,0.28), new THREE.MeshLambertMaterial({color:0x1d1d1d}));
+  bhead.position.set(-0.4, 0.3, 0); bytes.add(bhead);
+  var btail = new THREE.Mesh(new THREE.BoxGeometry(0.45,0.08,0.08), new THREE.MeshLambertMaterial({color:0x222222}));
+  btail.position.set(0.5, 0.25, 0); btail.rotation.z = 0.3; bytes.add(btail);
+  // sit Bytes on the chapel windowsill (left side, mid)
+  bytes.position.set(-11.2, 4, -2);
+  bytes.rotation.y = Math.PI/2;
+  scene.add(bytes); actors.bytes = bytes;
+  // cat is on chapel, not ceremony group
+
+  // CRUNCH — dog beside Tomas
+  var crunch = new THREE.Group();
+  var dbody = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 0.4), new THREE.MeshLambertMaterial({color:0xb09060}));
+  dbody.position.y = 0.25; crunch.add(dbody);
+  var dhead = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.34,0.34), new THREE.MeshLambertMaterial({color:0xc8a472}));
+  dhead.position.set(0.45, 0.5, 0); crunch.add(dhead);
+  var dtail = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.1,0.1), new THREE.MeshLambertMaterial({color:0xb09060}));
+  dtail.position.set(-0.45, 0.4, 0); crunch.add(dtail);
+  crunch.position.set(-1.4, 0, -12.2);
+  ceremony.add(crunch); actors.crunch = crunch;
+
+  // ELIZA — photographer (off to the side, framing shots)
+  var eliza = makeFig(0x336655);
+  // camera as small box at face level
+  var cam = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.25,0.5), new THREE.MeshLambertMaterial({color:0x111111}));
+  cam.position.set(0,1.4,0.35); eliza.add(cam);
+  eliza.userData.cam = cam;
+  eliza.position.set(4.5, 0, -10);
+  eliza.userData.role = 'eliza';
+  ceremony.add(eliza); actors.eliza = eliza;
+
+  // WREN — at organ inside chapel; we'll show her at chapel doorway sliver visible from above; place a small organ spot just inside the open arch
+  // For drone POV simplicity, show Wren at an organ on the chapel porch
+  var organ = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 1.0), new THREE.MeshLambertMaterial({color:0x4a3520}));
+  organ.position.set(-7.5, 0.7, -14);
+  ceremony.add(organ);
+  var wren = makeFig(0x553344);
+  wren.position.set(-7.5, 0, -15);
+  wren.userData.role = 'wren';
+  ceremony.add(wren); actors.wren = wren;
+
+  // ---------- petals / particles (rose petals on aisle) ----------
+  var petalGeo = new THREE.PlaneGeometry(0.18, 0.18);
+  var petalMat = new THREE.MeshBasicMaterial({color:0xe89aae, side:THREE.DoubleSide, transparent:true, opacity:0.92});
+  var petals = [];
+  for(var p=0;p<140;p++){
+    var pm = new THREE.Mesh(petalGeo, petalMat);
+    pm.position.set( (rng()-0.5)*2.2, 0.06, (rng()*22-9));
+    pm.rotation.x = -Math.PI/2;
+    pm.rotation.z = rng()*Math.PI;
+    ceremony.add(pm);
+    petals.push(pm);
+  }
+
+  // floating confetti particles (reseed-driven)
+  var confettiGroup = new THREE.Group(); scene.add(confettiGroup);
+  function reseedConfetti(){
+    while(confettiGroup.children.length){ confettiGroup.remove(confettiGroup.children[0]); }
+    for(var i=0;i<80;i++){
+      var c = new THREE.Mesh(new THREE.PlaneGeometry(0.15,0.15),
+        new THREE.MeshBasicMaterial({color: new THREE.Color().setHSL(rng(),0.7,0.65), side:THREE.DoubleSide, transparent:true, opacity:0.9}));
+      c.position.set((rng()-0.5)*40, 1+rng()*8, (rng()-0.5)*40+15);
+      c.userData.vx = (rng()-0.5)*0.15;
+      c.userData.vy = -0.05 - rng()*0.1;
+      c.userData.vz = (rng()-0.5)*0.15;
+      c.userData.rot = (rng()-0.5)*0.05;
+      confettiGroup.add(c);
+    }
+  }
+  reseedConfetti();
+
+  // background trees (cheap blobs)
+  for(var t=0;t<28;t++){
+    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.4,2.4,6), new THREE.MeshLambertMaterial({color:0x4a3320}));
+    var canopy = new THREE.Mesh(new THREE.SphereGeometry(2.0+rng()*0.8,8,6), new THREE.MeshLambertMaterial({color:0x2c4a26}));
+    canopy.position.y = 3;
+    var tg = new THREE.Group(); tg.add(trunk); tg.add(canopy);
+    var ang = rng()*Math.PI*2;
+    var rad = 50+rng()*40;
+    tg.position.set(Math.cos(ang)*rad, 0, Math.sin(ang)*rad);
+    scene.add(tg);
+  }
+
+  // ---------- 4×3 POV grid thumbnails ----------
+  var gridEl = document.getElementById('grid');
+  var thumbs = []; // {pov, ctx, canvas}
+  function buildGrid(){
+    gridEl.innerHTML = '';
+    thumbs = [];
+    // 11 other POVs + DRONE-self in last cell = 12 cells
+    var cells = ALL_POVS.slice(0); // 11
+    cells.push({id:'drone', label:'DRONE', role:'this view'});
+    cells.forEach(function(p){
+      var d = document.createElement('div'); d.className='gcell';
+      var cv = document.createElement('canvas'); cv.width=180; cv.height=120;
+      d.appendChild(cv);
+      var lab = document.createElement('div'); lab.className='glabel'; lab.textContent = p.label;
+      d.appendChild(lab);
+      var tag = document.createElement('div'); tag.className='gtag'; tag.textContent='LIVE';
+      d.appendChild(tag);
+      gridEl.appendChild(d);
+      thumbs.push({pov:p, canvas:cv, ctx:cv.getContext('2d'), tagEl:tag});
+    });
+  }
+  buildGrid();
+
+  // procedurally render each thumbnail per frame (cheap stylized)
+  function paintThumb(th, t, mclock){
+    var ctx = th.ctx, w=th.canvas.width, h=th.canvas.height;
+    var p = th.pov;
+    // base palette per pov
+    var palettes = {
+      henry:    ['#2a3a4a','#7090b0'],
+      lily:     ['#f8f0e0','#ffffff'],
+      tomas:    ['#1a1a2a','#666688'],
+      pemberton:['#3a2a5a','#bfa6e0'],
+      otto:     ['#5a8030','#c0e088'],
+      bytes:    ['#0a0a14','#aacaff'],
+      crunch:   ['#3a2a18','#d8b070'],
+      eliza:    ['#102030','#88e0d0'],
+      wren:     ['#1a1530','#a890ff'],
+      whitford: ['#100808','#dbb070'],
+      crowd:    ['#1a2030','#88a0c0'],
+      drone:    ['#02060e','#79ffb1']
+    };
+    var pal = palettes[p.id] || ['#222','#aaa'];
+    // gradient sky/floor
+    var gr = ctx.createLinearGradient(0,0,0,h);
+    gr.addColorStop(0, pal[0]);
+    gr.addColorStop(1, pal[1]);
+    ctx.fillStyle = gr; ctx.fillRect(0,0,w,h);
+
+    // signature sweep
+    ctx.globalAlpha = 0.25;
+    for(var i=0;i<5;i++){
+      ctx.fillStyle = '#ffffff';
+      var sy = (Math.sin(t*0.001 + i + p.label.length)*0.5+0.5)*h;
+      ctx.fillRect(0, sy, w, 1);
+    }
+    ctx.globalAlpha = 1;
+
+    // pov-specific marker
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(p.label, 8, h-22);
+    ctx.font = '8px monospace';
+    ctx.fillStyle = '#cfe6ff';
+    ctx.fillText(p.role, 8, h-10);
+
+    // mini schematic specific to subject
+    ctx.save();
+    ctx.translate(w*0.7, h*0.4);
+    ctx.fillStyle = '#ffffffcc';
+    var phase = (t*0.001 + p.label.charCodeAt(0)*0.07)%(Math.PI*2);
+    if(p.id==='lily' || p.id==='henry'){
+      // walking dot toward right
+      var prog = Math.min(1, mclock/180);
+      ctx.fillRect(-25 + prog*50, -2, 6, 6);
+    } else if(p.id==='tomas' || p.id==='whitford'){
+      // standing pulse
+      ctx.beginPath(); ctx.arc(0,0,5+Math.sin(phase)*1.2,0,Math.PI*2); ctx.fill();
+    } else if(p.id==='otto'){
+      ctx.fillRect(Math.cos(phase*2)*18,Math.sin(phase*2)*8,5,5);
+    } else if(p.id==='bytes'){
+      ctx.fillRect(-2 + Math.sin(phase*0.3)*1, -2, 8, 4);
+    } else if(p.id==='crunch'){
+      ctx.fillRect(-3,-3,7,7);
+      ctx.fillRect(5+Math.sin(phase*4)*2,-1,3,3);
+    } else if(p.id==='eliza'){
+      ctx.strokeStyle='#fff'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.rect(-12,-8,24,16); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
+    } else if(p.id==='wren'){
+      for(var k=0;k<6;k++){ ctx.fillRect(-15+k*5, -6+Math.sin(phase+k)*3, 3, 8); }
+    } else if(p.id==='pemberton'){
+      ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2); ctx.fill();
+    } else if(p.id==='crowd'){
+      for(var c=0;c<8;c++){ ctx.fillRect(-18+c*5, -3+(c%2)*4, 3,3); }
+    } else if(p.id==='drone'){
+      // crosshair
+      ctx.strokeStyle = '#ffe9b0'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-12,0); ctx.lineTo(12,0); ctx.moveTo(0,-12); ctx.lineTo(0,12); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+
+    // master clock band
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0,0,w,12);
+    ctx.fillStyle = '#79ffb1';
+    ctx.font = '9px monospace';
+    ctx.fillText('MC ' + mclock.toFixed(1)+'s', 4, 9);
+    ctx.fillStyle = '#ff5b5b';
+    ctx.fillText('●', w-12, 9);
+  }
+
+  // ---------- compass strip ----------
+  var compassStrip = document.getElementById('compass-strip');
+  var compassMarks = ['N','30','60','E','120','150','S','210','240','W','300','330','N','30','60','E','120','150','S','210','240','W','300','330'];
+  for(var ci=0;ci<compassMarks.length;ci++){
+    var m = document.createElement('div'); m.className='compass-mark'; m.style.left = (ci*30)+'px'; m.textContent = compassMarks[ci];
+    compassStrip.appendChild(m);
+  }
+
+  // ---------- main loop ----------
+  var t0 = performance.now();
+  var lastReseed = 0;
+  var convergenceFired = false;
+
+  function showChyron(text, dur){
+    var ch = document.getElementById('chyron');
+    ch.textContent = text;
+    ch.classList.add('show');
+    if(dur){
+      setTimeout(function(){ ch.classList.remove('show'); }, dur);
+    }
+  }
+  function showMaster(text, dur){
+    var mb = document.getElementById('master-banner');
+    mb.textContent = text;
+    mb.classList.add('show');
+    setTimeout(function(){ mb.classList.remove('show'); }, dur||3500);
+  }
+
+  // reseed flash
+  function flashSeed(){
+    var el = document.getElementById('seedflash');
+    el.classList.add('flash');
+    setTimeout(function(){ el.classList.remove('flash'); }, 320);
+  }
+
+  // chyron timeline
+  var chyrons = [
+    {t: 8,  d: 4500, txt:'establishing shot · St. Brimsworth · R21 wedding'},
+    {t: 35, d: 4500, txt:'orbital arc · 18°/s · gimbal -90° master shot'},
+    {t: 70, d: 4500, txt:'Henry walks Lily · processional · descending altitude'},
+    {t:110, d: 4500, txt:'Tomas at altar · Crunch beside him · Whitford ready'},
+    {t:160, d: 4500, txt:'Pemberton in honor seat · Bytes on the windowsill'},
+    {t:210, d: 4500, txt:'Eliza framing · Otto running · Wren at the organ'},
+    {t:300, d: 4500, txt:'vows · drone descending to 8m · gimbal locked'},
+    {t:420, d: 4500, txt:'rings exchanged · gentle ascent for the recession'},
+    {t:520, d: 4500, txt:'all twelve points of view holding the same second'},
+  ];
+  var chyronIdx = 0;
+
+  // resize
+  window.addEventListener('resize', function(){
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+  });
+
+  // animate each crowd figure to bob slightly
+  function animCrowd(t){
+    crowdFigs.forEach(function(f, i){
+      var ph = i*0.7 + t*0.0008;
+      f.position.y = Math.sin(ph)*0.04;
+      // turning heads slightly
+      if(f.userData.head){ f.userData.head.rotation.y = Math.sin(ph*2)*0.2; }
+    });
+  }
+
+  // animate Henry+Lily processional
+  function animProcessional(mclock){
+    // walk from z=10 to z=-10 between t=20s and t=180s
+    var prog = Math.min(1, Math.max(0, (mclock-20)/160));
+    var z = 10 - prog*22;
+    actors.henry.position.z = z;
+    actors.lily.position.z = z;
+    // step bob
+    actors.henry.position.y = Math.abs(Math.sin(mclock*4))*0.05;
+    actors.lily.position.y = Math.abs(Math.sin(mclock*4))*0.05;
+    // face the altar
+    actors.henry.rotation.y = Math.PI;
+    actors.lily.rotation.y = Math.PI;
+    // after arrival, henry steps off
+    if(prog>=1){
+      var post = Math.min(1, (mclock-185)/30);
+      actors.henry.position.x = -0.7 - post*3.5;
+      actors.henry.position.z = -10 + post*0.5;
+    }
+  }
+
+  // animate Otto running
+  function animOtto(t){
+    var ph = t*0.0009;
+    actors.otto.position.x = 8 + Math.cos(ph*1.4)*4;
+    actors.otto.position.z = 5 + Math.sin(ph*1.6)*4;
+    actors.otto.rotation.y = ph*1.5;
+    actors.otto.position.y = Math.abs(Math.sin(ph*8))*0.15;
+  }
+  // animate Bytes (cat tail flick)
+  function animBytes(t){
+    var ph = t*0.001;
+    actors.bytes.children[2].rotation.z = 0.3 + Math.sin(ph*1.5)*0.5;
+    actors.bytes.position.z = -2 + Math.sin(ph*0.4)*0.4;
+  }
+  // animate Crunch (dog tail wag, sit)
+  function animCrunch(t){
+    var ph = t*0.001;
+    actors.crunch.children[2].rotation.y = Math.sin(ph*8)*0.7;
+  }
+  // animate Eliza framing
+  function animEliza(t, mclock){
+    var ph = t*0.0008;
+    actors.eliza.position.x = 4.5 + Math.cos(ph*0.4)*1.8;
+    actors.eliza.position.z = -10 + Math.sin(ph*0.4)*4;
+    // face the altar
+    var dx = 0 - actors.eliza.position.x;
+    var dz = -13 - actors.eliza.position.z;
+    actors.eliza.rotation.y = Math.atan2(dx, dz);
+  }
+  // animate Wren (organist hands; just bob)
+  function animWren(t){
+    actors.wren.position.y = Math.sin(t*0.003)*0.08;
+    actors.wren.rotation.y = Math.PI; // facing organ
+  }
+  // animate Whitford slight lean
+  function animWhitford(t){
+    actors.whitford.rotation.y = Math.PI + Math.sin(t*0.0008)*0.15;
+    actors.whitford.position.y = Math.sin(t*0.0007)*0.03;
+  }
+  // animate Tomas glancing at aisle
+  function animTomas(t, mclock){
+    actors.tomas.rotation.y = Math.PI + Math.sin(t*0.0007)*0.4;
+    actors.tomas.position.y = Math.sin(t*0.0009)*0.04;
+  }
+  // animate Pemberton
+  function animPem(t){
+    actors.pemberton.rotation.y = Math.PI;
+    actors.pemberton.position.y = 0.6 + Math.sin(t*0.0006)*0.02;
+    if(actors.pemberton.userData.head){ actors.pemberton.userData.head.rotation.x = Math.sin(t*0.0005)*0.1; }
+  }
+
+  // make subject look up at drone
+  function lookUpAt(actor, target){
+    // simply tilt the head/body up by setting rotation.x on the whole group
+    if(!actor) return;
+    // flag mode: lean back
+    var lean = -0.5;
+    actor.rotation.x = THREE.MathUtils.lerp(actor.rotation.x||0, target ? lean : 0, 0.15);
+    if(actor.userData && actor.userData.head){
+      actor.userData.head.rotation.x = THREE.MathUtils.lerp(actor.userData.head.rotation.x||0, target ? -0.6 : 0, 0.15);
+    }
+  }
+
+  // wave: little arm-substitute (just spawn a small floating dot near head that bounces)
+  var waveMarkers = [];
+  function spawnWave(actor, color){
+    if(!actor) return;
+    var m = new THREE.Mesh(new THREE.SphereGeometry(0.18,8,6), new THREE.MeshBasicMaterial({color:color||0xffffff}));
+    m.userData.actor = actor;
+    m.userData.t0 = performance.now();
+    actor.add(m); m.position.set(0.4, 2.0, 0);
+    waveMarkers.push(m);
+  }
+  function animWaves(t){
+    waveMarkers.forEach(function(m){
+      var dt = (t - m.userData.t0)/1000;
+      m.position.y = 2.0 + Math.sin(dt*8)*0.25;
+      m.position.x = 0.4 + Math.sin(dt*8)*0.4;
+    });
+  }
+
+  // master clock display
+  function fmtTime(s){
+    var h = Math.floor(s/3600);
+    var m = Math.floor((s%3600)/60);
+    var sec = Math.floor(s%60);
+    return (h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(sec<10?'0':'')+sec;
+  }
+
+  // ---------- main render ----------
+  function frame(){
+    var now = performance.now();
+    var elapsedMs = now - masterClockOrigin;
+    var mclock = elapsedMs/1000;
+
+    // reseed every 600s
+    var reseedBucket = Math.floor(mclock/600);
+    if(reseedBucket !== seedEpoch){
+      seedEpoch = reseedBucket;
+      rng = makeRng(SEED_BASE ^ seedEpoch ^ Math.floor(now));
+      reseedConfetti();
+      flashSeed();
+      showChyron('reseed · epoch '+seedEpoch+' · pov holds', 2200);
+    }
+
+    var loopT = mclock; // we'll use mclock as canonical time
+
+    // animate confetti
+    confettiGroup.children.forEach(function(c){
+      c.position.x += c.userData.vx;
+      c.position.y += c.userData.vy;
+      c.position.z += c.userData.vz;
+      c.rotation.z += c.userData.rot;
+      if(c.position.y<0.1){ c.position.y = 8 + rng()*4; c.position.x = (rng()-0.5)*40; c.position.z = (rng()-0.5)*40+15; }
+    });
+
+    // animate ceremony actors
+    animCrowd(now);
+    animProcessional(loopT);
+    animOtto(now);
+    animBytes(now);
+    animCrunch(now);
+    animEliza(now, loopT);
+    animWren(now);
+    animWhitford(now);
+    animTomas(now, loopT);
+    animPem(now);
+
+    // ---------- DRONE camera ----------
+    // orbital arc around ceremony centroid (0, ~0, 0 in world; ceremony group offset z=18 so center is at (0,0,5) approx)
+    var center = new THREE.Vector3(0, 0, 5);
+    // altitude profile:
+    //   start at 30m
+    //   descend to 12m by t=300 (vows)
+    //   dip to 3m at t=540 (CONVERGENCE)
+    //   recover to 22m by t=620 (recession ascent)
+    var alt;
+    if(loopT<300) alt = 30 - (loopT/300)*18;       // 30 -> 12
+    else if(loopT<540) alt = 12 - ((loopT-300)/240)*9; // 12 -> 3
+    else if(loopT<620) alt = 3 + ((loopT-540)/80)*19;  // 3 -> 22
+    else alt = 22 + Math.sin((loopT-620)*0.05)*1.2;
+    // gentle sinusoidal flutter
+    alt += Math.sin(loopT*0.18)*0.25;
+
+    // orbit angle (slow)
+    var orbitSpeedDeg = 18; // deg/s nominal but we slow it
+    // Slow it heavily so it's "gentle"
+    var orbitRate = 0.06; // rad/s
+    var orbitR = 18 + Math.sin(loopT*0.05)*2;
+    // descend for vows: tighten orbit
+    if(loopT>280 && loopT<560) orbitR = 12 + Math.sin(loopT*0.05)*1.5;
+
+    var ang = loopT*orbitRate;
+    camera.position.x = center.x + Math.cos(ang)*orbitR;
+    camera.position.z = center.z + Math.sin(ang)*orbitR;
+    camera.position.y = alt;
+
+    // gimbal: tilt down at high alt; lower angle when close
+    // look at ceremony center; near convergence, look straight down at altar
+    var lookTarget = new THREE.Vector3();
+    lookTarget.copy(center);
+    if(loopT>=535 && loopT<=560){
+      // converge directly above altar
+      lookTarget.set(0, 0, -13+18); // arch position (in world; ceremony.z=18 + arch local -13 = 5)
+      // Hmm arch local z is -13, world z = 5. We're already aiming there roughly.
+      // At convergence sit directly above the altar:
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0, 0.15);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 5, 0.15);
+    }
+    camera.lookAt(lookTarget);
+
+    // gimbal angle = approx camera tilt down
+    var dy = camera.position.y - lookTarget.y;
+    var dh = Math.sqrt(Math.pow(camera.position.x-lookTarget.x,2)+Math.pow(camera.position.z-lookTarget.z,2));
+    var gimbalDeg = -Math.atan2(dy, dh) * 180/Math.PI;
+
+    // ---------- 540s convergence moment ----------
+    var converging = loopT>=538 && loopT<=560;
+    Object.keys(actors).forEach(function(k){
+      var a = actors[k];
+      lookUpAt(a, converging);
+    });
+    // crowd looks up too (bonus)
+    crowdFigs.forEach(function(f){ lookUpAt(f, converging); });
+
+    if(converging && !convergenceFired){
+      convergenceFired = true;
+      // spawn waves
+      Object.keys(actors).forEach(function(k){
+        var a = actors[k];
+        var col = (k==='lily') ? 0xfff5d8 : (k==='tomas') ? 0xc0c0ff : (k==='otto') ? 0xfff070 : 0xffffff;
+        spawnWave(a, col);
+      });
+      showChyron('convergence: drone — twelve points of view, one moment.', 9000);
+      showMaster('CONVERGENCE');
+      markConvergence(elapsedMs);
+      broadcast({type:'CONVERGENCE_FIRED', uuid:MY_UUID, clockMs:elapsedMs});
+    }
+
+    animWaves(now);
+
+    // chyrons schedule
+    while(chyronIdx<chyrons.length && loopT >= chyrons[chyronIdx].t){
+      var ch = chyrons[chyronIdx]; chyronIdx++;
+      showChyron(ch.txt, ch.d);
+    }
+
+    // ---------- HUD updates ----------
+    document.getElementById('rec-time').textContent = fmtTime(loopT);
+    document.getElementById('mclock').textContent = (loopT.toFixed(2))+'s';
+    document.getElementById('alt-tag').textContent = alt.toFixed(1)+'m';
+    document.getElementById('gim-tag').textContent = (-gimbalDeg).toFixed(0)+'°';
+    var batt = Math.max(8, 98 - loopT*0.05);
+    document.getElementById('batt-tag').textContent = batt.toFixed(0)+'%';
+    var nextSeed = 600 - (loopT%600);
+    document.getElementById('reseed').textContent = nextSeed.toFixed(0)+'s';
+    var convT = 540 - loopT;
+    var ct = document.getElementById('conv-tag');
+    if(convT>0){ ct.textContent = 'T-'+convT.toFixed(1)+'s'; ct.className='warn'; }
+    else if(convT>-22){ ct.textContent = 'NOW · 12 POVs LOCKED'; ct.className='alert'; }
+    else { ct.textContent = 'POST · '+(-convT).toFixed(1)+'s'; ct.className='ok'; }
+
+    // arc tag
+    var arcText = (loopT>280 && loopT<560) ? 'orbital · 11°/s · descending' : 'orbital · 18°/s · cruise';
+    if(loopT>540 && loopT<620) arcText = 'orbital · ascending · recession';
+    document.getElementById('arc-tag').textContent = arcText;
+
+    // compass needle position based on camera heading
+    // heading: direction of camera xz from looking direction
+    var dx = lookTarget.x - camera.position.x;
+    var dz = lookTarget.z - camera.position.z;
+    var headingRad = Math.atan2(dx, -dz); // 0 = north (-z)
+    var headingDeg = ((headingRad*180/Math.PI)+360)%360;
+    // Move strip so the heading aligns with center marker
+    var stripWidth = 720; // 24 marks * 30
+    var stripOffset = -(headingDeg/360)*stripWidth + 85; // 85 ≈ half compass width minus a bit
+    document.getElementById('compass-strip').style.left = stripOffset + 'px';
+
+    document.getElementById('subj-tag').textContent = (Object.keys(actors).length+1)+'/'+(ALL_POVS.length)+' tracked';
+
+    // paint thumbs (every other frame for perf)
+    if((Math.floor(now/100))%1 === 0){
+      thumbs.forEach(function(th){ paintThumb(th, now, loopT); });
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // initial chyron
+  setTimeout(function(){ showChyron('drone POV · master shot · brimsworth_convergence_v1 ledger active', 4500); }, 200);
+  setTimeout(function(){ showMaster('DRONE · MASTER ELECTED'); }, 600);
+
+  // expose for debug
+  window.__r26 = {
+    pov:POV_ID, uuid:MY_UUID, ledger:LEDGER_KEY,
+    readLedger:function(){ return readJSONArray(LEDGER_KEY); }
+  };
+})();
+</script>
+</body>
+</html>

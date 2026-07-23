@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ant Colony War — Lanchester's Square Law</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #08070a;
+    font-family: 'Helvetica Neue', system-ui, sans-serif;
+    color: #d8cdb8;
+    overflow: hidden;
+  }
+  #wrap {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 1200px; height: 800px;
+    border-radius: 10px;
+    box-shadow: 0 12px 60px rgba(0,0,0,0.7), 0 0 0 1px #1c1816;
+    overflow: hidden;
+    background: #0a0908;
+  }
+  canvas { display: block; }
+  #title {
+    position: absolute;
+    top: 14px; left: 18px;
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #dac7a6;
+    text-shadow: 0 2px 6px #000;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #title small {
+    display: block;
+    margin-top: 3px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: #8a7d65;
+    text-transform: none;
+  }
+  #legend {
+    position: absolute;
+    bottom: 14px; left: 18px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: #aa9d85;
+    text-shadow: 0 1px 3px #000;
+    pointer-events: none;
+    z-index: 5;
+    line-height: 1.6;
+  }
+  #legend .sw {
+    display: inline-block; width: 10px; height: 10px;
+    margin-right: 6px; vertical-align: -1px; border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="1200" height="800"></canvas>
+  <div id="title">Ant Colony War<small>500 vs 500 — Lanchester's square law emerges from individual rules</small></div>
+  <div id="legend">
+    <span><span class="sw" style="background:#ff5a3c"></span>Red colony</span> &nbsp;
+    <span><span class="sw" style="background:#5a90ff"></span>Black colony</span> &nbsp;
+    <span><span class="sw" style="background:#ffd866"></span>Food</span> &nbsp;
+    <span><span class="sw" style="background:#9af07a"></span>Carrier</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   ANT COLONY WAR
+   - Two colonies, 500 ants each
+   - Roles: forager / soldier / worker
+   - Pheromone field per colony (lay-on-return -> supply lines)
+   - Spatial hash combat -> Lanchester's square law emerges
+   - Auto-reset on queen death
+   ============================================================ */
+
+const W = 1200, H = 800;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+/* --- Pheromone grid --- */
+const CELL = 10;
+const GW = (W / CELL) | 0;     // 120
+const GH = (H / CELL) | 0;     // 80
+let phR = new Float32Array(GW * GH);
+let phB = new Float32Array(GW * GH);
+let phTmp = new Float32Array(GW * GH);
+
+/* offscreen for fast pheromone glow */
+const phCv = document.createElement('canvas');
+phCv.width = GW; phCv.height = GH;
+const phCtx = phCv.getContext('2d');
+const phImg = phCtx.createImageData(GW, GH);
+
+/* --- Spatial hash for combat --- */
+const HCELL = 28;
+const HW = Math.ceil(W / HCELL);
+const HH = Math.ceil(H / HCELL);
+let hash = new Array(HW * HH);
+function hidx(x, y) {
+  let hx = (x / HCELL) | 0; if (hx < 0) hx = 0; else if (hx >= HW) hx = HW - 1;
+  let hy = (y / HCELL) | 0; if (hy < 0) hy = 0; else if (hy >= HH) hy = HH - 1;
+  return hy * HW + hx;
+}
+
+/* --- Colonies --- */
+let colonies;
+function makeColonies() {
+  return [
+    { id: 0, qx: 120, qy: 400, color: '#ff5a3c', rgb: [255, 90, 60],
+      food: 120, queenHp: 1800, queenMaxHp: 1800, ants: [],
+      kills: 0, spawnAccum: 0, dead: false },
+    { id: 1, qx: 1080, qy: 400, color: '#5a90ff', rgb: [90, 144, 255],
+      food: 120, queenHp: 1800, queenMaxHp: 1800, ants: [],
+      kills: 0, spawnAccum: 0, dead: false },
+  ];
+}
+
+/* --- Ant --- */
+function makeAnt(c, role) {
+  const r = 30 + Math.random() * 50;
+  const a = Math.random() * Math.PI * 2;
+  return {
+    c: c,
+    role: role,                        // 'forager' | 'soldier' | 'worker'
+    x: c.qx + Math.cos(a) * r,
+    y: c.qy + Math.sin(a) * r,
+    ang: Math.random() * Math.PI * 2,
+    hp: role === 'soldier' ? 36 : 14,
+    maxHp: role === 'soldier' ? 36 : 14,
+    carry: false,                      // carrying food?
+    cool: 0,                           // attack cooldown
+    speed: role === 'soldier' ? 1.05 : (role === 'forager' ? 1.45 : 0.8),
+    alive: true,
+    age: 0,
+    promoteT: 0,
+  };
+}
+
+/* --- Food piles --- */
+const food = [];
+function spawnFood() {
+  if (food.length < 28 && Math.random() < 0.06) {
+    food.push({
+      x: 240 + Math.random() * (W - 480),
+      y: 60  + Math.random() * (H - 120),
+      amt: 60 + Math.random() * 120,
+    });
+  }
+}
+
+/* --- History for graph --- */
+const HIST = 220;
+let histR = [], histB = [], histFR = [], histFB = [];
+
+/* --- Battle sparks --- */
+const sparks = [];
+
+/* --- Camera dramatic zoom --- */
+const cam = { active: false, x: 600, y: 400, scale: 1, t: 0, dur: 0, easeIn: 0, peak: 1 };
+let nextCamCheck = 600;
+
+/* ============================================================
+   INIT / RESET
+   ============================================================ */
+let frame = 0;
+let resetCountdown = 0;
+let winner = null;
+
+function reset() {
+  colonies = makeColonies();
+  for (const c of colonies) {
+    for (let i = 0; i < 500; i++) {
+      let role;
+      if (i < 90) role = 'soldier';
+      else if (i < 410) role = 'forager';
+      else role = 'worker';
+      c.ants.push(makeAnt(c, role));
+    }
+  }
+  phR.fill(0); phB.fill(0);
+  food.length = 0;
+  for (let i = 0; i < 12; i++) spawnFood();
+  histR.length = 0; histB.length = 0; histFR.length = 0; histFB.length = 0;
+  sparks.length = 0;
+  cam.active = false; cam.scale = 1;
+  resetCountdown = 0;
+  winner = null;
+}
+reset();
+
+/* ============================================================
+   SIM HELPERS
+   ============================================================ */
+function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+function lerpAng(a, b, t) {
+  let d = b - a;
+  while (d >  Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+function sampleField(field, x, y) {
+  const gx = (x / CELL) | 0;
+  const gy = (y / CELL) | 0;
+  if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) return 0;
+  return field[gy * GW + gx];
+}
+function deposit(field, x, y, amt) {
+  const gx = (x / CELL) | 0;
+  const gy = (y / CELL) | 0;
+  if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) return;
+  const i = gy * GW + gx;
+  field[i] += amt;
+  if (field[i] > 250) field[i] = 250;
+}
+
+/* Pheromone gradient sense: returns turn rate (-,+) */
+function senseGradient(field, x, y, ang) {
+  const r = 14;
+  const lx = x + Math.cos(ang - 0.55) * r, ly = y + Math.sin(ang - 0.55) * r;
+  const fx = x + Math.cos(ang)         * r, fy = y + Math.sin(ang)         * r;
+  const rx = x + Math.cos(ang + 0.55) * r, ry = y + Math.sin(ang + 0.55) * r;
+  const L = sampleField(field, lx, ly);
+  const F = sampleField(field, fx, fy);
+  const R = sampleField(field, rx, ry);
+  // turn toward whichever is strongest, with bias to continue if F dominates
+  const diff = R - L;
+  const goStraight = F - (L + R) * 0.5;
+  return diff * 0.04 + (goStraight > 0 ? 0 : (Math.random() - 0.5) * 0.1);
+}
+
+/* ============================================================
+   PHEROMONE DIFFUSE + DECAY
+   ============================================================ */
+function diffuse(field) {
+  // box blur 3x3 + decay
+  const decay = 0.985;
+  const tmp = phTmp;
+  for (let y = 1; y < GH - 1; y++) {
+    const row = y * GW;
+    for (let x = 1; x < GW - 1; x++) {
+      const i = row + x;
+      const s = field[i] * 4
+              + field[i - 1] + field[i + 1]
+              + field[i - GW] + field[i + GW]
+              + (field[i - GW - 1] + field[i - GW + 1] +
+                 field[i + GW - 1] + field[i + GW + 1]) * 0.5;
+      tmp[i] = s * (1 / 8) * decay;
+    }
+  }
+  // copy tmp back, zero edges
+  for (let y = 0; y < GH; y++) {
+    const row = y * GW;
+    for (let x = 0; x < GW; x++) {
+      const i = row + x;
+      if (x === 0 || y === 0 || x === GW - 1 || y === GH - 1) field[i] *= 0.9;
+      else field[i] = tmp[i];
+    }
+  }
+}
+
+/* ============================================================
+   ANT BEHAVIOR
+   ============================================================ */
+function updateAnt(a) {
+  if (!a.alive) return;
+  a.age++;
+  if (a.cool > 0) a.cool--;
+
+  const c = a.c;
+  const enemyId = 1 - c.id;
+  const enemyC = colonies[enemyId];
+
+  if (a.role === 'forager') {
+    if (a.carry) {
+      // head home, lay heavy trail
+      const dx = c.qx - a.x, dy = c.qy - a.y;
+      const d2 = dx * dx + dy * dy;
+      a.ang = lerpAng(a.ang, Math.atan2(dy, dx), 0.18);
+      a.ang += (Math.random() - 0.5) * 0.06;
+      deposit(c.id === 0 ? phR : phB, a.x, a.y, 2.4);
+      if (d2 < 38 * 38) {
+        a.carry = false;
+        c.food += 12;
+      }
+    } else {
+      // search for food
+      let nearest = null, bestD = 90 * 90;
+      for (let i = 0; i < food.length; i++) {
+        const f = food[i];
+        const dx = f.x - a.x, dy = f.y - a.y;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; nearest = f; }
+      }
+      if (nearest) {
+        const dx = nearest.x - a.x, dy = nearest.y - a.y;
+        a.ang = lerpAng(a.ang, Math.atan2(dy, dx), 0.32);
+        if (dx * dx + dy * dy < 9 * 9) {
+          a.carry = true;
+          nearest.amt -= 8;
+          if (nearest.amt <= 0) {
+            const idx = food.indexOf(nearest);
+            if (idx >= 0) food.splice(idx, 1);
+          }
+        }
+      } else {
+        // follow our colony's pheromone gradient outward + random walk
+        const turn = senseGradient(c.id === 0 ? phR : phB, a.x, a.y, a.ang);
+        a.ang += turn + (Math.random() - 0.5) * 0.45;
+        // gentle outward bias from queen so foragers leave the nest
+        const dx = a.x - c.qx, dy = a.y - c.qy;
+        const dh = Math.sqrt(dx * dx + dy * dy);
+        if (dh < 80) {
+          const outAng = Math.atan2(dy, dx);
+          a.ang = lerpAng(a.ang, outAng, 0.04);
+        }
+      }
+    }
+  } else if (a.role === 'soldier') {
+    // bias: stay within a patrol radius around queen, follow OWN colony danger trail toward fights
+    const dx = a.x - c.qx, dy = a.y - c.qy;
+    const dh = Math.sqrt(dx * dx + dy * dy);
+    if (dh > 320) {
+      a.ang = lerpAng(a.ang, Math.atan2(-dy, -dx), 0.08);
+    } else {
+      const turn = senseGradient(c.id === 0 ? phR : phB, a.x, a.y, a.ang);
+      a.ang += turn * 0.8 + (Math.random() - 0.5) * 0.35;
+      // mild outward push (patrol perimeter)
+      if (dh < 140) {
+        a.ang = lerpAng(a.ang, Math.atan2(dy, dx), 0.03);
+      }
+    }
+  } else { /* worker */
+    const dx = c.qx - a.x, dy = c.qy - a.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > 60 * 60) a.ang = lerpAng(a.ang, Math.atan2(dy, dx), 0.12);
+    else a.ang += (Math.random() - 0.5) * 0.55;
+    // promote when colony has food and a role has shortages
+    a.promoteT++;
+    if (a.promoteT > 220 && c.food > 30) {
+      const fc = c.ants.reduce((n, x) => n + (x.alive && x.role === 'forager' ? 1 : 0), 0);
+      const sc = c.ants.reduce((n, x) => n + (x.alive && x.role === 'soldier' ? 1 : 0), 0);
+      if (sc < 80 || (fc > 200 && sc < 130)) {
+        a.role = 'soldier'; a.maxHp = 36; a.hp = 36; a.speed = 1.05;
+      } else {
+        a.role = 'forager'; a.maxHp = 14; a.hp = 14; a.speed = 1.45;
+      }
+      a.promoteT = 0;
+    }
+  }
+
+  // Move
+  a.x += Math.cos(a.ang) * a.speed;
+  a.y += Math.sin(a.ang) * a.speed;
+  // Bounds
+  if (a.x < 4)     { a.x = 4;     a.ang = Math.PI - a.ang; }
+  if (a.x > W - 4) { a.x = W - 4; a.ang = Math.PI - a.ang; }
+  if (a.y < 4)     { a.y = 4;     a.ang = -a.ang; }
+  if (a.y > H - 4) { a.y = H - 4; a.ang = -a.ang; }
+}
+
+/* ============================================================
+   COMBAT (spatial hash)
+   ============================================================ */
+function combat() {
+  // build hash
+  for (let i = 0; i < hash.length; i++) hash[i] = null;
+  for (const c of colonies) {
+    for (const a of c.ants) {
+      if (!a.alive) continue;
+      const k = hidx(a.x, a.y);
+      let bucket = hash[k];
+      if (!bucket) { bucket = []; hash[k] = bucket; }
+      bucket.push(a);
+    }
+  }
+
+  for (const c of colonies) {
+    for (const a of c.ants) {
+      if (!a.alive || a.cool > 0) continue;
+      const hx = (a.x / HCELL) | 0;
+      const hy = (a.y / HCELL) | 0;
+      let target = null, bestD = 999;
+      const range = a.role === 'soldier' ? 14 : 8;
+      const r2 = range * range;
+
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = hx + dx, ny = hy + dy;
+          if (nx < 0 || ny < 0 || nx >= HW || ny >= HH) continue;
+          const bucket = hash[ny * HW + nx];
+          if (!bucket) continue;
+          for (const o of bucket) {
+            if (!o.alive || o.c === a.c) continue;
+            const ddx = o.x - a.x, ddy = o.y - a.y;
+            const dd = ddx * ddx + ddy * ddy;
+            if (dd < r2 && dd < bestD) { bestD = dd; target = o; }
+          }
+        }
+      }
+      if (target) {
+        // attack
+        const dmg = a.role === 'soldier' ? 7 : 3;
+        target.hp -= dmg;
+        a.cool = a.role === 'soldier' ? 28 : 50;
+        // lay danger pheromone on attacker side -> recruits
+        deposit(a.c.id === 0 ? phR : phB, a.x, a.y, 5.5);
+        // spark
+        if (sparks.length < 220) {
+          sparks.push({
+            x: (a.x + target.x) * 0.5, y: (a.y + target.y) * 0.5,
+            vx: (Math.random() - 0.5) * 1.2, vy: (Math.random() - 0.5) * 1.2,
+            life: 14, max: 14,
+          });
+        }
+        if (target.hp <= 0) {
+          target.alive = false;
+          a.c.kills++;
+        }
+      }
+    }
+  }
+
+  // Ant attacks on enemy queen if very close
+  for (const c of colonies) {
+    const enemy = colonies[1 - c.id];
+    if (!enemy.queenHp) continue;
+    for (const a of c.ants) {
+      if (!a.alive) continue;
+      const dx = a.x - enemy.qx, dy = a.y - enemy.qy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 22 * 22) {
+        const dmg = a.role === 'soldier' ? 1.2 : 0.4;
+        enemy.queenHp -= dmg;
+        if (enemy.queenHp <= 0 && !enemy.dead) {
+          enemy.dead = true;
+          enemy.queenHp = 0;
+          winner = c.id;
+          resetCountdown = 240;
+        }
+      }
+    }
+  }
+}
+
+/* ============================================================
+   QUEEN / SPAWN / FOOD
+   ============================================================ */
+function queens() {
+  for (const c of colonies) {
+    if (c.dead) continue;
+    // queen consumes food slowly
+    if (frame % 6 === 0 && c.food > 0) c.food -= 0.5;
+    // spawn ants from food
+    c.spawnAccum += c.food > 0 ? 0.18 : 0;
+    while (c.spawnAccum >= 6 && c.food >= 4) {
+      c.spawnAccum -= 6;
+      c.food -= 4;
+      // spawn a worker; promotion handles role assignment
+      const baby = makeAnt(c, 'worker');
+      baby.x = c.qx + (Math.random() - 0.5) * 30;
+      baby.y = c.qy + (Math.random() - 0.5) * 30;
+      c.ants.push(baby);
+    }
+  }
+}
+
+/* compact ants array occasionally */
+function compact() {
+  if (frame % 60 !== 0) return;
+  for (const c of colonies) {
+    c.ants = c.ants.filter(a => a.alive);
+  }
+}
+
+/* ============================================================
+   DRAMATIC CAMERA ZOOM
+   ============================================================ */
+function findHotBattle() {
+  // pick a hash cell with most mixed-colony density
+  let best = -1, bx = 600, by = 400;
+  for (let y = 0; y < HH; y++) {
+    for (let x = 0; x < HW; x++) {
+      const b = hash[y * HW + x];
+      if (!b || b.length < 6) continue;
+      let r = 0, k = 0;
+      for (const a of b) { if (a.c.id === 0) r++; else k++; }
+      const score = Math.min(r, k);
+      if (score > best) {
+        best = score;
+        bx = x * HCELL + HCELL / 2;
+        by = y * HCELL + HCELL / 2;
+      }
+    }
+  }
+  return { score: best, x: bx, y: by };
+}
+function maybeStartZoom() {
+  if (cam.active) return;
+  if (frame < nextCamCheck) return;
+  const hot = findHotBattle();
+  if (hot.score >= 4) {
+    cam.active = true;
+    cam.x = hot.x; cam.y = hot.y;
+    cam.t = 0;
+    cam.dur = 360;
+    cam.peak = 2.2 + Math.random() * 0.8;
+    nextCamCheck = frame + 900 + (Math.random() * 600 | 0);
+  } else {
+    nextCamCheck = frame + 240;
+  }
+}
+function updateZoom() {
+  if (!cam.active) { cam.scale = 1; return; }
+  cam.t++;
+  const p = cam.t / cam.dur;
+  // ease in then ease out
+  let s;
+  if (p < 0.25)      s = (p / 0.25) * (p / 0.25);                            // ease in
+  else if (p < 0.75) s = 1;
+  else if (p < 1)    { const u = (p - 0.75) / 0.25; s = 1 - u * u; }
+  else { cam.active = false; cam.scale = 1; return; }
+  cam.scale = 1 + (cam.peak - 1) * s;
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function renderPheromones() {
+  const data = phImg.data;
+  let p = 0;
+  for (let i = 0; i < GW * GH; i++) {
+    const r = phR[i], b = phB[i];
+    // red glow & blue glow, both additive
+    const rv = Math.min(255, r * 3.4);
+    const bv = Math.min(255, b * 3.4);
+    data[p++] = (rv * 0.95) | 0;
+    data[p++] = (Math.max(rv, bv) * 0.18) | 0;
+    data[p++] = (bv * 0.95) | 0;
+    data[p++] = Math.min(255, (rv + bv) * 0.6) | 0;
+  }
+  phCtx.putImageData(phImg, 0, 0);
+}
+
+function drawAnts() {
+  // draw chevrons batched by colony
+  for (const c of colonies) {
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    for (const a of c.ants) {
+      if (!a.alive) continue;
+      const cs = Math.cos(a.ang), sn = Math.sin(a.ang);
+      const tx = a.x + cs * 4.2, ty = a.y + sn * 4.2;
+      const blx = a.x - cs * 2.6 + sn * 2.2, bly = a.y - sn * 2.6 - cs * 2.2;
+      const brx = a.x - cs * 2.6 - sn * 2.2, bry = a.y - sn * 2.6 + cs * 2.2;
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(blx, bly);
+      ctx.lineTo(brx, bry);
+    }
+    ctx.fill();
+
+    // Soldier highlight: small darker dot in middle
+    ctx.fillStyle = c.id === 0 ? '#7a1d10' : '#1a3a8a';
+    ctx.beginPath();
+    for (const a of c.ants) {
+      if (!a.alive || a.role !== 'soldier') continue;
+      ctx.moveTo(a.x + 1.2, a.y);
+      ctx.arc(a.x, a.y, 1.2, 0, Math.PI * 2);
+    }
+    ctx.fill();
+
+    // Carrier dot (green crumb)
+    ctx.fillStyle = '#a8f070';
+    ctx.beginPath();
+    for (const a of c.ants) {
+      if (!a.alive || !a.carry) continue;
+      const cs = Math.cos(a.ang), sn = Math.sin(a.ang);
+      ctx.moveTo(a.x - cs * 2 + 1.4, a.y - sn * 2);
+      ctx.arc(a.x - cs * 2, a.y - sn * 2, 1.4, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  }
+}
+
+function drawQueens() {
+  for (const c of colonies) {
+    // glow
+    const grad = ctx.createRadialGradient(c.qx, c.qy, 4, c.qx, c.qy, 90);
+    grad.addColorStop(0, c.id === 0 ? 'rgba(255,140,90,0.55)' : 'rgba(120,170,255,0.55)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(c.qx - 90, c.qy - 90, 180, 180);
+
+    // Nest mound
+    ctx.fillStyle = '#1a1310';
+    ctx.beginPath();
+    ctx.ellipse(c.qx, c.qy + 6, 38, 22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = c.id === 0 ? 'rgba(180,80,40,0.7)' : 'rgba(80,120,200,0.7)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // queen body
+    if (!c.dead) {
+      ctx.fillStyle = c.color;
+      ctx.beginPath();
+      ctx.ellipse(c.qx, c.qy, 9, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = c.id === 0 ? '#ffeacb' : '#e6efff';
+      ctx.beginPath();
+      ctx.arc(c.qx + 5, c.qy - 1, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = '#705040';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(c.qx - 8, c.qy - 6); ctx.lineTo(c.qx + 8, c.qy + 6);
+      ctx.moveTo(c.qx + 8, c.qy - 6); ctx.lineTo(c.qx - 8, c.qy + 6);
+      ctx.stroke();
+    }
+
+    // queen HP bar
+    const hpW = 70;
+    const hpx = c.qx - hpW / 2, hpy = c.qy - 30;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(hpx, hpy, hpW, 4);
+    ctx.fillStyle = c.color;
+    ctx.fillRect(hpx, hpy, hpW * (c.queenHp / c.queenMaxHp), 4);
+  }
+}
+
+function drawFood() {
+  for (const f of food) {
+    const r = 3 + Math.min(8, f.amt * 0.05);
+    const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, r * 3);
+    grad.addColorStop(0, 'rgba(255,220,120,0.9)');
+    grad.addColorStop(1, 'rgba(255,180,60,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(f.x - r * 3, f.y - r * 3, r * 6, r * 6);
+    ctx.fillStyle = '#ffd866';
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawSparks() {
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.x += s.vx; s.y += s.vy; s.life--;
+    if (s.life <= 0) { sparks.splice(i, 1); continue; }
+    const a = s.life / s.max;
+    ctx.fillStyle = 'rgba(255,230,170,' + (a * 0.9) + ')';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 1 + a * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawBackground() {
+  // dark earth radial gradient
+  const g = ctx.createRadialGradient(W / 2, H / 2, 80, W / 2, H / 2, 800);
+  g.addColorStop(0, '#1a120c');
+  g.addColorStop(0.5, '#100a07');
+  g.addColorStop(1, '#06040a');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // subtle noise dots (cached pattern would be better but this is fine)
+  // skip every-frame noise; do nothing further to keep it clean
+}
+
+/* Population graph (top-right) */
+function drawGraph() {
+  const gx = W - 290, gy = 16, gw = 270, gh = 110;
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,6,4,0.72)';
+  ctx.strokeStyle = 'rgba(220,200,160,0.18)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(gx, gy, gw, gh);
+  ctx.fill(); ctx.stroke();
+
+  // title
+  ctx.fillStyle = '#d8c8a8';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('POPULATION', gx + 8, gy + 13);
+
+  // counts
+  const r = histR.length ? histR[histR.length - 1] : 0;
+  const b = histB.length ? histB[histB.length - 1] : 0;
+  const fr = histFR.length ? histFR[histFR.length - 1] : 0;
+  const fb = histFB.length ? histFB[histFB.length - 1] : 0;
+  ctx.fillStyle = '#ff7a5a';
+  ctx.fillText('RED ' + r.toString().padStart(3, ' ') + '  food ' + (fr | 0), gx + 8, gy + 28);
+  ctx.fillStyle = '#7aa8ff';
+  ctx.fillText('BLK ' + b.toString().padStart(3, ' ') + '  food ' + (fb | 0), gx + 130, gy + 28);
+
+  // grid baseline
+  ctx.strokeStyle = 'rgba(220,200,160,0.08)';
+  ctx.beginPath();
+  for (let i = 1; i < 4; i++) {
+    const y = gy + 38 + (gh - 46) * i / 4;
+    ctx.moveTo(gx + 6, y); ctx.lineTo(gx + gw - 6, y);
+  }
+  ctx.stroke();
+
+  // plot (y = 0..max)
+  let max = 600;
+  for (let i = 0; i < histR.length; i++) {
+    if (histR[i] > max) max = histR[i];
+    if (histB[i] > max) max = histB[i];
+  }
+  function plot(arr, color) {
+    if (arr.length < 2) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    const pw = gw - 12;
+    const ph = gh - 46;
+    for (let i = 0; i < arr.length; i++) {
+      const px = gx + 6 + (i / (HIST - 1)) * pw;
+      const py = gy + 38 + ph - (arr[i] / max) * ph;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  plot(histR, '#ff5a3c');
+  plot(histB, '#5a90ff');
+  // food (faint)
+  function plotFood(arr, color) {
+    if (arr.length < 2) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    const pw = gw - 12;
+    const ph = gh - 46;
+    let fmax = 200;
+    for (let i = 0; i < arr.length; i++) if (arr[i] > fmax) fmax = arr[i];
+    for (let i = 0; i < arr.length; i++) {
+      const px = gx + 6 + (i / (HIST - 1)) * pw;
+      const py = gy + 38 + ph - (arr[i] / fmax) * ph;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  plotFood(histFR, 'rgba(255,180,90,0.55)');
+  plotFood(histFB, 'rgba(120,180,255,0.55)');
+
+  ctx.restore();
+}
+
+/* victory banner */
+function drawBanner() {
+  if (winner === null) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(W / 2 - 220, H / 2 - 50, 440, 100);
+  ctx.strokeStyle = winner === 0 ? '#ff5a3c' : '#5a90ff';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 220, H / 2 - 50, 440, 100);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = winner === 0 ? '#ff8866' : '#88a8ff';
+  ctx.font = 'bold 22px monospace';
+  ctx.fillText((winner === 0 ? 'RED' : 'BLACK') + ' COLONY VICTORIOUS', W / 2, H / 2 - 10);
+  ctx.fillStyle = '#bbb';
+  ctx.font = '12px monospace';
+  ctx.fillText('resetting in ' + Math.ceil(resetCountdown / 60) + 's...', W / 2, H / 2 + 18);
+  ctx.restore();
+}
+
+/* ============================================================
+   MAIN LOOP
+   ============================================================ */
+function tick() {
+  frame++;
+
+  spawnFood();
+
+  // pheromone diffuse every other frame
+  if (frame % 2 === 0) { diffuse(phR); diffuse(phB); }
+  else { // light decay only
+    for (let i = 0; i < phR.length; i++) { phR[i] *= 0.997; phB[i] *= 0.997; }
+  }
+
+  // update ants
+  for (const c of colonies) {
+    for (const a of c.ants) updateAnt(a);
+  }
+
+  combat();
+  queens();
+  compact();
+
+  // record history
+  if (frame % 4 === 0) {
+    let r = 0, b = 0;
+    for (const a of colonies[0].ants) if (a.alive) r++;
+    for (const a of colonies[1].ants) if (a.alive) b++;
+    histR.push(r); histB.push(b);
+    histFR.push(colonies[0].food); histFB.push(colonies[1].food);
+    if (histR.length > HIST) histR.shift();
+    if (histB.length > HIST) histB.shift();
+    if (histFR.length > HIST) histFR.shift();
+    if (histFB.length > HIST) histFB.shift();
+  }
+
+  maybeStartZoom();
+  updateZoom();
+}
+
+function render() {
+  drawBackground();
+
+  // pheromone glow (additive)
+  renderPheromones();
+
+  // camera transform
+  ctx.save();
+  if (cam.scale > 1.001) {
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(cam.scale, cam.scale);
+    ctx.translate(-cam.x, -cam.y);
+  }
+
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(phCv, 0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over';
+
+  drawFood();
+  drawQueens();
+  drawAnts();
+  drawSparks();
+
+  ctx.restore();
+
+  // UI never zoomed
+  drawGraph();
+
+  // vignette
+  const vg = ctx.createRadialGradient(W / 2, H / 2, 380, W / 2, H / 2, 720);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+
+  // zoom marker
+  if (cam.active) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(220,200,160,0.55)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.strokeRect(8, 8, W - 16, H - 16);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(220,200,160,0.7)';
+    ctx.font = '10px monospace';
+    ctx.fillText('◉ BATTLE FOCUS  ' + (cam.scale).toFixed(2) + 'x', 16, H - 12);
+    ctx.restore();
+  }
+
+  drawBanner();
+}
+
+function loop() {
+  tick();
+  render();
+
+  if (resetCountdown > 0) {
+    resetCountdown--;
+    if (resetCountdown === 0) reset();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

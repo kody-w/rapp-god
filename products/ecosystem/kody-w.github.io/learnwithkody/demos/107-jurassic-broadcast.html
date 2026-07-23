@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Demo 107 — Jurassic Broadcast</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden;font-family:'Helvetica Neue',Arial,sans-serif;color:#fff;}
+  #stage{position:fixed;inset:0;}
+  #stage canvas{display:block;width:100%;height:100%;}
+  .ui{position:absolute;pointer-events:none;}
+  #logo{top:18px;left:18px;display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:1px;}
+  #logo .badge{background:linear-gradient(135deg,#c8102e,#7b0a1f);padding:6px 12px;border-radius:4px;box-shadow:0 0 14px rgba(200,16,46,.55);font-size:14px;}
+  #logo .net{font-size:13px;opacity:.85;text-shadow:0 1px 2px rgba(0,0,0,.7);}
+  #live{top:18px;right:18px;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.45);padding:6px 12px;border-radius:4px;font-size:13px;}
+  #live .dot{width:10px;height:10px;border-radius:50%;background:#ff2a2a;box-shadow:0 0 10px #ff2a2a;animation:pulse 1.2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.55;transform:scale(.85);}}
+  #status{top:54px;right:18px;background:rgba(0,0,0,.45);padding:6px 12px;border-radius:4px;font-size:12px;text-align:right;}
+  #ticker{position:absolute;left:0;right:0;bottom:0;height:34px;background:linear-gradient(180deg,rgba(0,0,0,.85),rgba(0,0,0,.95));border-top:2px solid #c8102e;overflow:hidden;}
+  #ticker .label{position:absolute;left:0;top:0;bottom:0;background:#c8102e;color:#fff;display:flex;align-items:center;padding:0 14px;font-weight:800;font-size:13px;letter-spacing:1px;z-index:2;box-shadow:4px 0 8px rgba(0,0,0,.6);}
+  #ticker .scroll{position:absolute;left:120px;right:0;top:0;bottom:0;overflow:hidden;display:flex;align-items:center;}
+  #ticker .scroll span{display:inline-block;white-space:nowrap;padding-left:100%;animation:tick 60s linear infinite;font-size:13px;}
+  @keyframes tick{from{transform:translateX(0);}to{transform:translateX(-100%);}}
+  #encpanel{left:18px;bottom:46px;background:rgba(0,0,0,.55);padding:8px 12px;border-radius:6px;font-size:11px;line-height:1.5;border-left:3px solid #4ad36a;min-width:210px;}
+  #encpanel h4{margin:0 0 4px 0;font-size:11px;letter-spacing:1px;color:#9be8a8;}
+  #encpanel .row{display:flex;justify-content:space-between;gap:10px;}
+  #encpanel .row .v{opacity:.85;}
+  .ok{color:#7bd88f;}.warn{color:#ffd24a;}.bad{color:#ff5b5b;}
+  #lower3{position:absolute;left:30px;bottom:80px;max-width:560px;display:none;}
+  #lower3 .bar{background:linear-gradient(90deg,rgba(200,16,46,.95),rgba(60,6,14,.95));padding:10px 16px;border-left:6px solid #fff;}
+  #lower3 .t{font-size:20px;font-weight:800;letter-spacing:.5px;}
+  #lower3 .s{font-size:12px;opacity:.85;margin-top:2px;letter-spacing:1px;text-transform:uppercase;}
+  #subs{position:absolute;left:50%;bottom:90px;transform:translateX(-50%);max-width:70%;text-align:center;font-size:18px;line-height:1.35;text-shadow:0 2px 4px rgba(0,0,0,.85);padding:8px 18px;background:rgba(0,0,0,.35);border-radius:4px;display:none;}
+  #subs .who{display:block;font-size:11px;letter-spacing:2px;opacity:.75;margin-bottom:3px;text-transform:uppercase;}
+  .pip{position:absolute;width:200px;height:120px;border:2px solid rgba(255,255,255,.85);border-radius:4px;background:#000;box-shadow:0 0 14px rgba(0,0,0,.7);overflow:hidden;display:none;}
+  .pip canvas{display:block;width:100%;height:100%;}
+  .pip .lbl{position:absolute;left:0;top:0;background:rgba(0,0,0,.65);padding:3px 7px;font-size:10px;letter-spacing:1px;color:#fff;text-transform:uppercase;}
+  .pip .rec{position:absolute;right:5px;top:5px;color:#ff5b5b;font-size:10px;font-weight:800;}
+  #pip1{right:18px;top:96px;}
+  #pip2{right:18px;top:228px;}
+  #breakingflash{position:absolute;inset:0;background:rgba(200,16,46,0);pointer-events:none;transition:background .25s;}
+  #breakingflash.on{background:rgba(200,16,46,.18);}
+  #breakingbar{position:absolute;left:0;right:0;top:96px;height:38px;background:#c8102e;display:none;align-items:center;justify-content:center;font-weight:800;letter-spacing:2px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5);}
+  #stinger{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font-size:42px;font-weight:900;letter-spacing:3px;color:#fff;text-shadow:0 0 20px #c8102e,0 4px 8px rgba(0,0,0,.8);display:none;}
+  #vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 60%,rgba(0,0,0,.55) 100%);}
+  #lightning{position:absolute;inset:0;background:rgba(255,255,255,0);pointer-events:none;}
+  #cambadge{position:absolute;left:18px;top:54px;background:rgba(0,0,0,.6);padding:5px 10px;border-radius:3px;font-size:11px;letter-spacing:2px;border-left:3px solid #ffd24a;}
+</style>
+</head>
+<body>
+<!-- ROUND12_BROADCAST v1 -->
+<div id="stage"></div>
+<div id="vignette" class="ui"></div>
+<div id="lightning" class="ui"></div>
+<div id="breakingflash" class="ui"></div>
+
+<div id="logo" class="ui">
+  <div class="badge">JPN</div>
+  <div class="net">JURASSIC PARK NETWORK</div>
+</div>
+<div id="live" class="ui"><div class="dot"></div><div>LIVE • SECTOR FEED</div></div>
+<div id="status" class="ui">DAY 1 — 06:00<br/><span style="opacity:.7">Park Status: <span id="pstat" class="ok">OPEN</span></span></div>
+<div id="cambadge" class="ui">CAM: AERIAL-01</div>
+
+<div id="breakingbar" class="ui">★ BREAKING NEWS ★ BREAKING NEWS ★ BREAKING NEWS ★</div>
+<div id="stinger" class="ui"></div>
+
+<div id="lower3" class="ui">
+  <div class="bar"><div class="t" id="l3t">SPECIES PROFILE</div><div class="s" id="l3s">Tyrannosaurus Rex</div></div>
+</div>
+
+<div id="subs" class="ui"><span class="who" id="who">SIR REGINALD ASHWORTH</span><span id="line"></span></div>
+
+<div id="pip1" class="pip ui"><div class="lbl" id="pip1lbl">DASHCAM</div><div class="rec">● REC</div><canvas id="pip1c" width="200" height="120"></canvas></div>
+<div id="pip2" class="pip ui"><div class="lbl" id="pip2lbl">SECURITY</div><div class="rec">● REC</div><canvas id="pip2c" width="200" height="120"></canvas></div>
+
+<div id="encpanel" class="ui">
+  <h4>ENCLOSURE STATUS</h4>
+  <div class="row"><span>Sector 1 — Triceratops</span><span class="v ok" id="e1">SECURE</span></div>
+  <div class="row"><span>Sector 2 — Brachiosaurus</span><span class="v ok" id="e2">SECURE</span></div>
+  <div class="row"><span>Sector 5 — Velociraptor</span><span class="v ok" id="e3">SECURE</span></div>
+  <div class="row"><span>Sector 7 — Tyrannosaurus</span><span class="v ok" id="e4">SECURE</span></div>
+  <div class="row"><span>Sector 9 — Compsognathus</span><span class="v ok" id="e5">SECURE</span></div>
+</div>
+
+<div id="ticker" class="ui">
+  <div class="label">JPN ALERT</div>
+  <div class="scroll"><span id="tickerText">Welcome to the Jurassic Park Network — your 24-hour source for paleo-tourism coverage.</span></div>
+</div>
+
+<script>
+"use strict";
+(function(){
+
+  // -------------- PRNG --------------
+  var SEED = (Date.now() & 0xffffffff) >>> 0;
+  function srand(s){ SEED = (s>>>0) || 1; }
+  function rnd(){ SEED = (SEED * 1664525 + 1013904223) >>> 0; return SEED / 4294967296; }
+  function rrange(a,b){ return a + (b-a)*rnd(); }
+  function rint(a,b){ return Math.floor(rrange(a,b+1)); }
+  function pick(arr){ return arr[Math.floor(rnd()*arr.length)]; }
+
+  // -------------- THREE setup --------------
+  var stage = document.getElementById('stage');
+  var renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 1.5));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = false;
+  stage.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x88c4e8);
+  scene.fog = new THREE.Fog(0x88c4e8, 80, 360);
+
+  // PIP renderers reuse main renderer with viewport tricks via separate WebGLRenderTarget? Simpler: reuse main canvas snapshots.
+  // We'll instead render PIP scenes by copying drawingBuffer to small canvases.
+  var pip1Canvas = document.getElementById('pip1c');
+  var pip2Canvas = document.getElementById('pip2c');
+  var pip1Ctx = pip1Canvas.getContext('2d');
+  var pip2Ctx = pip2Canvas.getContext('2d');
+
+  // -------------- Cameras --------------
+  var aspect = function(){ return window.innerWidth/window.innerHeight; };
+  var mainCam = new THREE.PerspectiveCamera(55, aspect(), 0.5, 800);
+  mainCam.position.set(0, 60, 120);
+  mainCam.lookAt(0,0,0);
+
+  // PIP cams (separate cameras, but rendered with the same scene by re-rendering)
+  var pipCamA = new THREE.PerspectiveCamera(60, 200/120, 0.5, 800);
+  var pipCamB = new THREE.PerspectiveCamera(60, 200/120, 0.5, 800);
+
+  // -------------- Lights --------------
+  var hemi = new THREE.HemisphereLight(0xddeeff, 0x405030, 0.85);
+  scene.add(hemi);
+  var sun = new THREE.DirectionalLight(0xffeecc, 1.0);
+  sun.position.set(60, 120, 40);
+  scene.add(sun);
+  var ambient = new THREE.AmbientLight(0x223344, 0.25);
+  scene.add(ambient);
+
+  // -------------- Terrain --------------
+  function buildTerrain(){
+    var seg = 96;
+    var size = 600;
+    var geo = new THREE.PlaneGeometry(size, size, seg, seg);
+    geo.rotateX(-Math.PI/2);
+    var pos = geo.attributes.position;
+    var colors = new Float32Array(pos.count*3);
+    function h(x,z){
+      var d = Math.sqrt(x*x+z*z);
+      var hill = Math.sin(x*0.02)*Math.cos(z*0.025)*4
+               + Math.sin(x*0.06+z*0.04)*1.5
+               + Math.cos(z*0.07)*1.2;
+      var ridge = Math.max(0, 8 - d*0.04);
+      var lake = (d<60)? -2.5 : 0;
+      // flatten central plaza
+      var plaza = (Math.abs(x)<24 && Math.abs(z)<24)? -hill*0.85 : 0;
+      return hill + ridge*0.2 + lake*0.05 + plaza;
+    }
+    for (var i=0;i<pos.count;i++){
+      var x = pos.getX(i), z = pos.getZ(i);
+      var y = h(x,z);
+      pos.setY(i, y);
+      // color by elevation/biome
+      var c = new THREE.Color();
+      var dist = Math.sqrt(x*x+z*z);
+      if (y < -0.6){ c.setRGB(0.20,0.45,0.30); }
+      else if (y < 0.4){ c.setRGB(0.32,0.55,0.28); }
+      else if (y < 2.0){ c.setRGB(0.40,0.62,0.30); }
+      else { c.setRGB(0.55,0.55,0.40); }
+      // sandy ring near plaza
+      if (dist > 18 && dist < 26){ c.setRGB(0.62,0.55,0.40); }
+      colors[i*3]=c.r; colors[i*3+1]=c.g; colors[i*3+2]=c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+    geo.computeVertexNormals();
+    var mat = new THREE.MeshLambertMaterial({vertexColors:true, flatShading:true});
+    var mesh = new THREE.Mesh(geo, mat);
+    return {mesh:mesh, h:h};
+  }
+  var terrain = buildTerrain();
+  scene.add(terrain.mesh);
+
+  function ground(x,z){ return terrain.h(x,z); }
+
+  // -------------- Lake --------------
+  var lakeGeo = new THREE.CircleGeometry(40, 36);
+  lakeGeo.rotateX(-Math.PI/2);
+  var lakeMat = new THREE.MeshPhongMaterial({color:0x3b7aa8, shininess:80, transparent:true, opacity:0.85});
+  var lake = new THREE.Mesh(lakeGeo, lakeMat);
+  lake.position.set(-160, -1.7, -120);
+  scene.add(lake);
+
+  // -------------- Trees --------------
+  function makeTree(x,z,scale){
+    var g = new THREE.Group();
+    var trunkH = 4 + rnd()*4;
+    var trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5,0.7, trunkH, 6),
+      new THREE.MeshLambertMaterial({color:0x6b3a1a})
+    );
+    trunk.position.y = trunkH/2;
+    g.add(trunk);
+    var canopyN = 1 + Math.floor(rnd()*3);
+    for (var i=0;i<canopyN;i++){
+      var r = 2.5 + rnd()*2;
+      var cn = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(r, 0),
+        new THREE.MeshLambertMaterial({color: new THREE.Color().setHSL(0.27 + rnd()*0.08, 0.55, 0.32+rnd()*0.1)})
+      );
+      cn.position.set((rnd()-0.5)*1.5, trunkH + r*0.6 + i*1.5, (rnd()-0.5)*1.5);
+      g.add(cn);
+    }
+    g.position.set(x, ground(x,z), z);
+    g.scale.setScalar(scale||1);
+    return g;
+  }
+  var trees = new THREE.Group();
+  for (var i=0;i<160;i++){
+    var tx = rrange(-260, 260), tz = rrange(-260, 260);
+    var d = Math.sqrt(tx*tx+tz*tz);
+    if (d<35) continue;
+    // avoid lake
+    var dl = Math.sqrt((tx+160)*(tx+160)+(tz+120)*(tz+120));
+    if (dl<42) continue;
+    trees.add(makeTree(tx,tz, 0.8+rnd()*0.7));
+  }
+  scene.add(trees);
+
+  // -------------- Fences --------------
+  function buildFenceRect(cx, cz, w, h, color, group){
+    color = color || 0x808088;
+    var poles = [];
+    var step = 6;
+    function addPole(x,z){
+      var pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2,0.2,5,5),
+        new THREE.MeshLambertMaterial({color:color})
+      );
+      pole.position.set(x, ground(x,z)+2.5, z);
+      group.add(pole);
+      poles.push(pole);
+    }
+    for (var x=-w/2; x<=w/2; x+=step){ addPole(cx+x, cz-h/2); addPole(cx+x, cz+h/2); }
+    for (var z=-h/2+step; z<h/2; z+=step){ addPole(cx-w/2, cz+z); addPole(cx+w/2, cz+z); }
+    // wires (top + middle)
+    function addWire(p1,p2){
+      var geom = new THREE.BufferGeometry().setFromPoints([p1,p2]);
+      var line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0xffeb6b}));
+      group.add(line);
+    }
+    var hi = 4.5, mi = 2.5;
+    function corner(a,b){ return new THREE.Vector3(a, ground(a,b), b); }
+    var c1 = corner(cx-w/2, cz-h/2), c2 = corner(cx+w/2, cz-h/2),
+        c3 = corner(cx+w/2, cz+h/2), c4 = corner(cx-w/2, cz+h/2);
+    function ring(y){
+      addWire(c1.clone().setY(c1.y+y), c2.clone().setY(c2.y+y));
+      addWire(c2.clone().setY(c2.y+y), c3.clone().setY(c3.y+y));
+      addWire(c3.clone().setY(c3.y+y), c4.clone().setY(c4.y+y));
+      addWire(c4.clone().setY(c4.y+y), c1.clone().setY(c1.y+y));
+    }
+    ring(hi); ring(mi);
+    // sign
+    var sign = new THREE.Mesh(
+      new THREE.BoxGeometry(4,1.5,0.2),
+      new THREE.MeshLambertMaterial({color:0xffd24a})
+    );
+    sign.position.set(cx, ground(cx, cz-h/2)+5, cz-h/2-0.5);
+    group.add(sign);
+    return poles;
+  }
+
+  // -------------- Enclosures --------------
+  // Each: {name, sector, code, cx, cz, w, h, dinos:[], breached, group, statusEl}
+  var enclosures = [
+    {name:'Triceratops Valley',  sector:1, code:'e1', cx: 100, cz:  60, w:120, h:80, type:'trike',  count:5, color:0x6cf07a},
+    {name:'Brachiosaurus Lake',  sector:2, code:'e2', cx:-160, cz:-120, w:120, h:120,type:'brach',  count:3, color:0x6cb6ff},
+    {name:'Velociraptor Pen',    sector:5, code:'e3', cx:  90, cz:-130, w: 70, h:60, type:'raptor', count:4, color:0xff8b3a},
+    {name:'Tyrannosaurus Paddock',sector:7,code:'e4', cx:-100, cz: 110, w:140, h:100,type:'trex',   count:1, color:0xff3a3a},
+    {name:'Compy Meadow',        sector:9, code:'e5', cx:  10, cz: 200, w: 90, h: 60,type:'compy',  count:8, color:0xc8a8ff}
+  ];
+
+  var fenceGroup = new THREE.Group();
+  scene.add(fenceGroup);
+  enclosures.forEach(function(en){
+    en.group = new THREE.Group();
+    en.poles = buildFenceRect(en.cx, en.cz, en.w, en.h, en.color, en.group);
+    fenceGroup.add(en.group);
+    en.breached = false;
+    en.statusDiv = document.getElementById(en.code);
+  });
+
+  // -------------- Dinosaur Factories --------------
+  function dinoMat(c){ return new THREE.MeshLambertMaterial({color:c, flatShading:true}); }
+  function makeBox(w,h,d,c){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), dinoMat(c)); }
+  function makeSphere(r,c){ return new THREE.Mesh(new THREE.IcosahedronGeometry(r,0), dinoMat(c)); }
+
+  function buildTRex(){
+    var g = new THREE.Group();
+    var bodyC = 0x4a5a3a;
+    var body = makeBox(2.6, 2.4, 5, bodyC); body.position.y = 3.5; g.add(body);
+    var neck = makeBox(1.4,1.4,1.4, bodyC); neck.position.set(0, 4.6, 2.4); g.add(neck);
+    var head = makeBox(1.6, 1.4, 2.2, bodyC); head.position.set(0, 5.1, 3.6); g.add(head);
+    var jaw = makeBox(1.5, 0.5, 1.8, 0x3a4030); jaw.position.set(0, 4.55, 3.7); g.add(jaw);
+    // teeth
+    for (var t=-0.6;t<=0.6;t+=0.4){
+      var tooth = new THREE.Mesh(new THREE.ConeGeometry(0.07,0.3,4), new THREE.MeshLambertMaterial({color:0xffffff}));
+      tooth.position.set(t, 4.95, 4.5); tooth.rotation.x=Math.PI; g.add(tooth);
+    }
+    var eyeL = makeSphere(0.18, 0xffd24a); eyeL.position.set(0.55,5.4,4.4); g.add(eyeL);
+    var eyeR = makeSphere(0.18, 0xffd24a); eyeR.position.set(-0.55,5.4,4.4); g.add(eyeR);
+    var tail = makeBox(1.2,1.0,4, bodyC); tail.position.set(0, 3.6, -3.2); g.add(tail);
+    var tailTip = makeBox(0.6,0.6,2.5, bodyC); tailTip.position.set(0, 3.4, -6); g.add(tailTip);
+    var armL = makeBox(0.3,0.3,0.7, bodyC); armL.position.set(0.9,3.6,1.6); g.add(armL);
+    var armR = makeBox(0.3,0.3,0.7, bodyC); armR.position.set(-0.9,3.6,1.6); g.add(armR);
+    var legL = makeBox(0.9,2.2,1.0, bodyC); legL.position.set(0.8, 1.7, 0.2); g.add(legL); g.userData.legL=legL;
+    var legR = makeBox(0.9,2.2,1.0, bodyC); legR.position.set(-0.8, 1.7, 0.2); g.add(legR); g.userData.legR=legR;
+    var footL = makeBox(1.0,0.4,1.4, 0x303528); footL.position.set(0.8, 0.4, 0.5); g.add(footL);
+    var footR = makeBox(1.0,0.4,1.4, 0x303528); footR.position.set(-0.8, 0.4, 0.5); g.add(footR);
+    g.userData.kind='trex'; g.userData.head=head; g.userData.jaw=jaw;
+    return g;
+  }
+
+  function buildTrike(){
+    var g = new THREE.Group();
+    var c = 0x8a6a48;
+    var body = makeBox(2.4,1.8,3.6, c); body.position.y=2.0; g.add(body);
+    var head = makeBox(1.6,1.4,1.8, c); head.position.set(0,1.8,2.6); g.add(head);
+    var frill = makeBox(2.6,2.0,0.2, 0xa07c52); frill.position.set(0,2.3,1.9); g.add(frill);
+    var horn1 = new THREE.Mesh(new THREE.ConeGeometry(0.18,1.4,5), new THREE.MeshLambertMaterial({color:0xeeeeee}));
+    horn1.position.set(0.5,2.4,3.8); horn1.rotation.x=-1.2; g.add(horn1);
+    var horn2 = new THREE.Mesh(new THREE.ConeGeometry(0.18,1.4,5), new THREE.MeshLambertMaterial({color:0xeeeeee}));
+    horn2.position.set(-0.5,2.4,3.8); horn2.rotation.x=-1.2; g.add(horn2);
+    var horn3 = new THREE.Mesh(new THREE.ConeGeometry(0.14,0.7,5), new THREE.MeshLambertMaterial({color:0xeeeeee}));
+    horn3.position.set(0,1.5,3.4); horn3.rotation.x=-1.0; g.add(horn3);
+    for (var i=0;i<4;i++){
+      var lx=(i%2?1:-1)*0.9, lz=(i<2?-1:1)*1.1;
+      var leg = makeBox(0.55,1.6,0.55, c); leg.position.set(lx, 0.9, lz); g.add(leg);
+    }
+    var tail = makeBox(0.6,0.6,1.6, c); tail.position.set(0,1.8,-2.4); g.add(tail);
+    g.userData.kind='trike';
+    return g;
+  }
+
+  function buildBrach(){
+    var g = new THREE.Group();
+    var c = 0x6e7e5a;
+    var body = makeBox(3.6,3.2,6, c); body.position.y=4.5; g.add(body);
+    // long neck
+    var neckSegs=5;
+    for (var i=0;i<neckSegs;i++){
+      var ns = makeBox(1.2-i*0.12, 1.2-i*0.12, 1.4, c);
+      ns.position.set(0, 5.5+i*1.0, 3+i*0.9);
+      ns.rotation.x = -0.5 - i*0.05;
+      g.add(ns);
+    }
+    var head = makeBox(0.9,0.7,1.2, c); head.position.set(0, 10.5, 8.2); g.add(head);
+    var tail = makeBox(1.4,1.4,4, c); tail.position.set(0,4,-4.5); g.add(tail);
+    for (var L=0;L<4;L++){
+      var lx=(L%2?1:-1)*1.4, lz=(L<2?-1:1)*1.8;
+      var leg = makeBox(1.0, 4.2, 1.0, c); leg.position.set(lx, 2.1, lz); g.add(leg);
+    }
+    g.userData.kind='brach';
+    return g;
+  }
+
+  function buildRaptor(){
+    var g = new THREE.Group();
+    var c = 0xa67a3a;
+    var body = makeBox(1.0,1.0,2.2, c); body.position.y=1.6; g.add(body);
+    var head = makeBox(0.7,0.6,1.2, c); head.position.set(0,1.9,1.4); g.add(head);
+    var tail = makeBox(0.4,0.4,2.0, c); tail.position.set(0,1.5,-1.8); g.add(tail);
+    var legL = makeBox(0.4,1.4,0.5, c); legL.position.set(0.4,0.7,0.2); g.add(legL); g.userData.legL=legL;
+    var legR = makeBox(0.4,1.4,0.5, c); legR.position.set(-0.4,0.7,0.2); g.add(legR); g.userData.legR=legR;
+    var armL = makeBox(0.2,0.2,0.6, c); armL.position.set(0.45,1.5,0.7); g.add(armL);
+    var armR = makeBox(0.2,0.2,0.6, c); armR.position.set(-0.45,1.5,0.7); g.add(armR);
+    g.userData.kind='raptor';
+    return g;
+  }
+
+  function buildCompy(){
+    var g = new THREE.Group();
+    var c = 0x9aa050;
+    var body = makeBox(0.4,0.4,0.9, c); body.position.y=0.7; g.add(body);
+    var head = makeBox(0.3,0.3,0.5, c); head.position.set(0,0.85,0.6); g.add(head);
+    var tail = makeBox(0.18,0.18,1.0, c); tail.position.set(0,0.65,-0.7); g.add(tail);
+    var legL = makeBox(0.15,0.6,0.18, c); legL.position.set(0.15,0.3,0.1); g.add(legL);
+    var legR = makeBox(0.15,0.6,0.18, c); legR.position.set(-0.15,0.3,0.1); g.add(legR);
+    g.userData.kind='compy';
+    return g;
+  }
+
+  function buildDino(kind){
+    if (kind==='trex') return buildTRex();
+    if (kind==='trike') return buildTrike();
+    if (kind==='brach') return buildBrach();
+    if (kind==='raptor') return buildRaptor();
+    return buildCompy();
+  }
+
+  // Spawn dinosaurs in enclosures
+  enclosures.forEach(function(en){
+    en.dinos = [];
+    for (var i=0;i<en.count;i++){
+      var d = buildDino(en.type);
+      var x = en.cx + rrange(-en.w/2*0.7, en.w/2*0.7);
+      var z = en.cz + rrange(-en.h/2*0.7, en.h/2*0.7);
+      d.position.set(x, ground(x,z), z);
+      d.rotation.y = rnd()*Math.PI*2;
+      d.userData.home = {cx:en.cx, cz:en.cz, w:en.w, h:en.h};
+      d.userData.heading = rnd()*Math.PI*2;
+      d.userData.speed = (en.type==='brach')?0.6:(en.type==='compy')?2.4:(en.type==='raptor')?2.8:(en.type==='trex')?1.4:1.2;
+      d.userData.bobPhase = rnd()*Math.PI*2;
+      d.userData.enclosure = en;
+      d.userData.escaped = false;
+      d.userData.target = null;
+      scene.add(d);
+      en.dinos.push(d);
+    }
+  });
+
+  // -------------- Humanoids (rangers, tourists, narrator heads) --------------
+  function buildHumanoid(opt){
+    opt = opt || {};
+    var g = new THREE.Group();
+    var skin = opt.skin || 0xe0b890;
+    var shirt = opt.shirt || (0x223388);
+    var pants = opt.pants || 0x222222;
+    var hair = opt.hair || 0x2a1a10;
+    var head = makeSphere(0.34, skin); head.position.y=1.75; g.add(head); g.userData.head=head;
+    if (opt.hat){
+      var hat = new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.4,0.3,8), new THREE.MeshLambertMaterial({color:opt.hat}));
+      hat.position.y=2.0; g.add(hat);
+    } else {
+      var hr = new THREE.Mesh(new THREE.SphereGeometry(0.36,8,6,0,Math.PI*2,0,Math.PI/2.2), new THREE.MeshLambertMaterial({color:hair}));
+      hr.position.y=1.85; g.add(hr);
+    }
+    var torso = makeBox(0.6,0.9,0.35, shirt); torso.position.y=1.05; g.add(torso);
+    var armL = makeBox(0.18,0.85,0.18, shirt); armL.position.set(0.42,1.05,0); g.add(armL);
+    var armR = makeBox(0.18,0.85,0.18, shirt); armR.position.set(-0.42,1.05,0); g.add(armR);
+    var legL = makeBox(0.22,0.85,0.22, pants); legL.position.set(0.18,0.45,0); g.add(legL); g.userData.legL=legL;
+    var legR = makeBox(0.22,0.85,0.22, pants); legR.position.set(-0.18,0.45,0); g.add(legR); g.userData.legR=legR;
+    g.userData.bobPhase = rnd()*Math.PI*2;
+    g.userData.speed = opt.speed || 1.2;
+    g.userData.heading = rnd()*Math.PI*2;
+    return g;
+  }
+
+  // Visitor center plaza
+  function buildVisitorCenter(){
+    var g = new THREE.Group();
+    var base = new THREE.Mesh(
+      new THREE.BoxGeometry(28, 1, 18),
+      new THREE.MeshLambertMaterial({color:0xc8b890})
+    );
+    base.position.set(0, 0.5, 0);
+    g.add(base);
+    var bldg = new THREE.Mesh(
+      new THREE.BoxGeometry(20, 8, 12),
+      new THREE.MeshLambertMaterial({color:0xe0d0a8})
+    );
+    bldg.position.set(0, 5, 0);
+    g.add(bldg);
+    var roof = new THREE.Mesh(
+      new THREE.ConeGeometry(14, 4, 4),
+      new THREE.MeshLambertMaterial({color:0x5a3a20})
+    );
+    roof.position.set(0, 11, 0); roof.rotation.y=Math.PI/4;
+    g.add(roof);
+    // sign
+    var sign = new THREE.Mesh(
+      new THREE.BoxGeometry(16,2,0.3),
+      new THREE.MeshLambertMaterial({color:0xffd24a})
+    );
+    sign.position.set(0, 9.5, 6.2);
+    g.add(sign);
+    // gate
+    var gateL = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6,7,0.6),
+      new THREE.MeshLambertMaterial({color:0x404040})
+    );
+    gateL.position.set(8,3.5,9); g.add(gateL);
+    var gateR = gateL.clone(); gateR.position.set(-8,3.5,9); g.add(gateR);
+    var gateTop = new THREE.Mesh(
+      new THREE.BoxGeometry(17,0.6,0.6),
+      new THREE.MeshLambertMaterial({color:0x404040})
+    );
+    gateTop.position.set(0,7,9); g.add(gateTop);
+    var welcome = new THREE.Mesh(
+      new THREE.BoxGeometry(14,1.5,0.2),
+      new THREE.MeshLambertMaterial({color:0x223388})
+    );
+    welcome.position.set(0,8,9); g.add(welcome);
+    return g;
+  }
+  var visitorCenter = buildVisitorCenter();
+  scene.add(visitorCenter);
+
+  // tourists in plaza
+  var tourists = [];
+  for (var i=0;i<14;i++){
+    var t = buildHumanoid({
+      shirt: pick([0xd14a4a,0x4a8ad1,0x4ad17a,0xd1c84a,0xd14ab6,0x6a4ad1]),
+      pants: pick([0x222222,0x3a2a1a,0x404040]),
+      hat: rnd()<0.4 ? pick([0xffd24a,0xffffff,0x202020]) : null,
+      speed: 0.6+rnd()*0.4
+    });
+    var ang = rnd()*Math.PI*2, r = 4+rnd()*8;
+    t.position.set(Math.cos(ang)*r, 1, Math.sin(ang)*r + 4);
+    t.userData.kind='tourist';
+    scene.add(t);
+    tourists.push(t);
+  }
+
+  // rangers (will become more visible during breach/recapture)
+  var rangers = [];
+  for (var ri=0;ri<6;ri++){
+    var r = buildHumanoid({shirt:0x3a5a2a, pants:0x2a2a1a, hat:0x1a2a10, speed:1.6});
+    r.userData.kind='ranger';
+    var ang = rnd()*Math.PI*2;
+    r.position.set(Math.cos(ang)*16, 1, Math.sin(ang)*16);
+    scene.add(r);
+    rangers.push(r);
+  }
+
+  // Narrator heads (Sir Reginald, Maya, Dr. Dasari, Director Hammond-style)
+  function buildTalkingHead(opt){
+    var g = new THREE.Group();
+    var bg = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.2,1.4),
+      new THREE.MeshBasicMaterial({color:opt.bg||0x102030})
+    );
+    g.add(bg);
+    var head = makeSphere(0.5, opt.skin||0xe0b890);
+    head.position.set(0, 0.05, 0.05);
+    g.add(head); g.userData.head = head;
+    if (opt.hair){
+      var h = new THREE.Mesh(new THREE.SphereGeometry(0.52,10,8,0,Math.PI*2,0,Math.PI/2.2), new THREE.MeshLambertMaterial({color:opt.hair}));
+      h.position.set(0,0.2,0.05); g.add(h);
+    }
+    if (opt.glasses){
+      var gl = new THREE.Mesh(new THREE.TorusGeometry(0.12,0.03,6,12), new THREE.MeshBasicMaterial({color:0x111111}));
+      gl.position.set(0.18,0.05,0.5); g.add(gl);
+      var gr = gl.clone(); gr.position.set(-0.18,0.05,0.5); g.add(gr);
+    }
+    var nose = makeSphere(0.06, (opt.skin||0xe0b890));
+    nose.position.set(0,-0.05,0.5); g.add(nose);
+    var mouth = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.04,0.05), new THREE.MeshBasicMaterial({color:0x331010}));
+    mouth.position.set(0,-0.22,0.5); g.add(mouth); g.userData.mouth=mouth;
+    var torso = new THREE.Mesh(new THREE.BoxGeometry(1.0,0.6,0.2), new THREE.MeshLambertMaterial({color:opt.suit||0x202840}));
+    torso.position.set(0,-0.6,0); g.add(torso);
+    var name = opt.name || '';
+    g.userData.name = name;
+    g.visible = false;
+    return g;
+  }
+  // We'll render talking heads in PIP cam B for "expert/director" callouts.
+  var headReg = buildTalkingHead({name:'Sir Reginald Ashworth', bg:0x183040, skin:0xf0d8b8, hair:0xd8d8d8, suit:0x402020});
+  var headMaya = buildTalkingHead({name:'Maya Reyes', bg:0x402a18, skin:0xb8855a, hair:0x1a0f08, suit:0x205040});
+  var headDasari = buildTalkingHead({name:'Dr. Anjali Dasari', bg:0x101820, skin:0xc0926a, hair:0x1a0f08, glasses:true, suit:0x102030});
+  var headDirector = buildTalkingHead({name:'Director Carrow', bg:0x202020, skin:0xf0d8b8, hair:0xeeeeee, suit:0x101010});
+  // We'll position these near a "studio" off-screen but render via PIP cam.
+  var studio = new THREE.Group();
+  studio.position.set(500, 50, 500);
+  studio.add(headReg); headReg.position.set(0,0,0);
+  studio.add(headMaya); headMaya.position.set(3,0,0);
+  studio.add(headDasari); headDasari.position.set(6,0,0);
+  studio.add(headDirector); headDirector.position.set(9,0,0);
+  scene.add(studio);
+
+  // -------------- Jeeps --------------
+  function buildJeep(color){
+    var g = new THREE.Group();
+    var body = new THREE.Mesh(new THREE.BoxGeometry(2.4,1.0,4.2), new THREE.MeshLambertMaterial({color:color||0xd14a4a}));
+    body.position.y=1.0; g.add(body);
+    var cab = new THREE.Mesh(new THREE.BoxGeometry(2.2,0.9,2.2), new THREE.MeshLambertMaterial({color:0x202020}));
+    cab.position.set(0,1.85,-0.2); g.add(cab);
+    // stripes
+    var stripe = new THREE.Mesh(new THREE.BoxGeometry(2.42,0.15,4.22), new THREE.MeshLambertMaterial({color:0xffd24a}));
+    stripe.position.set(0,1.4,0); g.add(stripe);
+    // wheels
+    function wheel(x,z){
+      var w = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.4,10), new THREE.MeshLambertMaterial({color:0x111111}));
+      w.rotation.z=Math.PI/2; w.position.set(x,0.5,z); g.add(w); return w;
+    }
+    g.userData.wheels = [wheel(1.3,1.4),wheel(-1.3,1.4),wheel(1.3,-1.4),wheel(-1.3,-1.4)];
+    g.userData.speed = 5;
+    return g;
+  }
+  var jeeps = [];
+  for (var ji=0;ji<3;ji++){
+    var j = buildJeep(pick([0xd14a4a,0xd1c84a,0x4ad17a]));
+    j.userData.t = rnd()*Math.PI*2;
+    jeeps.push(j); scene.add(j);
+  }
+  // tour route ellipse
+  function jeepPos(t){
+    var rx = 180, rz = 140;
+    var x = Math.cos(t)*rx;
+    var z = Math.sin(t)*rz;
+    return {x:x, z:z};
+  }
+
+  // -------------- Monorail --------------
+  function buildMonorail(){
+    var g = new THREE.Group();
+    var trackR = 90;
+    var trackPts=[];
+    for (var i=0;i<=64;i++){
+      var a = i/64*Math.PI*2;
+      var x = Math.cos(a)*trackR;
+      var z = Math.sin(a)*trackR;
+      trackPts.push(new THREE.Vector3(x, ground(x,z)+8, z));
+    }
+    var trackGeom = new THREE.BufferGeometry().setFromPoints(trackPts);
+    var track = new THREE.Line(trackGeom, new THREE.LineBasicMaterial({color:0x888888}));
+    g.add(track);
+    // pylons
+    for (var p=0;p<16;p++){
+      var a = p/16*Math.PI*2;
+      var x = Math.cos(a)*trackR, z = Math.sin(a)*trackR;
+      var py = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.5,12,6), new THREE.MeshLambertMaterial({color:0x808080}));
+      py.position.set(x, ground(x,z)+6, z);
+      g.add(py);
+    }
+    // train
+    var train = new THREE.Group();
+    for (var c=0;c<3;c++){
+      var car = new THREE.Mesh(new THREE.BoxGeometry(2.2,2,5), new THREE.MeshLambertMaterial({color:0xeeeeee}));
+      car.position.set(0,0,-c*5.2);
+      train.add(car);
+      var win = new THREE.Mesh(new THREE.BoxGeometry(2.22,1,4.6), new THREE.MeshLambertMaterial({color:0x88ccee, emissive:0x224466}));
+      win.position.set(0,0.3,-c*5.2);
+      train.add(win);
+    }
+    g.add(train);
+    g.userData.train = train;
+    g.userData.trackR = trackR;
+    g.userData.t = 0;
+    return g;
+  }
+  var monorail = buildMonorail();
+  scene.add(monorail);
+
+  // -------------- Storm clouds + rain --------------
+  var clouds = new THREE.Group();
+  for (var ci=0;ci<24;ci++){
+    var c = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(8+rnd()*6, 0),
+      new THREE.MeshLambertMaterial({color:0x556068, transparent:true, opacity:0.0, flatShading:true})
+    );
+    c.position.set(rrange(-260,260), 70+rrange(-6,12), rrange(-260,260));
+    c.scale.set(1.6,0.5+rnd()*0.3,1.4);
+    clouds.add(c);
+  }
+  scene.add(clouds);
+
+  var rainCount = 1500;
+  var rainGeom = new THREE.BufferGeometry();
+  var rainPos = new Float32Array(rainCount*3);
+  for (var rIdx=0; rIdx<rainCount; rIdx++){
+    rainPos[rIdx*3]   = rrange(-200,200);
+    rainPos[rIdx*3+1] = rrange(0, 80);
+    rainPos[rIdx*3+2] = rrange(-200,200);
+  }
+  rainGeom.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+  var rainMat = new THREE.PointsMaterial({color:0xaaccee, size:0.4, transparent:true, opacity:0});
+  var rain = new THREE.Points(rainGeom, rainMat);
+  scene.add(rain);
+
+  // -------------- Helicopter (PIP candidate) --------------
+  var heli = new THREE.Group();
+  var heliBody = new THREE.Mesh(new THREE.BoxGeometry(2,1.2,3.5), new THREE.MeshLambertMaterial({color:0x2a4a8a}));
+  heli.add(heliBody);
+  var heliTail = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,3), new THREE.MeshLambertMaterial({color:0x2a4a8a}));
+  heliTail.position.set(0,0,-3); heli.add(heliTail);
+  var rotor = new THREE.Mesh(new THREE.BoxGeometry(7,0.05,0.3), new THREE.MeshLambertMaterial({color:0x101010}));
+  rotor.position.y=0.8; heli.add(rotor);
+  heli.userData.rotor = rotor;
+  heli.position.set(0, 60, 0);
+  scene.add(heli);
+
+  // -------------- Director (Camera) System --------------
+  var cams = {
+    aerial: {name:'AERIAL-01', set:function(t){
+      var orbit = t*0.06;
+      mainCam.position.set(Math.cos(orbit)*200, 90, Math.sin(orbit)*200);
+      mainCam.lookAt(0, 4, 0);
+    }},
+    tour: {name:'TOUR-CAM-3', set:function(t){
+      var j = jeeps[0];
+      var p = j.position;
+      var dx = Math.cos(j.rotation.y)*-6, dz = Math.sin(j.rotation.y)*-6;
+      mainCam.position.set(p.x+dx, p.y+3, p.z+dz);
+      mainCam.lookAt(p.x + Math.cos(j.rotation.y)*8, p.y+1, p.z + Math.sin(j.rotation.y)*8);
+    }},
+    watch: {name:'WATCHTOWER-7', set:function(t){
+      var en = enclosures[3]; // T-Rex
+      mainCam.position.set(en.cx + 60, 22, en.cz - 60);
+      var tx = en.cx + Math.cos(t*0.3)*4;
+      var tz = en.cz + Math.sin(t*0.3)*4;
+      mainCam.lookAt(tx, 4, tz);
+    }},
+    trex: {name:'TREX-CAM', set:function(t){
+      var en = enclosures[3];
+      var trex = en.dinos[0];
+      if (!trex) return;
+      var p = trex.position;
+      var ang = trex.rotation.y;
+      mainCam.position.set(p.x - Math.cos(ang)*10, p.y+8, p.z - Math.sin(ang)*10);
+      mainCam.lookAt(p.x + Math.cos(ang)*4, p.y+4, p.z + Math.sin(ang)*4);
+    }},
+    chase: {name:'CHASE-CAM', set:function(t){
+      var trex = enclosures[3].dinos[0];
+      if (!trex) return;
+      var p = trex.position;
+      var ang = trex.rotation.y;
+      mainCam.position.set(p.x - Math.cos(ang)*16, 8, p.z - Math.sin(ang)*16);
+      mainCam.lookAt(p.x, 4, p.z);
+    }},
+    plaza: {name:'VC-PLAZA', set:function(t){
+      mainCam.position.set(Math.cos(t*0.2)*22, 8, 12 + Math.sin(t*0.2)*8);
+      mainCam.lookAt(0, 5, 0);
+    }}
+  };
+  var camOrder = ['aerial','tour','watch','plaza'];
+  var camIdx = 0;
+  var camCurrent = 'aerial';
+  var camSwitchAt = 0;
+  function cutTo(name){
+    camCurrent = name;
+    camSwitchAt = clock.t;
+    document.getElementById('cambadge').textContent = 'CAM: '+cams[name].name;
+  }
+
+  // -------------- Narration & UI --------------
+  var subsEl = document.getElementById('subs');
+  var whoEl = document.getElementById('who');
+  var lineEl = document.getElementById('line');
+  var ticker = document.getElementById('tickerText');
+  var lower3 = document.getElementById('lower3');
+  var l3t = document.getElementById('l3t');
+  var l3s = document.getElementById('l3s');
+  var pstat = document.getElementById('pstat');
+  var statusEl = document.getElementById('status');
+  var pip1El = document.getElementById('pip1');
+  var pip2El = document.getElementById('pip2');
+  var pip1Lbl = document.getElementById('pip1lbl');
+  var pip2Lbl = document.getElementById('pip2lbl');
+  var breakingbar = document.getElementById('breakingbar');
+  var breakingflash = document.getElementById('breakingflash');
+  var stinger = document.getElementById('stinger');
+  var lightningEl = document.getElementById('lightning');
+
+  function showSub(who, text, color){
+    subsEl.style.display='block';
+    whoEl.textContent = who;
+    whoEl.style.color = color;
+    lineEl.style.color = color;
+    lineEl.textContent = text;
+  }
+  function hideSub(){ subsEl.style.display='none'; }
+  function showL3(t,s){
+    lower3.style.display='block';
+    l3t.textContent = t;
+    l3s.textContent = s;
+  }
+  function hideL3(){ lower3.style.display='none'; }
+
+  // narration queue
+  var narrQueue = [];
+  var narrCurrent = null;
+  var narrUntil = 0;
+  function say(who, text, dur, color){
+    narrQueue.push({who:who, text:text, dur:dur||4, color:color||'#ffffff'});
+  }
+  function sayReg(text, dur){ say('SIR REGINALD ASHWORTH', text, dur, '#ffffff'); }
+  function sayMaya(text, dur){ say('MAYA REYES', text, dur, '#ffd24a'); }
+  function sayDasari(text, dur){ say('DR. ANJALI DASARI', text, dur, '#a8e6ff'); }
+  function sayDirector(text, dur){ say('DIRECTOR CARROW', text, dur, '#ffb0b0'); }
+
+  // ticker queue
+  var tickerLines = [];
+  function pushTicker(s){ tickerLines.push(s); refreshTicker(); }
+  function refreshTicker(){
+    var s = tickerLines.slice(-12).join('   •   ');
+    if (!s) s = 'JURASSIC PARK NETWORK — CONTINUOUS COVERAGE — JPN — CONTINUOUS COVERAGE';
+    ticker.textContent = s + '   •   '+ s;
+  }
+
+  // breaking news stinger
+  function breaking(text, ms){
+    breakingbar.style.display='flex';
+    breakingflash.classList.add('on');
+    stinger.style.display='block';
+    stinger.textContent = text;
+    setTimeout(function(){ breakingflash.classList.remove('on'); },350);
+    setTimeout(function(){ stinger.style.display='none'; }, ms||2400);
+    setTimeout(function(){ breakingbar.style.display='none'; }, (ms||2400)+200);
+  }
+
+  // -------------- Storyline & State Machine --------------
+  // Acts (durations seconds): DOC=60, STORM=60, BREACH=90, CEREMONY=12 → 222s loop
+  var ACT = {DOC:'DOC', STORM:'STORM', BREACH:'BREACH', CEREMONY:'CEREMONY'};
+  var act = ACT.DOC;
+  var actStart = 0;
+  var loopCount = 0;
+  var clock = {t:0};
+
+  var breachOrder = []; // sequence of which sectors breach this loop
+  var breachedFirst = null;
+
+  function planLoop(){
+    // pick the first dino to breach
+    breachOrder = ['e4','e3']; // T-Rex first then raptors typically; vary order
+    if (rnd()<0.5) breachOrder = ['e3','e4']; // raptors first
+    if (rnd()<0.25) breachOrder = ['e4'];
+    breachedFirst = breachOrder[0];
+  }
+  planLoop();
+
+  // schedule of scripted beats per act
+  function scheduleBeats(){
+    // We use act-relative time t and trigger functions when t crosses values
+    // Beats are arrays: [time, fn]
+    return {
+      DOC: [
+        [0.5,  function(){ cutTo('aerial'); pushTicker('LIVE — Welcome to Isla Aurora, the world\'s only operational paleo-park.'); sayReg('Welcome, dear viewers, to Isla Aurora — the only place on Earth where the past walks among us.', 6.5); showL3('JURASSIC PARK NETWORK','Live from Isla Aurora — Day 1, Sunrise'); }],
+        [7,    function(){ hideL3(); sayMaya('Reggie, look at that herd. Triceratops at sunrise — that is a sight a hundred million years in the making.', 6); }],
+        [14,   function(){ cutTo('plaza'); showL3('SPECIES PROFILE','Triceratops horridus — Late Cretaceous'); sayReg('The triceratops you see in Sector 1 weigh in at six tonnes apiece, gentle so long as one keeps to the path.', 7); }],
+        [22,   function(){ cutTo('tour'); hideL3(); sayMaya('Tour jeeps are rolling out of the visitor center now. Reggie, are you on the early shuttle?', 5); }],
+        [27,   function(){ sayReg('I am perched, as ever, in Watchtower Seven, with a flask of Earl Grey and an unobstructed view of the apex predator.', 6); cutTo('watch'); }],
+        [34,   function(){ showL3('SECTOR 7','Tyrannosaurus rex — \"Big Doris\"'); sayMaya('Big Doris. Eight tonnes of charisma. Folks, she\'s the headliner of this whole park.', 5); }],
+        [40,   function(){ hideL3(); cutTo('aerial'); sayReg('Attendance this morning: forty-two thousand visitors. The plaza is already humming.', 5); }],
+        [46,   function(){ sayMaya('And that monorail you see slicing across the canopy? Six hundred guests an hour. Quiet as a whisper.', 5); cutTo('plaza'); }],
+        [52,   function(){ sayReg('Stay with us. The day is young, and Isla Aurora has scarcely begun.', 5); }],
+        [59,   function(){ hideL3(); }]
+      ],
+      STORM: [
+        [0.5,  function(){ cutTo('aerial'); pushTicker('WEATHER ALERT — Tropical depression moving in from the southeast.'); showL3('WEATHER','Tropical System Approaching'); sayMaya('We\'re getting word from the weather desk — a tropical system is rolling in faster than forecast.', 6); }],
+        [7,    function(){ sayReg('The wind has picked up considerably. The brachiosaurs at the lake have grown rather quiet — they always know first.', 6); cutTo('plaza'); }],
+        [14,   function(){ hideL3(); sayMaya('Park officials say guest operations remain normal. The monorail continues service. For now.', 6); }],
+        [22,   function(){ cutTo('watch'); sayReg('I can see lightning in the distance. The compy meadow is positively skittering with movement.', 6); }],
+        [29,   function(){ sayMaya('Reggie, the rangers down here are checking fence integrity in Sectors 5 and 7. Standard procedure, they tell us.', 6); }],
+        [36,   function(){ cutTo('aerial'); sayReg('Standard procedure on Isla Aurora is, in my professional opinion, an oxymoron.', 5); }],
+        [42,   function(){ sayMaya('Folks, that was a flash right over Sector 7. The T-Rex paddock just lit up like a stadium.', 5); cutTo('watch'); }],
+        [49,   function(){ sayReg('The fence indicators are flickering. I cannot tell from here if the perimeter wire is holding.', 6); pushTicker('Fence diagnostics intermittent in Sectors 5 and 7 — engineers en route.'); }],
+        [56,   function(){ sayMaya('Stand by. I think — I think we just lost power to the eastern grid.', 4); }]
+      ],
+      BREACH: [
+        [0.3,  function(){
+          // breach!
+          var first = breachedFirst;
+          var en = enclosures.find(function(e){return e.code===first;});
+          en.breached = true;
+          en.statusDiv.className = 'v bad'; en.statusDiv.textContent = 'BREACH';
+          pstat.className = 'bad'; pstat.textContent = 'EMERGENCY';
+          var label = (en.type==='trex')?'T-REX LOOSE IN PARK — IMMEDIATE EVACUATION ORDERED':'BREAKING: PERIMETER BREACH IN SECTOR '+en.sector;
+          breaking('BREAKING: PERIMETER BREACH IN SECTOR '+en.sector, 3000);
+          pushTicker('BREAKING — '+label);
+          showL3('BREACH ALERT','Sector '+en.sector+' — '+en.name+' — Containment Failed');
+          // animate fence collapse: drop a few poles
+          for (var i=0;i<Math.min(6, en.poles.length);i++){
+            en.poles[i].userData.fall = true;
+          }
+          // free a dino
+          if (en.dinos.length){
+            var d = en.dinos[0];
+            d.userData.escaped = true;
+            d.userData.target = {x:0, z:0}; // toward visitor center
+          }
+          cutTo('watch');
+          sayMaya('OH MY GOD — the fence is DOWN — I repeat, the perimeter in Sector '+en.sector+' is DOWN!', 5);
+        }],
+        [6,    function(){ cutTo('chase'); sayReg('I am — I am witnessing this myself. The animal is through. The animal is through the wire.', 5); }],
+        [12,   function(){ breaking('T-REX LOOSE IN PARK — IMMEDIATE EVACUATION ORDERED', 3000); pushTicker('EVACUATION ORDER — All guests proceed to monorail and shelter zones.'); sayMaya('Park-wide evacuation has been ordered. I am hearing the sirens from the plaza now.', 5); }],
+        [18,   function(){ cutTo('plaza'); sayReg('The visitor center plaza is in motion. To the staff\'s credit, they are not panicking — much.', 5); }],
+        [24,   function(){ cutTo('trex'); sayMaya('We have a feed from the helicopter. You\'re seeing it live — that\'s the animal moving through Sector 6 toward the monorail.', 6); pip2Lbl.textContent='HELI-CAM'; pip2El.style.display='block'; }],
+        [31,   function(){ showL3('EXPERT ANALYSIS','Dr. Anjali Dasari — Paleo-Behaviorist'); sayDasari('We warned them about this. We warned them. You cannot put predators of that intelligence behind a fence and call it safe.', 8); pip2Lbl.textContent='EXPERT FEED'; }],
+        [40,   function(){ hideL3(); sayMaya('Dr. Dasari, on the line from the mainland. Reggie, that quote is going to follow this park for years.', 5); }],
+        [46,   function(){ sayReg('It will follow it longer than that, Maya. It will follow it like a shadow.', 5); cutTo('chase'); }],
+        [52,   function(){ pushTicker('RANGER TEAM EN ROUTE — Tranquilizer protocol Bravo activated.'); sayMaya('Ranger units are converging on the breach. They are armed with tranquilizers, not lethal force, per park policy.', 6); }],
+        [59,   function(){ cutTo('aerial'); sayReg('I can see the ranger jeeps from up here. They are forming a containment ring around the loose animal.', 6); }],
+        [66,   function(){
+          // recapture
+          var en = enclosures.find(function(e){return e.code===breachedFirst;});
+          if (en && en.dinos[0]){
+            en.dinos[0].userData.tranq = true;
+            en.dinos[0].userData.target = {x:en.cx, z:en.cz};
+          }
+          breaking('RANGER TEAM RECAPTURES T-REX', 2800);
+          pushTicker('RECAPTURED — Animal sedated and being returned to enclosure.');
+          showL3('RECAPTURE','Sector '+(en?en.sector:7)+' — Animal Sedated');
+          sayMaya('They got it. They GOT IT. The animal is down. The animal is sedated.', 5);
+        }],
+        [73,   function(){ cutTo('chase'); sayReg('A textbook capture, if I may say so. The rangers have done their park proud.', 5); }],
+        [79,   function(){ hideL3(); pip2El.style.display='none'; sayMaya('Park status is being upgraded from EMERGENCY to CONTAINED. Damage assessment is underway.', 6); pstat.className='warn'; pstat.textContent='CONTAINED'; }],
+        [86,   function(){
+          var en = enclosures.find(function(e){return e.code===breachedFirst;});
+          if (en){
+            en.statusDiv.className='v warn'; en.statusDiv.textContent='REPAIR';
+            for (var i=0;i<en.poles.length;i++){ en.poles[i].userData.fall=false; en.poles[i].userData.repair=true; }
+            en.breached=false;
+          }
+          sayReg('And so the fences rise again. As they always do, on Isla Aurora.', 5);
+        }]
+      ],
+      CEREMONY: [
+        [0.3,  function(){ cutTo('plaza'); breaking('PARK REOPENS TOMORROW', 2400); pushTicker('PARK REOPENS TOMORROW — Director insists \"everything is fine.\"'); showL3('PRESS CONFERENCE','Director Carrow — Visitor Center Plaza'); pip2Lbl.textContent='DIRECTOR FEED'; pip2El.style.display='block'; sayDirector('I want to assure our guests, and the world, that Isla Aurora remains the safest paleo-park in operation. Everything is fine.', 7); }],
+        [8,    function(){ sayMaya('Everything is fine. Reggie, did the director just say everything is fine?', 4); }],
+        [12,   function(){ hideL3(); pip2El.style.display='none'; pstat.className='ok'; pstat.textContent='OPEN'; sayReg('He did, Maya. He did. And I, for one, will be watching very closely tomorrow.', 5); }]
+      ]
+    };
+  }
+  var beats = scheduleBeats();
+  var firedBeats = {DOC:{},STORM:{},BREACH:{},CEREMONY:{}};
+
+  function fireBeats(){
+    var localT = clock.t - actStart;
+    var list = beats[act];
+    for (var i=0;i<list.length;i++){
+      if (!firedBeats[act][i] && localT >= list[i][0]){
+        firedBeats[act][i] = true;
+        try { list[i][1](); } catch(e){}
+      }
+    }
+  }
+
+  function setStatusUI(){
+    var dayMin = Math.floor((clock.t/60)*180); // 3 min real -> a "day"
+    var hh = (6 + Math.floor(dayMin/60))%24;
+    var mm = dayMin%60;
+    var hs = (hh<10?'0':'')+hh, ms = (mm<10?'0':'')+mm;
+    var dayLabel = 'DAY '+(loopCount+1)+' — '+hs+':'+ms;
+    var phaseLabel = act==='DOC'?'OPEN':act==='STORM'?'STORM WATCH':act==='BREACH'?(pstat.textContent):'OPEN';
+    statusEl.innerHTML = dayLabel+'<br/><span style="opacity:.7">Park Status: <span id="pstat" class="'+pstat.className+'">'+pstat.textContent+'</span></span>';
+    pstat = document.getElementById('pstat');
+  }
+
+  function nextAct(){
+    if (act===ACT.DOC){ act=ACT.STORM; actStart = clock.t; }
+    else if (act===ACT.STORM){ act=ACT.BREACH; actStart=clock.t; }
+    else if (act===ACT.BREACH){ act=ACT.CEREMONY; actStart=clock.t; }
+    else { restartLoop(); }
+  }
+
+  function restartLoop(){
+    loopCount++;
+    // Re-seed for variety
+    srand((Date.now() ^ (loopCount*2654435761)) >>> 0);
+    // Reset state
+    act = ACT.DOC; actStart = clock.t;
+    firedBeats = {DOC:{},STORM:{},BREACH:{},CEREMONY:{}};
+    pstat.className='ok'; pstat.textContent='OPEN';
+    enclosures.forEach(function(en){
+      en.breached=false;
+      en.statusDiv.className='v ok'; en.statusDiv.textContent='SECURE';
+      en.poles.forEach(function(p){
+        p.userData.fall=false; p.userData.repair=false;
+        p.rotation.set(0,0,0);
+      });
+      en.dinos.forEach(function(d){
+        d.userData.escaped=false;
+        d.userData.tranq=false;
+        d.userData.target=null;
+        d.position.set(en.cx + rrange(-en.w/2*0.7, en.w/2*0.7),
+                       0,
+                       en.cz + rrange(-en.h/2*0.7, en.h/2*0.7));
+        d.position.y = ground(d.position.x, d.position.z);
+        d.rotation.y = rnd()*Math.PI*2;
+      });
+    });
+    planLoop();
+    pushTicker('NEW BROADCAST DAY — '+(['Returning to live coverage','Continuing 24-hour operations','Welcome back to JPN','Resuming continuous broadcast'][loopCount%4])+'.');
+  }
+
+  // -------------- Animation helpers --------------
+  function approachWrap(en, x, z){
+    var dx = (en.cx + en.w/2*0.7) - x; // not used directly; we just clamp
+  }
+  function clampToEnclosure(en, x, z){
+    var minX = en.cx - en.w/2*0.85, maxX = en.cx + en.w/2*0.85;
+    var minZ = en.cz - en.h/2*0.85, maxZ = en.cz + en.h/2*0.85;
+    return {x: Math.max(minX, Math.min(maxX, x)), z: Math.max(minZ, Math.min(maxZ, z))};
+  }
+
+  // Lightning state
+  var lightningCooldown = 0;
+  var stormIntensity = 0; // 0..1
+
+  function updateStorm(dt){
+    var target = 0;
+    if (act===ACT.DOC) target = 0;
+    else if (act===ACT.STORM){
+      var lt = (clock.t - actStart)/60;
+      target = Math.min(1, lt*1.2);
+    } else if (act===ACT.BREACH){
+      var bt = (clock.t - actStart)/90;
+      target = Math.max(0.2, 1 - bt*0.7);
+    } else {
+      target = 0;
+    }
+    stormIntensity += (target - stormIntensity)*Math.min(1, dt*0.5);
+    // sky color
+    var skyDay = new THREE.Color(0x88c4e8);
+    var skyStorm = new THREE.Color(0x37414a);
+    var sky = skyDay.clone().lerp(skyStorm, stormIntensity);
+    scene.background.copy(sky);
+    if (scene.fog) { scene.fog.color.copy(sky); scene.fog.far = 360 - stormIntensity*180; }
+    sun.intensity = 1.0 - stormIntensity*0.7;
+    hemi.intensity = 0.85 - stormIntensity*0.4;
+    // clouds opacity
+    clouds.children.forEach(function(c){
+      c.material.opacity = 0.05 + stormIntensity*0.85;
+    });
+    rainMat.opacity = stormIntensity*0.8;
+    // rain animation
+    if (stormIntensity>0.05){
+      var arr = rainGeom.attributes.position.array;
+      for (var i=0;i<rainCount;i++){
+        arr[i*3+1] -= (40+stormIntensity*60)*dt;
+        if (arr[i*3+1] < 0){ arr[i*3+1] = 70; arr[i*3] = rrange(-200,200); arr[i*3+2] = rrange(-200,200); }
+      }
+      rainGeom.attributes.position.needsUpdate = true;
+    }
+    // lightning
+    lightningCooldown -= dt;
+    if (stormIntensity > 0.5 && lightningCooldown <= 0){
+      lightningCooldown = 1.5 + rnd()*5;
+      lightningEl.style.background = 'rgba(255,255,255,'+(0.35+rnd()*0.4)+')';
+      setTimeout(function(){ lightningEl.style.background='rgba(255,255,255,0)'; }, 90);
+      setTimeout(function(){ lightningEl.style.background='rgba(255,255,255,'+(0.2+rnd()*0.3)+')'; }, 150);
+      setTimeout(function(){ lightningEl.style.background='rgba(255,255,255,0)'; }, 240);
+    }
+  }
+
+  // -------------- Main update --------------
+  var lastT = performance.now()/1000;
+  function step(){
+    var now = performance.now()/1000;
+    var dt = Math.min(0.05, now - lastT);
+    lastT = now;
+    clock.t += dt;
+
+    // act timing
+    var localT = clock.t - actStart;
+    if (act===ACT.DOC && localT > 60) nextAct();
+    else if (act===ACT.STORM && localT > 60) nextAct();
+    else if (act===ACT.BREACH && localT > 90) nextAct();
+    else if (act===ACT.CEREMONY && localT > 12) nextAct();
+
+    fireBeats();
+    setStatusUI();
+
+    // narration playback
+    if (!narrCurrent && narrQueue.length){
+      narrCurrent = narrQueue.shift();
+      narrUntil = clock.t + narrCurrent.dur;
+      showSub(narrCurrent.who, narrCurrent.text, narrCurrent.color);
+    } else if (narrCurrent && clock.t > narrUntil){
+      narrCurrent = null;
+      hideSub();
+    }
+
+    // Auto-cut camera if no scripted cut for a while during DOC
+    if (act===ACT.DOC && (clock.t - camSwitchAt) > 9){
+      camIdx = (camIdx+1)%camOrder.length;
+      cutTo(camOrder[camIdx]);
+    }
+
+    // Camera positioning
+    var camFn = cams[camCurrent];
+    if (camFn) camFn.set(clock.t);
+
+    // monorail
+    monorail.userData.t += dt*0.06;
+    var mt = monorail.userData.t;
+    var mr = monorail.userData.trackR;
+    var mx = Math.cos(mt)*mr, mz = Math.sin(mt)*mr;
+    var my = ground(mx,mz)+8;
+    var mtAhead = mt + 0.02;
+    var mxA = Math.cos(mtAhead)*mr, mzA = Math.sin(mtAhead)*mr;
+    monorail.userData.train.position.set(mx, my, mz);
+    monorail.userData.train.lookAt(mxA, my, mzA);
+
+    // jeeps
+    for (var ji=0;ji<jeeps.length;ji++){
+      var j = jeeps[ji];
+      j.userData.t += dt*0.04 + ji*0.0001;
+      var p = jeepPos(j.userData.t);
+      var pa = jeepPos(j.userData.t+0.02);
+      var gy = ground(p.x, p.z);
+      j.position.set(p.x, gy, p.z);
+      j.lookAt(pa.x, gy, pa.z);
+      // wheels spin
+      for (var w=0;w<j.userData.wheels.length;w++){
+        j.userData.wheels[w].rotation.x += dt*8;
+      }
+    }
+
+    // helicopter
+    var ht = clock.t*0.1;
+    var hr = act===ACT.BREACH? 60 : 100;
+    heli.position.set(Math.cos(ht)*hr, 50 + Math.sin(clock.t*0.5)*2, Math.sin(ht)*hr);
+    heli.rotation.y = -ht + Math.PI/2;
+    heli.userData.rotor.rotation.y += dt*30;
+
+    // dinos
+    enclosures.forEach(function(en){
+      en.dinos.forEach(function(d){
+        var ud = d.userData;
+        if (ud.escaped && !ud.tranq){
+          // run toward target (visitor center)
+          var tx = ud.target ? ud.target.x : 0;
+          var tz = ud.target ? ud.target.z : 0;
+          var dx = tx - d.position.x, dz = tz - d.position.z;
+          var dist = Math.sqrt(dx*dx+dz*dz);
+          var ang = Math.atan2(dz,dx);
+          d.rotation.y = ang;
+          if (dist > 4){
+            var sp = ud.speed*1.6;
+            d.position.x += Math.cos(ang)*sp*dt;
+            d.position.z += Math.sin(ang)*sp*dt;
+          } else {
+            // wander near plaza
+            ud.heading += (rnd()-0.5)*0.3;
+            d.rotation.y = ud.heading;
+            d.position.x += Math.cos(ud.heading)*ud.speed*dt;
+            d.position.z += Math.sin(ud.heading)*ud.speed*dt;
+          }
+        } else if (ud.tranq){
+          // walk back toward target slowly
+          var tx2 = ud.target ? ud.target.x : en.cx;
+          var tz2 = ud.target ? ud.target.z : en.cz;
+          var dx2 = tx2 - d.position.x, dz2 = tz2 - d.position.z;
+          var dist2 = Math.sqrt(dx2*dx2+dz2*dz2);
+          if (dist2 > 1){
+            var ang2 = Math.atan2(dz2,dx2);
+            d.rotation.y = ang2;
+            var sp2 = ud.speed*0.6;
+            d.position.x += Math.cos(ang2)*sp2*dt;
+            d.position.z += Math.sin(ang2)*sp2*dt;
+          }
+        } else {
+          // wander within enclosure
+          ud.heading += (rnd()-0.5)*0.4*dt*5;
+          d.rotation.y = ud.heading;
+          var nx = d.position.x + Math.cos(ud.heading)*ud.speed*dt;
+          var nz = d.position.z + Math.sin(ud.heading)*ud.speed*dt;
+          var c = clampToEnclosure(en, nx, nz);
+          if (c.x !== nx || c.z !== nz){ ud.heading += Math.PI; }
+          d.position.x = c.x; d.position.z = c.z;
+        }
+        d.position.y = ground(d.position.x, d.position.z);
+        // bob
+        ud.bobPhase += dt*ud.speed*1.5;
+        d.position.y += Math.sin(ud.bobPhase)*0.06;
+        // leg waggle for bipeds
+        if (ud.legL && ud.legR){
+          ud.legL.rotation.x = Math.sin(ud.bobPhase)*0.5;
+          ud.legR.rotation.x = -Math.sin(ud.bobPhase)*0.5;
+        }
+        // T-Rex jaw chomp
+        if (ud.kind==='trex' && ud.jaw){
+          ud.jaw.rotation.x = -Math.abs(Math.sin(clock.t*2.0))*0.25;
+        }
+      });
+    });
+
+    // tourists scatter during BREACH
+    tourists.forEach(function(t){
+      var ud = t.userData;
+      if (act===ACT.BREACH){
+        // run away from plaza outward
+        var ang = Math.atan2(t.position.z - 0, t.position.x - 0);
+        if (ud.fearAng===undefined){ ud.fearAng = ang + (rnd()-0.5)*0.5; }
+        t.rotation.y = ud.fearAng;
+        t.position.x += Math.cos(ud.fearAng)*ud.speed*1.6*dt;
+        t.position.z += Math.sin(ud.fearAng)*ud.speed*1.6*dt;
+      } else {
+        ud.fearAng = undefined;
+        // mill around plaza
+        ud.heading += (rnd()-0.5)*0.5*dt*5;
+        t.rotation.y = ud.heading;
+        var nx = t.position.x + Math.cos(ud.heading)*ud.speed*dt;
+        var nz = t.position.z + Math.sin(ud.heading)*ud.speed*dt;
+        var dr = Math.sqrt(nx*nx+nz*nz);
+        if (dr > 16){ ud.heading += Math.PI; }
+        else { t.position.x = nx; t.position.z = nz; }
+      }
+      t.position.y = ground(t.position.x, t.position.z) + 1;
+      ud.bobPhase += dt*ud.speed*2;
+      if (ud.legL && ud.legR){
+        ud.legL.rotation.x = Math.sin(ud.bobPhase)*0.5;
+        ud.legR.rotation.x = -Math.sin(ud.bobPhase)*0.5;
+      }
+    });
+
+    // rangers converge during BREACH
+    rangers.forEach(function(r,i){
+      var ud = r.userData;
+      var target = null;
+      if (act===ACT.BREACH){
+        var en = enclosures.find(function(e){return e.code===breachedFirst;});
+        if (en && en.dinos[0]){ target = {x:en.dinos[0].position.x + Math.cos(i)*6, z:en.dinos[0].position.z + Math.sin(i)*6}; }
+      }
+      if (target){
+        var dx = target.x - r.position.x, dz = target.z - r.position.z;
+        var ang = Math.atan2(dz,dx);
+        r.rotation.y = ang;
+        r.position.x += Math.cos(ang)*ud.speed*dt;
+        r.position.z += Math.sin(ang)*ud.speed*dt;
+      } else {
+        ud.heading += (rnd()-0.5)*0.5*dt*5;
+        r.rotation.y = ud.heading;
+        r.position.x += Math.cos(ud.heading)*ud.speed*0.4*dt;
+        r.position.z += Math.sin(ud.heading)*ud.speed*0.4*dt;
+      }
+      r.position.y = ground(r.position.x, r.position.z) + 1;
+      ud.bobPhase += dt*ud.speed*2;
+      if (ud.legL && ud.legR){
+        ud.legL.rotation.x = Math.sin(ud.bobPhase)*0.5;
+        ud.legR.rotation.x = -Math.sin(ud.bobPhase)*0.5;
+      }
+    });
+
+    // fence falls during BREACH, repair after
+    enclosures.forEach(function(en){
+      en.poles.forEach(function(p){
+        if (p.userData.fall && p.rotation.z > -Math.PI/2){
+          p.rotation.z -= dt*2;
+        }
+        if (p.userData.repair && p.rotation.z < 0){
+          p.rotation.z += dt*1.5; if (p.rotation.z>0) p.rotation.z=0;
+        }
+      });
+    });
+
+    // storm
+    updateStorm(dt);
+
+    // PIP cameras
+    if (act!==ACT.CEREMONY){
+      pip1El.style.display='block';
+      // dashcam = jeep[0]
+      var jp = jeeps[0];
+      pipCamA.position.set(jp.position.x + Math.cos(jp.rotation.y)*0.5, jp.position.y + 1.6, jp.position.z + Math.sin(jp.rotation.y)*0.5);
+      pipCamA.lookAt(jp.position.x + Math.cos(jp.rotation.y)*8, jp.position.y + 1.2, jp.position.z + Math.sin(jp.rotation.y)*8);
+      pip1Lbl.textContent = act===ACT.BREACH? 'DASHCAM-EVAC' : 'TOUR DASHCAM';
+    } else {
+      pip1El.style.display='none';
+    }
+
+    // Render main
+    renderer.setViewport(0,0,window.innerWidth,window.innerHeight);
+    renderer.setScissor(0,0,window.innerWidth,window.innerHeight);
+    renderer.setScissorTest(false);
+    renderer.render(scene, mainCam);
+
+    // Render PIPs by drawing small viewport into the canvas, then copying to PIP canvas
+    if (pip1El.style.display === 'block'){
+      drawPip(pipCamA, pip1Ctx, 200, 120);
+    }
+    if (pip2El.style.display === 'block'){
+      // PIP B: helicopter view OR talking head
+      if (pip2Lbl.textContent === 'EXPERT FEED'){
+        pipCamB.position.set(503, 50.5, 506); // looking at headDasari
+        headDasari.visible = true;
+        headReg.visible = false; headMaya.visible=false; headDirector.visible=false;
+        // talk
+        if (headDasari.userData.mouth) headDasari.userData.mouth.scale.y = 1 + Math.abs(Math.sin(clock.t*9))*1.5;
+        pipCamB.lookAt(506, 50, 500);
+      } else if (pip2Lbl.textContent === 'DIRECTOR FEED'){
+        headDirector.visible = true; headReg.visible=false; headMaya.visible=false; headDasari.visible=false;
+        if (headDirector.userData.mouth) headDirector.userData.mouth.scale.y = 1 + Math.abs(Math.sin(clock.t*9))*1.5;
+        pipCamB.position.set(509, 50.5, 506);
+        pipCamB.lookAt(509, 50, 500);
+      } else {
+        // heli cam
+        headDasari.visible=false; headDirector.visible=false; headReg.visible=false; headMaya.visible=false;
+        pipCamB.position.copy(heli.position);
+        pipCamB.lookAt(0,4,0);
+      }
+      drawPip(pipCamB, pip2Ctx, 200, 120);
+    }
+
+    requestAnimationFrame(step);
+  }
+
+  // helper: render scene with given camera into a small region of the renderer, copy to pip canvas
+  var pipRT = new THREE.WebGLRenderTarget(200, 120);
+  function drawPip(cam, ctx, w, h){
+    cam.aspect = w/h; cam.updateProjectionMatrix();
+    renderer.setRenderTarget(pipRT);
+    renderer.render(scene, cam);
+    renderer.setRenderTarget(null);
+    // read pixels
+    var pixels = new Uint8Array(w*h*4);
+    renderer.readRenderTargetPixels(pipRT, 0, 0, w, h, pixels);
+    var img = ctx.getImageData(0,0,w,h);
+    // flip Y
+    for (var y=0;y<h;y++){
+      for (var x=0;x<w;x++){
+        var srcIdx = ((h-1-y)*w + x)*4;
+        var dstIdx = (y*w + x)*4;
+        img.data[dstIdx]   = pixels[srcIdx];
+        img.data[dstIdx+1] = pixels[srcIdx+1];
+        img.data[dstIdx+2] = pixels[srcIdx+2];
+        img.data[dstIdx+3] = 255;
+      }
+    }
+    ctx.putImageData(img,0,0);
+    // overlay scanline
+    ctx.fillStyle='rgba(255,255,255,0.05)';
+    for (var sy=0; sy<h; sy+=2){ ctx.fillRect(0,sy,w,1); }
+  }
+
+  // resize
+  window.addEventListener('resize', function(){
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    mainCam.aspect = aspect();
+    mainCam.updateProjectionMatrix();
+  });
+
+  // initial ticker
+  pushTicker('Live coverage from Isla Aurora — JPN broadcast in progress.');
+  pushTicker('Today\'s weather: clear with a chance of paleo.');
+  pushTicker('Attendance: 42,318 visitors — Up 12% from last quarter.');
+  pushTicker('Coming up: Big Doris feeding livestream, 14:00 sharp.');
+
+  step();
+
+})();
+</script>
+</body>
+</html>

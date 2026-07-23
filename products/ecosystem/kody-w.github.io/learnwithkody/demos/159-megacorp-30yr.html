@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXLOGIC — 30 Year Saga (Round 16 EPOCH)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0e16;color:#e6f0fa;font-family:-apple-system,Helvetica,Arial,sans-serif}
+canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none;font-size:12px;letter-spacing:.04em}
+#erastamp{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(8,12,22,.78);border:1px solid #2c5577;padding:8px 22px;border-radius:4px;font-weight:700;font-size:14px;letter-spacing:.18em;text-shadow:0 0 8px #44aaff;color:#bfe7ff;min-width:340px;text-align:center}
+#cycleinfo{position:absolute;top:54px;left:50%;transform:translateX(-50%);font-size:10px;color:#7ad;letter-spacing:.18em;background:rgba(8,12,22,.6);padding:3px 14px;border-radius:3px}
+#yearcount{position:absolute;top:14px;right:14px;background:rgba(8,12,22,.78);border:1px solid #2c5577;padding:8px 14px;border-radius:4px;color:#9fd;min-width:230px;text-align:right}
+#minimap{position:absolute;top:60px;left:14px;background:rgba(8,12,22,.85);border:1px solid #2c5577;border-radius:4px}
+#stockchart{position:absolute;top:60px;right:14px;background:rgba(8,12,22,.85);border:1px solid #2c5577;border-radius:4px}
+#featured{position:absolute;bottom:60px;left:14px;background:rgba(8,12,22,.85);border:1px solid #2c5577;padding:8px 14px;border-radius:4px;max-width:380px;line-height:1.5}
+#cammeta{position:absolute;bottom:60px;right:14px;background:rgba(8,12,22,.85);border:1px solid #2c5577;padding:6px 12px;border-radius:4px;font-size:11px;color:#7af;letter-spacing:.14em}
+#chyron{position:absolute;bottom:0;left:0;right:0;height:36px;background:linear-gradient(180deg,rgba(8,12,22,.4),rgba(8,12,22,.95));border-top:1px solid #2c5577;overflow:hidden;display:flex;align-items:center}
+#chyronlabel{flex-shrink:0;background:#2c5577;color:#fff;padding:6px 14px;font-weight:700;letter-spacing:.18em;font-size:11px;height:100%;display:flex;align-items:center}
+#chyrontext{white-space:nowrap;padding-left:30px;animation:scroll 42s linear infinite;color:#cfe;font-weight:600}
+@keyframes scroll{from{transform:translateX(100%)}to{transform:translateX(-100%)}}
+.label{color:#fbb;font-weight:700;letter-spacing:.14em}
+.k{color:#9cf}
+#legend{position:absolute;top:250px;left:14px;background:rgba(8,12,22,.7);border:1px solid #2c5577;padding:6px 10px;border-radius:4px;font-size:10px;color:#9bd;line-height:1.6;max-width:180px}
+</style>
+</head>
+<body>
+<!-- ROUND16_EPOCH v1 -->
+<div id="hud">
+<div id="erastamp">YEAR 1 — GARAGE FOUNDED</div>
+<div id="cycleinfo">CYCLE 1 / NEXLOGIC INC. · LATTICE</div>
+<div id="yearcount">YEAR 1 of 30 · STOCK $1.00</div>
+<canvas id="minimap" width="190" height="190"></canvas>
+<canvas id="stockchart" width="260" height="130"></canvas>
+<div id="legend">CAMPUS LEGEND<br>· garage · office · tower<br>· server · campus · sat · lot</div>
+<div id="featured"><span class="label">WHO IS</span> Maya Chen — Co-founder &amp; CEO since year 1</div>
+<div id="cammeta">CAM 01 / GARAGE EXTERIOR</div>
+<div id="chyron"><div id="chyronlabel">NEXLOGIC LIVE</div><div id="chyrontext">From garage to legacy — every 30 years a new product line. Watching a tech company live a full life cycle.</div></div>
+</div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+var W = window, D = document, T = THREE;
+
+// ============================================================
+// CONSTANTS, ERAS, NAMED CAST
+// ============================================================
+var CYCLE_MS = 600000; // 10 min real == 30 sim years
+var SIM_YEARS = 30;
+
+var ERAS = [
+  [1,  'GARAGE FOUNDED'],
+  [3,  'FIRST OFFICE'],
+  [7,  'SERIES B'],
+  [12, 'IPO'],
+  [18, 'CAMPUS OPENS'],
+  [22, 'GLOBAL EXPANSION'],
+  [26, 'ANTITRUST CASE'],
+  [30, 'REINVENTION']
+];
+
+// 10 featured cast: [name, role, joinedYear, color]
+var NAMED = [
+  ['Maya Chen',     'Co-founder & CEO',         1, 0x44aaff],
+  ['Devraj Patel',  'Co-founder & Chief Arch.', 1, 0xff8844],
+  ['Linus Holt',    'Employee #1 to VP Eng',    1, 0x88dd44],
+  ['Mira Kapoor',   'Lead Designer',            4, 0xff44aa],
+  ['Jordan Park',   'CTO',                      5, 0x44ddcc],
+  ['Yelena Voss',   'COO',                      8, 0xddcc44],
+  ['Mr. Whitford',  'Board Member',             8, 0xa3a3a3],
+  ['Sasha Lin',     'Intern to VP Platform',   12, 0xaa88ff],
+  ['Nadia Brooks',  'General Counsel',         25, 0x66aa66],
+  ['Tomas Rivero',  'Replacement CEO',         26, 0xff6666]
+];
+
+// Yearly chyron events
+var EVENTS = [
+  [1, 'Year 1 — Maya Chen and Devraj Patel found NEXLOGIC in a Cupertino garage. First product: a build tool called Lattice.'],
+  [2, 'Year 2 — Linus Holt joins as Employee #1. The whiteboard fills up with sticky notes that all say, in some form, ship it.'],
+  [3, 'Year 3 — Series A closes at $4M. NEXLOGIC moves into a small office above a sandwich shop. Bean bags survive the move.'],
+  [4, 'Year 4 — Mira Kapoor hired as lead designer. Logo gets its first refresh. Devraj cries a little, in a good way.'],
+  [5, 'Year 5 — Jordan Park joins as CTO. Devraj happily rotates to Chief Architect and stops going to all the meetings.'],
+  [6, 'Year 6 — Lattice 2.0 ships. First office Christmas party in a karaoke room. Yelena, not yet hired, is reportedly there.'],
+  [7, 'Year 7 — Series B closes at $40M, Devraj steps down as CEO, Maya promotes Linus to VP Eng.'],
+  [8, 'Year 8 — Yelena Voss hired as COO. Mr. Whitford joins the board. He has opinions about the lobby plant.'],
+  [10,'Year 10 — Headcount hits 200. NEXLOGIC ships its cloud platform Reactor. Servers move into a real cold-aisle room.'],
+  [12,'Year 12 — IPO. Maya rings the bell. NXLG opens at $42 and closes at $61. Linus prints out his offer letter and frames it.'],
+  [13,'Year 13 — Sasha Lin joins as a summer intern. Files a perfectly formatted bug report on day three. Whitford notices.'],
+  [14,'Year 14 — Quiet acquisition season. Reactor becomes the default platform for a generation of startups.'],
+  [16,'Year 16 — A documentary gets made about NEXLOGIC. Sasha appears as the intern who runs the all-hands. She owns it.'],
+  [18,'Year 18 — NEXLOGIC Tower opens. 28 floors of glass on the bay. Maya keeps her old garage chair on the top floor.'],
+  [20,'Year 20 — Devraj retires as Chief Architect. Joins the board as Founding Engineer. Still answers pings on weekends.'],
+  [22,'Year 22 — Global expansion. Tokyo, Berlin, Sao Paulo offices. The campus has its own bakery now. The bakery has merch.'],
+  [24,'Year 24 — Sasha Lin promoted to VP, Platform. Stock hits an all-time high. Mira designs a new logo, refuses to discuss it.'],
+  [25,'Year 25 — Regulators open an inquiry. Nadia Brooks hired as General Counsel. Brings dogs to the office on Fridays.'],
+  [26,'Year 26 — Antitrust case. Maya testifies calmly. NEXLOGIC agrees to a regulatory adjustment, no admission of wrongdoing.'],
+  [27,'Year 27 — Quiet period. Two satellite buildings go dark for the season. Layoffs handled with generous, well-explained packages.'],
+  [28,'Year 28 — Maya steps down as CEO. Tomas Rivero, formerly head of NEXLOGIC EU, takes the chair. Inherits the garage chair too.'],
+  [29,'Year 29 — Mr. Whitford retires from the board after 21 years of unsolicited advice that was, annoyingly, usually correct.'],
+  [30,'Year 30 — Reinvention. The garage is rebuilt as an open research lab. Maya teaches first-year engineers on Tuesdays.']
+];
+
+var PRODUCTS = ['Lattice','Reactor','Halo','Quantum','Helios','Atlas','Mirror','Forge','Pulse','Ember'];
+
+// ============================================================
+// DISPOSABLE REGISTRY
+// ============================================================
+var DISP = [];
+function track(o){ DISP.push(o); return o; }
+function disposeAll(){
+  for(var i=0;i<DISP.length;i++){
+    var d = DISP[i];
+    try{
+      if(d.geometry && d.geometry.dispose) d.geometry.dispose();
+      if(d.material){
+        if(Array.isArray(d.material)){
+          for(var j=0;j<d.material.length;j++){
+            if(d.material[j] && d.material[j].dispose) d.material[j].dispose();
+          }
+        } else if(d.material.dispose){ d.material.dispose(); }
+      }
+      if(d.dispose && !d.geometry && !d.material) d.dispose();
+      if(d.parent) d.parent.remove(d);
+    }catch(e){}
+  }
+  DISP.length = 0;
+}
+W.addEventListener('beforeunload', disposeAll);
+W.__NEXLOGIC_DISPOSE = disposeAll;
+
+// ============================================================
+// LOCALSTORAGE MEMORY
+// ============================================================
+var MEM_KEY = 'nexlogic_memory_v1';
+function defaultMem(){
+  return {
+    cycle: 1,
+    productLine: 'Lattice',
+    employees: NAMED.map(function(n){
+      return { name:n[0], role:n[1], joinedYear:n[2], tenure:0, state:'active' };
+    })
+  };
+}
+function loadMem(){
+  try{
+    var raw = localStorage.getItem(MEM_KEY);
+    if(!raw) return defaultMem();
+    var m = JSON.parse(raw);
+    if(!m || !m.employees || !Array.isArray(m.employees) || m.employees.length < 10){
+      return defaultMem();
+    }
+    if(typeof m.cycle !== 'number') m.cycle = 1;
+    if(!m.productLine) m.productLine = PRODUCTS[(m.cycle-1) % PRODUCTS.length];
+    return m;
+  }catch(e){ return defaultMem(); }
+}
+function saveMem(){
+  try{ localStorage.setItem(MEM_KEY, JSON.stringify(MEMORY)); }catch(e){}
+}
+
+var MEMORY = loadMem();
+saveMem(); // ensure key is present immediately
+
+function reseed(){
+  // Advance roles, age out founders
+  MEMORY.cycle = (MEMORY.cycle || 1) + 1;
+  for(var i=0;i<MEMORY.employees.length;i++){
+    MEMORY.employees[i].tenure = (MEMORY.employees[i].tenure || 0) + 30;
+  }
+  // Co-founders age out
+  MEMORY.employees[0].role = 'Founder Emeritus & Educator';
+  MEMORY.employees[0].state = 'advisor';
+  MEMORY.employees[1].role = 'Founder Emeritus';
+  MEMORY.employees[1].state = 'retired';
+  // Linus rotates from VP Eng to CTO Emeritus
+  MEMORY.employees[2].role = 'CTO Emeritus';
+  // Employee #7 (1-indexed) — Mr. Whitford — becomes CEO 20 years later
+  MEMORY.employees[6].role = 'Chairman & CEO (succession)';
+  MEMORY.employees[6].state = 'active';
+  // Sasha rises to President
+  MEMORY.employees[7].role = 'President';
+  // New product line
+  MEMORY.productLine = PRODUCTS[(MEMORY.cycle - 1) % PRODUCTS.length];
+  saveMem();
+}
+
+// ============================================================
+// SCENE / RENDERER / CAMERA
+// ============================================================
+var scene = new T.Scene();
+scene.background = new T.Color(0x0c1422);
+scene.fog = new T.FogExp2(0x0c1422, 0.0065);
+
+var renderer = new T.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(W.devicePixelRatio || 1);
+renderer.setSize(W.innerWidth, W.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = T.PCFSoftShadowMap;
+renderer.outputColorSpace = T.SRGBColorSpace;
+D.body.appendChild(renderer.domElement);
+
+var camera = new T.PerspectiveCamera(50, W.innerWidth/W.innerHeight, 0.1, 1200);
+
+W.addEventListener('resize', function(){
+  camera.aspect = W.innerWidth/W.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(W.innerWidth, W.innerHeight);
+});
+
+// LIGHTS
+var sun = new T.DirectionalLight(0xfff0d0, 1.05);
+sun.position.set(60, 110, 50);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+var sc = sun.shadow.camera;
+sc.left=-110; sc.right=110; sc.top=110; sc.bottom=-110; sc.near=0.5; sc.far=320;
+scene.add(sun);
+
+var ambient = new T.AmbientLight(0x4a5c75, 0.45);
+scene.add(ambient);
+
+var hemi = new T.HemisphereLight(0x88aacc, 0x2a3344, 0.45);
+scene.add(hemi);
+
+// Sky-ish backdrop hill
+var hillMat = track(new T.MeshStandardMaterial({ color:0x1a2a3a, roughness:1 }));
+for(var hi=0; hi<3; hi++){
+  var hg = track(new T.SphereGeometry(60+hi*15, 16, 8, 0, Math.PI*2, 0, Math.PI/2));
+  var hm = new T.Mesh(hg, hillMat);
+  hm.position.set(-40 + hi*30, -2, -120 - hi*8);
+  hm.scale.set(1.6, 0.5, 1);
+  scene.add(hm);
+  track(hm);
+}
+
+// GROUND
+var groundMat = track(new T.MeshStandardMaterial({ color:0x222a35, roughness:0.95 }));
+var groundGeo = track(new T.PlaneGeometry(420, 420));
+var ground = new T.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+track(ground);
+
+// ROAD
+var roadMat = track(new T.MeshStandardMaterial({ color:0x14181c, roughness:0.85 }));
+var roadGeo = track(new T.PlaneGeometry(420, 14));
+var road = new T.Mesh(roadGeo, roadMat);
+road.rotation.x = -Math.PI/2;
+road.position.set(0, 0.01, 60);
+scene.add(road);
+track(road);
+// Lane markings
+var laneMat = track(new T.MeshBasicMaterial({ color:0xeeee99 }));
+for(var lm=-200; lm<=200; lm+=8){
+  var lg = track(new T.PlaneGeometry(3, 0.3));
+  var lp = new T.Mesh(lg, laneMat);
+  lp.rotation.x = -Math.PI/2;
+  lp.position.set(lm, 0.02, 60);
+  scene.add(lp);
+  track(lp);
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function box(w, h, d, color, opts){
+  var g = track(new T.BoxGeometry(w, h, d));
+  var m = track(new T.MeshStandardMaterial({
+    color: color,
+    roughness: (opts && opts.rough!=null) ? opts.rough : 0.7,
+    metalness: (opts && opts.metal!=null) ? opts.metal : 0.05,
+    transparent: !!(opts && opts.transparent),
+    opacity: (opts && opts.opacity!=null) ? opts.opacity : 1,
+    emissive: (opts && opts.emissive!=null) ? opts.emissive : 0,
+    emissiveIntensity: (opts && opts.emissiveIntensity!=null) ? opts.emissiveIntensity : 0
+  }));
+  var mesh = new T.Mesh(g, m);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return track(mesh);
+}
+function cyl(rt, rb, h, color, segs){
+  var g = track(new T.CylinderGeometry(rt, rb, h, segs || 12));
+  var m = track(new T.MeshStandardMaterial({ color:color, roughness:0.7 }));
+  var mesh = new T.Mesh(g, m);
+  mesh.castShadow = true;
+  return track(mesh);
+}
+function makeSign(text, color, w, h){
+  var c = D.createElement('canvas');
+  c.width = 256; c.height = 64;
+  var ctx = c.getContext('2d');
+  ctx.fillStyle = '#' + color.toString(16).padStart(6,'0');
+  ctx.fillRect(0,0,256,64);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px Helvetica';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 34);
+  var tex = track(new T.CanvasTexture(c));
+  var mat = track(new T.MeshBasicMaterial({ map:tex, transparent:true }));
+  var geo = track(new T.PlaneGeometry(w, h));
+  var m = new T.Mesh(geo, mat);
+  return track(m);
+}
+
+// ============================================================
+// BUILDINGS — 8 era structures, persistent
+// ============================================================
+var BUILDINGS = new T.Group();
+scene.add(BUILDINGS);
+
+// (1) GARAGE — year 1+
+var garage = new T.Group();
+var garageBase = box(8, 4, 6, 0xb09060, { rough:0.9 });
+garageBase.position.y = 2;
+garage.add(garageBase);
+var garageRoof = box(9, 0.4, 7, 0x6a4828);
+garageRoof.position.y = 4.2;
+garage.add(garageRoof);
+var garageDoor = box(5, 3, 0.2, 0x4a3a2a);
+garageDoor.position.set(0, 1.5, 3.05);
+garage.add(garageDoor);
+var garageWindow1 = box(1.4, 1, 0.1, 0x88ccee, { emissive:0x224466, emissiveIntensity:0.3 });
+garageWindow1.position.set(-3, 2.3, 3.05);
+garage.add(garageWindow1);
+// Garage sign
+var garageSign = makeSign('NEXLOGIC', 0x224466, 4, 0.7);
+garageSign.position.set(0, 4.5, 3.1);
+garage.add(garageSign);
+garage.position.set(-30, 0, 0);
+BUILDINGS.add(garage);
+
+// Garage interior props (whiteboard, desks, bean bags)
+var garageInterior = new T.Group();
+var whiteboard = box(3, 2, 0.05, 0xffffff);
+whiteboard.position.set(0, 2.5, -2.85);
+garageInterior.add(whiteboard);
+// Whiteboard scribbles
+for(var ws=0; ws<6; ws++){
+  var sc1 = box(0.3 + Math.random()*0.6, 0.05, 0.02, 0x224466);
+  sc1.position.set(-1 + ws*0.4, 2.2 + (ws%2)*0.6, -2.82);
+  garageInterior.add(sc1);
+}
+var desk1 = box(2.5, 0.1, 1.2, 0x664420);
+desk1.position.set(-2, 0.85, 0);
+garageInterior.add(desk1);
+var desk2 = box(2.5, 0.1, 1.2, 0x664420);
+desk2.position.set(2, 0.85, 0);
+garageInterior.add(desk2);
+// Monitors
+for(var mn=0; mn<2; mn++){
+  var mon = box(1, 0.7, 0.05, 0x000000, { emissive:0x88ccee, emissiveIntensity:0.5 });
+  mon.position.set(mn===0 ? -2 : 2, 1.4, -0.3);
+  garageInterior.add(mon);
+}
+// Bean bags
+var beanBag1 = cyl(0.7, 0.7, 0.4, 0xcc4422, 8);
+beanBag1.position.set(-3, 0.2, 1.5);
+garageInterior.add(beanBag1);
+var beanBag2 = cyl(0.7, 0.7, 0.4, 0x4488aa, 8);
+beanBag2.position.set(3, 0.2, 1.5);
+garageInterior.add(beanBag2);
+garageInterior.position.copy(garage.position);
+BUILDINGS.add(garageInterior);
+
+// (2) SMALL OFFICE — year 3+
+var office1 = new T.Group();
+var o1base = box(14, 4, 9, 0xc8c0a8);
+o1base.position.y = 2;
+office1.add(o1base);
+var o1roof = box(15, 0.3, 10, 0x382818);
+o1roof.position.y = 4.2;
+office1.add(o1roof);
+for(var oi=-2; oi<=2; oi++){
+  var ow = box(1.5, 1.2, 0.1, 0x77bbdd, { emissive:0x224466, emissiveIntensity:0.3 });
+  ow.position.set(oi*2.5, 2.5, 4.55);
+  office1.add(ow);
+}
+var sign1 = makeSign('NEXLOGIC', 0x2266aa, 3.5, 0.6);
+sign1.position.set(0, 4.5, 4.65);
+office1.add(sign1);
+// Front cubicles indoors visible through windows
+for(var c1=-1; c1<=1; c1++){
+  var cubi = box(1.2, 1.2, 0.05, 0x556677);
+  cubi.position.set(c1*3, 1.5, 3.5);
+  office1.add(cubi);
+}
+office1.position.set(-12, 0, -10);
+BUILDINGS.add(office1);
+
+// (3) MID-RISE 3 FLOORS — year 7+
+var office2 = new T.Group();
+var o2base = box(14, 12, 11, 0x9aaab8);
+o2base.position.y = 6;
+office2.add(o2base);
+for(var f2=0; f2<3; f2++){
+  for(var i2=-3; i2<=3; i2++){
+    var w2 = box(1.4, 1.5, 0.05, 0x66aacc, { emissive:0x224466, emissiveIntensity:0.3 });
+    w2.position.set(i2*2, 2 + f2*4, 5.55);
+    office2.add(w2);
+    var w2b = box(1.4, 1.5, 0.05, 0x66aacc, { emissive:0x224466, emissiveIntensity:0.3 });
+    w2b.position.set(i2*2, 2 + f2*4, -5.55);
+    office2.add(w2b);
+  }
+}
+var sign2 = makeSign('NEXLOGIC', 0x2266aa, 5, 0.8);
+sign2.position.set(0, 11.2, 5.6);
+office2.add(sign2);
+office2.position.set(8, 0, -10);
+BUILDINGS.add(office2);
+
+// (4) 5-FLOOR GLASS BUILDING — year 12+
+var office3 = new T.Group();
+var o3base = box(16, 22, 13, 0x88aabb, { metal:0.2 });
+o3base.position.y = 11;
+office3.add(o3base);
+var o3glassMat = track(new T.MeshStandardMaterial({
+  color:0x2a4a6a, roughness:0.15, metalness:0.4,
+  transparent:true, opacity:0.85,
+  emissive:0x224466, emissiveIntensity:0.25
+}));
+var o3glassGeo = track(new T.BoxGeometry(15.6, 21.6, 0.1));
+var o3glassF = new T.Mesh(o3glassGeo, o3glassMat);
+o3glassF.position.set(0, 11, 6.55);
+office3.add(o3glassF);
+track(o3glassF);
+var o3glassB = new T.Mesh(o3glassGeo, o3glassMat);
+o3glassB.position.set(0, 11, -6.55);
+office3.add(o3glassB);
+track(o3glassB);
+var o3sign = makeSign('NEXLOGIC', 0x44aaff, 6, 1);
+o3sign.position.set(0, 21, 6.7);
+office3.add(o3sign);
+// IPO bell at year 12 — small bell shape
+var ipoStage = box(3, 0.5, 3, 0x884422);
+ipoStage.position.set(0, 0.25, 7);
+office3.add(ipoStage);
+var ipoBell = cyl(0.6, 0.8, 1.2, 0xddaa22, 8);
+ipoBell.position.set(0, 1, 7);
+office3.add(ipoBell);
+office3.position.set(28, 0, -8);
+BUILDINGS.add(office3);
+
+// (5) GLASS TOWER — year 18+
+var tower = new T.Group();
+var towerMat = track(new T.MeshStandardMaterial({
+  color:0x1c3a5e, roughness:0.1, metalness:0.55
+}));
+var towerGeo = track(new T.BoxGeometry(20, 60, 16));
+var towerMesh = new T.Mesh(towerGeo, towerMat);
+towerMesh.position.y = 30;
+towerMesh.castShadow = true;
+towerMesh.receiveShadow = true;
+tower.add(towerMesh);
+track(towerMesh);
+// Tower windows (instanced) — light up at night
+var winGeo = track(new T.PlaneGeometry(0.7, 1.0));
+var winMat = track(new T.MeshStandardMaterial({
+  color:0xffeeaa, emissive:0xffcc66, emissiveIntensity:0.6, side:T.DoubleSide
+}));
+var WIN_CAP = 18 * 4 * 9;
+var winMesh = new T.InstancedMesh(winGeo, winMat, WIN_CAP);
+var dummy = new T.Object3D();
+var wi = 0;
+for(var f3=0; f3<18; f3++){
+  for(var i3=-4; i3<=4; i3++){
+    if(wi>=WIN_CAP) break;
+    dummy.position.set(i3*1.0, 4 + f3*3, 8.05);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    winMesh.setMatrixAt(wi++, dummy.matrix);
+    if(wi>=WIN_CAP) break;
+    dummy.position.set(i3*1.0, 4 + f3*3, -8.05);
+    dummy.rotation.set(0, Math.PI, 0);
+    dummy.updateMatrix();
+    winMesh.setMatrixAt(wi++, dummy.matrix);
+  }
+  for(var i4=-3; i4<=3; i4++){
+    if(wi>=WIN_CAP) break;
+    dummy.position.set(10.05, 4 + f3*3, i4*1.0);
+    dummy.rotation.set(0, Math.PI/2, 0);
+    dummy.updateMatrix();
+    winMesh.setMatrixAt(wi++, dummy.matrix);
+    if(wi>=WIN_CAP) break;
+    dummy.position.set(-10.05, 4 + f3*3, i4*1.0);
+    dummy.rotation.set(0, -Math.PI/2, 0);
+    dummy.updateMatrix();
+    winMesh.setMatrixAt(wi++, dummy.matrix);
+  }
+}
+winMesh.count = wi;
+winMesh.instanceMatrix.needsUpdate = true;
+tower.add(winMesh);
+track(winMesh);
+// Per-instance "lit" colors for night flicker
+var winLitColor = new T.Color(0xffe9b0);
+var winDimColor = new T.Color(0x182030);
+for(var wic=0; wic<wi; wic++){
+  winMesh.setColorAt(wic, ((wic*7)%9 < 6) ? winLitColor : winDimColor);
+}
+if(winMesh.instanceColor) winMesh.instanceColor.needsUpdate = true;
+
+var towerLogo = makeSign('NEXLOGIC', 0x44aaff, 12, 2.4);
+towerLogo.position.set(0, 56, 8.2);
+tower.add(towerLogo);
+// Helipad
+var helipad = cyl(3, 3, 0.2, 0x222222, 16);
+helipad.position.set(0, 60.1, 0);
+tower.add(helipad);
+var helipadH = box(2, 0.05, 1, 0xffaa22, { emissive:0xffaa22, emissiveIntensity:0.6 });
+helipadH.position.set(0, 60.21, 0);
+tower.add(helipadH);
+tower.position.set(0, 0, -25);
+BUILDINGS.add(tower);
+
+// (6) CAMPUS BUILDINGS — year 22+ (4 supporting buildings)
+var campusBuildings = new T.Group();
+var campusBdgs = [];
+var campusWinMats = [];
+for(var ci=0; ci<4; ci++){
+  var cb = new T.Group();
+  var cbW = 14, cbH = 12 + (ci%2)*4, cbD = 12;
+  var cbMat = track(new T.MeshStandardMaterial({ color:0x556677, roughness:0.6, metalness:0.15 }));
+  var cbBaseGeo = track(new T.BoxGeometry(cbW, cbH, cbD));
+  var cbBase = new T.Mesh(cbBaseGeo, cbMat);
+  cbBase.position.y = cbH/2;
+  cbBase.castShadow = true;
+  cbBase.receiveShadow = true;
+  cb.add(cbBase);
+  track(cbBase);
+  // Windows — store material so we can dim later
+  var cbWinMat = track(new T.MeshStandardMaterial({
+    color:0x88ccee, emissive:0xffcc66, emissiveIntensity:0.4
+  }));
+  campusWinMats.push(cbWinMat);
+  for(var fc=0; fc<Math.floor(cbH/4); fc++){
+    for(var jc=-2; jc<=2; jc++){
+      var cbWG = track(new T.BoxGeometry(1.2, 1.4, 0.05));
+      var cbW1 = new T.Mesh(cbWG, cbWinMat);
+      cbW1.position.set(jc*2.5, 2 + fc*4, cbD/2 + 0.05);
+      cb.add(cbW1);
+      track(cbW1);
+      var cbW2 = new T.Mesh(cbWG, cbWinMat);
+      cbW2.position.set(jc*2.5, 2 + fc*4, -cbD/2 - 0.05);
+      cb.add(cbW2);
+      track(cbW2);
+    }
+  }
+  // Roof signage
+  var bldgNames = ['REACTOR','HALO','QUANTUM','HELIOS'];
+  var cbSign = makeSign(bldgNames[ci], 0x2266aa, 5, 0.8);
+  cbSign.position.set(0, cbH + 0.2, cbD/2 + 0.1);
+  cb.add(cbSign);
+  var angle = ci * Math.PI/2 + Math.PI/4;
+  cb.position.set(Math.cos(angle)*40, 0, Math.sin(angle)*40 - 25);
+  cb.rotation.y = -angle + Math.PI/2;
+  campusBuildings.add(cb);
+  campusBdgs.push(cb);
+}
+BUILDINGS.add(campusBuildings);
+
+// (7) SERVER ROOM — year 6+
+var serverRoom = new T.Group();
+var srBox = box(16, 5, 10, 0x2a2a2a, { rough:0.5, metal:0.3 });
+srBox.position.y = 2.5;
+serverRoom.add(srBox);
+// Cold-aisle: rows of racks with LEDs
+for(var rk=-3; rk<=3; rk++){
+  var rack = box(0.8, 3.5, 1.5, 0x1a1a1a, { metal:0.3, rough:0.4 });
+  rack.position.set(rk*1.2, 1.75, 0);
+  serverRoom.add(rack);
+  for(var ld=0; ld<6; ld++){
+    var ledColor = ld%2 ? 0x00ff66 : 0x00aaff;
+    var led = box(0.1, 0.1, 0.06, ledColor, { emissive:ledColor, emissiveIntensity:1.2 });
+    led.position.set(rk*1.2, 0.5 + ld*0.5, 0.78);
+    serverRoom.add(led);
+  }
+}
+// HVAC pipes overhead
+for(var pp=-2; pp<=2; pp++){
+  var pipe = cyl(0.25, 0.25, 9, 0x999999, 8);
+  pipe.rotation.z = Math.PI/2;
+  pipe.position.set(0, 4.5, pp*0.7);
+  serverRoom.add(pipe);
+}
+serverRoom.position.set(50, 0, 5);
+BUILDINGS.add(serverRoom);
+
+// (8) PARKING LOT (always visible from year 1)
+var parking = new T.Group();
+var pLot = box(40, 0.05, 20, 0x202020);
+pLot.position.y = 0.025;
+parking.add(pLot);
+for(var pl=-9; pl<=9; pl+=2){
+  var line = box(0.1, 0.06, 18, 0xeeeeee);
+  line.position.set(pl*1.5, 0.04, 0);
+  parking.add(line);
+}
+// Cars (shared materials per color)
+var carColors = [0xcc4444, 0x44aacc, 0xeeeeee, 0x222222, 0x88aa44, 0xffaa22, 0x6644cc];
+var carBodyMats = carColors.map(function(c){ return track(new T.MeshStandardMaterial({ color:c, roughness:0.4, metalness:0.3 })); });
+var carBodyGeo = track(new T.BoxGeometry(2.5, 1, 4));
+var carTopGeo = track(new T.BoxGeometry(1.8, 0.6, 2.2));
+var PARKED_CARS = [];
+for(var car=0; car<14; car++){
+  var cmat = carBodyMats[car % carBodyMats.length];
+  var cBody = new T.Mesh(carBodyGeo, cmat);
+  cBody.position.y = 0.5;
+  cBody.castShadow = true;
+  track(cBody);
+  var cTop = new T.Mesh(carTopGeo, cmat);
+  cTop.position.y = 1.1;
+  cTop.castShadow = true;
+  track(cTop);
+  var carGroup = new T.Group();
+  carGroup.add(cBody);
+  carGroup.add(cTop);
+  carGroup.position.set(((car%7)-3)*3, 0, (Math.floor(car/7))*5 - 2.5);
+  parking.add(carGroup);
+  PARKED_CARS.push(carGroup);
+}
+parking.position.set(-25, 0, 35);
+BUILDINGS.add(parking);
+
+// (9) SATELLITE OFFICE — year 22+
+var satellite = new T.Group();
+var satBase = box(8, 6, 8, 0xa9b8c8, { metal:0.2 });
+satBase.position.y = 3;
+satellite.add(satBase);
+for(var sf=0; sf<2; sf++){
+  for(var si=-1; si<=1; si++){
+    var sw = box(1, 1, 0.05, 0x99ccee, { emissive:0x224466, emissiveIntensity:0.4 });
+    sw.position.set(si*2, 1.5 + sf*2.5, 4.05);
+    satellite.add(sw);
+    var sw2 = box(1, 1, 0.05, 0x99ccee, { emissive:0x224466, emissiveIntensity:0.4 });
+    sw2.position.set(si*2, 1.5 + sf*2.5, -4.05);
+    satellite.add(sw2);
+  }
+}
+var satSign = makeSign('NEXLOGIC TOKYO', 0x2266aa, 4, 0.5);
+satSign.position.set(0, 6.4, 4.1);
+satellite.add(satSign);
+satellite.position.set(70, 0, 50);
+BUILDINGS.add(satellite);
+
+// (10) ANTITRUST HEARING ROOM — courthouse facade (year 25-28)
+var courthouse = new T.Group();
+var chBase = box(14, 9, 12, 0xddccaa, { rough:0.9 });
+chBase.position.y = 4.5;
+courthouse.add(chBase);
+// Columns
+for(var cl=-2; cl<=2; cl++){
+  var col = cyl(0.4, 0.4, 7, 0xeeeedd, 12);
+  col.position.set(cl*2.8, 3.5, 6.4);
+  courthouse.add(col);
+}
+var chRoof = box(15, 1.2, 13, 0xaa9988);
+chRoof.position.y = 9.6;
+courthouse.add(chRoof);
+var chPeak = box(8, 2, 0.4, 0xddccaa);
+chPeak.position.set(0, 10.2, 6.5);
+courthouse.add(chPeak);
+var chSign = makeSign('FEDERAL HEARING', 0x664422, 6, 0.7);
+chSign.position.set(0, 7.5, 6.5);
+courthouse.add(chSign);
+courthouse.position.set(70, 0, -45);
+BUILDINGS.add(courthouse);
+
+// CAFETERIA — open-air eating area, year 7+
+var cafeteria = new T.Group();
+var cafFloor = box(14, 0.1, 10, 0xc8aa88);
+cafFloor.position.y = 0.05;
+cafeteria.add(cafFloor);
+// Awning
+for(var aw=-2; aw<=2; aw++){
+  var awn = box(0.3, 0.1, 9, 0x224466);
+  awn.position.set(aw*3, 3.2, 0);
+  cafeteria.add(awn);
+  var awnPole = cyl(0.08, 0.08, 3.2, 0xaaaaaa, 6);
+  awnPole.position.set(aw*3, 1.6, 4.2);
+  cafeteria.add(awnPole);
+  var awnPole2 = cyl(0.08, 0.08, 3.2, 0xaaaaaa, 6);
+  awnPole2.position.set(aw*3, 1.6, -4.2);
+  cafeteria.add(awnPole2);
+}
+// Tables
+for(var tt=-1; tt<=1; tt++){
+  var cafTable = cyl(1.0, 1.0, 0.1, 0xeeeeee, 12);
+  cafTable.position.set(tt*4, 0.85, 0);
+  cafeteria.add(cafTable);
+  var cafLeg = cyl(0.1, 0.1, 0.8, 0x777777, 6);
+  cafLeg.position.set(tt*4, 0.4, 0);
+  cafeteria.add(cafLeg);
+  // Chairs around
+  for(var chc=0; chc<4; chc++){
+    var chAng = chc * Math.PI/2;
+    var chair = cyl(0.4, 0.4, 0.1, 0x884422, 8);
+    chair.position.set(tt*4 + Math.cos(chAng)*1.6, 0.5, Math.sin(chAng)*1.6);
+    cafeteria.add(chair);
+  }
+}
+cafeteria.position.set(15, 0, 12);
+BUILDINGS.add(cafeteria);
+
+// LOBBY / RECEPTION — year 18+ (all-hands stage)
+var lobby = new T.Group();
+var lobbyFloor = box(20, 0.1, 12, 0x554433);
+lobbyFloor.position.y = 0.05;
+lobby.add(lobbyFloor);
+var stage = box(8, 0.5, 4, 0x443322);
+stage.position.set(0, 0.3, -3);
+lobby.add(stage);
+var stageScreen = box(7, 3, 0.1, 0x000000, { emissive:0x224466, emissiveIntensity:0.6 });
+stageScreen.position.set(0, 2.2, -4.9);
+lobby.add(stageScreen);
+// Audience seats
+for(var ar=0; ar<4; ar++){
+  for(var ac=-3; ac<=3; ac++){
+    var seat = box(0.7, 0.4, 0.7, 0x224466);
+    seat.position.set(ac*1.0, 0.3, 0.5 + ar*1.2);
+    lobby.add(seat);
+  }
+}
+lobby.position.set(0, 0, 12);
+BUILDINGS.add(lobby);
+
+// Decorative trees
+function makeTree(){
+  var trunkG = track(new T.CylinderGeometry(0.3, 0.4, 2, 6));
+  var trunkM = track(new T.MeshStandardMaterial({ color:0x4a3422 }));
+  var trunk = new T.Mesh(trunkG, trunkM);
+  trunk.position.y = 1;
+  var leafG = track(new T.SphereGeometry(1.4, 8, 6));
+  var leafM = track(new T.MeshStandardMaterial({ color:0x335522, roughness:0.95 }));
+  var leaf = new T.Mesh(leafG, leafM);
+  leaf.position.y = 2.6;
+  var g = new T.Group();
+  g.add(trunk);
+  g.add(leaf);
+  trunk.castShadow = true;
+  leaf.castShadow = true;
+  return track(g);
+}
+var trees = [];
+for(var ti=0; ti<28; ti++){
+  var tt2 = makeTree();
+  var tang = (ti / 28) * Math.PI * 2 + (ti%3)*0.2;
+  var tr = 60 + ((ti*7)%5) * 8;
+  tt2.position.set(Math.cos(tang)*tr, 0, Math.sin(tang)*tr - 10);
+  tt2.scale.setScalar(0.7 + ((ti*13)%10)/10*0.7);
+  scene.add(tt2);
+  trees.push(tt2);
+}
+
+// Garden / lab benches for revival year 30
+var labBenches = new T.Group();
+for(var lb=-2; lb<=2; lb++){
+  var bench = box(2.4, 0.8, 1.2, 0xeeeeee, { rough:0.4 });
+  bench.position.set(lb*3 - 30, 0.4, 5);
+  labBenches.add(bench);
+  var benchTop = box(2.4, 0.05, 1.2, 0x88ccee, { emissive:0x224466, emissiveIntensity:0.3 });
+  benchTop.position.set(lb*3 - 30, 0.83, 5);
+  labBenches.add(benchTop);
+}
+BUILDINGS.add(labBenches);
+
+// ============================================================
+// CHARACTERS — 10 named featured cast
+// ============================================================
+function makeCharacter(color){
+  var g = new T.Group();
+  var bodyGeo = track(new T.CapsuleGeometry(0.32, 0.9, 4, 8));
+  var bodyMat = track(new T.MeshStandardMaterial({ color:color, roughness:0.7 }));
+  var body = new T.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.85;
+  body.castShadow = true;
+  g.add(body);
+  var headGeo = track(new T.SphereGeometry(0.27, 12, 10));
+  var headMat = track(new T.MeshStandardMaterial({ color:0xffd6a5, roughness:0.85 }));
+  var head = new T.Mesh(headGeo, headMat);
+  head.position.y = 1.65;
+  head.castShadow = true;
+  g.add(head);
+  var hairGeo = track(new T.SphereGeometry(0.28, 12, 8, 0, Math.PI*2, 0, Math.PI/2));
+  var hairMat = track(new T.MeshStandardMaterial({ color:0x2a1a14, roughness:0.95 }));
+  var hair = new T.Mesh(hairGeo, hairMat);
+  hair.position.y = 1.7;
+  g.add(hair);
+  g.userData.body = body;
+  g.userData.head = head;
+  g.userData.hair = hair;
+  g.userData.hairMat = hairMat;
+  g.userData.bodyMat = bodyMat;
+  return track(g);
+}
+
+// Procedural employee badge
+function makeBadge(name, role, color){
+  var c = D.createElement('canvas');
+  c.width = 320; c.height = 80;
+  var ctx = c.getContext('2d');
+  // BG
+  ctx.fillStyle = 'rgba(12,20,32,0.92)';
+  ctx.fillRect(0, 0, 320, 80);
+  // Color stripe
+  ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+  ctx.fillRect(0, 0, 6, 80);
+  // Photo placeholder (colored circle)
+  ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+  ctx.beginPath();
+  ctx.arc(40, 40, 26, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = 'bold 22px Helvetica';
+  ctx.fillText(name.charAt(0), 32, 48);
+  // Text
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 18px Helvetica';
+  ctx.fillText(name, 80, 30);
+  ctx.fillStyle = '#9bd';
+  ctx.font = '12px Helvetica';
+  ctx.fillText(role, 80, 50);
+  ctx.fillStyle = '#4a8';
+  ctx.font = '10px Helvetica';
+  ctx.fillText('NEXLOGIC · BADGE #' + Math.floor(Math.random()*99999).toString().padStart(5,'0'), 80, 68);
+  var tex = track(new T.CanvasTexture(c));
+  var sprMat = track(new T.SpriteMaterial({ map:tex, transparent:true, depthTest:false, depthWrite:false }));
+  var spr = new T.Sprite(sprMat);
+  spr.scale.set(2.2, 0.55, 1);
+  return track(spr);
+}
+
+var characters = [];
+for(var ni=0; ni<NAMED.length; ni++){
+  var nd = NAMED[ni];
+  var ch = makeCharacter(nd[3]);
+  ch.userData.named = true;
+  ch.userData.idx = ni;
+  ch.userData.name = nd[0];
+  ch.userData.role = nd[1];
+  ch.userData.joinedYear = nd[2];
+  ch.userData.color = nd[3];
+  ch.userData.t0 = Math.random() * 1000;
+  var badge = makeBadge(nd[0], nd[1], nd[3]);
+  badge.position.y = 2.4;
+  ch.add(badge);
+  ch.userData.badge = badge;
+  scene.add(ch);
+  characters.push(ch);
+}
+
+// ============================================================
+// CROWD — 100 instanced employees
+// ============================================================
+var FIRST_NAMES = ['Alex','Ben','Cam','Dani','Emi','Faye','Gus','Hari','Iris','Jules','Kai','Leo','Mia','Noa','Owen','Priya','Quinn','Ravi','Sam','Tess','Uma','Vik','Wren','Xochi','Yara','Zane','Cody','Drew','Ezra','Fiona'];
+var LAST_NAMES = ['Ng','Reyes','Khan','Singh','Park','Lee','Cole','Diaz','Adams','Brooks','Carter','Davis','Evans','Foster','Garcia','Hayes','Ito','Jensen','Kim','Lopez','Moss','North','Olsen','Patel','Quinn','Roth','Stone','Tan','Ueda','Vega'];
+
+var CROWD_N = 100;
+var crowdGeo = track(new T.CapsuleGeometry(0.3, 0.85, 4, 6));
+var crowdMat = track(new T.MeshStandardMaterial({ color:0xffffff, roughness:0.7 }));
+var crowd = new T.InstancedMesh(crowdGeo, crowdMat, CROWD_N);
+crowd.castShadow = true;
+crowd.receiveShadow = true;
+scene.add(crowd);
+track(crowd);
+
+var CROWD_DATA = [];
+var tmpColor = new T.Color();
+for(var ck=0; ck<CROWD_N; ck++){
+  var fn = FIRST_NAMES[ck % FIRST_NAMES.length];
+  var ln = LAST_NAMES[Math.floor(ck/FIRST_NAMES.length) % LAST_NAMES.length];
+  var hire = 1 + Math.floor(((ck*13) % 30));
+  CROWD_DATA.push({ name: fn + ' ' + ln, hire: hire });
+  tmpColor.setHSL(((ck*37) % 360) / 360, 0.45, 0.55);
+  crowd.setColorAt(ck, tmpColor);
+}
+if(crowd.instanceColor) crowd.instanceColor.needsUpdate = true;
+
+// ============================================================
+// HUD HOOKS
+// ============================================================
+var hudEra = D.getElementById('erastamp');
+var hudYear = D.getElementById('yearcount');
+var hudMini = D.getElementById('minimap');
+var hudStock = D.getElementById('stockchart');
+var hudFeat = D.getElementById('featured');
+var hudCam = D.getElementById('cammeta');
+var hudChyronText = D.getElementById('chyrontext');
+var hudCycle = D.getElementById('cycleinfo');
+var miniCtx = hudMini.getContext('2d');
+var stockCtx = hudStock.getContext('2d');
+
+function pushChyron(text){
+  hudChyronText.textContent = text;
+  hudChyronText.style.animation = 'none';
+  void hudChyronText.offsetWidth;
+  hudChyronText.style.animation = '';
+}
+
+// ============================================================
+// STOCK PRICE MODEL
+// ============================================================
+function stockAt(yf){
+  var price;
+  if(yf < 1) price = 1;
+  else if(yf <= 12) price = 1 + Math.pow((yf-1)/11, 1.4) * 79;            // 1 -> 80
+  else if(yf <= 22) price = 80 + (yf-12) * 7 + Math.sin(yf*1.3) * 14;     // 80 -> ~150 peak
+  else if(yf <= 26) price = 150 - Math.pow((yf-22)/4, 1.2) * 100;          // 150 -> 50
+  else price = 50 + (yf-26) * 12 + Math.sin(yf*0.7) * 4;                  // 50 -> ~100
+  return Math.max(0.5, price + Math.sin(yf*7.7) * 1.4);
+}
+
+// ============================================================
+// CAMERAS — 20 director angles
+// ============================================================
+// Each: [name, posFn(year), lookFn(year), eraGate(year)|null]
+var CAMS = [
+  ['GARAGE EXTERIOR',         function(y){ return [-18, 5, 14]; },        function(y){ return [-30, 2, 0]; },     function(y){ return y<=4; }],
+  ['GARAGE WHITEBOARD',       function(y){ return [-30, 2.4, 3]; },       function(y){ return [-30, 2.5, -3]; },   function(y){ return y<=5; }],
+  ['SMALL OFFICE BULLPEN',    function(y){ return [-12, 4, 4]; },         function(y){ return [-12, 2, -10]; },    function(y){ return y>=3 && y<=8; }],
+  ['MID-RISE FLOOR',          function(y){ return [8, 7, 4]; },           function(y){ return [8, 6, -10]; },      function(y){ return y>=7 && y<=12; }],
+  ['SERVER ROOM COLD AISLE',  function(y){ return [50, 2.4, 12]; },       function(y){ return [50, 2, 0]; },       function(y){ return y>=6; }],
+  ['EXEC SUITE GLASS',        function(y){ return [28, 18, 12]; },        function(y){ return [28, 11, -8]; },     function(y){ return y>=12 && y<=20; }],
+  ['CAFETERIA',               function(y){ return [22, 3, 22]; },         function(y){ return [15, 1, 12]; },      function(y){ return y>=7; }],
+  ['ALL-HANDS STAGE',         function(y){ return [0, 4, 22]; },          function(y){ return [0, 1, 8]; },        function(y){ return y>=10; }],
+  ['IPO BELL RINGING',        function(y){ return [28, 3, 14]; },         function(y){ return [28, 1, 7]; },       function(y){ return y>=11 && y<=14; }],
+  ['CAMPUS DRONE OVERHEAD',   function(y){ return [40, 80, 40]; },        function(y){ return [0, 0, -10]; },      function(y){ return y>=18; }],
+  ['PARKING LOT',             function(y){ return [-25, 4, 50]; },        function(y){ return [-25, 1, 35]; },     null],
+  ['ANTITRUST HEARING ROOM',  function(y){ return [82, 5, -32]; },        function(y){ return [70, 4, -45]; },     function(y){ return y>=24 && y<=28; }],
+  ['TOWER LOBBY',             function(y){ return [0, 4, 0]; },           function(y){ return [0, 6, -25]; },      function(y){ return y>=18; }],
+  ['SATELLITE OFFICE',        function(y){ return [78, 5, 60]; },         function(y){ return [70, 3, 50]; },      function(y){ return y>=22; }],
+  ['ROOFTOP HELIPAD',         function(y){ return [10, 64, 10]; },        function(y){ return [0, 60, -25]; },     function(y){ return y>=18; }],
+  ['FOUNDERS DESK',           function(y){ return [-30, 1.4, 1.3]; },     function(y){ return [-30, 1.5, -2]; },   null],
+  ['LAB BENCH (REVIVAL)',     function(y){ return [-26, 2, 9]; },         function(y){ return [-30, 1, 5]; },      function(y){ return y>=29; }],
+  ['STREET VIEW',             function(y){ return [-50, 4, 60]; },        function(y){ return [0, 5, 0]; },        null],
+  ['CITY ARRIVAL',            function(y){ return [120, 30, 80]; },       function(y){ return [0, 10, 0]; },       null],
+  ['QUIET CORNER',            function(y){ return [-25, 1.6, 38]; },      function(y){ return [-30, 1.4, 28]; },   null]
+];
+
+var camIndex = 0;
+var camChangeTime = 0;
+var CAM_DURATION = 7500;
+
+function pickCam(year){
+  var eligible = [];
+  for(var k=0; k<CAMS.length; k++){
+    var c = CAMS[k];
+    if(!c[3] || c[3](year)) eligible.push(k);
+  }
+  if(eligible.length === 0) return 0;
+  // Bias: 60% toward an era-specific camera if available
+  var eraSpecific = eligible.filter(function(idx){ return CAMS[idx][3] !== null; });
+  if(eraSpecific.length && Math.random() < 0.6){
+    return eraSpecific[Math.floor(Math.random()*eraSpecific.length)];
+  }
+  return eligible[Math.floor(Math.random()*eligible.length)];
+}
+
+function applyCam(idx, y){
+  var c = CAMS[idx];
+  var p = c[1](y);
+  var l = c[2](y);
+  camera.position.set(p[0], p[1], p[2]);
+  camera.lookAt(l[0], l[1], l[2]);
+  hudCam.textContent = 'CAM ' + String(idx+1).padStart(2,'0') + ' / ' + c[0];
+}
+
+// ============================================================
+// ERA-DRIVEN VISIBILITY & APPEARANCE
+// ============================================================
+function updateEra(year){
+  garage.visible = true;
+  garageInterior.visible = year <= 7;
+  office1.visible = year >= 3;
+  office2.visible = year >= 7;
+  office3.visible = year >= 12;
+  tower.visible = year >= 18;
+  campusBuildings.visible = year >= 22;
+  serverRoom.visible = year >= 6;
+  satellite.visible = year >= 22;
+  cafeteria.visible = year >= 7;
+  lobby.visible = year >= 10;
+  courthouse.visible = year >= 24 && year <= 28;
+  labBenches.visible = year >= 29;
+
+  // Revival recolor on garage
+  var isRevival = year >= 30;
+  garageBase.material.color.setHex(isRevival ? 0x88aa66 : 0xb09060);
+  garageRoof.material.color.setHex(isRevival ? 0x335533 : 0x6a4828);
+  garageDoor.material.color.setHex(isRevival ? 0x223344 : 0x4a3a2a);
+
+  // Decline 26-29: dim some campus buildings
+  var isDecline = year >= 26 && year < 30;
+  for(var ce=0; ce<campusBdgs.length; ce++){
+    var dim = isDecline && ce >= 2;
+    campusWinMats[ce].emissiveIntensity = dim ? 0.05 : 0.4;
+    campusWinMats[ce].color.setHex(dim ? 0x445566 : 0x88ccee);
+  }
+
+  // Tower window night flicker — based on global time
+  var simT = (year * 0.5) % 1;
+  var night = simT > 0.55 ? 1 : 0.35;
+  winMat.emissiveIntensity = year >= 18 ? (night * (0.7 + 0.3 * Math.sin(performance.now()*0.001))) : 0.0;
+
+  // Glass tower itself glints based on year
+  if(year >= 22){
+    towerMat.metalness = 0.65;
+  }
+}
+
+// ============================================================
+// CHARACTER POSITIONING / AGING
+// ============================================================
+function characterAnchor(year, idx){
+  // Different roles, different spots based on era
+  if(year <= 4){
+    var a = idx * 0.7;
+    return [-30 + Math.cos(a)*2, Math.sin(a)*1.2];
+  } else if(year <= 11){
+    return [-12 + (idx-5)*1.8, -8 + (idx%3)*1.2];
+  } else if(year <= 17){
+    return [22 + (idx-5)*1.8, -4 + (idx%3)*1.2];
+  } else if(year <= 21){
+    if(idx === 0) return [0, -22];           // Maya in tower
+    if(idx === 1) return [-2, -20];          // Devraj in tower
+    return [(idx-5)*2.3, -16 + (idx%3)*1.5];
+  } else if(year <= 25){
+    if(idx === 0) return [0, -22];
+    if(idx === 7) return [12, 12];           // Sasha at cafeteria
+    return [(idx-5)*2.3, -16 + (idx%3)*1.5];
+  } else if(year <= 28){
+    // antitrust era — Maya, Whitford, Nadia at courthouse
+    if(idx === 0 || idx === 6 || idx === 8) return [70 + (idx-5)*1.4, -45 + (idx%3)*1.2];
+    if(idx === 9) return [0, -22];           // Tomas in tower
+    return [(idx-5)*2.0, -16 + (idx%3)*1.5];
+  } else {
+    // revival
+    if(idx === 0) return [-26 + (idx-1)*0.6, 9]; // Maya at lab
+    if(idx === 9) return [0, -22];               // Tomas in tower
+    return [-26 + (idx-5)*1.4, 4 + (idx%3)*1.2];
+  }
+}
+
+function positionCharacters(year, now){
+  for(var ci=0; ci<characters.length; ci++){
+    var ch = characters[ci];
+    var nd = NAMED[ci];
+    var joined = nd[2];
+    var present = year >= joined;
+
+    // Devraj retires at 28+, becomes less visible
+    if(ci === 1 && year >= 28) present = false;
+    // Whitford retires at 29+
+    if(ci === 6 && year >= 29) present = false;
+    // Tomas only present from 26+
+    if(ci === 9 && year < 26) present = false;
+    // Nadia only present from 25+
+    if(ci === 8 && year < 25) present = false;
+
+    ch.visible = present;
+    if(!present) continue;
+
+    var tenure = year - joined;
+    var hairColor = 0x2a1a14;
+    var bodyScale = 1.0;
+    if(tenure >= 5 && tenure < 12)      hairColor = 0x554433;
+    else if(tenure >= 12 && tenure < 20) hairColor = 0x888888;
+    else if(tenure >= 20 && tenure < 28) hairColor = 0xcccccc;
+    else if(tenure >= 28)                { hairColor = 0xeeeeee; bodyScale = 0.96; }
+    ch.userData.hairMat.color.setHex(hairColor);
+    ch.scale.setScalar(bodyScale);
+
+    var anchor = characterAnchor(year, ci);
+    var t = (now * 0.001 + ch.userData.t0);
+    ch.position.set(
+      anchor[0] + Math.sin(t * 0.45) * 0.18,
+      0,
+      anchor[1] + Math.cos(t * 0.4) * 0.18
+    );
+    ch.rotation.y = Math.sin(t * 0.18) * 0.6;
+  }
+}
+
+// ============================================================
+// CROWD MOVEMENT
+// ============================================================
+var crowdDummy = new T.Object3D();
+function updateCrowd(year, now){
+  var employeeCount;
+  if(year < 3) employeeCount = 4;
+  else if(year < 7)  employeeCount = 22;
+  else if(year < 12) employeeCount = 55;
+  else if(year < 18) employeeCount = 90;
+  else if(year < 22) employeeCount = 100;
+  else if(year < 26) employeeCount = 100;
+  else if(year < 30) employeeCount = 65;
+  else employeeCount = 95;
+
+  var cx, cz, radius;
+  if(year <= 4)        { cx = -30; cz = 0;   radius = 5; }
+  else if(year <= 11)  { cx = 0;   cz = -8;  radius = 14; }
+  else if(year <= 17)  { cx = 18;  cz = -5;  radius = 18; }
+  else if(year <= 25)  { cx = 0;   cz = -20; radius = 30; }
+  else if(year <= 29)  { cx = 0;   cz = -20; radius = 24; }
+  else                 { cx = -10; cz = 0;   radius = 25; }
+
+  for(var i=0; i<CROWD_N; i++){
+    if(i >= employeeCount){
+      crowdDummy.position.set(2000, -1000, 2000); // hide far away
+      crowdDummy.updateMatrix();
+      crowd.setMatrixAt(i, crowdDummy.matrix);
+      continue;
+    }
+    var seed = i * 0.47;
+    var orbit = (now * 0.00012 * (1 + (i%5)*0.05)) + seed * 6.28;
+    var rr = ((i*7) % 10) / 10 * radius + 2.5;
+    var px = cx + Math.cos(orbit) * rr;
+    var pz = cz + Math.sin(orbit) * rr;
+    var py = Math.abs(Math.sin(now*0.002 + i*0.3)) * 0.05;
+    crowdDummy.position.set(px, py, pz);
+    crowdDummy.rotation.set(0, orbit + Math.PI/2, 0);
+    crowdDummy.updateMatrix();
+    crowd.setMatrixAt(i, crowdDummy.matrix);
+  }
+  crowd.instanceMatrix.needsUpdate = true;
+}
+
+// ============================================================
+// MINIMAP
+// ============================================================
+function drawMiniMap(year){
+  var ctx = miniCtx;
+  ctx.clearRect(0, 0, 190, 190);
+  ctx.fillStyle = '#0a1018';
+  ctx.fillRect(0, 0, 190, 190);
+  ctx.strokeStyle = '#2c5577';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, 189, 189);
+  ctx.font = '9px Helvetica';
+  ctx.fillStyle = '#7af';
+  ctx.fillText('CAMPUS MAP — Y' + year, 6, 13);
+  ctx.fillText('CYCLE ' + MEMORY.cycle, 6, 184);
+
+  // Map: world (-100..100) on x, (-100..100) on z. Center at 95, 100.
+  function w2m(x, z){ return [95 + x*0.7, 100 + z*0.7]; }
+  function rect(x, z, w, h, col){
+    var p = w2m(x, z);
+    ctx.fillStyle = col;
+    ctx.fillRect(p[0]-w/2, p[1]-h/2, w, h);
+  }
+
+  // Road
+  ctx.fillStyle = '#1a1d22';
+  ctx.fillRect(0, 95+60*0.7-4, 190, 8);
+
+  // Garage
+  rect(-30, 0, 8, 8, year >= 30 ? '#88aa66' : '#b09060');
+  // Office1
+  if(year >= 3) rect(-12, -10, 10, 8, '#c8c0a8');
+  // Office2
+  if(year >= 7) rect(8, -10, 10, 8, '#9aaab8');
+  // Office3
+  if(year >= 12) rect(28, -8, 10, 10, '#88aabb');
+  // Tower
+  if(year >= 18) rect(0, -25, 14, 12, '#3388dd');
+  // Campus buildings
+  if(year >= 22){
+    for(var cb=0; cb<4; cb++){
+      var ang = cb * Math.PI/2 + Math.PI/4;
+      var dim = year >= 26 && year < 30 && cb >= 2;
+      rect(Math.cos(ang)*40, Math.sin(ang)*40 - 25, 8, 8, dim ? '#334455' : '#778899');
+    }
+  }
+  // Server room
+  if(year >= 6) rect(50, 5, 12, 8, '#444444');
+  // Cafeteria
+  if(year >= 7) rect(15, 12, 9, 6, '#c8aa88');
+  // Lobby
+  if(year >= 10) rect(0, 12, 12, 6, '#554433');
+  // Parking
+  rect(-25, 35, 14, 6, '#222222');
+  // Satellite
+  if(year >= 22) rect(70, 50, 6, 6, '#a9b8c8');
+  // Courthouse
+  if(year >= 24 && year <= 28) rect(70, -45, 8, 8, '#ddccaa');
+
+  // Hotspot — current camera focus
+  var lookAt = CAMS[camIndex][2](year);
+  var p = w2m(lookAt[0], lookAt[2]);
+  ctx.strokeStyle = '#ffaa44';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(p[0], p[1], 7, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.fillStyle = '#ffaa44';
+  ctx.beginPath();
+  ctx.arc(p[0], p[1], 2.5, 0, Math.PI*2);
+  ctx.fill();
+
+  // Camera label near hotspot
+  ctx.fillStyle = '#ffd';
+  ctx.font = '8px Helvetica';
+  ctx.fillText(CAMS[camIndex][0].slice(0, 18), Math.max(2, p[0]-30), Math.min(186, p[1]+18));
+}
+
+// ============================================================
+// STOCK CHART
+// ============================================================
+var STOCK_HISTORY = [];
+var STOCK_MAX_POINTS = 240;
+function drawStockChart(year, price){
+  STOCK_HISTORY.push(price);
+  if(STOCK_HISTORY.length > STOCK_MAX_POINTS) STOCK_HISTORY.shift();
+  var ctx = stockCtx;
+  ctx.clearRect(0, 0, 260, 130);
+  ctx.fillStyle = '#0a1018';
+  ctx.fillRect(0, 0, 260, 130);
+  ctx.strokeStyle = '#2c5577';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, 259, 129);
+  ctx.font = '9px Helvetica';
+  ctx.fillStyle = '#7af';
+  ctx.fillText('NXLG · Y' + year + ' · $' + price.toFixed(2), 6, 13);
+  ctx.fillStyle = '#9bd';
+  ctx.fillText('cycle ' + MEMORY.cycle + ' · ' + MEMORY.productLine, 145, 13);
+
+  // Grid
+  ctx.strokeStyle = '#1c2a3a';
+  ctx.lineWidth = 0.5;
+  for(var g=1; g<5; g++){
+    ctx.beginPath();
+    ctx.moveTo(6, 20 + g*22);
+    ctx.lineTo(254, 20 + g*22);
+    ctx.stroke();
+  }
+
+  // Era zone shading
+  var zones = [
+    [0,   12, 'rgba(68,221,170,0.06)'],
+    [12,  22, 'rgba(255,200,80,0.08)'],
+    [22,  26, 'rgba(255,90,90,0.08)'],
+    [26,  30, 'rgba(120,180,255,0.07)']
+  ];
+  for(var z=0; z<zones.length; z++){
+    var x0 = 6 + (zones[z][0] / 30) * 248;
+    var x1 = 6 + (zones[z][1] / 30) * 248;
+    ctx.fillStyle = zones[z][2];
+    ctx.fillRect(x0, 18, x1-x0, 105);
+  }
+
+  // Plot full 30-year curve as background reference
+  ctx.strokeStyle = '#244';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for(var sy=0; sy<=300; sy++){
+    var yy = sy / 10;
+    var pp = stockAt(yy);
+    var xx = 6 + (yy / 30) * 248;
+    var pyc = 122 - (Math.min(170, pp) / 170) * 100;
+    if(sy===0) ctx.moveTo(xx, pyc); else ctx.lineTo(xx, pyc);
+  }
+  ctx.stroke();
+
+  // Plot live chart trail (last sampling)
+  ctx.strokeStyle = '#44ddaa';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for(var i=0; i<STOCK_HISTORY.length; i++){
+    var yyear = (i / Math.max(1, STOCK_HISTORY.length-1)) * year;
+    var x = 6 + (yyear / 30) * 248;
+    var v = STOCK_HISTORY[i];
+    var py = 122 - (Math.min(170, v) / 170) * 100;
+    if(i===0) ctx.moveTo(x, py); else ctx.lineTo(x, py);
+  }
+  ctx.stroke();
+
+  // Current marker
+  var curX = 6 + (year/30) * 248;
+  var curY = 122 - (Math.min(170, price)/170) * 100;
+  ctx.fillStyle = '#ffaa44';
+  ctx.beginPath();
+  ctx.arc(curX, curY, 3.5, 0, Math.PI*2);
+  ctx.fill();
+}
+
+// ============================================================
+// FEATURED CYCLER
+// ============================================================
+var featIdx = -1;
+var featNextSwitch = 0;
+function updateFeatured(year, now){
+  if(now > featNextSwitch){
+    featIdx = (featIdx + 1) % NAMED.length;
+    featNextSwitch = now + 5500;
+    var e = NAMED[featIdx];
+    var role = e[1];
+    if(MEMORY.employees[featIdx] && MEMORY.cycle > 1){
+      role = MEMORY.employees[featIdx].role;
+    }
+    if(year >= e[2]){
+      hudFeat.innerHTML = '<span class="label">WHO IS</span> ' +
+        e[0] + ' &mdash; <span class="k">' + role + '</span> since year ' + e[2];
+    } else {
+      hudFeat.innerHTML = '<span class="label">UPCOMING</span> ' +
+        e[0] + ' joins year ' + e[2] + ' as <span class="k">' + e[1] + '</span>';
+    }
+  }
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+var startTime = performance.now();
+var lastReseedTime = startTime;
+var currentYear = 0;
+var nextEventIdx = 0;
+var lastEra = ERAS[0];
+
+hudCycle.textContent = 'CYCLE ' + MEMORY.cycle + ' / NEXLOGIC INC. · ' +
+  (MEMORY.productLine || 'LATTICE').toUpperCase();
+pushChyron('NEXLOGIC LIVE — Cycle ' + MEMORY.cycle + ', product ' + MEMORY.productLine + '. From garage to legacy.');
+applyCam(0, 1);
+
+function tick(){
+  var now = performance.now();
+  var cycleElapsed = now - lastReseedTime;
+
+  // Reseed every 10 minutes
+  if(cycleElapsed >= CYCLE_MS){
+    reseed();
+    lastReseedTime = now;
+    cycleElapsed = 0;
+    nextEventIdx = 0;
+    STOCK_HISTORY.length = 0;
+    hudCycle.textContent = 'CYCLE ' + MEMORY.cycle + ' / NEXLOGIC INC. · ' +
+      (MEMORY.productLine || 'LATTICE').toUpperCase();
+    pushChyron('CYCLE ' + MEMORY.cycle + ' — NEW PRODUCT LINE: ' +
+      MEMORY.productLine + '. The next 30 years begin. Maya teaches Tuesdays.');
+  }
+
+  // Year fraction
+  var yProg = (cycleElapsed / CYCLE_MS) * SIM_YEARS;
+  var yearF = 1 + yProg;
+  var year = Math.max(1, Math.min(30, Math.floor(yearF)));
+
+  if(year !== currentYear){
+    currentYear = year;
+    while(nextEventIdx < EVENTS.length && EVENTS[nextEventIdx][0] <= year){
+      pushChyron(EVENTS[nextEventIdx][1]);
+      nextEventIdx++;
+    }
+    var active = ERAS[0];
+    for(var ei=0; ei<ERAS.length; ei++){
+      if(year >= ERAS[ei][0]) active = ERAS[ei];
+    }
+    if(active !== lastEra){
+      lastEra = active;
+    }
+    hudEra.textContent = 'YEAR ' + active[0] + ' — ' + active[1];
+  }
+
+  var price = stockAt(yearF);
+  hudYear.textContent = 'YEAR ' + year + ' of 30 · STOCK $' + price.toFixed(2);
+
+  updateEra(year);
+  positionCharacters(year, now);
+  updateCrowd(year, now);
+
+  if(now > camChangeTime){
+    camIndex = pickCam(year);
+    applyCam(camIndex, year);
+    camChangeTime = now + CAM_DURATION + Math.random() * 3000;
+  } else {
+    // Subtle camera drift for cinematic feel
+    var c = CAMS[camIndex];
+    var p = c[1](year);
+    var l = c[2](year);
+    var drift = Math.sin(now * 0.00025) * 0.6;
+    camera.position.set(p[0] + drift, p[1] + Math.sin(now*0.0003)*0.2, p[2] + Math.cos(now*0.00025)*0.5);
+    camera.lookAt(l[0], l[1], l[2]);
+  }
+
+  drawMiniMap(year);
+  drawStockChart(year, price);
+  updateFeatured(year, now);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+
+requestAnimationFrame(tick);
+
+})();
+</script>
+</body>
+</html>

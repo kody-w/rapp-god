@@ -1,0 +1,1171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tiny Transformer — Live Browser Training</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#05070d;color:#cfe;font:12px/1.4 'SF Mono', Menlo, Consolas, monospace;overflow:hidden}
+  #wrap{position:fixed;inset:0;display:grid;grid-template-columns:1fr 380px;grid-template-rows:1fr}
+  #stage{position:relative;background:radial-gradient(ellipse at center,#0a1426 0%, #03050a 70%);overflow:auto;padding:10px 14px 80px;border-right:1px solid #142}
+  #side{overflow:auto;padding:10px;background:#070b14}
+  h3{margin:8px 0 4px;color:#7df;font-size:11px;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid #1a2c44;padding-bottom:2px}
+  h4{margin:6px 0 3px;color:#9bd;font-size:10px;letter-spacing:.4px;text-transform:uppercase}
+  button{background:#0d1726;border:1px solid #1c3550;color:#9ed;padding:5px 10px;cursor:pointer;font:inherit;border-radius:3px}
+  button:hover{background:#152338;border-color:#2a5a87;color:#fff}
+  button.active{background:#1a3a52;border-color:#4af;color:#fff;box-shadow:0 0 8px #4af3}
+  textarea{width:100%;height:90px;background:#03070e;border:1px solid #1a2c44;color:#cfe;font:11px/1.3 'SF Mono', Menlo, monospace;padding:6px;border-radius:3px;resize:vertical;box-sizing:border-box}
+  input[type=range]{width:100%;accent-color:#4af}
+  .row{display:flex;gap:6px;align-items:center;margin:3px 0}
+  .row label{flex:0 0 80px;color:#8ad;font-size:10px}
+  .row .v{flex:0 0 50px;color:#fff;text-align:right;font-size:11px}
+  .stat{display:flex;justify-content:space-between;color:#8ad;font-size:11px;padding:1px 0}
+  .stat span:last-child{color:#fff}
+  #title{color:#4af;font-size:11px;letter-spacing:1px;opacity:.85;margin:0 0 8px;font-weight:normal}
+  .panel{background:#03070e;border:1px solid #1a2c44;border-radius:3px;padding:6px;margin:6px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  canvas{display:block;background:#020509;border-radius:2px}
+  #lossCanvas{width:100%;height:140px}
+  #attCanvas{width:100%;height:180px}
+  .heatmap{width:100%;height:80px;image-rendering:pixelated}
+  .sample{font:11px/1.35 'SF Mono', Menlo, monospace;color:#bdf;background:#02050a;border-left:2px solid #2a5a87;padding:5px 7px;margin:4px 0;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow:auto}
+  .sample .meta{color:#578;font-size:10px;margin-bottom:3px;letter-spacing:.5px}
+  .sample .gen{color:#fff}
+  .pill{display:inline-block;background:#0d1726;border:1px solid #1c3550;color:#9ed;padding:1px 7px;border-radius:9px;font-size:10px;margin-right:4px}
+  .pill b{color:#fff}
+  #ctrls{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+  #help{font-size:10px;color:#68a;margin-top:6px}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#1a2c44;border-radius:4px}
+  ::-webkit-scrollbar-track{background:#03070e}
+  .legend{font-size:9px;color:#578;margin-top:2px;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <h1 id="title">TINY TRANSFORMER · LIVE TRAINING IN-BROWSER · CHAR-LEVEL LM</h1>
+    <div id="ctrls">
+      <button id="bPause">Pause</button>
+      <button id="bReset">Reset Weights</button>
+      <button id="bSample">Sample Now</button>
+      <span id="status" class="pill">init…</span>
+      <span id="paramsPill" class="pill">params: <b>—</b></span>
+      <span id="speedPill" class="pill">steps/s: <b>—</b></span>
+      <span id="vocabPill" class="pill">vocab: <b>—</b></span>
+    </div>
+
+    <div class="panel">
+      <h4>Loss curve (cross-entropy, per token)</h4>
+      <canvas id="lossCanvas"></canvas>
+      <div class="legend"><span id="lossLeft">step 0</span><span id="lossRight">loss —</span></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h4>Block 1 — Wq, Wk, Wv, Wo, FF1, FF2</h4>
+        <canvas id="b1q" class="heatmap"></canvas>
+        <canvas id="b1k" class="heatmap"></canvas>
+        <canvas id="b1v" class="heatmap"></canvas>
+        <canvas id="b1o" class="heatmap"></canvas>
+        <canvas id="b1f1" class="heatmap"></canvas>
+        <canvas id="b1f2" class="heatmap"></canvas>
+      </div>
+      <div class="panel">
+        <h4>Block 2 — Wq, Wk, Wv, Wo, FF1, FF2</h4>
+        <canvas id="b2q" class="heatmap"></canvas>
+        <canvas id="b2k" class="heatmap"></canvas>
+        <canvas id="b2v" class="heatmap"></canvas>
+        <canvas id="b2o" class="heatmap"></canvas>
+        <canvas id="b2f1" class="heatmap"></canvas>
+        <canvas id="b2f2" class="heatmap"></canvas>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h4>Attention pattern · last batch (block 1, sequence 0)</h4>
+      <canvas id="attCanvas"></canvas>
+      <div class="legend"><span>row = query position</span><span>column = key position (causal mask)</span></div>
+    </div>
+
+    <div id="help">
+      Watch the model evolve from random characters → letter pairs → word fragments → English-like text.
+      Loss starts near ln(vocab) and should drop into the 1.5-2.5 range. Architecture: 2 transformer
+      blocks · single-head attention · 64-dim embed · 256-dim FF · context 64 · Adam optimizer.
+    </div>
+  </div>
+
+  <div id="side">
+    <h3>Controls</h3>
+    <div class="row">
+      <label>learning rate</label>
+      <input id="lrSlider" type="range" min="-4" max="-1.3" step="0.05" value="-2.5">
+      <span class="v" id="lrVal">3.0e-3</span>
+    </div>
+    <div class="row">
+      <label>temperature</label>
+      <input id="tSlider" type="range" min="0.1" max="1.6" step="0.05" value="1.0">
+      <span class="v" id="tVal">1.00</span>
+    </div>
+    <div class="row">
+      <label>batch size</label>
+      <input id="bSlider" type="range" min="4" max="32" step="2" value="16">
+      <span class="v" id="bVal">16</span>
+    </div>
+
+    <h3>Stats</h3>
+    <div class="stat"><span>step</span><span id="sStep">0</span></div>
+    <div class="stat"><span>loss (smoothed)</span><span id="sLoss">—</span></div>
+    <div class="stat"><span>tokens seen</span><span id="sTok">0</span></div>
+    <div class="stat"><span>elapsed</span><span id="sTime">0s</span></div>
+
+    <h3>Corpus (paste to replace)</h3>
+    <textarea id="corpus" spellcheck="false"></textarea>
+    <div style="display:flex;gap:6px;margin-top:5px">
+      <button id="bApply">Apply &amp; Reset</button>
+      <button id="bDefault">Restore default</button>
+    </div>
+
+    <h3>Recent samples (every 50 steps)</h3>
+    <div id="samples"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   TINY TRANSFORMER — pure JS, hand-written matrix math, browser training
+   ===================================================================== */
+
+/* ---------- Default corpus: opening of Pride and Prejudice ---------- */
+const DEFAULT_CORPUS = `It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.
+
+However little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered the rightful property of some one or other of their daughters.
+
+"My dear Mr. Bennet," said his lady to him one day, "have you heard that Netherfield Park is let at last?"
+
+Mr. Bennet replied that he had not.
+
+"But it is," returned she; "for Mrs. Long has just been here, and she told me all about it."
+
+Mr. Bennet made no answer.
+
+"Do you not want to know who has taken it?" cried his wife impatiently.
+
+"You want to tell me, and I have no objection to hearing it."
+
+This was invitation enough.
+
+"Why, my dear, you must know, Mrs. Long says that Netherfield is taken by a young man of large fortune from the north of England; that he came down on Monday in a chaise and four to see the place, and was so much delighted with it that he agreed with Mr. Morris immediately; that he is to take possession before Michaelmas, and some of his servants are to be in the house by the end of next week."
+
+"What is his name?"
+
+"Bingley."
+
+"Is he married or single?"
+
+"Oh! Single, my dear, to be sure! A single man of large fortune; four or five thousand a year. What a fine thing for our girls!"
+
+"How so? How can it affect them?"
+
+"My dear Mr. Bennet," replied his wife, "how can you be so tiresome! You must know that I am thinking of his marrying one of them."
+
+"Is that his design in settling here?"
+
+"Design! Nonsense, how can you talk so! But it is very likely that he may fall in love with one of them, and therefore you must visit him as soon as he comes."
+
+"I see no occasion for that. You and the girls may go, or you may send them by themselves, which perhaps will be still better, for as you are as handsome as any of them, Mr. Bingley may like you the best of the party."
+
+"My dear, you flatter me. I certainly have had my share of beauty, but I do not pretend to be anything extraordinary now. When a woman has five grown up daughters, she ought to give over thinking of her own beauty."
+
+"In such cases, a woman has not often much beauty to think of."
+
+"But, my dear, you must indeed go and see Mr. Bingley when he comes into the neighbourhood."
+
+"It is more than I engage for, I assure you."
+
+"But consider your daughters. Only think what an establishment it would be for one of them. Sir William and Lady Lucas are determined to go, merely on that account, for in general, you know, they visit no newcomers. Indeed you must go, for it will be impossible for us to visit him if you do not."
+
+"You are over-scrupulous, surely. I dare say Mr. Bingley will be very glad to see you; and I will send a few lines by you to assure him of my hearty consent to his marrying whichever he chooses of the girls; though I must throw in a good word for my little Lizzy."
+
+"I desire you will do no such thing. Lizzy is not a bit better than the others; and I am sure she is not half so handsome as Jane, nor half so good humoured as Lydia. But you are always giving her the preference."
+
+"They have none of them much to recommend them," replied he; "they are all silly and ignorant like other girls; but Lizzy has something more of quickness than her sisters."
+
+"Mr. Bennet, how can you abuse your own children in such a way? You take delight in vexing me. You have no compassion on my poor nerves."
+
+"You mistake me, my dear. I have a high respect for your nerves. They are my old friends. I have heard you mention them with consideration these last twenty years at least."
+
+"Ah, you do not know what I suffer."
+
+"But I hope you will get over it, and live to see many young men of four thousand a year come into the neighbourhood."
+
+"It will be no use to us, if twenty such should come, since you will not visit them."
+
+"Depend upon it, my dear, that when there are twenty, I will visit them all."
+
+Mr. Bennet was so odd a mixture of quick parts, sarcastic humour, reserve, and caprice, that the experience of three and twenty years had been insufficient to make his wife understand his character. Her mind was less difficult to develop. She was a woman of mean understanding, little information, and uncertain temper. When she was discontented, she fancied herself nervous. The business of her life was to get her daughters married; its solace was visiting and news.
+
+Mr. Bingley was good looking and gentlemanlike; he had a pleasant countenance, and easy, unaffected manners. His sisters were fine women, with an air of decided fashion. His brother-in-law, Mr. Hurst, merely looked the gentleman; but his friend Mr. Darcy soon drew the attention of the room by his fine, tall person, handsome features, noble mien, and the report which was in general circulation within five minutes after his entrance, of his having ten thousand a year. The gentlemen pronounced him to be a fine figure of a man, the ladies declared he was much handsomer than Mr. Bingley, and he was looked at with great admiration for about half the evening, till his manners gave a disgust which turned the tide of his popularity; for he was discovered to be proud; to be above his company, and above being pleased; and it could not be enough that he had a large estate in Hertfordshire, could not save him, therefore, from having a most forbidding, disagreeable countenance, and being unworthy to be compared with his friend.
+
+Mr. Bingley had soon made himself acquainted with all the principal people in the room; he was lively and unreserved, danced every dance, was angry that the ball closed so early, and talked of giving one himself at Netherfield. Such amiable qualities must speak for themselves. What a contrast between him and his friend! Mr. Darcy danced only once with Mrs. Hurst and once with Miss Bingley, declined being introduced to any other lady, and spent the rest of the evening in walking about the room, speaking occasionally to one of his own party. His character was decided. He was the proudest, most disagreeable man in the world, and everybody hoped that he would never come there again.`;
+
+/* ---------- Hyperparameters ---------- */
+const HP = {
+  CTX: 64,         // context length
+  D:   64,         // model / embedding dim
+  FF:  256,        // feed-forward hidden dim (=4D)
+  N_LAYERS: 2,
+  BATCH: 16,
+  LR: 3e-3,
+  BETA1: 0.9,
+  BETA2: 0.999,
+  EPS: 1e-8,
+};
+
+/* ---------- Tiny matrix helpers (Float32Array, row-major) ---------- */
+function zeros(n){ return new Float32Array(n); }
+function rand(n, scale){
+  const a = new Float32Array(n);
+  // Xavier-ish: scale comes in
+  for(let i=0;i<n;i++) a[i] = (Math.random()*2 - 1) * scale;
+  return a;
+}
+// y = x @ W  where x:(B,M), W:(M,N) -> y:(B,N)
+function matmul(x, W, B, M, N){
+  const y = new Float32Array(B*N);
+  for(let b=0;b<B;b++){
+    const xo = b*M, yo = b*N;
+    for(let n=0;n<N;n++){
+      let s = 0;
+      for(let m=0;m<M;m++) s += x[xo+m] * W[m*N+n];
+      y[yo+n] = s;
+    }
+  }
+  return y;
+}
+// y = x @ W^T   x:(B,N), W:(M,N) -> y:(B,M)
+function matmulNT(x, W, B, M, N){
+  const y = new Float32Array(B*M);
+  for(let b=0;b<B;b++){
+    const xo = b*N, yo = b*M;
+    for(let m=0;m<M;m++){
+      let s = 0;
+      const Wo = m*N;
+      for(let n=0;n<N;n++) s += x[xo+n] * W[Wo+n];
+      y[yo+m] = s;
+    }
+  }
+  return y;
+}
+// Gradient of weight: gW = x^T @ dy   x:(B,M), dy:(B,N) -> gW:(M,N)
+function gradW(x, dy, B, M, N){
+  const g = new Float32Array(M*N);
+  for(let m=0;m<M;m++){
+    for(let n=0;n<N;n++){
+      let s = 0;
+      for(let b=0;b<B;b++) s += x[b*M+m] * dy[b*N+n];
+      g[m*N+n] = s;
+    }
+  }
+  return g;
+}
+
+/* ---------- Activations ---------- */
+function gelu(x){
+  // Approximate GELU
+  const c = 0.7978845608; // sqrt(2/pi)
+  return 0.5 * x * (1 + Math.tanh(c * (x + 0.044715 * x*x*x)));
+}
+function geluPrime(x){
+  // d/dx of approximate GELU
+  const c = 0.7978845608;
+  const x3 = x*x*x;
+  const u = c * (x + 0.044715 * x3);
+  const t = Math.tanh(u);
+  const sech2 = 1 - t*t;
+  const dudx = c * (1 + 3 * 0.044715 * x*x);
+  return 0.5*(1+t) + 0.5*x*sech2*dudx;
+}
+
+/* ---------- Layer norm (per-row over N) ---------- */
+function layerNormForward(x, gamma, beta, B, N){
+  const y = new Float32Array(B*N);
+  const mean = new Float32Array(B);
+  const invStd = new Float32Array(B);
+  const eps = 1e-5;
+  for(let b=0;b<B;b++){
+    let m=0;
+    for(let n=0;n<N;n++) m += x[b*N+n];
+    m /= N;
+    let v=0;
+    for(let n=0;n<N;n++){ const d = x[b*N+n] - m; v += d*d; }
+    v /= N;
+    const is = 1/Math.sqrt(v + eps);
+    mean[b] = m;
+    invStd[b] = is;
+    for(let n=0;n<N;n++){
+      const xh = (x[b*N+n] - m) * is;
+      y[b*N+n] = xh * gamma[n] + beta[n];
+    }
+  }
+  return {y, mean, invStd};
+}
+function layerNormBackward(dy, x, mean, invStd, gamma, B, N){
+  const dx = new Float32Array(B*N);
+  const dGamma = new Float32Array(N);
+  const dBeta = new Float32Array(N);
+  for(let b=0;b<B;b++){
+    const m = mean[b], is = invStd[b];
+    // pre-compute xhat sums
+    let dot1 = 0, dot2 = 0;
+    for(let n=0;n<N;n++){
+      const xh = (x[b*N+n] - m) * is;
+      const dyG = dy[b*N+n] * gamma[n];
+      dot1 += dyG;
+      dot2 += dyG * xh;
+      dGamma[n] += dy[b*N+n] * xh;
+      dBeta[n]  += dy[b*N+n];
+    }
+    for(let n=0;n<N;n++){
+      const xh = (x[b*N+n] - m) * is;
+      const dyG = dy[b*N+n] * gamma[n];
+      dx[b*N+n] = (is / N) * (N * dyG - dot1 - xh * dot2);
+    }
+  }
+  return {dx, dGamma, dBeta};
+}
+
+/* ---------- Softmax (row-wise, length L) over a row of an LxL matrix with causal mask ---------- */
+function softmaxCausalRow(scores, L){
+  // scores: (L,L) row-major in-place to probs
+  for(let i=0;i<L;i++){
+    let mx = -Infinity;
+    for(let j=0;j<=i;j++){ const v = scores[i*L+j]; if(v>mx) mx = v; }
+    let s = 0;
+    for(let j=0;j<=i;j++){ scores[i*L+j] = Math.exp(scores[i*L+j] - mx); s += scores[i*L+j]; }
+    for(let j=0;j<=i;j++) scores[i*L+j] /= s;
+    for(let j=i+1;j<L;j++) scores[i*L+j] = 0;
+  }
+}
+
+/* =====================================================================
+   The model
+   ===================================================================== */
+class Block {
+  constructor(D, FF){
+    this.D = D; this.FF = FF;
+    const sQ = Math.sqrt(2/D);
+    this.Wq = rand(D*D, sQ);
+    this.Wk = rand(D*D, sQ);
+    this.Wv = rand(D*D, sQ);
+    this.Wo = rand(D*D, sQ);
+    this.Wf1 = rand(D*FF, Math.sqrt(2/D));
+    this.bf1 = zeros(FF);
+    this.Wf2 = rand(FF*D, Math.sqrt(2/FF));
+    this.bf2 = zeros(D);
+    this.gamma1 = new Float32Array(D).fill(1);
+    this.beta1  = zeros(D);
+    this.gamma2 = new Float32Array(D).fill(1);
+    this.beta2  = zeros(D);
+  }
+  params(){
+    return [
+      [this.Wq,'Wq'], [this.Wk,'Wk'], [this.Wv,'Wv'], [this.Wo,'Wo'],
+      [this.Wf1,'Wf1'], [this.bf1,'bf1'], [this.Wf2,'Wf2'], [this.bf2,'bf2'],
+      [this.gamma1,'g1'], [this.beta1,'b1'], [this.gamma2,'g2'], [this.beta2,'b2'],
+    ];
+  }
+}
+
+class Model {
+  constructor(vocab){
+    this.vocab = vocab;
+    const D = HP.D;
+    this.tokEmb = rand(vocab*D, 0.02);
+    this.posEmb = rand(HP.CTX*D, 0.02);
+    this.blocks = [];
+    for(let i=0;i<HP.N_LAYERS;i++) this.blocks.push(new Block(D, HP.FF));
+    this.gammaF = new Float32Array(D).fill(1);
+    this.betaF  = zeros(D);
+    // Output head shares weights with token embedding (tied), but we'll use separate for clarity
+    this.head = rand(D*vocab, 0.02);
+    // Adam state
+    this.adamState = new Map();
+    this.t = 0;
+    this.savedAttn = null; // for visualization
+  }
+
+  paramList(){
+    const list = [
+      [this.tokEmb,'tokEmb'], [this.posEmb,'posEmb'],
+    ];
+    for(let i=0;i<this.blocks.length;i++){
+      for(const [p,nm] of this.blocks[i].params()) list.push([p, `blk${i}.${nm}`]);
+    }
+    list.push([this.gammaF,'gammaF'], [this.betaF,'betaF'], [this.head,'head']);
+    return list;
+  }
+
+  paramCount(){
+    let n = 0;
+    for(const [p] of this.paramList()) n += p.length;
+    return n;
+  }
+
+  /* ----------- Forward + backward for a batch of sequences ---------- */
+  // ids: Int32Array[(B*L)+B*L] — we pass: input ids (B,L) and target ids (B,L)
+  // returns total loss and accumulates grads.
+  trainStep(inputIds, targetIds, B, L, lr, captureAttn=false){
+    const D = HP.D, V = this.vocab;
+
+    /* ---- Embedding ---- */
+    // x: (B*L, D)
+    const x0 = new Float32Array(B*L*D);
+    for(let b=0;b<B;b++){
+      for(let t=0;t<L;t++){
+        const id = inputIds[b*L+t];
+        const off = (b*L+t)*D;
+        const eo = id*D, po = t*D;
+        for(let d=0;d<D;d++) x0[off+d] = this.tokEmb[eo+d] + this.posEmb[po+d];
+      }
+    }
+
+    // We'll keep activations needed for backward
+    const cache = {x0, blocks:[]};
+
+    /* ---- Through transformer blocks ---- */
+    let x = x0;
+    for(let bi=0; bi<this.blocks.length; bi++){
+      const blk = this.blocks[bi];
+      // ---- Pre-LN before attention
+      const ln1 = layerNormForward(x, blk.gamma1, blk.beta1, B*L, D);
+      const xn = ln1.y; // (B*L, D)
+      // Q, K, V: (B*L, D)
+      const Q = matmul(xn, blk.Wq, B*L, D, D);
+      const K = matmul(xn, blk.Wk, B*L, D, D);
+      const V = matmul(xn, blk.Wv, B*L, D, D);
+      // Per-batch attention
+      // scoresB: (B, L, L)
+      const scoresB = new Array(B);
+      const scaleAtt = 1/Math.sqrt(D);
+      for(let b=0;b<B;b++){
+        const sc = new Float32Array(L*L);
+        const Qoff = b*L*D, Koff = b*L*D;
+        for(let i=0;i<L;i++){
+          const Qi = Qoff + i*D;
+          for(let j=0;j<=i;j++){
+            const Kj = Koff + j*D;
+            let s = 0;
+            for(let d=0;d<D;d++) s += Q[Qi+d] * K[Kj+d];
+            sc[i*L+j] = s * scaleAtt;
+          }
+          for(let j=i+1;j<L;j++) sc[i*L+j] = 0;
+        }
+        softmaxCausalRow(sc, L);
+        scoresB[b] = sc;
+      }
+      if(captureAttn && bi===0){
+        // store attention pattern for first sequence in batch
+        const sc0 = scoresB[0];
+        this.savedAttn = new Float32Array(sc0); // copy
+      }
+      // attOut = scores @ V  (per batch, per row)
+      const attOut = new Float32Array(B*L*D);
+      for(let b=0;b<B;b++){
+        const sc = scoresB[b];
+        const Voff = b*L*D, AOff = b*L*D;
+        for(let i=0;i<L;i++){
+          for(let d=0;d<D;d++){
+            let s = 0;
+            for(let j=0;j<=i;j++) s += sc[i*L+j] * V[Voff+j*D+d];
+            attOut[AOff+i*D+d] = s;
+          }
+        }
+      }
+      // Wo projection
+      const attProj = matmul(attOut, blk.Wo, B*L, D, D);
+      // residual: x = x + attProj
+      const xMid = new Float32Array(B*L*D);
+      for(let i=0;i<x.length;i++) xMid[i] = x[i] + attProj[i];
+
+      // ---- Pre-LN before FF
+      const ln2 = layerNormForward(xMid, blk.gamma2, blk.beta2, B*L, D);
+      const xn2 = ln2.y;
+      // FF1 + GELU
+      const h1 = matmul(xn2, blk.Wf1, B*L, D, HP.FF);
+      // add bias + gelu
+      for(let r=0;r<B*L;r++){
+        for(let f=0;f<HP.FF;f++){
+          const idx = r*HP.FF+f;
+          h1[idx] = h1[idx] + blk.bf1[f];
+        }
+      }
+      const h1Pre = new Float32Array(h1); // save pre-activation for backward
+      const h1Act = new Float32Array(h1.length);
+      for(let i=0;i<h1.length;i++) h1Act[i] = gelu(h1[i]);
+      // FF2
+      const ff2 = matmul(h1Act, blk.Wf2, B*L, HP.FF, D);
+      for(let r=0;r<B*L;r++){
+        for(let d=0;d<D;d++) ff2[r*D+d] += blk.bf2[d];
+      }
+      // residual
+      const xOut = new Float32Array(B*L*D);
+      for(let i=0;i<x.length;i++) xOut[i] = xMid[i] + ff2[i];
+
+      cache.blocks.push({
+        xIn:x, xn, Q, K, V, scoresB, attOut, attProj, xMid,
+        xn2, h1Pre, h1Act, ff2,
+        ln1, ln2,
+      });
+      x = xOut;
+    }
+
+    /* ---- Final LN + head ---- */
+    const lnF = layerNormForward(x, this.gammaF, this.betaF, B*L, D);
+    const xnF = lnF.y;
+    // logits: (B*L, V)
+    const logits = matmul(xnF, this.head, B*L, D, V);
+
+    /* ---- Loss + softmax ---- */
+    let loss = 0;
+    const probs = new Float32Array(B*L*V);
+    for(let r=0;r<B*L;r++){
+      let mx = -Infinity;
+      for(let v=0;v<V;v++){ const z = logits[r*V+v]; if(z>mx) mx = z; }
+      let s = 0;
+      for(let v=0;v<V;v++){ const e = Math.exp(logits[r*V+v]-mx); probs[r*V+v]=e; s+=e; }
+      for(let v=0;v<V;v++) probs[r*V+v] /= s;
+      const tgt = targetIds[r];
+      loss += -Math.log(Math.max(probs[r*V+tgt], 1e-12));
+    }
+    loss /= (B*L);
+
+    /* ============== BACKWARD PASS ============== */
+    // dlogits: (B*L, V) — from softmax CE
+    const dLogits = new Float32Array(B*L*V);
+    const inv = 1/(B*L);
+    for(let r=0;r<B*L;r++){
+      const tgt = targetIds[r];
+      for(let v=0;v<V;v++) dLogits[r*V+v] = probs[r*V+v] * inv;
+      dLogits[r*V+tgt] -= inv;
+    }
+
+    // grads collector
+    const grads = new Map();
+    const addGrad = (param, g) => {
+      let cur = grads.get(param);
+      if(!cur){ cur = new Float32Array(param.length); grads.set(param, cur); }
+      for(let i=0;i<g.length;i++) cur[i] += g[i];
+    };
+
+    // d head: head: (D,V)
+    addGrad(this.head, gradW(xnF, dLogits, B*L, D, V));
+    // d xnF
+    const dXnF = matmulNT(dLogits, this.head, B*L, D, V);
+
+    // back through final LN
+    const lnFB = layerNormBackward(dXnF, x, lnF.mean, lnF.invStd, this.gammaF, B*L, D);
+    addGrad(this.gammaF, lnFB.dGamma);
+    addGrad(this.betaF,  lnFB.dBeta);
+    let dX = lnFB.dx;
+
+    // back through blocks (reverse)
+    for(let bi=this.blocks.length-1; bi>=0; bi--){
+      const blk = this.blocks[bi];
+      const c = cache.blocks[bi];
+      // Output of block: xOut = xMid + ff2
+      // Coming in: dX is gradient w.r.t. xOut
+      // dxMid_residual = dX (passes through residual)
+      // dff2 = dX
+      const dff2 = dX; // (B*L, D)
+      // FF2: ff2 = h1Act @ Wf2 + bf2
+      addGrad(blk.Wf2, gradW(c.h1Act, dff2, B*L, HP.FF, D));
+      // bf2
+      const dbf2 = new Float32Array(D);
+      for(let r=0;r<B*L;r++) for(let d=0;d<D;d++) dbf2[d] += dff2[r*D+d];
+      addGrad(blk.bf2, dbf2);
+      // dh1Act = dff2 @ Wf2^T  -> (B*L, FF)
+      const dh1Act = matmulNT(dff2, blk.Wf2, B*L, HP.FF, D);
+      // dh1Pre = dh1Act * gelu'(h1Pre)
+      const dh1Pre = new Float32Array(dh1Act.length);
+      for(let i=0;i<dh1Pre.length;i++) dh1Pre[i] = dh1Act[i] * geluPrime(c.h1Pre[i]);
+      // FF1: h1Pre = xn2 @ Wf1 + bf1
+      addGrad(blk.Wf1, gradW(c.xn2, dh1Pre, B*L, HP.D, HP.FF));
+      const dbf1 = new Float32Array(HP.FF);
+      for(let r=0;r<B*L;r++) for(let f=0;f<HP.FF;f++) dbf1[f] += dh1Pre[r*HP.FF+f];
+      addGrad(blk.bf1, dbf1);
+      // dxn2 = dh1Pre @ Wf1^T -> (B*L, D)
+      const dxn2 = matmulNT(dh1Pre, blk.Wf1, B*L, HP.D, HP.FF);
+      // through LN2
+      const ln2B = layerNormBackward(dxn2, c.xMid, c.ln2.mean, c.ln2.invStd, blk.gamma2, B*L, D);
+      addGrad(blk.gamma2, ln2B.dGamma);
+      addGrad(blk.beta2,  ln2B.dBeta);
+      // gradient flowing into xMid from FF branch + the residual from above
+      const dxMid = new Float32Array(B*L*D);
+      for(let i=0;i<dxMid.length;i++) dxMid[i] = dX[i] + ln2B.dx[i];
+      // xMid = xIn + attProj  -> dattProj = dxMid (and dxIn += dxMid)
+      const dattProj = dxMid;
+      // attProj = attOut @ Wo
+      addGrad(blk.Wo, gradW(c.attOut, dattProj, B*L, D, D));
+      // d attOut = dattProj @ Wo^T
+      const dattOut = matmulNT(dattProj, blk.Wo, B*L, D, D);
+      // attOut[b,i,:] = sum_j sc[b,i,j] * V[b,j,:]
+      // dscores[b,i,j] = sum_d dattOut[b,i,d] * V[b,j,d]
+      // dV[b,j,:] += sum_i sc[b,i,j] * dattOut[b,i,:]
+      const dQ = new Float32Array(B*L*D);
+      const dK = new Float32Array(B*L*D);
+      const dV = new Float32Array(B*L*D);
+      const scaleAtt = 1/Math.sqrt(D);
+      for(let b=0;b<B;b++){
+        const sc = c.scoresB[b];
+        const Voff = b*L*D, Aoff = b*L*D, Qoff = b*L*D, Koff = b*L*D;
+        // dscores
+        const dScores = new Float32Array(L*L);
+        for(let i=0;i<L;i++){
+          for(let j=0;j<=i;j++){
+            let s = 0;
+            for(let d=0;d<D;d++) s += dattOut[Aoff+i*D+d] * c.V[Voff+j*D+d];
+            dScores[i*L+j] = s;
+          }
+        }
+        // dV update: dV[j,d] += sum_i sc[i,j] * dattOut[i,d]
+        for(let j=0;j<L;j++){
+          for(let d=0;d<D;d++){
+            let s = 0;
+            for(let i=j;i<L;i++) s += sc[i*L+j] * dattOut[Aoff+i*D+d];
+            dV[Voff+j*D+d] = s;
+          }
+        }
+        // softmax backward (per row): dlogits = sc * (dScores - sum(dScores*sc))
+        for(let i=0;i<L;i++){
+          let dot = 0;
+          for(let j=0;j<=i;j++) dot += dScores[i*L+j] * sc[i*L+j];
+          for(let j=0;j<=i;j++){
+            dScores[i*L+j] = sc[i*L+j] * (dScores[i*L+j] - dot);
+          }
+        }
+        // scale by 1/sqrt(D)
+        for(let i=0;i<L*L;i++) dScores[i] *= scaleAtt;
+        // dQ[i,d] += sum_j dScores[i,j] * K[j,d]
+        // dK[j,d] += sum_i dScores[i,j] * Q[i,d]
+        for(let i=0;i<L;i++){
+          for(let d=0;d<D;d++){
+            let sQ_ = 0;
+            for(let j=0;j<=i;j++) sQ_ += dScores[i*L+j] * c.K[Koff+j*D+d];
+            dQ[Qoff+i*D+d] = sQ_;
+          }
+        }
+        for(let j=0;j<L;j++){
+          for(let d=0;d<D;d++){
+            let sK_ = 0;
+            for(let i=j;i<L;i++) sK_ += dScores[i*L+j] * c.Q[Qoff+i*D+d];
+            dK[Koff+j*D+d] = sK_;
+          }
+        }
+      }
+      // Q = xn @ Wq
+      addGrad(blk.Wq, gradW(c.xn, dQ, B*L, D, D));
+      addGrad(blk.Wk, gradW(c.xn, dK, B*L, D, D));
+      addGrad(blk.Wv, gradW(c.xn, dV, B*L, D, D));
+      // dxn = dQ@Wq^T + dK@Wk^T + dV@Wv^T
+      const dxnA = matmulNT(dQ, blk.Wq, B*L, D, D);
+      const dxnB = matmulNT(dK, blk.Wk, B*L, D, D);
+      const dxnC = matmulNT(dV, blk.Wv, B*L, D, D);
+      const dxn = new Float32Array(B*L*D);
+      for(let i=0;i<dxn.length;i++) dxn[i] = dxnA[i] + dxnB[i] + dxnC[i];
+      // through LN1
+      const ln1B = layerNormBackward(dxn, c.xIn, c.ln1.mean, c.ln1.invStd, blk.gamma1, B*L, D);
+      addGrad(blk.gamma1, ln1B.dGamma);
+      addGrad(blk.beta1,  ln1B.dBeta);
+      // dxIn includes residual (the dxMid which included dX, but xMid = xIn + attProj so dxIn += dxMid as well)
+      const dxIn = new Float32Array(B*L*D);
+      for(let i=0;i<dxIn.length;i++) dxIn[i] = dxMid[i] + ln1B.dx[i];
+      dX = dxIn;
+    }
+
+    // dX is now gradient w.r.t. x0 (embedding output)
+    // x0[b,t,d] = tokEmb[id, d] + posEmb[t, d]
+    const dTok = new Float32Array(this.tokEmb.length);
+    const dPos = new Float32Array(this.posEmb.length);
+    for(let b=0;b<B;b++){
+      for(let t=0;t<L;t++){
+        const id = inputIds[b*L+t];
+        const off = (b*L+t)*D;
+        for(let d=0;d<D;d++){
+          const g = dX[off+d];
+          dTok[id*D+d] += g;
+          dPos[t*D+d]  += g;
+        }
+      }
+    }
+    addGrad(this.tokEmb, dTok);
+    addGrad(this.posEmb, dPos);
+
+    /* ----- Adam update ----- */
+    this.t++;
+    const t = this.t;
+    const b1 = HP.BETA1, b2 = HP.BETA2;
+    const bcorr1 = 1 - Math.pow(b1, t);
+    const bcorr2 = 1 - Math.pow(b2, t);
+    for(const [p] of this.paramList()){
+      const g = grads.get(p);
+      if(!g) continue;
+      let st = this.adamState.get(p);
+      if(!st){
+        st = {m:new Float32Array(p.length), v:new Float32Array(p.length)};
+        this.adamState.set(p, st);
+      }
+      // gradient clip per parameter (norm clip)
+      let gn = 0;
+      for(let i=0;i<g.length;i++) gn += g[i]*g[i];
+      gn = Math.sqrt(gn);
+      const clip = 5.0;
+      const scale = gn > clip ? clip/gn : 1;
+      for(let i=0;i<p.length;i++){
+        const gi = g[i] * scale;
+        st.m[i] = b1*st.m[i] + (1-b1)*gi;
+        st.v[i] = b2*st.v[i] + (1-b2)*gi*gi;
+        const mh = st.m[i]/bcorr1;
+        const vh = st.v[i]/bcorr2;
+        p[i] -= lr * mh / (Math.sqrt(vh) + HP.EPS);
+      }
+    }
+    return loss;
+  }
+
+  /* ---------- Sampling (no gradients) ---------- */
+  sample(startIds, nNew, temperature){
+    const D = HP.D, V = this.vocab;
+    let ids = Array.from(startIds);
+    for(let step=0; step<nNew; step++){
+      const ctx = ids.slice(Math.max(0, ids.length - HP.CTX));
+      const L = ctx.length;
+      // Embedding
+      const x0 = new Float32Array(L*D);
+      for(let t=0;t<L;t++){
+        const id = ctx[t];
+        for(let d=0;d<D;d++) x0[t*D+d] = this.tokEmb[id*D+d] + this.posEmb[t*D+d];
+      }
+      let x = x0;
+      for(const blk of this.blocks){
+        const ln1 = layerNormForward(x, blk.gamma1, blk.beta1, L, D);
+        const xn = ln1.y;
+        const Q = matmul(xn, blk.Wq, L, D, D);
+        const K = matmul(xn, blk.Wk, L, D, D);
+        const V_ = matmul(xn, blk.Wv, L, D, D);
+        const sc = new Float32Array(L*L);
+        const sa = 1/Math.sqrt(D);
+        for(let i=0;i<L;i++){
+          for(let j=0;j<=i;j++){
+            let s=0;
+            for(let d=0;d<D;d++) s += Q[i*D+d]*K[j*D+d];
+            sc[i*L+j] = s*sa;
+          }
+        }
+        softmaxCausalRow(sc, L);
+        const attOut = new Float32Array(L*D);
+        for(let i=0;i<L;i++){
+          for(let d=0;d<D;d++){
+            let s = 0;
+            for(let j=0;j<=i;j++) s += sc[i*L+j] * V_[j*D+d];
+            attOut[i*D+d] = s;
+          }
+        }
+        const attProj = matmul(attOut, blk.Wo, L, D, D);
+        const xMid = new Float32Array(L*D);
+        for(let i=0;i<x.length;i++) xMid[i] = x[i] + attProj[i];
+        const ln2 = layerNormForward(xMid, blk.gamma2, blk.beta2, L, D);
+        const xn2 = ln2.y;
+        const h1 = matmul(xn2, blk.Wf1, L, D, HP.FF);
+        for(let r=0;r<L;r++) for(let f=0;f<HP.FF;f++) h1[r*HP.FF+f] = gelu(h1[r*HP.FF+f] + blk.bf1[f]);
+        const ff2 = matmul(h1, blk.Wf2, L, HP.FF, D);
+        for(let r=0;r<L;r++) for(let d=0;d<D;d++) ff2[r*D+d] += blk.bf2[d];
+        const xOut = new Float32Array(L*D);
+        for(let i=0;i<x.length;i++) xOut[i] = xMid[i] + ff2[i];
+        x = xOut;
+      }
+      const lnF = layerNormForward(x, this.gammaF, this.betaF, L, D);
+      const xnF = lnF.y;
+      // last position only
+      const logitsLast = new Float32Array(V);
+      for(let v=0;v<V;v++){
+        let s = 0;
+        for(let d=0;d<D;d++) s += xnF[(L-1)*D+d] * this.head[d*V+v];
+        logitsLast[v] = s / Math.max(temperature, 0.05);
+      }
+      // softmax
+      let mx = -Infinity;
+      for(let v=0;v<V;v++) if(logitsLast[v]>mx) mx = logitsLast[v];
+      let sum = 0;
+      const probs = new Float32Array(V);
+      for(let v=0;v<V;v++){ probs[v] = Math.exp(logitsLast[v]-mx); sum += probs[v]; }
+      for(let v=0;v<V;v++) probs[v] /= sum;
+      // sample
+      let r = Math.random();
+      let pick = V-1;
+      for(let v=0;v<V;v++){ r -= probs[v]; if(r<=0){ pick = v; break; } }
+      ids.push(pick);
+    }
+    return ids;
+  }
+}
+
+/* =====================================================================
+   Tokenizer / corpus
+   ===================================================================== */
+let CORPUS = DEFAULT_CORPUS;
+let CHARS = []; // unique chars
+let CHAR2ID = {};
+let TOKENS = null; // Int32Array of corpus
+
+function buildTokenizer(text){
+  const set = new Set();
+  for(let i=0;i<text.length;i++) set.add(text[i]);
+  CHARS = Array.from(set).sort();
+  CHAR2ID = {};
+  for(let i=0;i<CHARS.length;i++) CHAR2ID[CHARS[i]] = i;
+  TOKENS = new Int32Array(text.length);
+  for(let i=0;i<text.length;i++) TOKENS[i] = CHAR2ID[text[i]];
+}
+function decodeIds(ids){
+  let s = '';
+  for(let i=0;i<ids.length;i++){
+    const c = CHARS[ids[i]];
+    if(c !== undefined) s += c;
+  }
+  return s;
+}
+
+/* =====================================================================
+   Visualization helpers
+   ===================================================================== */
+function colorMapVal(v){
+  // map [-1,1] to BWR-ish color
+  const t = Math.max(-1, Math.min(1, v));
+  if(t >= 0){
+    // 0 -> dark, 1 -> bright cyan/white
+    const r = Math.floor(20 + t*120);
+    const g = Math.floor(40 + t*200);
+    const b = Math.floor(60 + t*200);
+    return [r,g,b];
+  } else {
+    const a = -t;
+    const r = Math.floor(40 + a*200);
+    const g = Math.floor(20 + a*60);
+    const b = Math.floor(60 + a*120);
+    return [r,g,b];
+  }
+}
+function drawHeatmap(canvas, mat, M, N){
+  const w = canvas.width = canvas.clientWidth;
+  const h = canvas.height = canvas.clientHeight;
+  const ctx = canvas.getContext('2d');
+  // determine scale (use a robust max)
+  let mx = 1e-6;
+  for(let i=0;i<mat.length;i++){ const a = Math.abs(mat[i]); if(a>mx) mx = a; }
+  // sample down if too big
+  const stepX = Math.max(1, Math.floor(N / w));
+  const stepY = Math.max(1, Math.floor(M / h));
+  const cellW = w / Math.ceil(N / stepX);
+  const cellH = h / Math.ceil(M / stepY);
+  // clear
+  ctx.fillStyle = '#020509';
+  ctx.fillRect(0,0,w,h);
+  // draw using ImageData for speed
+  const cols = Math.ceil(N/stepX);
+  const rows = Math.ceil(M/stepY);
+  const img = ctx.createImageData(cols, rows);
+  let p = 0;
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const yi = r*stepY, xi = c*stepX;
+      // average a small region for downsample
+      let s = 0, n = 0;
+      const yEnd = Math.min(M, yi+stepY);
+      const xEnd = Math.min(N, xi+stepX);
+      for(let y2=yi;y2<yEnd;y2++) for(let x2=xi;x2<xEnd;x2++){ s += mat[y2*N+x2]; n++; }
+      const v = s/n/mx;
+      const [rr,gg,bb] = colorMapVal(v);
+      img.data[p++]=rr; img.data[p++]=gg; img.data[p++]=bb; img.data[p++]=255;
+    }
+  }
+  // put then scale up
+  // create temp canvas
+  const tmp = document.createElement('canvas');
+  tmp.width = cols; tmp.height = rows;
+  tmp.getContext('2d').putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(tmp, 0, 0, w, h);
+  // label
+  ctx.fillStyle = '#578'; ctx.font = '9px monospace';
+  ctx.fillText(`${M}x${N}`, 4, 10);
+}
+
+function drawAttention(canvas, attn, L){
+  const w = canvas.width = canvas.clientWidth;
+  const h = canvas.height = canvas.clientHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#020509'; ctx.fillRect(0,0,w,h);
+  const img = ctx.createImageData(L, L);
+  let p = 0;
+  // attn rows i: probabilities over j<=i. For coloring use square root for visibility.
+  for(let i=0;i<L;i++){
+    let mx = 1e-6;
+    for(let j=0;j<=i;j++) if(attn[i*L+j]>mx) mx = attn[i*L+j];
+    for(let j=0;j<L;j++){
+      const v = j<=i ? attn[i*L+j]/mx : 0;
+      const a = Math.sqrt(v);
+      const r = Math.floor(20 + a*60);
+      const g = Math.floor(60 + a*180);
+      const b = Math.floor(100 + a*200);
+      img.data[p++]=r; img.data[p++]=g; img.data[p++]=b; img.data[p++]=255;
+    }
+  }
+  const tmp = document.createElement('canvas');
+  tmp.width = L; tmp.height = L;
+  tmp.getContext('2d').putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(tmp, 0, 0, w, h);
+}
+
+/* ---------- Loss curve ---------- */
+const lossHistory = []; // {step, loss}
+function drawLoss(){
+  const c = document.getElementById('lossCanvas');
+  const w = c.width = c.clientWidth;
+  const h = c.height = c.clientHeight;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#020509'; ctx.fillRect(0,0,w,h);
+  if(lossHistory.length<2) return;
+  // determine bounds
+  let mn = Infinity, mx = -Infinity;
+  for(const p of lossHistory){ if(p.loss<mn) mn = p.loss; if(p.loss>mx) mx = p.loss; }
+  if(mx-mn < 0.05) mx = mn + 0.05;
+  // gridlines
+  ctx.strokeStyle = '#0d1726'; ctx.lineWidth = 1;
+  for(let i=1;i<5;i++){
+    const y = h*i/5;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+  }
+  // raw loss
+  ctx.strokeStyle = '#1a3a52'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for(let i=0;i<lossHistory.length;i++){
+    const p = lossHistory[i];
+    const x = (i/(lossHistory.length-1)) * w;
+    const y = h - ((p.loss-mn)/(mx-mn))*h;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // smoothed
+  ctx.strokeStyle = '#4af'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  let ema = lossHistory[0].loss;
+  const alpha = 0.05;
+  for(let i=0;i<lossHistory.length;i++){
+    ema = alpha*lossHistory[i].loss + (1-alpha)*ema;
+    const x = (i/(lossHistory.length-1)) * w;
+    const y = h - ((ema-mn)/(mx-mn))*h;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // labels
+  ctx.fillStyle = '#578'; ctx.font = '10px monospace';
+  ctx.fillText(mx.toFixed(2), 3, 11);
+  ctx.fillText(mn.toFixed(2), 3, h-3);
+  document.getElementById('lossLeft').textContent = `step ${lossHistory[0].step}`;
+  document.getElementById('lossRight').textContent = `loss ${lossHistory[lossHistory.length-1].loss.toFixed(3)}`;
+}
+
+/* =====================================================================
+   Main loop / state
+   ===================================================================== */
+let model = null;
+let running = true;
+let stepCount = 0;
+let tokensSeen = 0;
+let lossEMA = null;
+let startTime = 0;
+let lastSpeedT = 0;
+let stepsSinceSpeed = 0;
+
+function freshModel(){
+  buildTokenizer(CORPUS);
+  model = new Model(CHARS.length);
+  stepCount = 0;
+  tokensSeen = 0;
+  lossEMA = null;
+  lossHistory.length = 0;
+  startTime = performance.now();
+  lastSpeedT = startTime;
+  stepsSinceSpeed = 0;
+  document.getElementById('paramsPill').innerHTML = `params: <b>${model.paramCount().toLocaleString()}</b>`;
+  document.getElementById('vocabPill').innerHTML = `vocab: <b>${CHARS.length}</b>`;
+  // Clear samples
+  document.getElementById('samples').innerHTML = '';
+}
+
+function makeBatch(B, L){
+  const inIds  = new Int32Array(B*L);
+  const tgtIds = new Int32Array(B*L);
+  const lim = TOKENS.length - L - 1;
+  for(let b=0;b<B;b++){
+    const start = (Math.random()*lim)|0;
+    for(let t=0;t<L;t++){
+      inIds[b*L+t]  = TOKENS[start+t];
+      tgtIds[b*L+t] = TOKENS[start+t+1];
+    }
+  }
+  return {inIds, tgtIds};
+}
+
+function generateSample(nChars){
+  if(!model) return '';
+  const T = parseFloat(document.getElementById('tSlider').value);
+  // seed with a single space or first char of corpus
+  const seedChar = CHARS.includes(' ') ? ' ' : CHARS[0];
+  const seed = [CHAR2ID[seedChar]];
+  const ids = model.sample(seed, nChars, T);
+  return decodeIds(ids);
+}
+
+function appendSample(text){
+  const div = document.createElement('div');
+  div.className = 'sample';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = `step ${stepCount} · loss ${lossEMA?lossEMA.toFixed(3):'—'} · T=${parseFloat(document.getElementById('tSlider').value).toFixed(2)}`;
+  const gen = document.createElement('div');
+  gen.className = 'gen';
+  gen.textContent = text;
+  div.appendChild(meta);
+  div.appendChild(gen);
+  const c = document.getElementById('samples');
+  c.insertBefore(div, c.firstChild);
+  while(c.children.length > 5) c.removeChild(c.lastChild);
+}
+
+function refreshHeatmaps(){
+  const D = HP.D, FF = HP.FF;
+  const bs = model.blocks;
+  drawHeatmap(document.getElementById('b1q'), bs[0].Wq, D, D);
+  drawHeatmap(document.getElementById('b1k'), bs[0].Wk, D, D);
+  drawHeatmap(document.getElementById('b1v'), bs[0].Wv, D, D);
+  drawHeatmap(document.getElementById('b1o'), bs[0].Wo, D, D);
+  drawHeatmap(document.getElementById('b1f1'), bs[0].Wf1, D, FF);
+  drawHeatmap(document.getElementById('b1f2'), bs[0].Wf2, FF, D);
+  drawHeatmap(document.getElementById('b2q'), bs[1].Wq, D, D);
+  drawHeatmap(document.getElementById('b2k'), bs[1].Wk, D, D);
+  drawHeatmap(document.getElementById('b2v'), bs[1].Wv, D, D);
+  drawHeatmap(document.getElementById('b2o'), bs[1].Wo, D, D);
+  drawHeatmap(document.getElementById('b2f1'), bs[1].Wf1, D, FF);
+  drawHeatmap(document.getElementById('b2f2'), bs[1].Wf2, FF, D);
+}
+
+function trainTick(){
+  if(!running || !model){
+    requestAnimationFrame(trainTick);
+    return;
+  }
+  // train one (or more) steps per frame, budget ~30ms
+  const start = performance.now();
+  const B = parseInt(document.getElementById('bSlider').value);
+  const lr = Math.pow(10, parseFloat(document.getElementById('lrSlider').value));
+  const budget = 35;
+  let didStep = false;
+  do {
+    const {inIds, tgtIds} = makeBatch(B, HP.CTX);
+    const captureAttn = (stepCount % 10 === 0);
+    const loss = model.trainStep(inIds, tgtIds, B, HP.CTX, lr, captureAttn);
+    stepCount++;
+    tokensSeen += B*HP.CTX;
+    stepsSinceSpeed++;
+    lossEMA = (lossEMA === null) ? loss : 0.05*loss + 0.95*lossEMA;
+    if(stepCount % 5 === 0 || lossHistory.length < 50){
+      lossHistory.push({step: stepCount, loss});
+      if(lossHistory.length > 600) lossHistory.shift();
+    }
+    didStep = true;
+  } while(performance.now() - start < budget);
+
+  // sample every 50 steps
+  if(stepCount % 50 === 0 && stepCount > 0 && didStep){
+    try {
+      const txt = generateSample(200);
+      appendSample(txt);
+    } catch(e){ console.error(e); }
+  }
+
+  // periodically refresh visualizations (every ~250ms approx)
+  const now = performance.now();
+  if(now - lastSpeedT > 500){
+    const sps = stepsSinceSpeed * 1000 / (now - lastSpeedT);
+    document.getElementById('speedPill').innerHTML = `steps/s: <b>${sps.toFixed(1)}</b>`;
+    lastSpeedT = now; stepsSinceSpeed = 0;
+    refreshHeatmaps();
+    if(model.savedAttn) drawAttention(document.getElementById('attCanvas'), model.savedAttn, HP.CTX);
+    drawLoss();
+    document.getElementById('sStep').textContent = stepCount.toLocaleString();
+    document.getElementById('sLoss').textContent = lossEMA ? lossEMA.toFixed(3) : '—';
+    document.getElementById('sTok').textContent = tokensSeen.toLocaleString();
+    document.getElementById('sTime').textContent = ((now-startTime)/1000).toFixed(0) + 's';
+    document.getElementById('status').textContent = 'training';
+  }
+  requestAnimationFrame(trainTick);
+}
+
+/* ---------- UI hookup ---------- */
+function uiInit(){
+  // corpus textarea default
+  document.getElementById('corpus').value = DEFAULT_CORPUS;
+
+  document.getElementById('bPause').onclick = () => {
+    running = !running;
+    document.getElementById('bPause').textContent = running ? 'Pause' : 'Resume';
+    document.getElementById('status').textContent = running ? 'training' : 'paused';
+  };
+  document.getElementById('bReset').onclick = () => {
+    freshModel();
+  };
+  document.getElementById('bSample').onclick = () => {
+    const txt = generateSample(200);
+    appendSample(txt);
+  };
+  document.getElementById('bApply').onclick = () => {
+    const txt = document.getElementById('corpus').value;
+    if(txt && txt.length > 256){
+      CORPUS = txt;
+      freshModel();
+    } else {
+      alert('Corpus too short (need at least 256 chars).');
+    }
+  };
+  document.getElementById('bDefault').onclick = () => {
+    CORPUS = DEFAULT_CORPUS;
+    document.getElementById('corpus').value = DEFAULT_CORPUS;
+    freshModel();
+  };
+
+  const lrS = document.getElementById('lrSlider');
+  const lrV = document.getElementById('lrVal');
+  const updateLR = () => { const v = Math.pow(10, parseFloat(lrS.value)); lrV.textContent = v.toExponential(1); };
+  lrS.oninput = updateLR; updateLR();
+
+  const tS = document.getElementById('tSlider');
+  const tV = document.getElementById('tVal');
+  tS.oninput = () => { tV.textContent = parseFloat(tS.value).toFixed(2); };
+
+  const bS = document.getElementById('bSlider');
+  const bV = document.getElementById('bVal');
+  bS.oninput = () => { bV.textContent = bS.value; };
+}
+
+/* ---------- Boot ---------- */
+uiInit();
+freshModel();
+// Begin training immediately (well within 2 second budget)
+requestAnimationFrame(trainTick);
+</script>
+</body>
+</html>

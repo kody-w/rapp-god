@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vibe Chess Engine — 67</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a14 100%);
+    color: #eef;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #app {
+    display: flex;
+    gap: 18px;
+    max-width: 1400px;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+  }
+  #board-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+  }
+  h1 {
+    font-size: 16px;
+    color: #aaf;
+    letter-spacing: 3px;
+    font-weight: 300;
+    text-shadow: 0 0 20px rgba(150,180,255,0.4);
+  }
+  #board {
+    display: block;
+    background: #0d0d1a;
+    border-radius: 10px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(150,180,255,0.15);
+    cursor: grab;
+  }
+  #board.dragging { cursor: grabbing; }
+  #status {
+    text-align: center;
+    font-size: 14px;
+    height: 22px;
+    color: #cdf;
+    text-shadow: 0 0 10px rgba(150,180,255,0.3);
+  }
+  #controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 640px;
+  }
+  button, select {
+    background: linear-gradient(180deg, #2a2a48 0%, #1f1f3a 100%);
+    color: #eef;
+    border: 1px solid #4a4a7a;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  button:hover, select:hover {
+    background: linear-gradient(180deg, #3a3a68 0%, #2f2f5a 100%);
+    border-color: #6a6a9a;
+  }
+  button:active { transform: translateY(1px); }
+  button.active { background: linear-gradient(180deg, #4a6a8a 0%, #3a5a7a 100%); }
+  #side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 460px;
+    max-width: 540px;
+    height: 700px;
+  }
+  #stats {
+    background: rgba(15,15,30,0.7);
+    backdrop-filter: blur(10px);
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(150,180,255,0.15);
+    font-family: 'SF Mono', 'Consolas', monospace;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 18px;
+    font-size: 12px;
+  }
+  .stat { display: flex; justify-content: space-between; }
+  .stat span:first-child { color: #889; }
+  .stat span:last-child { color: #6f8; font-weight: bold; text-shadow: 0 0 8px rgba(80,255,140,0.4); }
+  #tree-wrap {
+    flex: 1;
+    background: rgba(10,10,22,0.85);
+    border-radius: 10px;
+    border: 1px solid rgba(150,180,255,0.15);
+    overflow: hidden;
+    position: relative;
+  }
+  #tree-wrap::before {
+    content: 'SEARCH TREE';
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(180,200,255,0.5);
+    z-index: 1;
+  }
+  #tree { display: block; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="board-pane">
+    <h1>♚  V I B E   C H E S S  ♛</h1>
+    <canvas id="board" width="640" height="640"></canvas>
+    <div id="status">White to move</div>
+    <div id="controls">
+      <button id="newGame">New Game</button>
+      <button id="undo">Undo</button>
+      <button id="flip">Flip</button>
+      <button id="aivai">AI vs AI</button>
+      <select id="depth" title="AI search depth">
+        <option value="2">Depth 2</option>
+        <option value="3" selected>Depth 3</option>
+        <option value="4">Depth 4</option>
+        <option value="5">Depth 5</option>
+        <option value="6">Depth 6</option>
+      </select>
+      <select id="promo" title="Pawn promotion">
+        <option value="q" selected>♛ Queen</option>
+        <option value="r">♜ Rook</option>
+        <option value="b">♝ Bishop</option>
+        <option value="n">♞ Knight</option>
+      </select>
+    </div>
+  </div>
+  <div id="side">
+    <div id="stats">
+      <div class="stat"><span>Nodes</span><span id="s-nodes">0</span></div>
+      <div class="stat"><span>NPS</span><span id="s-nps">0</span></div>
+      <div class="stat"><span>Depth</span><span id="s-depth">—</span></div>
+      <div class="stat"><span>Eval</span><span id="s-eval">0.00</span></div>
+      <div class="stat"><span>Best</span><span id="s-best">—</span></div>
+      <div class="stat"><span>Time</span><span id="s-time">0 ms</span></div>
+    </div>
+    <div id="tree-wrap"><canvas id="tree" width="520" height="620"></canvas></div>
+  </div>
+</div>
+<script>
+'use strict';
+
+// ============================================================
+//  CHESS ENGINE — VIBE 67
+//  pure JS minimax + alpha-beta + iterative deepening + Zobrist TT
+// ============================================================
+
+const FILES = 'abcdefgh';
+const RANKS = '87654321';
+const sqName = (r, c) => FILES[c] + RANKS[r];
+
+const PIECE_VAL = { P:100, N:320, B:330, R:500, Q:900, K:20000 };
+const PIECE_GLYPH = {
+  K:'♔', Q:'♕', R:'♖', B:'♗', N:'♘', P:'♙',
+  k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟'
+};
+
+// Piece-square tables (white perspective: row 0 = rank 8)
+const PST = {
+  P:[[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],
+     [5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],
+     [5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+  N:[[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],
+     [-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],
+     [-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],
+     [-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+  B:[[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],
+     [-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],
+     [-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],
+     [-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
+  R:[[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],
+     [-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],
+     [-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
+  Q:[[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],
+     [-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],
+     [0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],
+     [-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
+  K_MG:[[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],
+        [-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],
+        [-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],
+        [20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]],
+  K_EG:[[-50,-40,-30,-20,-20,-30,-40,-50],[-30,-20,-10,0,0,-10,-20,-30],
+        [-30,-10,20,30,30,20,-10,-30],[-30,-10,30,40,40,30,-10,-30],
+        [-30,-10,30,40,40,30,-10,-30],[-30,-10,20,30,30,20,-10,-30],
+        [-30,-30,0,0,0,0,-30,-30],[-50,-30,-30,-30,-30,-30,-30,-50]]
+};
+
+// ---------- Zobrist hashing (32-bit) ----------
+function rand32() { return (Math.random() * 0x100000000) >>> 0; }
+const ZOB_PIECE = {};
+'PNBRQKpnbrqk'.split('').forEach(p => {
+  ZOB_PIECE[p] = [];
+  for (let r = 0; r < 8; r++) {
+    ZOB_PIECE[p][r] = [];
+    for (let c = 0; c < 8; c++) ZOB_PIECE[p][r][c] = rand32();
+  }
+});
+const ZOB_TURN = rand32();
+const ZOB_CASTLE = { wk: rand32(), wq: rand32(), bk: rand32(), bq: rand32() };
+const ZOB_EP = []; for (let i = 0; i < 8; i++) ZOB_EP.push(rand32());
+
+function computeZobrist(state) {
+  let z = 0;
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const p = state.board[r][c];
+      if (p !== '.') z ^= ZOB_PIECE[p][r][c];
+    }
+  if (state.turn === 'b') z ^= ZOB_TURN;
+  if (state.castling.wk) z ^= ZOB_CASTLE.wk;
+  if (state.castling.wq) z ^= ZOB_CASTLE.wq;
+  if (state.castling.bk) z ^= ZOB_CASTLE.bk;
+  if (state.castling.bq) z ^= ZOB_CASTLE.bq;
+  if (state.ep) z ^= ZOB_EP[state.ep[1]];
+  return z >>> 0;
+}
+
+// ---------- State ----------
+function makeInitialState() {
+  const board = [
+    ['r','n','b','q','k','b','n','r'],
+    ['p','p','p','p','p','p','p','p'],
+    ['.','.','.','.','.','.','.','.'],
+    ['.','.','.','.','.','.','.','.'],
+    ['.','.','.','.','.','.','.','.'],
+    ['.','.','.','.','.','.','.','.'],
+    ['P','P','P','P','P','P','P','P'],
+    ['R','N','B','Q','K','B','N','R']
+  ];
+  const s = {
+    board,
+    turn: 'w',
+    castling: { wk:true, wq:true, bk:true, bq:true },
+    ep: null,
+    halfmove: 0,
+    fullmove: 1,
+    kings: { w:[7,4], b:[0,4] },
+    zobrist: 0
+  };
+  s.zobrist = computeZobrist(s);
+  return s;
+}
+
+const isWhite = p => p >= 'A' && p <= 'Z';
+
+// ---------- Move generation ----------
+const KNIGHT_DELTAS = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+const ROOK_DIRS = [[-1,0],[1,0],[0,-1],[0,1]];
+const BISHOP_DIRS = [[-1,-1],[-1,1],[1,-1],[1,1]];
+const QUEEN_DIRS = ROOK_DIRS.concat(BISHOP_DIRS);
+
+function isSquareAttacked(state, r, c, byWhite) {
+  const b = state.board;
+  // Pawn attacks
+  const enemyPawn = byWhite ? 'P' : 'p';
+  const pDir = byWhite ? 1 : -1; // pawn that attacks (r,c) sits at r+pDir
+  for (const dc of [-1, 1]) {
+    const pr = r + pDir, pc = c + dc;
+    if (pr >= 0 && pr < 8 && pc >= 0 && pc < 8 && b[pr][pc] === enemyPawn) return true;
+  }
+  // Knight
+  const enemyN = byWhite ? 'N' : 'n';
+  for (const [dr, dc] of KNIGHT_DELTAS) {
+    const nr = r + dr, nc = c + dc;
+    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && b[nr][nc] === enemyN) return true;
+  }
+  // King
+  const enemyK = byWhite ? 'K' : 'k';
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && b[nr][nc] === enemyK) return true;
+    }
+  // Sliding orthogonal: rook/queen
+  const enemyR = byWhite ? 'R' : 'r';
+  const enemyQ = byWhite ? 'Q' : 'q';
+  const enemyB = byWhite ? 'B' : 'b';
+  for (const [dr, dc] of ROOK_DIRS) {
+    let nr = r + dr, nc = c + dc;
+    while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+      const t = b[nr][nc];
+      if (t !== '.') { if (t === enemyR || t === enemyQ) return true; break; }
+      nr += dr; nc += dc;
+    }
+  }
+  for (const [dr, dc] of BISHOP_DIRS) {
+    let nr = r + dr, nc = c + dc;
+    while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+      const t = b[nr][nc];
+      if (t !== '.') { if (t === enemyB || t === enemyQ) return true; break; }
+      nr += dr; nc += dc;
+    }
+  }
+  return false;
+}
+
+function genPawnMoves(state, r, c, moves) {
+  const b = state.board;
+  const p = b[r][c];
+  const w = p === 'P';
+  const dir = w ? -1 : 1;
+  const startRow = w ? 6 : 1;
+  const promoRow = w ? 0 : 7;
+  // forward 1
+  if (b[r + dir][c] === '.') {
+    if (r + dir === promoRow) addPromos(moves, r, c, r + dir, c, w);
+    else moves.push({ from:[r,c], to:[r+dir,c] });
+    if (r === startRow && b[r + 2*dir][c] === '.')
+      moves.push({ from:[r,c], to:[r+2*dir,c] });
+  }
+  // captures
+  for (const dc of [-1, 1]) {
+    const nc = c + dc;
+    if (nc < 0 || nc > 7) continue;
+    const nr = r + dir;
+    const t = b[nr][nc];
+    if (t !== '.' && isWhite(t) !== w) {
+      if (nr === promoRow) addPromos(moves, r, c, nr, nc, w);
+      else moves.push({ from:[r,c], to:[nr,nc] });
+    }
+    // en passant
+    if (state.ep && state.ep[0] === nr && state.ep[1] === nc)
+      moves.push({ from:[r,c], to:[nr,nc], ep:true });
+  }
+}
+function addPromos(moves, r1, c1, r2, c2, w) {
+  const promos = w ? ['Q','R','B','N'] : ['q','r','b','n'];
+  for (const promo of promos) moves.push({ from:[r1,c1], to:[r2,c2], promotion:promo });
+}
+
+function genKnightMoves(state, r, c, moves) {
+  const w = state.board[r][c] === 'N';
+  for (const [dr, dc] of KNIGHT_DELTAS) {
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nr > 7 || nc < 0 || nc > 7) continue;
+    const t = state.board[nr][nc];
+    if (t === '.' || isWhite(t) !== w) moves.push({ from:[r,c], to:[nr,nc] });
+  }
+}
+function genSlidingMoves(state, r, c, moves, dirs) {
+  const w = isWhite(state.board[r][c]);
+  for (const [dr, dc] of dirs) {
+    let nr = r + dr, nc = c + dc;
+    while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+      const t = state.board[nr][nc];
+      if (t === '.') moves.push({ from:[r,c], to:[nr,nc] });
+      else { if (isWhite(t) !== w) moves.push({ from:[r,c], to:[nr,nc] }); break; }
+      nr += dr; nc += dc;
+    }
+  }
+}
+function genKingMoves(state, r, c, moves) {
+  const p = state.board[r][c];
+  const w = p === 'K';
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr > 7 || nc < 0 || nc > 7) continue;
+      const t = state.board[nr][nc];
+      if (t === '.' || isWhite(t) !== w) moves.push({ from:[r,c], to:[nr,nc] });
+    }
+  // Castling
+  const baseRow = w ? 7 : 0;
+  if (r !== baseRow || c !== 4) return;
+  const kRight = w ? state.castling.wk : state.castling.bk;
+  const qRight = w ? state.castling.wq : state.castling.bq;
+  const enemyW = !w;
+  if (kRight && state.board[baseRow][5] === '.' && state.board[baseRow][6] === '.' &&
+      state.board[baseRow][7] === (w ? 'R' : 'r')) {
+    if (!isSquareAttacked(state, baseRow, 4, enemyW) &&
+        !isSquareAttacked(state, baseRow, 5, enemyW) &&
+        !isSquareAttacked(state, baseRow, 6, enemyW))
+      moves.push({ from:[r,c], to:[baseRow,6], castle:'K' });
+  }
+  if (qRight && state.board[baseRow][1] === '.' && state.board[baseRow][2] === '.' &&
+      state.board[baseRow][3] === '.' && state.board[baseRow][0] === (w ? 'R' : 'r')) {
+    if (!isSquareAttacked(state, baseRow, 4, enemyW) &&
+        !isSquareAttacked(state, baseRow, 3, enemyW) &&
+        !isSquareAttacked(state, baseRow, 2, enemyW))
+      moves.push({ from:[r,c], to:[baseRow,2], castle:'Q' });
+  }
+}
+
+function generatePseudoMoves(state) {
+  const moves = [];
+  const want = state.turn === 'w';
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const p = state.board[r][c];
+      if (p === '.') continue;
+      if (isWhite(p) !== want) continue;
+      const u = p.toUpperCase();
+      if (u === 'P') genPawnMoves(state, r, c, moves);
+      else if (u === 'N') genKnightMoves(state, r, c, moves);
+      else if (u === 'B') genSlidingMoves(state, r, c, moves, BISHOP_DIRS);
+      else if (u === 'R') genSlidingMoves(state, r, c, moves, ROOK_DIRS);
+      else if (u === 'Q') genSlidingMoves(state, r, c, moves, QUEEN_DIRS);
+      else if (u === 'K') genKingMoves(state, r, c, moves);
+    }
+  return moves;
+}
+
+function generateLegalMoves(state) {
+  const pseudo = generatePseudoMoves(state);
+  const legal = [];
+  const us = state.turn;
+  for (const m of pseudo) {
+    makeMove(state, m);
+    const k = state.kings[us];
+    if (!isSquareAttacked(state, k[0], k[1], state.turn === 'w')) legal.push(m);
+    unmakeMove(state, m);
+  }
+  return legal;
+}
+
+// ---------- Make / Unmake ----------
+function makeMove(state, move) {
+  const [r1, c1] = move.from;
+  const [r2, c2] = move.to;
+  const piece = state.board[r1][c1];
+  const capt = state.board[r2][c2];
+  move.piece = piece;
+  move.capture = capt;
+  move.prevCastling = { ...state.castling };
+  move.prevEp = state.ep;
+  move.prevHalfmove = state.halfmove;
+  move.prevZobrist = state.zobrist;
+
+  let z = state.zobrist;
+  // remove from-square piece
+  z ^= ZOB_PIECE[piece][r1][c1];
+
+  if (move.castle) {
+    state.board[r2][c2] = piece;
+    state.board[r1][c1] = '.';
+    z ^= ZOB_PIECE[piece][r2][c2];
+    let rookFR, rookFC, rookTR, rookTC;
+    if (move.castle === 'K') { rookFR = r1; rookFC = 7; rookTR = r1; rookTC = 5; }
+    else { rookFR = r1; rookFC = 0; rookTR = r1; rookTC = 3; }
+    const rook = state.board[rookFR][rookFC];
+    state.board[rookFR][rookFC] = '.';
+    state.board[rookTR][rookTC] = rook;
+    z ^= ZOB_PIECE[rook][rookFR][rookFC];
+    z ^= ZOB_PIECE[rook][rookTR][rookTC];
+  } else if (move.ep) {
+    state.board[r2][c2] = piece;
+    state.board[r1][c1] = '.';
+    z ^= ZOB_PIECE[piece][r2][c2];
+    const captR = r1, captC = c2;
+    const captPiece = state.board[captR][captC];
+    state.board[captR][captC] = '.';
+    z ^= ZOB_PIECE[captPiece][captR][captC];
+    move.epCaptureSq = [captR, captC];
+    move.capture = captPiece;
+  } else {
+    if (capt !== '.') z ^= ZOB_PIECE[capt][r2][c2];
+    const placed = move.promotion || piece;
+    state.board[r2][c2] = placed;
+    state.board[r1][c1] = '.';
+    z ^= ZOB_PIECE[placed][r2][c2];
+  }
+
+  if (piece === 'K') state.kings.w = [r2, c2];
+  else if (piece === 'k') state.kings.b = [r2, c2];
+
+  // Castling rights updates
+  if (piece === 'K') { state.castling.wk = false; state.castling.wq = false; }
+  if (piece === 'k') { state.castling.bk = false; state.castling.bq = false; }
+  if (r1 === 7 && c1 === 0) state.castling.wq = false;
+  if (r1 === 7 && c1 === 7) state.castling.wk = false;
+  if (r1 === 0 && c1 === 0) state.castling.bq = false;
+  if (r1 === 0 && c1 === 7) state.castling.bk = false;
+  if (r2 === 7 && c2 === 0) state.castling.wq = false;
+  if (r2 === 7 && c2 === 7) state.castling.wk = false;
+  if (r2 === 0 && c2 === 0) state.castling.bq = false;
+  if (r2 === 0 && c2 === 7) state.castling.bk = false;
+
+  if (move.prevCastling.wk !== state.castling.wk) z ^= ZOB_CASTLE.wk;
+  if (move.prevCastling.wq !== state.castling.wq) z ^= ZOB_CASTLE.wq;
+  if (move.prevCastling.bk !== state.castling.bk) z ^= ZOB_CASTLE.bk;
+  if (move.prevCastling.bq !== state.castling.bq) z ^= ZOB_CASTLE.bq;
+
+  if (move.prevEp) z ^= ZOB_EP[move.prevEp[1]];
+  state.ep = null;
+  if ((piece === 'P' || piece === 'p') && Math.abs(r2 - r1) === 2) {
+    state.ep = [(r1 + r2) >> 1, c1];
+    z ^= ZOB_EP[c1];
+  }
+
+  if (piece === 'P' || piece === 'p' || capt !== '.' || move.ep) state.halfmove = 0;
+  else state.halfmove++;
+
+  state.turn = state.turn === 'w' ? 'b' : 'w';
+  z ^= ZOB_TURN;
+  state.zobrist = z >>> 0;
+}
+
+function unmakeMove(state, move) {
+  const [r1, c1] = move.from;
+  const [r2, c2] = move.to;
+  state.turn = state.turn === 'w' ? 'b' : 'w';
+
+  if (move.castle) {
+    state.board[r1][c1] = move.piece;
+    state.board[r2][c2] = '.';
+    let rookFR, rookFC, rookTR, rookTC;
+    if (move.castle === 'K') { rookFR = r1; rookFC = 7; rookTR = r1; rookTC = 5; }
+    else { rookFR = r1; rookFC = 0; rookTR = r1; rookTC = 3; }
+    state.board[rookFR][rookFC] = state.board[rookTR][rookTC];
+    state.board[rookTR][rookTC] = '.';
+  } else if (move.ep) {
+    state.board[r1][c1] = move.piece;
+    state.board[r2][c2] = '.';
+    const [cr, cc] = move.epCaptureSq;
+    state.board[cr][cc] = move.capture;
+  } else {
+    state.board[r1][c1] = move.piece;
+    state.board[r2][c2] = move.capture;
+  }
+
+  if (move.piece === 'K') state.kings.w = [r1, c1];
+  else if (move.piece === 'k') state.kings.b = [r1, c1];
+
+  state.castling = move.prevCastling;
+  state.ep = move.prevEp;
+  state.halfmove = move.prevHalfmove;
+  state.zobrist = move.prevZobrist;
+}
+
+// ---------- Evaluation ----------
+function evaluate(state) {
+  const b = state.board;
+  let score = 0;
+  let nonPawnMaterial = 0;
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const p = b[r][c];
+      if (p === '.' || p === 'K' || p === 'k' || p === 'P' || p === 'p') continue;
+      nonPawnMaterial += PIECE_VAL[p.toUpperCase()];
+    }
+  const endgame = nonPawnMaterial < 1300;
+
+  const wPF = [0,0,0,0,0,0,0,0], bPF = [0,0,0,0,0,0,0,0];
+  const wPR = [[],[],[],[],[],[],[],[]], bPR = [[],[],[],[],[],[],[],[]];
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const p = b[r][c];
+      if (p === 'P') { wPF[c]++; wPR[c].push(r); }
+      else if (p === 'p') { bPF[c]++; bPR[c].push(r); }
+    }
+
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const p = b[r][c];
+      if (p === '.') continue;
+      const w = isWhite(p);
+      const u = p.toUpperCase();
+      const v = PIECE_VAL[u];
+      const pstR = w ? r : 7 - r;
+      let pst = 0;
+      if (u === 'P') pst = PST.P[pstR][c];
+      else if (u === 'N') pst = PST.N[pstR][c];
+      else if (u === 'B') pst = PST.B[pstR][c];
+      else if (u === 'R') pst = PST.R[pstR][c];
+      else if (u === 'Q') pst = PST.Q[pstR][c];
+      else if (u === 'K') pst = endgame ? PST.K_EG[pstR][c] : PST.K_MG[pstR][c];
+      score += w ? (v + pst) : -(v + pst);
+    }
+
+  // Pawn structure: doubled, isolated, passed
+  for (let f = 0; f < 8; f++) {
+    if (wPF[f] > 1) score -= 10 * (wPF[f] - 1);
+    if (bPF[f] > 1) score += 10 * (bPF[f] - 1);
+    if (wPF[f] > 0) {
+      const left = f > 0 ? wPF[f-1] : 0, right = f < 7 ? wPF[f+1] : 0;
+      if (left === 0 && right === 0) score -= 20 * wPF[f];
+    }
+    if (bPF[f] > 0) {
+      const left = f > 0 ? bPF[f-1] : 0, right = f < 7 ? bPF[f+1] : 0;
+      if (left === 0 && right === 0) score += 20 * bPF[f];
+    }
+    for (const wr of wPR[f]) {
+      let blocked = false;
+      for (let bf = Math.max(0, f-1); bf <= Math.min(7, f+1) && !blocked; bf++)
+        for (const br of bPR[bf]) if (br < wr) { blocked = true; break; }
+      if (!blocked) score += 30;
+    }
+    for (const br of bPR[f]) {
+      let blocked = false;
+      for (let bf = Math.max(0, f-1); bf <= Math.min(7, f+1) && !blocked; bf++)
+        for (const wr of wPR[bf]) if (wr > br) { blocked = true; break; }
+      if (!blocked) score -= 30;
+    }
+  }
+
+  // King safety: open files near king (middlegame only)
+  if (!endgame) {
+    const wkc = state.kings.w[1], bkc = state.kings.b[1];
+    for (const f of [wkc-1, wkc, wkc+1]) {
+      if (f < 0 || f > 7) continue;
+      if (wPF[f] === 0) score -= 18;
+    }
+    for (const f of [bkc-1, bkc, bkc+1]) {
+      if (f < 0 || f > 7) continue;
+      if (bPF[f] === 0) score += 18;
+    }
+  }
+
+  // Mobility (cheap: count moves for side to move)
+  // Approximated by knight/bishop count — full mobility is too expensive in eval
+
+  return state.turn === 'w' ? score : -score;
+}
+
+// ---------- Search ----------
+const INF = 1e9;
+const MATE = 100000;
+
+let nodes = 0;
+let TT = new Map();
+let abortSearch = false;
+
+function moveOrderScore(state, m, ttBest) {
+  let s = 0;
+  if (ttBest && m.from[0] === ttBest.from[0] && m.from[1] === ttBest.from[1] &&
+      m.to[0] === ttBest.to[0] && m.to[1] === ttBest.to[1]) s += 100000;
+  const target = state.board[m.to[0]][m.to[1]];
+  if (target !== '.') {
+    s += 10 * PIECE_VAL[target.toUpperCase()] - PIECE_VAL[state.board[m.from[0]][m.from[1]].toUpperCase()];
+    s += 5000;
+  }
+  if (m.ep) s += 5000;
+  if (m.promotion) s += 8000;
+  if (m.castle) s += 200;
+  return s;
+}
+function orderMoves(state, moves, ttBest) {
+  return moves.map(m => ({ m, s: moveOrderScore(state, m, ttBest) }))
+              .sort((a, b) => b.s - a.s)
+              .map(x => x.m);
+}
+
+function makeTreeNode(state, move, ply) {
+  return {
+    move: moveNotation(state, move),
+    score: 0, aiScore: 0,
+    nodesVisited: 0,
+    children: [],
+    pv: false, cut: false,
+    ply
+  };
+}
+
+function negamax(state, depth, alpha, beta, parentNode, ply) {
+  nodes++;
+  if (parentNode) parentNode.nodesVisited++;
+
+  if (state.halfmove >= 100) return 0;
+
+  const ttHit = TT.get(state.zobrist);
+  let ttBest = null;
+  if (ttHit && ttHit.depth >= depth) {
+    if (ttHit.flag === 0) return ttHit.score;                 // EXACT
+    if (ttHit.flag === 1 && ttHit.score >= beta) return ttHit.score;  // LOWER
+    if (ttHit.flag === 2 && ttHit.score <= alpha) return ttHit.score; // UPPER
+  }
+  if (ttHit) ttBest = ttHit.best;
+
+  if (depth <= 0) return evaluate(state);
+
+  const moves = generateLegalMoves(state);
+  if (moves.length === 0) {
+    const k = state.kings[state.turn];
+    const inChk = isSquareAttacked(state, k[0], k[1], state.turn !== 'w');
+    if (inChk) return -MATE + ply;
+    return 0;
+  }
+
+  const ordered = orderMoves(state, moves, ttBest);
+  let bestScore = -INF;
+  let bestMove = null;
+  let flag = 2; // UPPER
+  const recordChildren = ply <= 1; // record at ply 0 (root, done elsewhere) and ply 1 (responses)
+
+  for (const move of ordered) {
+    let childNode = null;
+    if (recordChildren && parentNode) {
+      childNode = makeTreeNode(state, move, ply + 1);
+      parentNode.children.push(childNode);
+    }
+    makeMove(state, move);
+    const score = -negamax(state, depth - 1, -beta, -alpha, childNode || parentNode, ply + 1);
+    unmakeMove(state, move);
+
+    if (childNode) {
+      childNode.score = score;
+      childNode.aiScore = score * ((ply + 1) % 2 === 1 ? 1 : -1);
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMove = move;
+      if (recordChildren && parentNode) {
+        for (const c of parentNode.children) c.pv = false;
+        if (childNode) childNode.pv = true;
+      }
+    }
+    if (score > alpha) { alpha = score; flag = 0; }
+    if (alpha >= beta) {
+      flag = 1;
+      if (childNode) childNode.cut = true;
+      break;
+    }
+  }
+
+  TT.set(state.zobrist, { depth, score: bestScore, flag, best: bestMove });
+  if (TT.size > 200000) TT.clear();
+
+  return bestScore;
+}
+
+async function searchBestMove(state, maxDepth, treeRoot, onProgress) {
+  nodes = 0;
+  TT.clear();
+  abortSearch = false;
+  let bestMove = null, bestScore = 0;
+  const startTime = performance.now();
+
+  for (let d = 1; d <= maxDepth; d++) {
+    treeRoot.children = [];
+    treeRoot.depth = d;
+    const moves = generateLegalMoves(state);
+    if (moves.length === 0) break;
+    const ttHit = TT.get(state.zobrist);
+    const ordered = orderMoves(state, moves, ttHit && ttHit.best);
+
+    let alpha = -INF, beta = INF;
+    let iterBest = null, iterScore = -INF;
+
+    for (let i = 0; i < ordered.length; i++) {
+      if (abortSearch) break;
+      const move = ordered[i];
+      const childNode = makeTreeNode(state, move, 1);
+      childNode.aiScore = 0;
+      treeRoot.children.push(childNode);
+
+      makeMove(state, move);
+      const score = -negamax(state, d - 1, -beta, -alpha, childNode, 1);
+      unmakeMove(state, move);
+
+      childNode.score = score;
+      childNode.aiScore = score; // ply-1 nodes are from AI POV
+      childNode.nodesVisited++;
+
+      if (score > iterScore) {
+        iterScore = score;
+        iterBest = move;
+        for (const c of treeRoot.children) c.pv = false;
+        childNode.pv = true;
+      }
+      if (score > alpha) alpha = score;
+
+      if (onProgress) onProgress(d, nodes, performance.now() - startTime, iterScore, iterBest);
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    if (iterBest) { bestMove = iterBest; bestScore = iterScore; }
+    if (Math.abs(bestScore) > MATE - 1000) break;
+  }
+  return { move: bestMove, score: bestScore, time: performance.now() - startTime };
+}
+
+function moveNotation(state, move) {
+  const piece = state.board[move.from[0]][move.from[1]];
+  if (move.castle) return move.castle === 'K' ? 'O-O' : 'O-O-O';
+  const u = piece ? piece.toUpperCase() : '?';
+  const target = state.board[move.to[0]][move.to[1]];
+  const isCapture = target !== '.' || move.ep;
+  let s = '';
+  if (u !== 'P') s += u;
+  if (u === 'P' && isCapture) s += FILES[move.from[1]];
+  if (isCapture) s += 'x';
+  s += sqName(move.to[0], move.to[1]);
+  if (move.promotion) s += '=' + move.promotion.toUpperCase();
+  return s;
+}
+
+// ============================================================
+//  UI
+// ============================================================
+const boardCanvas = document.getElementById('board');
+const treeCanvas = document.getElementById('tree');
+const bctx = boardCanvas.getContext('2d');
+const tctx = treeCanvas.getContext('2d');
+const SQ = 80;
+
+let state = makeInitialState();
+let history = [];
+let posCounts = new Map();
+posCounts.set(state.zobrist, 1);
+
+let dragging = null;
+let legalFromSquare = [];
+let lastMove = null;
+let flipped = false;
+let busy = false;
+let gameOver = false;
+let aiVsAi = false;
+let humanColor = 'w';
+let treeRoot = { move:'root', children:[], nodesVisited:0, score:0, aiScore:0, depth:0 };
+
+const depthSelect = document.getElementById('depth');
+const promoSelect = document.getElementById('promo');
+const statusEl = document.getElementById('status');
+const sNodes = document.getElementById('s-nodes');
+const sNps = document.getElementById('s-nps');
+const sDepth = document.getElementById('s-depth');
+const sEval = document.getElementById('s-eval');
+const sBest = document.getElementById('s-best');
+const sTime = document.getElementById('s-time');
+
+function setStatus(msg) { statusEl.textContent = msg; }
+
+function squareFromMouse(e) {
+  const rect = boardCanvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (boardCanvas.width / rect.width);
+  const y = (e.clientY - rect.top) * (boardCanvas.height / rect.height);
+  let c = Math.floor(x / SQ);
+  let r = Math.floor(y / SQ);
+  if (flipped) { r = 7 - r; c = 7 - c; }
+  return [r, c, x, y];
+}
+
+function drawBoard() {
+  bctx.clearRect(0, 0, 640, 640);
+  // squares
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const dr = flipped ? 7 - r : r;
+      const dc = flipped ? 7 - c : c;
+      bctx.fillStyle = ((r + c) % 2 === 0) ? '#e8d5a8' : '#9c6f49';
+      bctx.fillRect(dc * SQ, dr * SQ, SQ, SQ);
+    }
+  // last move highlight
+  if (lastMove) {
+    bctx.fillStyle = 'rgba(255,230,80,0.35)';
+    for (const [r, c] of [lastMove.from, lastMove.to]) {
+      const dr = flipped ? 7 - r : r;
+      const dc = flipped ? 7 - c : c;
+      bctx.fillRect(dc * SQ, dr * SQ, SQ, SQ);
+    }
+  }
+  // check highlight
+  const k = state.kings[state.turn];
+  if (k && isSquareAttacked(state, k[0], k[1], state.turn !== 'w')) {
+    const dr = flipped ? 7 - k[0] : k[0];
+    const dc = flipped ? 7 - k[1] : k[1];
+    const grad = bctx.createRadialGradient(dc*SQ+SQ/2, dr*SQ+SQ/2, 8, dc*SQ+SQ/2, dr*SQ+SQ/2, SQ/2);
+    grad.addColorStop(0, 'rgba(255,80,80,0.65)');
+    grad.addColorStop(1, 'rgba(255,80,80,0)');
+    bctx.fillStyle = grad;
+    bctx.fillRect(dc * SQ, dr * SQ, SQ, SQ);
+  }
+  // selected + legal
+  if (dragging) {
+    const dr = flipped ? 7 - dragging.from[0] : dragging.from[0];
+    const dc = flipped ? 7 - dragging.from[1] : dragging.from[1];
+    bctx.fillStyle = 'rgba(120,200,255,0.35)';
+    bctx.fillRect(dc * SQ, dr * SQ, SQ, SQ);
+    for (const m of legalFromSquare) {
+      const er = flipped ? 7 - m.to[0] : m.to[0];
+      const ec = flipped ? 7 - m.to[1] : m.to[1];
+      const isCap = state.board[m.to[0]][m.to[1]] !== '.' || m.ep;
+      bctx.beginPath();
+      if (isCap) {
+        bctx.arc(ec * SQ + SQ/2, er * SQ + SQ/2, SQ/2.2, 0, 2*Math.PI);
+        bctx.lineWidth = 5;
+        bctx.strokeStyle = 'rgba(80,255,140,0.75)';
+        bctx.stroke();
+      } else {
+        bctx.arc(ec * SQ + SQ/2, er * SQ + SQ/2, SQ/6.5, 0, 2*Math.PI);
+        bctx.fillStyle = 'rgba(80,255,140,0.65)';
+        bctx.fill();
+      }
+    }
+  }
+  // pieces
+  bctx.font = `${SQ * 0.78}px "Segoe UI Symbol", "Apple Color Emoji", serif`;
+  bctx.textAlign = 'center';
+  bctx.textBaseline = 'middle';
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const p = state.board[r][c];
+      if (p === '.') continue;
+      if (dragging && dragging.from[0] === r && dragging.from[1] === c) continue;
+      const dr = flipped ? 7 - r : r;
+      const dc = flipped ? 7 - c : c;
+      const x = dc * SQ + SQ/2;
+      const y = dr * SQ + SQ/2 + 2;
+      const w = isWhite(p);
+      // shadow
+      bctx.fillStyle = 'rgba(0,0,0,0.25)';
+      bctx.fillText(PIECE_GLYPH[p], x + 2, y + 2);
+      // outline
+      bctx.lineWidth = 3;
+      bctx.strokeStyle = w ? '#222' : '#000';
+      bctx.strokeText(PIECE_GLYPH[p], x, y);
+      bctx.fillStyle = w ? '#fff' : '#1a1a1a';
+      bctx.fillText(PIECE_GLYPH[p], x, y);
+    }
+  // dragged piece
+  if (dragging) {
+    const p = dragging.piece;
+    const w = isWhite(p);
+    bctx.fillStyle = 'rgba(0,0,0,0.3)';
+    bctx.fillText(PIECE_GLYPH[p], dragging.x + 3, dragging.y + 3);
+    bctx.lineWidth = 3;
+    bctx.strokeStyle = w ? '#222' : '#000';
+    bctx.strokeText(PIECE_GLYPH[p], dragging.x, dragging.y);
+    bctx.fillStyle = w ? '#fff' : '#1a1a1a';
+    bctx.fillText(PIECE_GLYPH[p], dragging.x, dragging.y);
+  }
+  // labels
+  bctx.font = '11px sans-serif';
+  bctx.textAlign = 'left';
+  bctx.textBaseline = 'top';
+  for (let i = 0; i < 8; i++) {
+    const file = flipped ? FILES[7 - i] : FILES[i];
+    bctx.fillStyle = ((7 + i) % 2 === 0) ? 'rgba(60,30,10,0.6)' : 'rgba(255,250,230,0.6)';
+    bctx.fillText(file, i * SQ + 4, 624);
+  }
+  bctx.textAlign = 'right';
+  for (let i = 0; i < 8; i++) {
+    const rank = flipped ? RANKS[7 - i] : RANKS[i];
+    bctx.fillStyle = (i % 2 === 0) ? 'rgba(255,250,230,0.6)' : 'rgba(60,30,10,0.6)';
+    bctx.fillText(rank, 636, i * SQ + 4);
+  }
+}
+
+// ---------- Tree visualization ----------
+function scoreToColor(score, cut) {
+  if (cut) return 'rgba(140,140,160,0.55)';
+  const norm = Math.max(-1, Math.min(1, Math.tanh(score / 250)));
+  const t = (norm + 1) / 2;
+  const r = Math.round(255 * (1 - t) + 60 * t);
+  const g = Math.round(70 * (1 - t) + 240 * t);
+  const b = Math.round(80 * (1 - t) + 130 * t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawTree() {
+  const W = treeCanvas.width, H = treeCanvas.height;
+  tctx.clearRect(0, 0, W, H);
+  // bg gradient
+  const bg = tctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, 'rgba(30,30,55,0.4)');
+  bg.addColorStop(1, 'rgba(10,10,22,0.4)');
+  tctx.fillStyle = bg;
+  tctx.fillRect(0, 0, W, H);
+
+  if (!treeRoot) return;
+  const root = treeRoot;
+  const rootX = W / 2, rootY = 50;
+  const lvl1Y = 230;
+  const lvl2Y = H - 80;
+  const children = root.children;
+  const slotW = W / Math.max(children.length, 1);
+
+  const time = performance.now();
+  const pulse = 0.5 + 0.5 * Math.sin(time / 220);
+
+  // edges + grandchildren first
+  children.forEach((c1, i) => {
+    const x1 = slotW * (i + 0.5);
+    const y1 = lvl1Y;
+    tctx.beginPath();
+    tctx.moveTo(rootX, rootY);
+    const cpY = (rootY + y1) / 2;
+    tctx.bezierCurveTo(rootX, cpY, x1, cpY, x1, y1);
+    tctx.setLineDash(c1.cut ? [5, 5] : []);
+    if (c1.pv) {
+      tctx.strokeStyle = `rgba(80,255,140,${0.7 + 0.3 * pulse})`;
+      tctx.lineWidth = 2.5;
+    } else {
+      tctx.strokeStyle = c1.cut ? 'rgba(180,140,120,0.4)' : 'rgba(170,180,220,0.35)';
+      tctx.lineWidth = Math.max(0.5, Math.min(2, Math.log2(Math.max(c1.nodesVisited, 1)) / 3));
+    }
+    tctx.stroke();
+    tctx.setLineDash([]);
+
+    if (c1.children && c1.children.length > 0) {
+      const grand = c1.children;
+      const gSlotW = slotW / Math.max(grand.length, 1);
+      const left = i * slotW;
+      grand.forEach((c2, j) => {
+        const x2 = left + gSlotW * (j + 0.5);
+        const y2 = lvl2Y;
+        tctx.beginPath();
+        tctx.moveTo(x1, y1);
+        const cpY2 = (y1 + y2) / 2;
+        tctx.bezierCurveTo(x1, cpY2, x2, cpY2, x2, y2);
+        tctx.setLineDash(c2.cut ? [3, 4] : []);
+        if (c2.pv && c1.pv) {
+          tctx.strokeStyle = `rgba(80,255,140,${0.6 + 0.4 * pulse})`;
+          tctx.lineWidth = 1.8;
+        } else {
+          tctx.strokeStyle = c2.cut ? 'rgba(180,140,120,0.3)' : 'rgba(170,180,220,0.18)';
+          tctx.lineWidth = 0.7;
+        }
+        tctx.stroke();
+        tctx.setLineDash([]);
+        drawTreeNode(x2, y2, c2, 2, pulse);
+      });
+    }
+  });
+
+  // level 1 nodes on top
+  children.forEach((c1, i) => {
+    const x1 = slotW * (i + 0.5);
+    drawTreeNode(x1, lvl1Y, c1, 1, pulse);
+  });
+
+  // root
+  drawTreeNode(rootX, rootY, { move: 'root', aiScore: 0, nodesVisited: root.nodesVisited, pv: false, cut: false }, 0, pulse);
+}
+
+function drawTreeNode(x, y, node, level, pulse) {
+  const baseR = level === 0 ? 14 : level === 1 ? 8 : 4;
+  const r = baseR + Math.min(14, Math.log2(Math.max(node.nodesVisited, 1)) * 0.9);
+  const fill = scoreToColor(node.aiScore || 0, node.cut);
+
+  if (node.pv) {
+    const glowR = r + 4 + 4 * pulse;
+    const grad = tctx.createRadialGradient(x, y, r * 0.5, x, y, glowR);
+    grad.addColorStop(0, 'rgba(80,255,140,0.4)');
+    grad.addColorStop(1, 'rgba(80,255,140,0)');
+    tctx.fillStyle = grad;
+    tctx.beginPath();
+    tctx.arc(x, y, glowR, 0, 2 * Math.PI);
+    tctx.fill();
+  }
+  tctx.beginPath();
+  tctx.arc(x, y, r, 0, 2 * Math.PI);
+  tctx.fillStyle = fill;
+  tctx.fill();
+  tctx.strokeStyle = node.pv ? `rgba(80,255,140,${0.8 + 0.2 * pulse})` : 'rgba(0,0,0,0.4)';
+  tctx.lineWidth = node.pv ? 2 : 1;
+  tctx.stroke();
+
+  if (level === 1 && node.move) {
+    tctx.fillStyle = node.pv ? '#bff' : 'rgba(220,225,245,0.8)';
+    tctx.font = node.pv ? 'bold 11px sans-serif' : '10px sans-serif';
+    tctx.textAlign = 'center';
+    tctx.textBaseline = 'top';
+    tctx.fillText(node.move, x, y + r + 4);
+    if (node.aiScore !== undefined && Math.abs(node.aiScore) < MATE - 1000) {
+      tctx.fillStyle = 'rgba(180,200,220,0.6)';
+      tctx.font = '9px monospace';
+      tctx.fillText((node.aiScore / 100).toFixed(2), x, y + r + 16);
+    }
+  }
+}
+
+function draw() { drawBoard(); }
+
+// ---------- Position counts (threefold) ----------
+function recordPosition() {
+  const k = state.zobrist;
+  posCounts.set(k, (posCounts.get(k) || 0) + 1);
+}
+function unrecordPosition(prevZobrist) {
+  const c = posCounts.get(prevZobrist) || 0;
+  if (c <= 1) posCounts.delete(prevZobrist); else posCounts.set(prevZobrist, c - 1);
+}
+function isThreefold() {
+  return (posCounts.get(state.zobrist) || 0) >= 3;
+}
+
+// ---------- Stats ----------
+function updateStats(depth, n, ms, scoreCp, bestMove) {
+  sNodes.textContent = n.toLocaleString();
+  sNps.textContent = ms > 0 ? Math.round(n / (ms / 1000)).toLocaleString() : '0';
+  sDepth.textContent = depth;
+  const fromAi = scoreCp / 100;
+  sEval.textContent = (fromAi >= 0 ? '+' : '') + fromAi.toFixed(2);
+  sTime.textContent = Math.round(ms) + ' ms';
+  if (bestMove) sBest.textContent = moveNotation(state, bestMove);
+}
+
+// ---------- Game flow ----------
+function checkGameEnd() {
+  const moves = generateLegalMoves(state);
+  if (moves.length === 0) {
+    const k = state.kings[state.turn];
+    const inChk = isSquareAttacked(state, k[0], k[1], state.turn !== 'w');
+    gameOver = true;
+    if (inChk) setStatus(`Checkmate — ${state.turn === 'w' ? 'Black' : 'White'} wins`);
+    else setStatus('Stalemate — Draw');
+    return true;
+  }
+  if (state.halfmove >= 100) { gameOver = true; setStatus('Draw — 50-move rule'); return true; }
+  if (isThreefold()) { gameOver = true; setStatus('Draw — Threefold repetition'); return true; }
+  const k = state.kings[state.turn];
+  const inChk = isSquareAttacked(state, k[0], k[1], state.turn !== 'w');
+  setStatus(`${state.turn === 'w' ? 'White' : 'Black'} to move${inChk ? ' — CHECK' : ''}`);
+  return false;
+}
+
+async function playMove(move) {
+  makeMove(state, move);
+  recordPosition();
+  history.push(move);
+  lastMove = move;
+  draw();
+  if (checkGameEnd()) return;
+  if (state.turn !== humanColor || aiVsAi) {
+    setTimeout(aiTurn, 80);
+  }
+}
+
+async function aiTurn() {
+  if (gameOver || busy) return;
+  if (!aiVsAi && state.turn === humanColor) return;
+  busy = true;
+  boardCanvas.classList.add('thinking');
+  treeRoot = { move: 'root', children: [], nodesVisited: 0, aiScore: 0, score: 0, depth: 0 };
+  const depth = parseInt(depthSelect.value);
+  setStatus(`${state.turn === 'w' ? 'White' : 'Black'} thinking…`);
+  const res = await searchBestMove(state, depth, treeRoot, (d, n, ms, sc, bm) => {
+    updateStats(d, n, ms, sc, bm);
+  });
+  busy = false;
+  boardCanvas.classList.remove('thinking');
+  if (res.move) {
+    makeMove(state, res.move);
+    recordPosition();
+    history.push(res.move);
+    lastMove = res.move;
+    draw();
+    if (!checkGameEnd() && aiVsAi) setTimeout(aiTurn, 200);
+  } else {
+    checkGameEnd();
+  }
+}
+
+// ---------- Mouse / drag ----------
+boardCanvas.addEventListener('mousedown', (e) => {
+  if (busy || gameOver || aiVsAi) return;
+  if (state.turn !== humanColor) return;
+  const [r, c, x, y] = squareFromMouse(e);
+  if (r < 0 || r > 7 || c < 0 || c > 7) return;
+  const p = state.board[r][c];
+  if (p === '.') return;
+  if (state.turn === 'w' && !isWhite(p)) return;
+  if (state.turn === 'b' && isWhite(p)) return;
+  dragging = { from: [r, c], piece: p, x, y };
+  legalFromSquare = generateLegalMoves(state).filter(m => m.from[0] === r && m.from[1] === c);
+  boardCanvas.classList.add('dragging');
+  draw();
+});
+boardCanvas.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  const [, , x, y] = squareFromMouse(e);
+  dragging.x = x; dragging.y = y;
+  draw();
+});
+boardCanvas.addEventListener('mouseup', (e) => {
+  if (!dragging) return;
+  const [r, c] = squareFromMouse(e);
+  let chosen = null;
+  const candidates = legalFromSquare.filter(m => m.to[0] === r && m.to[1] === c);
+  if (candidates.length > 0) {
+    const promos = candidates.filter(m => m.promotion);
+    if (promos.length > 0) {
+      const want = state.turn === 'w' ? promoSelect.value.toUpperCase() : promoSelect.value.toLowerCase();
+      chosen = promos.find(m => m.promotion === want) || promos[0];
+    } else {
+      chosen = candidates[0];
+    }
+  }
+  dragging = null;
+  legalFromSquare = [];
+  boardCanvas.classList.remove('dragging');
+  if (chosen) playMove(chosen); else draw();
+});
+boardCanvas.addEventListener('mouseleave', () => {
+  if (dragging) { dragging = null; legalFromSquare = []; boardCanvas.classList.remove('dragging'); draw(); }
+});
+
+// ---------- Buttons ----------
+document.getElementById('newGame').onclick = () => {
+  if (busy) abortSearch = true;
+  state = makeInitialState();
+  history = [];
+  posCounts = new Map();
+  posCounts.set(state.zobrist, 1);
+  lastMove = null;
+  gameOver = false;
+  aiVsAi = false;
+  document.getElementById('aivai').classList.remove('active');
+  document.getElementById('aivai').textContent = 'AI vs AI';
+  treeRoot = { move:'root', children:[], nodesVisited:0, aiScore:0, score:0, depth:0 };
+  updateStats(0, 0, 0, 0, null);
+  sBest.textContent = '—'; sDepth.textContent = '—';
+  setStatus('White to move');
+  draw();
+};
+document.getElementById('undo').onclick = () => {
+  if (busy || aiVsAi) return;
+  if (history.length === 0) return;
+  // undo last move (and the AI's previous move so it's human's turn again)
+  const undoOnce = () => {
+    const move = history.pop();
+    if (!move) return;
+    unrecordPosition(state.zobrist);
+    unmakeMove(state, move);
+  };
+  undoOnce();
+  if (state.turn !== humanColor && history.length > 0) undoOnce();
+  lastMove = history[history.length - 1] || null;
+  gameOver = false;
+  checkGameEnd();
+  draw();
+};
+document.getElementById('flip').onclick = () => { flipped = !flipped; draw(); };
+const aivaiBtn = document.getElementById('aivai');
+aivaiBtn.onclick = () => {
+  aiVsAi = !aiVsAi;
+  aivaiBtn.classList.toggle('active', aiVsAi);
+  aivaiBtn.textContent = aiVsAi ? 'Stop' : 'AI vs AI';
+  if (aiVsAi && !busy && !gameOver) aiTurn();
+};
+
+// ---------- Animation loop (for tree pulse + tree refresh) ----------
+function animLoop() {
+  drawTree();
+  requestAnimationFrame(animLoop);
+}
+
+// ---------- Init ----------
+draw();
+updateStats(0, 0, 0, 0, null);
+sBest.textContent = '—'; sDepth.textContent = '—';
+animLoop();
+</script>
+</body>
+</html>

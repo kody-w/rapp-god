@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Greatpine Wildlife Reserve — Round 18 · Agentic Story Engine</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;padding:0;background:#0a1410;color:#f0e8d4;font-family:'Georgia',serif;overflow:hidden;height:100%;}
+  #stage{position:fixed;inset:0;}
+  canvas{display:block;}
+  .panel{position:fixed;background:rgba(14,28,20,0.78);border:1px solid #b8a86a;color:#f3ead0;
+    padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.4;letter-spacing:0.3px;
+    backdrop-filter:blur(4px);box-shadow:0 0 14px rgba(184,168,106,0.18) inset;}
+  #hud{top:10px;left:10px;max-width:340px;}
+  #hud b{color:#f3d07a;}
+  #chyron{bottom:14px;left:50%;transform:translateX(-50%);max-width:780px;text-align:center;
+    font-style:italic;color:#f6e6b4;background:rgba(8,16,12,0.78);}
+  #brain{top:10px;right:10px;max-width:300px;font-family:'Courier New',monospace;font-size:11px;
+    background:rgba(10,20,14,0.86);}
+  #brain h4{margin:0 0 6px 0;color:#ffd97a;font-family:'Georgia',serif;letter-spacing:0.6px;}
+  #brain .row{margin:2px 0;color:#e9d8b0;}
+  #brain .lbl{color:#9cd47a;display:inline-block;width:60px;}
+  #cast{bottom:60px;left:10px;max-width:240px;font-size:11px;}
+  #cast .nm{color:#ffd97a;}
+  #cast .gl{color:#a9d27a;}
+  #balance{top:10px;left:50%;transform:translateX(-50%);font-size:11px;text-align:center;
+    background:rgba(8,16,12,0.78);font-family:'Courier New',monospace;}
+  #balance b{color:#9cd47a;}
+  #map{bottom:60px;right:10px;width:200px;height:140px;background:rgba(8,16,12,0.82);
+    border:1px solid #b8a86a;border-radius:6px;}
+  #mapTitle{position:fixed;bottom:204px;right:14px;font-size:10px;color:#b8a86a;letter-spacing:1px;}
+  #graph{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:520px;height:340px;background:rgba(8,16,12,0.92);
+    border:1px solid #b8a86a;border-radius:8px;display:none;}
+  #graphTitle{position:absolute;top:8px;left:14px;color:#ffd97a;font-size:12px;letter-spacing:1px;}
+  #toast{position:fixed;top:46%;left:50%;transform:translate(-50%,-50%);
+    font-size:18px;color:#ffeac0;text-shadow:0 0 8px #b8a86a;
+    pointer-events:none;opacity:0;transition:opacity .6s;}
+  #seal{position:fixed;bottom:6px;left:10px;font-size:9px;color:#7a6e3a;letter-spacing:1px;}
+</style>
+</head>
+<body>
+<!-- ROUND18_AGENT v1 -->
+<div id="stage"></div>
+<div class="panel" id="hud">Loading reserve…</div>
+<div class="panel" id="brain">Tuning into the wild…</div>
+<div class="panel" id="cast"></div>
+<div class="panel" id="balance">Balance: warming…</div>
+<canvas id="map" width="200" height="140"></canvas>
+<div id="mapTitle">GREATPINE RESERVE MAP</div>
+<canvas id="graph" width="520" height="340"></canvas>
+<div id="graphTitle">RELATIONSHIPS · HERD &amp; SIGHTING LOG</div>
+<div class="panel" id="chyron">Dawn settles over Greatpine…</div>
+<div id="toast"></div>
+<div id="seal">GREATPINE WILDLIFE RESERVE · CONTINUUM ENGINE</div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+"use strict";
+(function(){
+  const STORE_KEY="greatpine_reserve_v1";
+  const stage=document.getElementById("stage");
+  const hud=document.getElementById("hud");
+  const brainEl=document.getElementById("brain");
+  const castEl=document.getElementById("cast");
+  const balanceEl=document.getElementById("balance");
+  const chyron=document.getElementById("chyron");
+  const toast=document.getElementById("toast");
+  const mapCv=document.getElementById("map");
+  const mapCtx=mapCv.getContext("2d");
+  const graphCv=document.getElementById("graph");
+  const graphCtx=graphCv.getContext("2d");
+
+  function loadMem(){
+    try{const j=localStorage.getItem(STORE_KEY);if(j)return JSON.parse(j);}catch(e){}
+    return {day:1,reseeds:0,sightings:[],hunts:[],herdMoves:[],tagged:{},log:[]};
+  }
+  function saveMem(m){try{localStorage.setItem(STORE_KEY,JSON.stringify(m));}catch(e){}}
+  let memory=loadMem();
+  memory.reseeds=(memory.reseeds||0)+1;
+  memory.day=(memory.day||1)+(memory.reseeds>1?1:0);
+  if(!memory.sightings)memory.sightings=[];
+  if(!memory.hunts)memory.hunts=[];
+  if(!memory.herdMoves)memory.herdMoves=[];
+  if(!memory.tagged)memory.tagged={};
+  if(!memory.log)memory.log=[];
+  saveMem(memory);
+
+  const ZONES=[
+    {id:0,name:"SAVANNA",palette:{ground:0xc9a55a,grass:0xd4b56a,sky:0x9ec8e0,accent:0x8a6a2a,bg:0xc9d4e8},
+     mapPos:[0.30,0.32],mapSize:[0.30,0.28]},
+    {id:1,name:"WATER HOLE",palette:{ground:0x6a8a5a,grass:0x7aa46a,sky:0xa8c8d8,accent:0x3a6ab0,bg:0xa8c8d8},
+     mapPos:[0.62,0.50],mapSize:[0.22,0.26]},
+    {id:2,name:"JUNGLE",palette:{ground:0x2a4a26,grass:0x3a6a32,sky:0x6a8a4a,accent:0xe89a3a,bg:0x1a2a14},
+     mapPos:[0.80,0.78],mapSize:[0.20,0.20]},
+    {id:3,name:"MOUNTAIN",palette:{ground:0x6a6a72,grass:0x8a8a92,sky:0xa8b4d4,accent:0x9a7ad4,bg:0x7a8aa0},
+     mapPos:[0.18,0.78],mapSize:[0.20,0.20]},
+    {id:4,name:"RANGER STATION",palette:{ground:0x6b432a,grass:0x8a6a3a,sky:0xc0c8d0,accent:0xd4b56a,bg:0x4a3a26},
+     mapPos:[0.18,0.18],mapSize:[0.18,0.18]}
+  ];
+
+  const RANGERS=[
+    {id:0,name:"Chief Ranger Kavi Mansoor",short:"Kavi",role:"Chief Ranger",
+     goal:"Tag the alpha lion",mood:"Steady",home:4,target:"Maximus",
+     plan:["Brief crew at station","Drive jeep to savanna","Track Maximus","Dart and tag"]},
+    {id:1,name:"Ranger Esi Boateng",short:"Esi",role:"Jungle specialist",
+     goal:"Count the toucan flock",mood:"Curious",home:2,target:"Mango",
+     plan:["Hike jungle path","Listen for calls","Spot toucans","Log count"]},
+    {id:2,name:"Ranger Pip Sundeen",short:"Pip",role:"Mountain specialist",
+     goal:"Check the eagle nest",mood:"Patient",home:3,target:"Vela",
+     plan:["Climb cliff trail","Glass the nest","Note chicks","Radio findings"]},
+    {id:3,name:"Ranger Halsey \"Hal\" Kingfisher",short:"Hal",role:"Savanna specialist",
+     goal:"Track the elephant herd",mood:"Caring",home:0,target:"Tembo",
+     plan:["Find herd tracks","Approach upwind","Confirm count","Note mood"]}
+  ];
+
+  const ANIMALS=[
+    {id:0,name:"Maximus",species:"lion",home:0,role:"alpha lion",
+     goal:"Stalk zebras at dawn",mood:"Focused",
+     plan:["Wake under acacia","Scan herd","Stalk low","Decide hunt"]},
+    {id:1,name:"Nala-cub",species:"lion",home:0,role:"cub",
+     goal:"Follow Brigida",mood:"Curious",
+     plan:["Tumble in grass","Pounce shadows","Stay near mom","Nap at noon"]},
+    {id:2,name:"Brigida",species:"lion",home:0,role:"lioness",
+     goal:"Watch over Nala-cub",mood:"Watchful",
+     plan:["Patrol shade","Mind the cub","Drink at hole","Rest at dusk"]},
+    {id:3,name:"Tembo",species:"elephant",home:0,role:"matriarch",
+     goal:"Lead herd to water hole",mood:"Watchful pride",
+     plan:["Trumpet","Walk savanna path","Drink at water hole","Mud bath"]},
+    {id:4,name:"Kibo",species:"elephant",home:0,role:"bull",
+     goal:"Follow Tembo",mood:"Steady",
+     plan:["Match the matriarch","Shoulder Asabe","Drink deep","Spray mud"]},
+    {id:5,name:"Asabe-calf",species:"elephant",home:0,role:"calf",
+     goal:"Stay close to Tembo",mood:"Bright",
+     plan:["Wobble alongside","Splash in shallows","Trumpet small","Lean on Kibo"]},
+    {id:6,name:"Stretch",species:"giraffe",home:0,role:"bull",
+     goal:"Browse acacia tops",mood:"Calm",
+     plan:["Reach the canopy","Chew slow","Watch for cats","Drift to jungle edge"]},
+    {id:7,name:"Banah",species:"giraffe",home:0,role:"cow",
+     goal:"Stay near Stretch",mood:"Calm",
+     plan:["Browse beside Stretch","Step careful","Sip at water hole","Rest standing"]},
+    {id:8,name:"Pinstripe",species:"zebra",home:0,role:"stallion",
+     goal:"Lead the dazzle",mood:"Alert",
+     plan:["Snort the air","Trot the line","Check for cats","Cross to water"]},
+    {id:9,name:"Domino",species:"zebra",home:0,role:"mare",
+     goal:"Stay in the dazzle",mood:"Alert",
+     plan:["Flank Pinstripe","Graze quick","Match the gallop","Drink fast"]},
+    {id:10,name:"Pajamas",species:"zebra",home:0,role:"foal",
+     goal:"Stay near Domino",mood:"Skittish",
+     plan:["Tuck between mares","Mimic the gallop","Splash at edge","Rest in dust"]},
+    {id:11,name:"Vela",species:"eagle",home:3,role:"matriarch eagle",
+     goal:"Soar all five zones",mood:"Imperial",
+     plan:["Launch from cliff","Ride the thermal","Scan the savanna","Return to nest"]},
+    {id:12,name:"Mango",species:"toucan",home:2,role:"flock leader",
+     goal:"Lead flock to bloom tree",mood:"Bright",
+     plan:["Call from canopy","Swoop the vines","Pick at bloom","Roost with Plum"]},
+    {id:13,name:"Plum",species:"toucan",home:2,role:"mate",
+     goal:"Stay with Mango",mood:"Bright",
+     plan:["Mirror Mango's flight","Tap at bloom","Preen on branch","Call back at dusk"]},
+    {id:14,name:"Kiki",species:"monkey",home:2,role:"troop leader",
+     goal:"Lead troop along vines",mood:"Mischievous",
+     plan:["Whoop from monkey-tree","Swing the vines","Pluck fruit","Watch Esi pass"]},
+    {id:15,name:"Bananaman",species:"monkey",home:2,role:"trickster",
+     goal:"Steal a fruit from Kiki",mood:"Sly",
+     plan:["Tail Kiki low","Snatch a fruit","Bound to high vine","Munch hidden"]},
+    {id:16,name:"Toodle",species:"monkey",home:2,role:"juvenile",
+     goal:"Copy Kiki",mood:"Eager",
+     plan:["Mimic the swing","Miss the branch","Catch the next","Cling and chitter"]},
+    {id:17,name:"Comet",species:"cheetah",home:0,role:"lone hunter",
+     goal:"Sprint the savanna at dusk",mood:"Coiled",
+     plan:["Wait in tall grass","Pick a runner","Burst","Walk it off"]},
+    {id:18,name:"Nestor",species:"crocodile",home:1,role:"old croc",
+     goal:"Sun on the log",mood:"Ancient",
+     plan:["Float still","Slide to log","Yawn at sun","Drift back to reeds"]},
+    {id:19,name:"Big Bess",species:"hippo",home:1,role:"matriarch hippo",
+     goal:"Wallow deep",mood:"Sleepy",
+     plan:["Submerge to eyes","Yawn enormous","Mud-roll at noon","Bellow at dusk"]}
+  ];
+
+  const NAME_POOL=[
+    "Acacia","Banyan","Cinder","Dapple","Echo","Fern","Glimmer","Hazel","Ibis","Juno",
+    "Kestrel","Loam","Mosshart","Nimbus","Oryx","Petal","Quill","Rowan","Sable","Tinder",
+    "Umber","Vesper","Willow","Xena","Yarrow","Zephyr","Aspen","Birch","Cricket","Drift"
+  ];
+
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.shadowMap.enabled=false;
+  stage.appendChild(renderer.domElement);
+
+  const scene=new THREE.Scene();
+  scene.fog=new THREE.Fog(0xc9d4e8,40,160);
+  scene.background=new THREE.Color(0xc9d4e8);
+
+  const camera=new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,0.1,500);
+  camera.position.set(0,18,32);
+  camera.lookAt(0,2,0);
+
+  const disposables=[];
+  function track(o){disposables.push(o);return o;}
+  function disposeMaterial(m){
+    if(!m)return;
+    if(m.map)m.map.dispose&&m.map.dispose();
+    if(Array.isArray(m))m.forEach(x=>x&&x.dispose&&x.dispose());
+    else m.dispose&&m.dispose();
+  }
+  function disposeAll(){
+    scene.traverse(o=>{
+      if(o.geometry)o.geometry.dispose();
+      if(o.material)disposeMaterial(o.material);
+    });
+    while(scene.children.length)scene.remove(scene.children[0]);
+    disposables.forEach(d=>{
+      if(d&&d.geometry)d.geometry.dispose();
+      if(d&&d.material)disposeMaterial(d.material);
+    });
+    disposables.length=0;
+  }
+
+  const ambient=new THREE.AmbientLight(0xfff0d8,0.65);
+  scene.add(ambient);
+  const sun=new THREE.DirectionalLight(0xfff0c8,0.95);
+  sun.position.set(40,80,30);
+  scene.add(sun);
+  const warmFill=new THREE.PointLight(0xffae6a,0.45,80);
+  warmFill.position.set(0,12,0);
+  scene.add(warmFill);
+
+  const zoneRoots=[];
+  for(let i=0;i<ZONES.length;i++){
+    const g=new THREE.Group();
+    g.visible=(i===0);
+    scene.add(g);
+    zoneRoots.push(g);
+  }
+
+  function addMesh(root,geo,mat,x,y,z){
+    const m=new THREE.Mesh(geo,mat);
+    m.position.set(x,y,z);
+    root.add(m);
+    return m;
+  }
+
+  function buildSavanna(root,c){
+    const ground=new THREE.Mesh(
+      new THREE.PlaneGeometry(180,180,8,8),
+      new THREE.MeshStandardMaterial({color:c.palette.ground,roughness:0.95})
+    );
+    ground.rotation.x=-Math.PI/2;
+    root.add(ground);
+    for(let i=0;i<60;i++){
+      const tuft=new THREE.Mesh(
+        new THREE.ConeGeometry(0.4+Math.random()*0.4,0.8+Math.random()*0.6,5),
+        new THREE.MeshStandardMaterial({color:c.palette.grass,roughness:1})
+      );
+      tuft.position.set((Math.random()-0.5)*120,0.4,(Math.random()-0.5)*120);
+      root.add(tuft);
+    }
+    const trunk=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.6,0.9,8,8),
+      new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:0.9})
+    );
+    trunk.position.set(-14,4,-8);
+    root.add(trunk);
+    const canopy=new THREE.Mesh(
+      new THREE.SphereGeometry(6,12,8),
+      new THREE.MeshStandardMaterial({color:0x4a6a3a,roughness:0.9})
+    );
+    canopy.scale.set(1.4,0.5,1.4);
+    canopy.position.set(-14,9,-8);
+    root.add(canopy);
+    const hole=new THREE.Mesh(
+      new THREE.CircleGeometry(4,18),
+      new THREE.MeshStandardMaterial({color:0x4a6ac0,roughness:0.4,metalness:0.2})
+    );
+    hole.rotation.x=-Math.PI/2;
+    hole.position.set(18,0.05,12);
+    root.add(hole);
+    for(let i=0;i<8;i++){
+      const stone=new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.6+Math.random()*0.6),
+        new THREE.MeshStandardMaterial({color:0xa89870,roughness:1})
+      );
+      stone.position.set(18+Math.cos(i)*4.4,0.3,12+Math.sin(i)*4.4);
+      root.add(stone);
+    }
+  }
+
+  function buildWaterHole(root,c){
+    const ground=new THREE.Mesh(
+      new THREE.PlaneGeometry(120,120,8,8),
+      new THREE.MeshStandardMaterial({color:c.palette.ground,roughness:0.9})
+    );
+    ground.rotation.x=-Math.PI/2;
+    root.add(ground);
+    const pond=new THREE.Mesh(
+      new THREE.CircleGeometry(18,32),
+      new THREE.MeshStandardMaterial({color:c.palette.accent,roughness:0.3,metalness:0.3})
+    );
+    pond.rotation.x=-Math.PI/2;
+    pond.position.set(0,0.04,0);
+    root.add(pond);
+    const mud=new THREE.Mesh(
+      new THREE.RingGeometry(18,22,32),
+      new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+    );
+    mud.rotation.x=-Math.PI/2;
+    mud.position.y=0.03;
+    root.add(mud);
+    for(let i=0;i<28;i++){
+      const a=Math.random()*Math.PI*2;
+      const r=22+Math.random()*4;
+      const reed=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05,0.05,2.4,4),
+        new THREE.MeshStandardMaterial({color:0x4a6a32,roughness:1})
+      );
+      reed.position.set(Math.cos(a)*r,1.2,Math.sin(a)*r);
+      root.add(reed);
+    }
+    const log=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.6,0.6,6,8),
+      new THREE.MeshStandardMaterial({color:0x4a3220,roughness:1})
+    );
+    log.rotation.z=Math.PI/2;
+    log.position.set(-14,0.6,0);
+    root.add(log);
+    for(let i=0;i<6;i++){
+      const perch=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06,0.06,3,4),
+        new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+      );
+      perch.position.set(-22+i*7,1.5,-22);
+      root.add(perch);
+    }
+  }
+
+  function buildJungle(root,c){
+    const ground=new THREE.Mesh(
+      new THREE.PlaneGeometry(140,140,4,4),
+      new THREE.MeshStandardMaterial({color:c.palette.ground,roughness:1})
+    );
+    ground.rotation.x=-Math.PI/2;
+    root.add(ground);
+    for(let i=0;i<28;i++){
+      const x=(Math.random()-0.5)*100;
+      const z=(Math.random()-0.5)*100;
+      const h=10+Math.random()*8;
+      const trunk=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.5,0.7,h,6),
+        new THREE.MeshStandardMaterial({color:0x4a3220,roughness:1})
+      );
+      trunk.position.set(x,h/2,z);
+      root.add(trunk);
+      const leaves=new THREE.Mesh(
+        new THREE.SphereGeometry(3+Math.random()*1.5,8,6),
+        new THREE.MeshStandardMaterial({color:c.palette.grass,roughness:0.9})
+      );
+      leaves.scale.set(1.2,0.8,1.2);
+      leaves.position.set(x,h+1,z);
+      root.add(leaves);
+    }
+    for(let i=0;i<12;i++){
+      const bloom=new THREE.Mesh(
+        new THREE.SphereGeometry(0.6,6,5),
+        new THREE.MeshStandardMaterial({color:c.palette.accent,emissive:c.palette.accent,emissiveIntensity:0.4})
+      );
+      bloom.position.set((Math.random()-0.5)*60,3+Math.random()*8,(Math.random()-0.5)*60);
+      root.add(bloom);
+    }
+    const tree=new THREE.Mesh(
+      new THREE.CylinderGeometry(1.2,1.6,16,8),
+      new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+    );
+    tree.position.set(0,8,0);
+    root.add(tree);
+    for(let i=0;i<6;i++){
+      const branch=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2,0.3,5,5),
+        new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+      );
+      branch.rotation.z=Math.PI/2.4;
+      branch.rotation.y=i*Math.PI/3;
+      branch.position.set(Math.cos(i)*2.5,10+i*0.3,Math.sin(i)*2.5);
+      root.add(branch);
+    }
+  }
+
+  function buildMountain(root,c){
+    const ground=new THREE.Mesh(
+      new THREE.PlaneGeometry(140,140,8,8),
+      new THREE.MeshStandardMaterial({color:c.palette.ground,roughness:1})
+    );
+    ground.rotation.x=-Math.PI/2;
+    root.add(ground);
+    const cliff=new THREE.Mesh(
+      new THREE.BoxGeometry(40,30,18),
+      new THREE.MeshStandardMaterial({color:0x6a6a72,roughness:1})
+    );
+    cliff.position.set(-20,15,-30);
+    root.add(cliff);
+    const ledge=new THREE.Mesh(
+      new THREE.BoxGeometry(8,1,5),
+      new THREE.MeshStandardMaterial({color:0x8a8a92,roughness:1})
+    );
+    ledge.position.set(-20,22,-20);
+    root.add(ledge);
+    const nest=new THREE.Mesh(
+      new THREE.TorusGeometry(1.4,0.4,6,12),
+      new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+    );
+    nest.rotation.x=Math.PI/2;
+    nest.position.set(-20,22.6,-20);
+    root.add(nest);
+    for(let i=0;i<40;i++){
+      const flower=new THREE.Mesh(
+        new THREE.SphereGeometry(0.2,4,4),
+        new THREE.MeshStandardMaterial({color:c.palette.accent,emissive:c.palette.accent,emissiveIntensity:0.5})
+      );
+      flower.position.set((Math.random()-0.5)*60,0.3,(Math.random()-0.5)*60+20);
+      root.add(flower);
+    }
+    const stream=new THREE.Mesh(
+      new THREE.PlaneGeometry(2,40),
+      new THREE.MeshStandardMaterial({color:0x6aa8d4,roughness:0.4,metalness:0.3})
+    );
+    stream.rotation.x=-Math.PI/2;
+    stream.position.set(10,0.05,0);
+    root.add(stream);
+    for(let i=0;i<8;i++){
+      const rock=new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1+Math.random()*1.4),
+        new THREE.MeshStandardMaterial({color:0x8a8a92,roughness:1})
+      );
+      rock.position.set((Math.random()-0.5)*50,1,(Math.random()-0.5)*50);
+      root.add(rock);
+    }
+  }
+
+  function buildRangerStation(root,c){
+    const ground=new THREE.Mesh(
+      new THREE.PlaneGeometry(120,120),
+      new THREE.MeshStandardMaterial({color:c.palette.ground,roughness:1})
+    );
+    ground.rotation.x=-Math.PI/2;
+    root.add(ground);
+    const cabin=new THREE.Mesh(
+      new THREE.BoxGeometry(10,5,8),
+      new THREE.MeshStandardMaterial({color:0x6b432a,roughness:0.9})
+    );
+    cabin.position.set(-8,2.5,0);
+    root.add(cabin);
+    const roof=new THREE.Mesh(
+      new THREE.ConeGeometry(8,3,4),
+      new THREE.MeshStandardMaterial({color:0x4a3220,roughness:1})
+    );
+    roof.rotation.y=Math.PI/4;
+    roof.position.set(-8,6.5,0);
+    root.add(roof);
+    const tower=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.6,0.6,12,6),
+      new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+    );
+    tower.position.set(8,6,-4);
+    root.add(tower);
+    const obs=new THREE.Mesh(
+      new THREE.BoxGeometry(3,2,3),
+      new THREE.MeshStandardMaterial({color:0x8a6a3a,roughness:0.9})
+    );
+    obs.position.set(8,12,-4);
+    root.add(obs);
+    const telemetry=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1,0.1,18,4),
+      new THREE.MeshStandardMaterial({color:0xb8a86a,emissive:0xffd97a,emissiveIntensity:0.2})
+    );
+    telemetry.position.set(14,9,4);
+    root.add(telemetry);
+    const dish=new THREE.Mesh(
+      new THREE.SphereGeometry(0.8,8,6,0,Math.PI*2,0,Math.PI/2),
+      new THREE.MeshStandardMaterial({color:0xc8c8c8,roughness:0.3,metalness:0.6})
+    );
+    dish.position.set(14,18,4);
+    root.add(dish);
+    const jeepBody=new THREE.Mesh(
+      new THREE.BoxGeometry(3.4,1,1.6),
+      new THREE.MeshStandardMaterial({color:0xc9a55a,roughness:0.7})
+    );
+    jeepBody.position.set(2,1,6);
+    root.add(jeepBody);
+    const jeepTop=new THREE.Mesh(
+      new THREE.BoxGeometry(2.4,0.8,1.4),
+      new THREE.MeshStandardMaterial({color:0x8a6a3a,roughness:0.7})
+    );
+    jeepTop.position.set(2,2,6);
+    root.add(jeepTop);
+    for(let i=0;i<4;i++){
+      const wheel=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.4,0.4,0.3,8),
+        new THREE.MeshStandardMaterial({color:0x14140e,roughness:1})
+      );
+      wheel.rotation.z=Math.PI/2;
+      wheel.position.set(2+(i<2?-1.2:1.2),0.4,6+(i%2?0.7:-0.7));
+      root.add(wheel);
+    }
+    const radio=new THREE.Mesh(
+      new THREE.BoxGeometry(0.6,0.4,0.4),
+      new THREE.MeshStandardMaterial({color:0x14140e,roughness:0.6})
+    );
+    radio.position.set(-8,4.4,4);
+    root.add(radio);
+  }
+
+  buildSavanna(zoneRoots[0],ZONES[0]);
+  buildWaterHole(zoneRoots[1],ZONES[1]);
+  buildJungle(zoneRoots[2],ZONES[2]);
+  buildMountain(zoneRoots[3],ZONES[3]);
+  buildRangerStation(zoneRoots[4],ZONES[4]);
+
+  function makeLion(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(1.6,0.8,0.7),
+      new THREE.MeshStandardMaterial({color:0xc9a06a,roughness:0.9})
+    );
+    body.position.y=0.6;
+    g.add(body);
+    const mane=new THREE.Mesh(
+      new THREE.SphereGeometry(0.5,10,8),
+      new THREE.MeshStandardMaterial({color:0x6a3a1a,roughness:1})
+    );
+    mane.position.set(0.8,0.7,0);
+    g.add(mane);
+    const head=new THREE.Mesh(
+      new THREE.BoxGeometry(0.5,0.45,0.5),
+      new THREE.MeshStandardMaterial({color:0xc9a06a,roughness:0.9})
+    );
+    head.position.set(0.95,0.8,0);
+    g.add(head);
+    const tail=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05,0.08,0.9,5),
+      new THREE.MeshStandardMaterial({color:0xc9a06a,roughness:0.9})
+    );
+    tail.rotation.z=Math.PI/3;
+    tail.position.set(-1,0.7,0);
+    g.add(tail);
+    return g;
+  }
+
+  function makeElephant(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(2.4,1.4,1.3),
+      new THREE.MeshStandardMaterial({color:0x8a8a92,roughness:1})
+    );
+    body.position.y=1.1;
+    g.add(body);
+    const head=new THREE.Mesh(
+      new THREE.BoxGeometry(0.9,0.9,0.95),
+      new THREE.MeshStandardMaterial({color:0x8a8a92,roughness:1})
+    );
+    head.position.set(1.4,1.2,0);
+    g.add(head);
+    const trunk=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18,0.32,1.4,8),
+      new THREE.MeshStandardMaterial({color:0x8a8a92,roughness:1})
+    );
+    trunk.rotation.z=-Math.PI/3;
+    trunk.position.set(2.0,0.6,0);
+    g.add(trunk);
+    const earL=new THREE.Mesh(
+      new THREE.BoxGeometry(0.1,0.7,0.6),
+      new THREE.MeshStandardMaterial({color:0x6a6a72,roughness:1})
+    );
+    earL.position.set(1.4,1.4,0.7);
+    g.add(earL);
+    const earR=earL.clone();
+    earR.position.z=-0.7;
+    g.add(earR);
+    return g;
+  }
+
+  function makeGiraffe(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(1.6,1.0,0.8),
+      new THREE.MeshStandardMaterial({color:0xe6c870,roughness:0.9})
+    );
+    body.position.y=2.2;
+    g.add(body);
+    const neck=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18,0.22,2.6,6),
+      new THREE.MeshStandardMaterial({color:0xe6c870,roughness:0.9})
+    );
+    neck.rotation.z=-Math.PI/8;
+    neck.position.set(0.8,3.6,0);
+    g.add(neck);
+    const head=new THREE.Mesh(
+      new THREE.BoxGeometry(0.5,0.4,0.4),
+      new THREE.MeshStandardMaterial({color:0xe6c870,roughness:0.9})
+    );
+    head.position.set(1.4,4.7,0);
+    g.add(head);
+    for(let i=0;i<6;i++){
+      const spot=new THREE.Mesh(
+        new THREE.SphereGeometry(0.12,5,4),
+        new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+      );
+      spot.scale.y=0.4;
+      spot.position.set(-0.6+i*0.3,2.2+(i%2)*0.3,0.41);
+      g.add(spot);
+    }
+    return g;
+  }
+
+  function makeZebra(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(1.4,0.8,0.6),
+      new THREE.MeshStandardMaterial({color:0xf0eadc,roughness:0.9})
+    );
+    body.position.y=0.8;
+    g.add(body);
+    for(let i=0;i<5;i++){
+      const stripe=new THREE.Mesh(
+        new THREE.BoxGeometry(0.12,0.82,0.62),
+        new THREE.MeshStandardMaterial({color:0x14140e,roughness:1})
+      );
+      stripe.position.set(-0.5+i*0.25,0.8,0);
+      g.add(stripe);
+    }
+    const head=new THREE.Mesh(
+      new THREE.BoxGeometry(0.5,0.4,0.4),
+      new THREE.MeshStandardMaterial({color:0xf0eadc,roughness:0.9})
+    );
+    head.position.set(0.85,1.1,0);
+    g.add(head);
+    return g;
+  }
+
+  function makeEagle(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.ConeGeometry(0.3,1.0,6),
+      new THREE.MeshStandardMaterial({color:0x4a3220,roughness:0.9})
+    );
+    body.rotation.z=-Math.PI/2;
+    body.position.y=0.4;
+    g.add(body);
+    const wingL=new THREE.Mesh(
+      new THREE.BoxGeometry(0.08,1.6,0.5),
+      new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:0.9})
+    );
+    wingL.position.set(0,0.45,0);
+    wingL.rotation.x=Math.PI/12;
+    g.add(wingL);
+    const head=new THREE.Mesh(
+      new THREE.SphereGeometry(0.18,6,5),
+      new THREE.MeshStandardMaterial({color:0xf0e8d4,roughness:0.9})
+    );
+    head.position.set(0.55,0.45,0);
+    g.add(head);
+    return g;
+  }
+
+  function makeToucan(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.SphereGeometry(0.3,8,6),
+      new THREE.MeshStandardMaterial({color:0x14140e,roughness:0.9})
+    );
+    body.position.y=0.3;
+    g.add(body);
+    const beak=new THREE.Mesh(
+      new THREE.ConeGeometry(0.18,0.55,6),
+      new THREE.MeshStandardMaterial({color:0xe89a3a,roughness:0.7})
+    );
+    beak.rotation.z=-Math.PI/2;
+    beak.position.set(0.35,0.32,0);
+    g.add(beak);
+    return g;
+  }
+
+  function makeMonkey(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.SphereGeometry(0.32,8,6),
+      new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+    );
+    body.position.y=0.5;
+    g.add(body);
+    const head=new THREE.Mesh(
+      new THREE.SphereGeometry(0.22,8,6),
+      new THREE.MeshStandardMaterial({color:0x8a5a2a,roughness:1})
+    );
+    head.position.set(0,0.9,0);
+    g.add(head);
+    const tail=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06,0.06,0.9,5),
+      new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:1})
+    );
+    tail.rotation.z=Math.PI/4;
+    tail.position.set(-0.45,0.6,0);
+    g.add(tail);
+    return g;
+  }
+
+  function makeCheetah(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(1.4,0.5,0.5),
+      new THREE.MeshStandardMaterial({color:0xe6c870,roughness:0.9})
+    );
+    body.position.y=0.5;
+    g.add(body);
+    for(let i=0;i<10;i++){
+      const spot=new THREE.Mesh(
+        new THREE.SphereGeometry(0.06,4,4),
+        new THREE.MeshStandardMaterial({color:0x14140e,roughness:1})
+      );
+      spot.position.set(-0.6+Math.random()*1.2,0.5+Math.random()*0.2,(Math.random()-0.5)*0.5);
+      g.add(spot);
+    }
+    const head=new THREE.Mesh(
+      new THREE.BoxGeometry(0.45,0.4,0.4),
+      new THREE.MeshStandardMaterial({color:0xe6c870,roughness:0.9})
+    );
+    head.position.set(0.85,0.7,0);
+    g.add(head);
+    return g;
+  }
+
+  function makeCrocodile(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(2.6,0.4,0.7),
+      new THREE.MeshStandardMaterial({color:0x4a6a32,roughness:1})
+    );
+    body.position.y=0.2;
+    g.add(body);
+    for(let i=0;i<5;i++){
+      const ridge=new THREE.Mesh(
+        new THREE.ConeGeometry(0.12,0.3,4),
+        new THREE.MeshStandardMaterial({color:0x3a5a22,roughness:1})
+      );
+      ridge.position.set(-1+i*0.5,0.5,0);
+      g.add(ridge);
+    }
+    const tail=new THREE.Mesh(
+      new THREE.ConeGeometry(0.3,1.2,5),
+      new THREE.MeshStandardMaterial({color:0x4a6a32,roughness:1})
+    );
+    tail.rotation.z=Math.PI/2;
+    tail.position.set(-1.8,0.2,0);
+    g.add(tail);
+    return g;
+  }
+
+  function makeHippo(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(2.2,1.2,1.2),
+      new THREE.MeshStandardMaterial({color:0x6a4a4a,roughness:1})
+    );
+    body.position.y=0.7;
+    g.add(body);
+    const head=new THREE.Mesh(
+      new THREE.BoxGeometry(0.9,0.8,0.9),
+      new THREE.MeshStandardMaterial({color:0x6a4a4a,roughness:1})
+    );
+    head.position.set(1.3,0.8,0);
+    g.add(head);
+    return g;
+  }
+
+  function makeRanger(colorShirt){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(
+      new THREE.BoxGeometry(0.45,0.9,0.3),
+      new THREE.MeshStandardMaterial({color:colorShirt||0x8a6a3a,roughness:0.9})
+    );
+    body.position.y=0.9;
+    g.add(body);
+    const head=new THREE.Mesh(
+      new THREE.SphereGeometry(0.18,8,6),
+      new THREE.MeshStandardMaterial({color:0xf3d6b0,roughness:0.9})
+    );
+    head.position.y=1.55;
+    g.add(head);
+    const hat=new THREE.Mesh(
+      new THREE.CylinderGeometry(0.32,0.32,0.08,8),
+      new THREE.MeshStandardMaterial({color:0x4a3220,roughness:1})
+    );
+    hat.position.y=1.74;
+    g.add(hat);
+    const legs=new THREE.Mesh(
+      new THREE.BoxGeometry(0.4,0.7,0.28),
+      new THREE.MeshStandardMaterial({color:0x4a3220,roughness:0.9})
+    );
+    legs.position.y=0.35;
+    g.add(legs);
+    return g;
+  }
+
+  function makeAnimalMesh(species){
+    switch(species){
+      case "lion":return makeLion();
+      case "elephant":return makeElephant();
+      case "giraffe":return makeGiraffe();
+      case "zebra":return makeZebra();
+      case "eagle":return makeEagle();
+      case "toucan":return makeToucan();
+      case "monkey":return makeMonkey();
+      case "cheetah":return makeCheetah();
+      case "crocodile":return makeCrocodile();
+      case "hippo":return makeHippo();
+    }
+    return makeLion();
+  }
+
+  const actorMeshes={};
+  RANGERS.forEach(r=>{
+    const m=makeRanger(0x6a8a4a);
+    m.position.set(-6+r.id*3,0,-2);
+    actorMeshes["R"+r.id]=m;
+    zoneRoots[r.home].add(m);
+  });
+  ANIMALS.forEach(a=>{
+    const m=makeAnimalMesh(a.species);
+    const ang=Math.random()*Math.PI*2;
+    const r=4+Math.random()*16;
+    m.position.set(Math.cos(ang)*r,a.species==="eagle"?(a.home===3?22.6:8):0,Math.sin(ang)*r);
+    actorMeshes["A"+a.id]=m;
+    zoneRoots[a.home].add(m);
+  });
+
+  const ambientHerds=[];
+  for(let i=0;i<80;i++){
+    const zoneId=i<24?0:(i<40?1:(i<60?2:(i<74?3:4)));
+    const speciesMap=[
+      ["zebra","giraffe"],
+      ["hippo"],
+      ["monkey","toucan"],
+      ["eagle"],
+      []
+    ];
+    const choices=speciesMap[zoneId];
+    if(!choices||!choices.length){
+      const trekker=makeRanger(0x8a6a3a);
+      const ang=Math.random()*Math.PI*2;
+      const r=8+Math.random()*14;
+      trekker.position.set(Math.cos(ang)*r,0,Math.sin(ang)*r);
+      trekker.scale.setScalar(0.8);
+      zoneRoots[zoneId].add(trekker);
+      ambientHerds.push({mesh:trekker,zone:zoneId,seed:Math.random()*Math.PI*2,name:NAME_POOL[i%NAME_POOL.length]});
+      continue;
+    }
+    const sp=choices[i%choices.length];
+    const mesh=makeAnimalMesh(sp);
+    mesh.scale.setScalar(0.7+Math.random()*0.3);
+    const ang=Math.random()*Math.PI*2;
+    const rad=8+Math.random()*22;
+    const yOff=sp==="eagle"?(8+Math.random()*8):0;
+    mesh.position.set(Math.cos(ang)*rad,yOff,Math.sin(ang)*rad);
+    zoneRoots[zoneId].add(mesh);
+    ambientHerds.push({mesh,zone:zoneId,seed:Math.random()*Math.PI*2,name:NAME_POOL[i%NAME_POOL.length],species:sp});
+  }
+
+  const decisionDiamonds={};
+  function ensureDiamond(actorKey){
+    if(decisionDiamonds[actorKey])return decisionDiamonds[actorKey];
+    const d=new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.4,0),
+      new THREE.MeshStandardMaterial({color:0xffd97a,emissive:0xffd97a,emissiveIntensity:0.7,transparent:true,opacity:0.9})
+    );
+    d.visible=false;
+    scene.add(d);
+    decisionDiamonds[actorKey]=d;
+    return d;
+  }
+
+  const sparkles=[];
+  function spawnSparkle(pos){
+    const g=new THREE.Group();
+    for(let i=0;i<7;i++){
+      const s=new THREE.Mesh(
+        new THREE.SphereGeometry(0.08,5,5),
+        new THREE.MeshBasicMaterial({color:0xfff0c0,transparent:true,opacity:1})
+      );
+      s.position.set((Math.random()-0.5)*0.6,Math.random()*0.6,(Math.random()-0.5)*0.6);
+      g.add(s);
+    }
+    g.position.copy(pos);
+    scene.add(g);
+    sparkles.push({g,life:1.6,age:0});
+  }
+
+  const trailLines={};
+  function ensureTrail(actorKey,color){
+    if(trailLines[actorKey])return trailLines[actorKey];
+    const geom=new THREE.BufferGeometry();
+    geom.setAttribute("position",new THREE.BufferAttribute(new Float32Array(60*3),3));
+    const mat=new THREE.LineBasicMaterial({color,transparent:true,opacity:0.6});
+    const line=new THREE.Line(geom,mat);
+    line.frustumCulled=false;
+    scene.add(line);
+    trailLines[actorKey]={line,points:[],color};
+    return trailLines[actorKey];
+  }
+  function pushTrail(actorKey,pos){
+    const t=trailLines[actorKey];
+    if(!t)return;
+    t.points.push(pos.clone());
+    if(t.points.length>20)t.points.shift();
+    const arr=t.line.geometry.attributes.position.array;
+    for(let i=0;i<20;i++){
+      const p=t.points[i]||t.points[t.points.length-1]||new THREE.Vector3();
+      arr[i*3]=p.x;arr[i*3+1]=(p.y||0)+0.05;arr[i*3+2]=p.z;
+    }
+    t.line.geometry.attributes.position.needsUpdate=true;
+    t.line.geometry.setDrawRange(0,t.points.length);
+  }
+
+  const SPECIES_TRAIL_COLORS={lion:0xc9a06a,elephant:0x8a8a92,giraffe:0xe6c870,zebra:0xf0eadc,
+    eagle:0x9a7ad4,toucan:0xe89a3a,monkey:0x6a4a2a,cheetah:0xffae6a,crocodile:0x4a6a32,hippo:0x6a4a4a};
+
+  ANIMALS.forEach(a=>ensureTrail("A"+a.id,SPECIES_TRAIL_COLORS[a.species]||0xffffff));
+  RANGERS.forEach(r=>ensureTrail("R"+r.id,0x9cd47a));
+
+  const CAMERAS=[
+    {name:"SAVANNA WIDE",zone:0,fn:(t,cam)=>{cam.position.set(Math.cos(t*0.07)*44,18,Math.sin(t*0.07)*44);cam.lookAt(0,2,0);}},
+    {name:"ACACIA SHADE",zone:0,fn:(t,cam)=>{cam.position.set(-14+Math.cos(t*0.2)*4,5,-8+Math.sin(t*0.2)*4);cam.lookAt(0,1,0);}},
+    {name:"WATERING HOLE EYE",zone:0,fn:(t,cam)=>{cam.position.set(18+Math.cos(t*0.15)*8,3,12+Math.sin(t*0.15)*8);cam.lookAt(18,1,12);}},
+    {name:"PRIDE GROUND POV",zone:0,fn:(t,cam)=>{const p=actorMeshes["A0"]?actorMeshes["A0"].position:new THREE.Vector3();cam.position.set(p.x-3,1.5,p.z-3);cam.lookAt(p.x+2,0.6,p.z+2);}},
+    {name:"BIRD POV (POND)",zone:1,fn:(t,cam)=>{cam.position.set(Math.cos(t*0.1)*22,12,Math.sin(t*0.1)*22);cam.lookAt(0,0,0);}},
+    {name:"REED LEVEL",zone:1,fn:(t,cam)=>{cam.position.set(Math.cos(t*0.18)*24,1.4,Math.sin(t*0.18)*24);cam.lookAt(0,0.6,0);}},
+    {name:"CROC LOG",zone:1,fn:(t,cam)=>{cam.position.set(-14+Math.cos(t*0.3)*3,1.6,Math.sin(t*0.3)*3);cam.lookAt(-14,0.6,0);}},
+    {name:"JUNGLE CANOPY",zone:2,fn:(t,cam)=>{cam.position.set(Math.cos(t*0.1)*18,16,Math.sin(t*0.1)*18);cam.lookAt(0,8,0);}},
+    {name:"TOUCAN BRANCH",zone:2,fn:(t,cam)=>{const p=actorMeshes["A12"]?actorMeshes["A12"].position:new THREE.Vector3();cam.position.set(p.x+3,p.y+1,p.z+3);cam.lookAt(p.x,p.y,p.z);}},
+    {name:"MONKEY VINE",zone:2,fn:(t,cam)=>{cam.position.set(Math.cos(t*0.22)*5,6,Math.sin(t*0.22)*5);cam.lookAt(0,5,0);}},
+    {name:"MOUNTAIN CLIFF",zone:3,fn:(t,cam)=>{cam.position.set(-20+Math.cos(t*0.12)*12,28,-20+Math.sin(t*0.12)*12);cam.lookAt(-20,22,-20);}},
+    {name:"EAGLE NEST",zone:3,fn:(t,cam)=>{cam.position.set(-14,24,-15);cam.lookAt(-20,22.6,-20);}},
+    {name:"ALPINE MEADOW",zone:3,fn:(t,cam)=>{cam.position.set(Math.cos(t*0.1)*22,4,20+Math.sin(t*0.1)*8);cam.lookAt(0,1,20);}},
+    {name:"VELA SOAR POV",zone:3,fn:(t,cam)=>{const p=actorMeshes["A11"]?actorMeshes["A11"].position:new THREE.Vector3(0,22,0);cam.position.set(p.x-4,p.y+2,p.z-4);cam.lookAt(p.x+8,p.y-2,p.z+8);}},
+    {name:"RANGER STATION",zone:4,fn:(t,cam)=>{cam.position.set(Math.cos(t*0.1)*22,10,Math.sin(t*0.1)*22);cam.lookAt(0,3,0);}},
+    {name:"OBS TOWER",zone:4,fn:(t,cam)=>{cam.position.set(8,16,-4);cam.lookAt(Math.cos(t*0.15)*30,2,Math.sin(t*0.15)*30);}},
+    {name:"JEEP FOLLOW",zone:4,fn:(t,cam)=>{cam.position.set(2+Math.cos(t*0.15)*8,3,6+Math.sin(t*0.15)*8);cam.lookAt(2,1,6);}},
+    {name:"TELEMETRY TOWER",zone:4,fn:(t,cam)=>{cam.position.set(14+Math.cos(t*0.1)*6,12,4+Math.sin(t*0.1)*6);cam.lookAt(14,9,4);}}
+  ];
+
+  let currentZone=0;
+  let portalT=0,portalDur=0,portalActive=false,portalFrom=0,portalTo=0;
+  let cameraIdx=0,cameraSwitchTime=0;
+  let storyTime=0,thinkTime=0,balanceTime=0;
+  let focusActor=null;
+  let lastZoneSwitch=0;
+
+  function setZone(z){
+    if(z===currentZone)return;
+    zoneRoots.forEach((g,i)=>{g.visible=(i===z);});
+    currentZone=z;
+    const c=ZONES[z];
+    scene.background=new THREE.Color(c.palette.bg);
+    scene.fog.color=new THREE.Color(c.palette.bg);
+    showToast("ENTERING "+c.name);
+    memory.log.push({day:memory.day,zone:c.name,t:Date.now()});
+    if(memory.log.length>40)memory.log.shift();
+    saveMem(memory);
+    chooseCameraForZone(z);
+  }
+
+  function chooseCameraForZone(z){
+    const opts=CAMERAS.filter(c=>c.zone===z);
+    if(opts.length){
+      const pick=opts[Math.floor(Math.random()*opts.length)];
+      cameraIdx=CAMERAS.indexOf(pick);
+    }
+    cameraSwitchTime=0;
+  }
+
+  function startPortal(toZone){
+    portalActive=true;portalT=0;portalDur=2.6;portalFrom=currentZone;portalTo=toZone;
+    showToast("AERIAL DRONE → "+ZONES[toZone].name);
+    memory.herdMoves.push({day:memory.day,from:ZONES[portalFrom].name,to:ZONES[toZone].name});
+    if(memory.herdMoves.length>30)memory.herdMoves.shift();
+    saveMem(memory);
+  }
+
+  function showToast(s){
+    toast.textContent=s;
+    toast.style.opacity=1;
+    setTimeout(()=>{toast.style.opacity=0;},1700);
+  }
+
+  function pickFocus(){
+    const all=[...ANIMALS.map((a,i)=>({k:"A"+i,obj:a,kind:"animal"})),...RANGERS.map((r,i)=>({k:"R"+i,obj:r,kind:"ranger"}))];
+    return all[Math.floor(Math.random()*all.length)];
+  }
+  focusActor=pickFocus();
+
+  function renderBrain(){
+    if(!focusActor)return;
+    const o=focusActor.obj;
+    const stepIdx=Math.floor((storyTime/9)%o.plan.length);
+    const need=focusActor.kind==="ranger"?
+      ("Find "+(o.target||"target")):
+      (o.species==="elephant"?"All 3 elephants + safe path":
+       o.species==="lion"?"Cover + a gap in the dazzle":
+       o.species==="eagle"?"Updraft + clear sky":
+       o.species==="zebra"?"Herd cohesion":
+       o.species==="monkey"?"Branches + ripe fruit":
+       o.species==="toucan"?"Bloom tree in reach":
+       o.species==="giraffe"?"Tall acacia leaves":
+       o.species==="cheetah"?"Open lane to sprint":
+       o.species==="crocodile"?"Sun and still water":
+       o.species==="hippo"?"Deep mud":"Quiet ground");
+    const have=focusActor.kind==="ranger"?"Jeep, radio, log":"Kin nearby, terrain known";
+    brainEl.innerHTML=
+      "<h4>"+o.name.toUpperCase()+"</h4>"+
+      "<div class='row'>"+(focusActor.kind==="ranger"?o.role:(o.role+" · "+o.species))+"</div>"+
+      "<div class='row'><span class='lbl'>GOAL</span>"+o.goal+"</div>"+
+      "<div class='row'><span class='lbl'>NEED</span>"+need+"</div>"+
+      "<div class='row'><span class='lbl'>HAVE</span>"+have+"</div>"+
+      "<div class='row'><span class='lbl'>PLAN</span>"+o.plan.join(" → ")+"</div>"+
+      "<div class='row'><span class='lbl'>STEP</span>"+(stepIdx+1)+" of "+o.plan.length+" ("+o.plan[stepIdx]+")</div>"+
+      "<div class='row'><span class='lbl'>MOOD</span>"+o.mood+"</div>";
+  }
+
+  function renderHud(){
+    const z=ZONES[currentZone];
+    const here=ANIMALS.filter(a=>a.home===currentZone).length;
+    const headline=focusActor&&focusActor.kind==="animal"&&focusActor.obj.home===currentZone?
+      (focusActor.obj.name.toUpperCase()+" "+focusActor.obj.plan[0].toUpperCase()):
+      "RESERVE QUIET";
+    hud.innerHTML=
+      "<b>GREATPINE WILDLIFE RESERVE</b><br>"+
+      "Day "+memory.day+" · Reseed "+memory.reseeds+"<br>"+
+      "ZONE "+(currentZone+1)+" OF 5: "+z.name+" · "+here+" NAMED ANIMALS · "+headline+"<br>"+
+      "<i style='color:#a9d27a'>Camera: "+CAMERAS[cameraIdx].name+"</i>";
+    let ch="<b>CAST</b><br>";
+    RANGERS.forEach(r=>{ch+="<span class='nm'>"+r.short+"</span> · <span class='gl'>"+r.goal+"</span><br>";});
+    const focusAnimals=ANIMALS.slice(0,6);
+    focusAnimals.forEach(a=>{ch+="<span class='nm'>"+a.name+"</span> · <span class='gl'>"+a.goal+"</span><br>";});
+    castEl.innerHTML=ch;
+  }
+
+  function renderBalance(){
+    const lions=ANIMALS.filter(a=>a.species==="lion").length;
+    const cheetahs=ANIMALS.filter(a=>a.species==="cheetah").length;
+    const zebras=ANIMALS.filter(a=>a.species==="zebra").length;
+    const elephants=ANIMALS.filter(a=>a.species==="elephant").length;
+    const giraffes=ANIMALS.filter(a=>a.species==="giraffe").length;
+    const balance=(zebras+elephants+giraffes>=lions+cheetahs+1)?"HEALTHY":"WATCHFUL";
+    balanceEl.innerHTML="<b>ECOSYSTEM</b> · Pride: "+lions+" lions · Cheetah: "+cheetahs+" · Herd: "+(zebras+elephants+giraffes)+" grazers · Balance: <b>"+balance+"</b>";
+  }
+
+  function renderMap(){
+    const w=mapCv.width,h=mapCv.height;
+    mapCtx.clearRect(0,0,w,h);
+    mapCtx.fillStyle="#0a1410";
+    mapCtx.fillRect(0,0,w,h);
+    ZONES.forEach((z,i)=>{
+      mapCtx.fillStyle=i===currentZone?"#9cd47a":"rgba(184,168,106,0.4)";
+      const x=z.mapPos[0]*w,y=z.mapPos[1]*h;
+      const sw=z.mapSize[0]*w,sh=z.mapSize[1]*h;
+      mapCtx.fillRect(x-sw/2,y-sh/2,sw,sh);
+      mapCtx.fillStyle="#0a1410";
+      mapCtx.font="9px Georgia";
+      mapCtx.textAlign="center";
+      mapCtx.fillText(z.name,x,y+3);
+    });
+    ANIMALS.forEach(a=>{
+      const z=ZONES[a.home];
+      const x=z.mapPos[0]*w+(Math.random()-0.5)*z.mapSize[0]*w*0.6;
+      const y=z.mapPos[1]*h+(Math.random()-0.5)*z.mapSize[1]*h*0.6;
+      mapCtx.fillStyle=SPECIES_TRAIL_COLORS[a.species]?
+        "#"+SPECIES_TRAIL_COLORS[a.species].toString(16).padStart(6,"0"):"#fff";
+      mapCtx.beginPath();mapCtx.arc(x,y,1.6,0,Math.PI*2);mapCtx.fill();
+    });
+    RANGERS.forEach(r=>{
+      const z=ZONES[r.home];
+      const x=z.mapPos[0]*w,y=z.mapPos[1]*h-z.mapSize[1]*h*0.3;
+      mapCtx.fillStyle="#9cd47a";
+      mapCtx.beginPath();mapCtx.arc(x,y,2.4,0,Math.PI*2);mapCtx.fill();
+    });
+  }
+
+  function renderGraph(){
+    const w=graphCv.width,h=graphCv.height;
+    graphCtx.clearRect(0,0,w,h);
+    graphCtx.fillStyle="rgba(8,16,12,0.9)";
+    graphCtx.fillRect(0,0,w,h);
+    graphCtx.fillStyle="#ffd97a";
+    graphCtx.font="14px Georgia";
+    graphCtx.fillText("Greatpine · Day "+memory.day+" · Reseed "+memory.reseeds,18,30);
+    graphCtx.font="11px 'Courier New'";
+    graphCtx.fillStyle="#a9d27a";
+    graphCtx.fillText("HERD MOVEMENTS",18,56);
+    graphCtx.fillStyle="#e9d8b0";
+    const moves=memory.herdMoves.slice(-7);
+    moves.forEach((m,i)=>{
+      graphCtx.fillText("Day "+m.day+" · "+m.from+" → "+m.to,28,76+i*14);
+    });
+    graphCtx.fillStyle="#a9d27a";
+    graphCtx.fillText("RANGER SIGHTINGS",18,196);
+    graphCtx.fillStyle="#e9d8b0";
+    const s=memory.sightings.slice(-6);
+    s.forEach((m,i)=>{
+      graphCtx.fillText(m.ranger+" → "+m.animal+" ("+m.zone+")",28,216+i*14);
+    });
+    graphCtx.fillStyle="#a9d27a";
+    graphCtx.fillText("HUNT CYCLE",260,196);
+    graphCtx.fillStyle="#e9d8b0";
+    const hu=memory.hunts.slice(-6);
+    hu.forEach((m,i)=>{
+      graphCtx.fillText(m.predator+" pursued "+m.prey+" ("+m.outcome+")",270,216+i*14);
+    });
+  }
+
+  let storyArc=[
+    "Day {D} Act 1 — Dawn lifts off the savanna. Tembo trumpets the herd awake.",
+    "Day {D} Act 2 — Maximus stalks zebras at dawn. Vela soars over the cliff.",
+    "Day {D} Act 3 — Tembo leads the herd to the water hole. Big Bess yawns awake.",
+    "Day {D} Act 4 — Esi counts toucans along the canopy. Pip glasses the eagle nest.",
+    "Day {D} Act 5 — Comet picks a lane at dusk. Kavi's jeep finds Maximus' tracks.",
+    "Day {D} Act 6 — The reserve quiets. Rangers radio the day's sightings home."
+  ];
+
+  function pushChyron(){
+    const beat=Math.floor(storyTime/22)%storyArc.length;
+    chyron.textContent=storyArc[beat].replace("{D}",memory.day);
+  }
+
+  function maybeSighting(){
+    if(Math.random()>0.7){
+      const r=RANGERS[Math.floor(Math.random()*RANGERS.length)];
+      const candidates=ANIMALS.filter(a=>a.home===currentZone||a.home===r.home);
+      if(!candidates.length)return;
+      const a=candidates[Math.floor(Math.random()*candidates.length)];
+      memory.sightings.push({day:memory.day,ranger:r.short,animal:a.name,zone:ZONES[currentZone].name});
+      if(memory.sightings.length>30)memory.sightings.shift();
+      memory.tagged[a.name]=(memory.tagged[a.name]||0)+1;
+      saveMem(memory);
+      const m=actorMeshes["A"+ANIMALS.indexOf(a)];
+      if(m)spawnSparkle(m.position);
+      showToast(r.short+" SPOTS "+a.name.toUpperCase());
+    }
+  }
+
+  function maybeHunt(){
+    if(Math.random()>0.85){
+      const preds=ANIMALS.filter(a=>a.species==="lion"||a.species==="cheetah");
+      const prey=ANIMALS.filter(a=>a.species==="zebra"||a.species==="giraffe");
+      if(!preds.length||!prey.length)return;
+      const p=preds[Math.floor(Math.random()*preds.length)];
+      const q=prey[Math.floor(Math.random()*prey.length)];
+      const ok=Math.random()>0.5;
+      memory.hunts.push({day:memory.day,predator:p.name,prey:q.name,outcome:ok?"successful":"prey escaped"});
+      if(memory.hunts.length>30)memory.hunts.shift();
+      saveMem(memory);
+      chyron.textContent=p.name+(ok?" successfully hunts on the savanna.":" stalks "+q.name+", who escapes into the dazzle.");
+    }
+  }
+
+  function tickActors(dt,t){
+    ANIMALS.forEach((a,i)=>{
+      const k="A"+i;
+      const m=actorMeshes[k];
+      if(!m)return;
+      const z=a.home;
+      const cx=Math.cos(t*0.2+i)*0.04;
+      const cz=Math.sin(t*0.2+i)*0.04;
+      if(a.species==="eagle"){
+        const r=14+Math.sin(t*0.1+i)*4;
+        m.position.set(Math.cos(t*0.13+i)*r,16+Math.sin(t*0.21+i)*5,Math.sin(t*0.13+i)*r);
+      }else if(a.species==="crocodile"){
+        m.position.set(-14+Math.cos(t*0.04)*0.3,0.6,Math.sin(t*0.05)*0.3);
+      }else if(a.species==="hippo"){
+        m.position.set(Math.cos(t*0.06+i)*4,0.4+Math.sin(t*0.4)*0.05,Math.sin(t*0.06+i)*4);
+      }else{
+        m.position.x+=cx;m.position.z+=cz;
+        const lim=18;
+        if(m.position.x>lim)m.position.x=lim;
+        if(m.position.x<-lim)m.position.x=-lim;
+        if(m.position.z>lim)m.position.z=lim;
+        if(m.position.z<-lim)m.position.z=-lim;
+        m.rotation.y=Math.atan2(cz,cx);
+      }
+      if(z===currentZone){
+        pushTrail(k,m.position);
+      }
+      if(focusActor&&focusActor.k===k){
+        const d=ensureDiamond(k);
+        d.visible=true;
+        d.position.set(m.position.x,m.position.y+(a.species==="eagle"?0.8:2.2),m.position.z);
+        d.rotation.y=t*1.2;
+      }else{
+        const d=decisionDiamonds[k];
+        if(d)d.visible=false;
+      }
+    });
+    RANGERS.forEach((r,i)=>{
+      const k="R"+i;
+      const m=actorMeshes[k];
+      if(!m)return;
+      const cx=Math.cos(t*0.18+i*1.3)*0.05;
+      const cz=Math.sin(t*0.18+i*1.3)*0.05;
+      m.position.x+=cx;m.position.z+=cz;
+      if(r.home===currentZone){pushTrail(k,m.position);}
+      m.rotation.y=Math.atan2(cz,cx);
+      if(focusActor&&focusActor.k===k){
+        const d=ensureDiamond(k);
+        d.visible=true;
+        d.position.set(m.position.x,m.position.y+2.4,m.position.z);
+        d.rotation.y=t*1.2;
+      }else{
+        const d=decisionDiamonds[k];
+        if(d)d.visible=false;
+      }
+    });
+    ambientHerds.forEach((h,i)=>{
+      h.seed+=dt*0.3;
+      if(h.species==="eagle"){
+        const r=20+Math.sin(h.seed)*4;
+        h.mesh.position.x=Math.cos(h.seed)*r;
+        h.mesh.position.z=Math.sin(h.seed)*r;
+        h.mesh.position.y=14+Math.sin(h.seed*1.3)*3;
+      }else{
+        h.mesh.position.x+=Math.cos(h.seed)*0.02;
+        h.mesh.position.z+=Math.sin(h.seed)*0.02;
+        h.mesh.rotation.y=h.seed;
+      }
+    });
+    for(let i=sparkles.length-1;i>=0;i--){
+      const sp=sparkles[i];
+      sp.age+=dt;
+      sp.g.children.forEach(c=>{
+        c.position.y+=dt*0.6;
+        c.material.opacity=Math.max(0,1-sp.age/sp.life);
+      });
+      if(sp.age>=sp.life){
+        sp.g.children.forEach(c=>{c.geometry.dispose();c.material.dispose();});
+        scene.remove(sp.g);
+        sparkles.splice(i,1);
+      }
+    }
+  }
+
+  function applyCamera(t){
+    const cam=CAMERAS[cameraIdx];
+    if(cam.zone!==currentZone){
+      chooseCameraForZone(currentZone);
+      return;
+    }
+    cam.fn(t,camera);
+  }
+
+  function tickPortal(dt){
+    if(!portalActive)return;
+    portalT+=dt;
+    const k=portalT/portalDur;
+    const arc=Math.sin(k*Math.PI);
+    camera.position.set(
+      Math.cos(k*Math.PI)*40,
+      40+arc*20,
+      Math.sin(k*Math.PI)*40
+    );
+    camera.lookAt(0,0,0);
+    if(k>0.5&&zoneRoots[portalTo].visible===false){
+      zoneRoots.forEach((g,i)=>{g.visible=(i===portalTo);});
+      const c=ZONES[portalTo];
+      scene.background=new THREE.Color(c.palette.bg);
+      scene.fog.color=new THREE.Color(c.palette.bg);
+      currentZone=portalTo;
+    }
+    if(portalT>=portalDur){
+      portalActive=false;
+      chooseCameraForZone(portalTo);
+      lastZoneSwitch=performance.now()/1000;
+    }
+  }
+
+  let last=performance.now()/1000;
+  let graphTimer=0;
+  function frame(now){
+    const t=now/1000;
+    const dt=Math.min(0.06,t-last);
+    last=t;
+    storyTime+=dt;thinkTime+=dt;balanceTime+=dt;cameraSwitchTime+=dt;graphTimer+=dt;
+    if(!portalActive){
+      applyCamera(t);
+      if(cameraSwitchTime>11){
+        const opts=CAMERAS.map((c,i)=>({c,i})).filter(x=>x.c.zone===currentZone&&x.i!==cameraIdx);
+        if(opts.length){
+          cameraIdx=opts[Math.floor(Math.random()*opts.length)].i;
+        }
+        cameraSwitchTime=0;
+      }
+      const sinceZ=t-lastZoneSwitch;
+      if(sinceZ>(60+Math.random()*30)){
+        const next=(currentZone+1+Math.floor(Math.random()*4))%5;
+        startPortal(next);
+      }
+    }else{
+      tickPortal(dt);
+    }
+    tickActors(dt,t);
+    if(thinkTime>4){
+      thinkTime=0;
+      if(Math.random()>0.5)focusActor=pickFocus();
+      maybeSighting();
+      maybeHunt();
+    }
+    if(balanceTime>2){balanceTime=0;renderBalance();}
+    if(graphTimer>1.4){graphTimer=0;renderMap();}
+    renderBrain();renderHud();pushChyron();
+    renderer.render(scene,camera);
+    rafId=requestAnimationFrame(frame);
+  }
+  let rafId=requestAnimationFrame(frame);
+  renderGraph();
+  setInterval(renderGraph,4000);
+
+  setTimeout(()=>{graphCv.style.display="block";setTimeout(()=>{graphCv.style.display="none";},9000);},25000);
+
+  document.addEventListener("keydown",e=>{
+    if(e.key==="g"||e.key==="G"){graphCv.style.display=graphCv.style.display==="block"?"none":"block";}
+    if(e.key==="c"||e.key==="C"){cameraIdx=(cameraIdx+1)%CAMERAS.length;chooseCameraForZone(currentZone);}
+  });
+
+  window.addEventListener("resize",()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  });
+
+  setTimeout(function reseed(){
+    cancelAnimationFrame(rafId);
+    disposeAll();
+    renderer.dispose();
+    location.reload();
+  },10*60*1000);
+
+  showToast("DAY "+memory.day+" · GREATPINE RESERVE");
+})();
+</script>
+</body>
+</html>

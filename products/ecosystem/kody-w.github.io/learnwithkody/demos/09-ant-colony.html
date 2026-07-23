@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ant Colony Optimization — Vibe Coding</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #07090d;
+    color: #d8e0ec;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #stage {
+    position: absolute;
+    inset: 0;
+    display: block;
+    cursor: crosshair;
+  }
+  #ui {
+    position: absolute;
+    top: 14px; left: 14px;
+    background: rgba(8,12,18, 0.78);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(140, 180, 255, 0.18);
+    border-radius: 12px;
+    padding: 14px 16px;
+    width: 296px;
+    font-size: 11px;
+    line-height: 1.45;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  }
+  #ui h1 {
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #8ad0ff;
+    margin-bottom: 2px;
+    font-weight: 600;
+  }
+  #ui .sub {
+    color: #6a7a90;
+    font-size: 10px;
+    margin-bottom: 12px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    margin: 7px 0;
+    gap: 8px;
+  }
+  .row label {
+    flex: 0 0 60px;
+    color: #aab8cc;
+    font-size: 10.5px;
+  }
+  .row .val {
+    color: #ffd66b;
+    font-size: 10.5px;
+    flex: 0 0 50px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type=range] {
+    flex: 1;
+    accent-color: #6ad1ff;
+    height: 4px;
+    background: transparent;
+    min-width: 0;
+  }
+  .tools {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  button {
+    background: rgba(60, 100, 160, 0.18);
+    color: #c8d8ee;
+    border: 1px solid rgba(140, 180, 255, 0.25);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font: inherit;
+    font-size: 10.5px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  button:hover {
+    background: rgba(80, 130, 200, 0.32);
+    border-color: rgba(140, 180, 255, 0.45);
+  }
+  button.active {
+    background: rgba(255, 120, 80, 0.35);
+    border-color: rgba(255, 160, 120, 0.7);
+    color: #fff;
+  }
+  #stats {
+    position: absolute;
+    top: 14px; right: 14px;
+    background: rgba(8,12,18, 0.78);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(140, 180, 255, 0.18);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 11px;
+    line-height: 1.6;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  #stats .num { color: #ffd66b; font-weight: 600; }
+  #stats .lbl { color: #7a8aa0; font-size: 10px; letter-spacing: 0.05em; }
+  #legend {
+    position: absolute;
+    bottom: 14px; left: 14px;
+    background: rgba(8,12,18, 0.7);
+    border: 1px solid rgba(140, 180, 255, 0.15);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 10.5px;
+    line-height: 1.7;
+    color: #aab8cc;
+    max-width: 380px;
+  }
+  #legend .swatch {
+    display: inline-block;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  #legend kbd {
+    background: rgba(140, 180, 255, 0.12);
+    border: 1px solid rgba(140, 180, 255, 0.25);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #d8e0ec;
+    font-size: 9.5px;
+  }
+  .divider {
+    height: 1px;
+    background: rgba(140, 180, 255, 0.12);
+    margin: 10px 0;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="ui">
+  <h1>Ant Colony</h1>
+  <div class="sub">Stigmergy through pheromones</div>
+
+  <div class="row">
+    <label>Ants</label>
+    <input type="range" id="antCount" min="1000" max="10000" step="500" value="6000">
+    <span class="val" id="antCountVal">6000</span>
+  </div>
+  <div class="row">
+    <label>Evaporate</label>
+    <input type="range" id="evap" min="950" max="999" step="1" value="985">
+    <span class="val" id="evapVal">0.985</span>
+  </div>
+  <div class="row">
+    <label>Strength</label>
+    <input type="range" id="strength" min="10" max="200" step="5" value="80">
+    <span class="val" id="strengthVal">0.80</span>
+  </div>
+  <div class="row">
+    <label>Sense</label>
+    <input type="range" id="sense" min="6" max="24" step="1" value="14">
+    <span class="val" id="senseVal">14</span>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="tools">
+    <button id="toolFood" class="active">Food (click)</button>
+    <button id="toolNest">Nest (shift+click)</button>
+    <button id="toolWall">Poison Wall (drag)</button>
+    <button id="toolErase">Erase</button>
+  </div>
+  <div class="tools" style="margin-top:6px; grid-template-columns: 1fr 1fr 1fr;">
+    <button id="btnReset">Reset</button>
+    <button id="btnClearWalls">Clear Walls</button>
+    <button id="btnPause">Pause</button>
+  </div>
+</div>
+
+<div id="stats">
+  <div><span class="num" id="fps">60</span> <span class="lbl">FPS</span></div>
+  <div><span class="num" id="ants">6000</span> <span class="lbl">ANTS</span></div>
+  <div><span class="num" id="food">3</span> <span class="lbl">FOOD</span></div>
+  <div><span class="num" id="nests">1</span> <span class="lbl">NESTS</span></div>
+</div>
+
+<div id="legend">
+  <div><span class="swatch" style="background:#65ff8a;box-shadow:0 0 6px #65ff8a;"></span>Food pheromone (laid by ants returning with food)</div>
+  <div><span class="swatch" style="background:#6ad1ff;box-shadow:0 0 6px #6ad1ff;"></span>Home pheromone (laid by ants searching)</div>
+  <div><span class="swatch" style="background:#ff5a5a;box-shadow:0 0 6px #ff5a5a;"></span>Food&nbsp;&nbsp;<span class="swatch" style="background:#ffaa44;box-shadow:0 0 6px #ffaa44;"></span>Nest&nbsp;&nbsp;<span class="swatch" style="background:#5d6678;"></span>Wall</div>
+  <div style="margin-top:4px; color:#7a8aa0;">Click=food &middot; <kbd>Shift</kbd>+click=nest &middot; drag=wall</div>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================================
+// Ant Colony Optimization — WebGL2 instanced ants + CPU pheromone field
+// ============================================================================
+//
+// Architecture: Pheromone field lives on the CPU (Float32Array, 2 channels:
+//   home + food). Ants sense it directly (fast, no GPU readback stall).
+//   Each frame we:
+//     1. Diffuse + evaporate field (CPU, 5-tap blur, 256K cells)
+//     2. Update + sense + deposit per ant (CPU)
+//     3. Upload field to GPU as Uint8 RGBA texture
+//     4. Render: composite shader (field as glow), instanced ants on top
+//
+// 10K ants @ 60fps achievable on modern hardware.
+
+const canvas = document.getElementById('stage');
+const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+if (!gl) { alert('WebGL2 required.'); throw new Error('No WebGL2'); }
+
+// ---------- World / field config ----------
+const FIELD_W = 256;          // pheromone grid resolution
+const FIELD_H = 256;
+const FIELD_CELLS = FIELD_W * FIELD_H;
+
+let antCount = 6000;
+let evap = 0.985;
+let strength = 0.80;
+let senseDist = 14;            // grid cells in field-space
+let paused = false;
+
+let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+// ---------- Ant state (SoA for cache) ----------
+const MAX_ANTS = 10000;
+let antX     = new Float32Array(MAX_ANTS);
+let antY     = new Float32Array(MAX_ANTS);
+let antHX    = new Float32Array(MAX_ANTS);
+let antHY    = new Float32Array(MAX_ANTS);
+let antState = new Uint8Array(MAX_ANTS);   // 0 = searching, 1 = returning
+
+// ---------- Pheromone field ----------
+// fieldHome[i] and fieldFood[i] hold per-cell pheromone amounts
+let fieldHome = new Float32Array(FIELD_CELLS);
+let fieldFood = new Float32Array(FIELD_CELLS);
+let fieldHomeTmp = new Float32Array(FIELD_CELLS);
+let fieldFoodTmp = new Float32Array(FIELD_CELLS);
+
+// Wall grid (Uint8: 0 open, 255 wall)
+let wallData = new Uint8Array(FIELD_CELLS);
+// Source grid (R = food source, G = nest, B = wall) — uploaded to GPU
+let sourceData = new Uint8Array(FIELD_CELLS * 4);
+// Combined field texture (RGBA8): R = home pheromone (scaled), G = food pheromone (scaled)
+let fieldTexData = new Uint8Array(FIELD_CELLS * 4);
+
+let food = [];   // [{x, y, r}, ...] in world coords [0..1]
+let nests = [];  // [{x, y, r}, ...]
+
+// =======================================================================
+// Shader helpers
+// =======================================================================
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+    throw new Error('shader compile failed');
+  }
+  return s;
+}
+function program(vsSrc, fsSrc) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(p));
+    throw new Error('program link failed');
+  }
+  return p;
+}
+
+// =======================================================================
+// Composite shader — field + sources to screen with pretty colors
+// =======================================================================
+const VS_QUAD = `#version 300 es
+in vec2 a_pos;
+out vec2 v_uv;
+void main() {
+  v_uv = a_pos * 0.5 + 0.5;
+  v_uv.y = 1.0 - v_uv.y;          // flip so texture y goes down
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const FS_COMPOSITE = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_field;
+uniform sampler2D u_source;
+out vec4 fragColor;
+
+vec3 tonemap(vec3 x) { return x / (1.0 + x); }
+
+void main() {
+  vec2 ph = texture(u_field, v_uv).rg;     // R = home, G = food (each [0..1])
+  vec4 src = texture(u_source, v_uv);
+
+  vec3 col = vec3(0.018, 0.024, 0.038);
+
+  float home = ph.r * 3.5;
+  float food = ph.g * 3.5;
+
+  vec3 homeCol = vec3(0.30, 0.70, 1.20) * home;
+  vec3 foodCol = vec3(0.30, 1.30, 0.55) * food;
+  col += homeCol + foodCol;
+
+  float fs = src.r;
+  if (fs > 0.0) {
+    col = mix(col, vec3(1.0, 0.25, 0.25), fs);
+    col += vec3(0.6, 0.1, 0.1) * fs;
+  }
+  float ns = src.g;
+  if (ns > 0.0) {
+    col = mix(col, vec3(1.0, 0.65, 0.25), ns);
+    col += vec3(0.6, 0.35, 0.1) * ns;
+  }
+  float wl = src.b;
+  if (wl > 0.0) {
+    col = mix(col, vec3(0.18, 0.20, 0.26), wl);
+  }
+
+  col = tonemap(col);
+  fragColor = vec4(col, 1.0);
+}`;
+
+// =======================================================================
+// Ant render shader — instanced quads
+// =======================================================================
+const VS_ANT = `#version 300 es
+in vec2 a_corner;       // [-1..1] quad corner
+in vec2 a_pos;          // world coord per-instance [0..1]
+in float a_state;       // 0 search, 1 return
+uniform vec2 u_resolution;
+uniform float u_pointSize;
+out vec2 v_uv;
+out float v_state;
+
+void main() {
+  vec2 px = a_pos * u_resolution;
+  px.y = u_resolution.y - px.y;
+  vec2 corner = a_corner * u_pointSize;
+  vec2 final = px + corner;
+  vec2 ndc = (final / u_resolution) * 2.0 - 1.0;
+  gl_Position = vec4(ndc, 0.0, 1.0);
+  v_uv = a_corner;
+  v_state = a_state;
+}`;
+
+const FS_ANT = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+in float v_state;
+out vec4 fragColor;
+void main() {
+  float r = length(v_uv);
+  if (r > 1.0) discard;
+  float a = smoothstep(1.0, 0.45, r);
+  // Searching ants white-blue, returning ants warm yellow (so trails are easy to read)
+  vec3 col = (v_state < 0.5) ? vec3(0.92, 0.96, 1.0) : vec3(1.0, 0.88, 0.45);
+  fragColor = vec4(col, a);
+}`;
+
+// =======================================================================
+// Build programs
+// =======================================================================
+const progComposite = program(VS_QUAD, FS_COMPOSITE);
+const progAnt       = program(VS_ANT, FS_ANT);
+
+const locComp = {
+  field:  gl.getUniformLocation(progComposite, 'u_field'),
+  source: gl.getUniformLocation(progComposite, 'u_source'),
+  pos:    gl.getAttribLocation(progComposite, 'a_pos'),
+};
+const locAnt = {
+  corner:    gl.getAttribLocation(progAnt, 'a_corner'),
+  pos:       gl.getAttribLocation(progAnt, 'a_pos'),
+  state:     gl.getAttribLocation(progAnt, 'a_state'),
+  res:       gl.getUniformLocation(progAnt, 'u_resolution'),
+  pointSize: gl.getUniformLocation(progAnt, 'u_pointSize'),
+};
+
+// =======================================================================
+// Geometry buffers
+// =======================================================================
+const quadVbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+
+const antQuadVbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, antQuadVbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  -1,-1,  1,-1,  -1,1,
+   1,-1,  1, 1,  -1,1
+]), gl.STATIC_DRAW);
+
+// Per-instance ant data: [x, y, state]
+const ANT_INSTANCE_FLOATS = 3;
+let antInstanceArr = new Float32Array(MAX_ANTS * ANT_INSTANCE_FLOATS);
+const antInstanceVbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, antInstanceVbo);
+gl.bufferData(gl.ARRAY_BUFFER, antInstanceArr.byteLength, gl.DYNAMIC_DRAW);
+
+// =======================================================================
+// VAOs
+// =======================================================================
+const vaoQuadComp = gl.createVertexArray();
+gl.bindVertexArray(vaoQuadComp);
+gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
+gl.enableVertexAttribArray(locComp.pos);
+gl.vertexAttribPointer(locComp.pos, 2, gl.FLOAT, false, 0, 0);
+
+const vaoAnts = gl.createVertexArray();
+gl.bindVertexArray(vaoAnts);
+gl.bindBuffer(gl.ARRAY_BUFFER, antQuadVbo);
+gl.enableVertexAttribArray(locAnt.corner);
+gl.vertexAttribPointer(locAnt.corner, 2, gl.FLOAT, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, antInstanceVbo);
+gl.enableVertexAttribArray(locAnt.pos);
+gl.vertexAttribPointer(locAnt.pos, 2, gl.FLOAT, false, 12, 0);
+gl.vertexAttribDivisor(locAnt.pos, 1);
+gl.enableVertexAttribArray(locAnt.state);
+gl.vertexAttribPointer(locAnt.state, 1, gl.FLOAT, false, 12, 8);
+gl.vertexAttribDivisor(locAnt.state, 1);
+
+gl.bindVertexArray(null);
+
+// =======================================================================
+// Textures
+// =======================================================================
+function makeRGBATex(w, h) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  return t;
+}
+const fieldTex  = makeRGBATex(FIELD_W, FIELD_H);
+const sourceTex = makeRGBATex(FIELD_W, FIELD_H);
+
+// =======================================================================
+// World init
+// =======================================================================
+function initWorld() {
+  nests = [{ x: 0.5, y: 0.5, r: 0.025 }];
+  food = [];
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+    const dist = 0.30 + Math.random() * 0.10;
+    food.push({
+      x: 0.5 + Math.cos(angle) * dist,
+      y: 0.5 + Math.sin(angle) * dist,
+      r: 0.028
+    });
+  }
+  wallData.fill(0);
+  fieldHome.fill(0);
+  fieldFood.fill(0);
+  spawnAnts();
+  rebuildSourceTexture();
+}
+
+function spawnAnts() {
+  const nest = nests[0] || { x: 0.5, y: 0.5 };
+  for (let i = 0; i < antCount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    antX[i] = nest.x;
+    antY[i] = nest.y;
+    antHX[i] = Math.cos(a);
+    antHY[i] = Math.sin(a);
+    antState[i] = 0;
+  }
+}
+
+function rebuildSourceTexture() {
+  // R = food source intensity, G = nest intensity, B = wall, A = 255
+  for (let i = 0; i < FIELD_CELLS; i++) {
+    sourceData[i*4 + 0] = 0;
+    sourceData[i*4 + 1] = 0;
+    sourceData[i*4 + 2] = wallData[i];
+    sourceData[i*4 + 3] = 255;
+  }
+  for (const f of food) stampSource(f.x, f.y, f.r, 0, 255);
+  for (const n of nests) stampSource(n.x, n.y, n.r, 1, 255);
+  uploadSourceTexture();
+}
+
+function stampSource(cx, cy, r, channelIdx, value) {
+  const px = cx * FIELD_W, py = cy * FIELD_H;
+  const pr = r * FIELD_W;
+  const pr2 = pr * pr;
+  const x0 = Math.max(0, Math.floor(px - pr));
+  const x1 = Math.min(FIELD_W - 1, Math.ceil(px + pr));
+  const y0 = Math.max(0, Math.floor(py - pr));
+  const y1 = Math.min(FIELD_H - 1, Math.ceil(py + pr));
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const dx = x - px, dy = y - py;
+      const d2 = dx*dx + dy*dy;
+      if (d2 <= pr2) {
+        const falloff = 1 - Math.sqrt(d2)/pr;
+        const idx = (y*FIELD_W + x)*4 + channelIdx;
+        const v = Math.floor(value * falloff);
+        if (v > sourceData[idx]) sourceData[idx] = v;
+      }
+    }
+  }
+}
+
+function stampWall(cx, cy, r) {
+  const px = cx * FIELD_W, py = cy * FIELD_H;
+  const pr = r * FIELD_W;
+  const pr2 = pr * pr;
+  const x0 = Math.max(0, Math.floor(px - pr));
+  const x1 = Math.min(FIELD_W - 1, Math.ceil(px + pr));
+  const y0 = Math.max(0, Math.floor(py - pr));
+  const y1 = Math.min(FIELD_H - 1, Math.ceil(py + pr));
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const dx = x - px, dy = y - py;
+      if (dx*dx + dy*dy <= pr2) {
+        wallData[y*FIELD_W + x] = 255;
+        sourceData[(y*FIELD_W + x)*4 + 2] = 255;
+      }
+    }
+  }
+}
+
+function eraseAt(cx, cy, r) {
+  const px = cx * FIELD_W, py = cy * FIELD_H;
+  const pr = r * FIELD_W;
+  const pr2 = pr * pr;
+  const x0 = Math.max(0, Math.floor(px - pr));
+  const x1 = Math.min(FIELD_W - 1, Math.ceil(px + pr));
+  const y0 = Math.max(0, Math.floor(py - pr));
+  const y1 = Math.min(FIELD_H - 1, Math.ceil(py + pr));
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const dx = x - px, dy = y - py;
+      if (dx*dx + dy*dy <= pr2) {
+        wallData[y*FIELD_W + x] = 0;
+      }
+    }
+  }
+  food = food.filter(f => {
+    const dx = (f.x - cx), dy = (f.y - cy);
+    return dx*dx + dy*dy > (r + f.r)*(r + f.r) * 0.5;
+  });
+  nests = nests.filter(n => {
+    const dx = (n.x - cx), dy = (n.y - cy);
+    return dx*dx + dy*dy > (r + n.r)*(r + n.r) * 0.5;
+  });
+}
+
+function uploadSourceTexture() {
+  gl.bindTexture(gl.TEXTURE_2D, sourceTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, sourceData);
+}
+
+// =======================================================================
+// Pheromone diffuse + evaporate (CPU)
+// 5-tap blur with edge clamp; walls block pheromone.
+// =======================================================================
+function diffuseAndEvaporate() {
+  const W = FIELD_W, H = FIELD_H;
+  const fH = fieldHome, fF = fieldFood;
+  const tH = fieldHomeTmp, tF = fieldFoodTmp;
+  const wd = wallData;
+  const ev = evap;
+  // process interior with 5-tap blur (center 0.6, neighbors 0.1 each)
+  // edges: simpler — just evaporate, no blur
+  for (let y = 1; y < H - 1; y++) {
+    const rowI = y * W;
+    const rowU = (y - 1) * W;
+    const rowD = (y + 1) * W;
+    for (let x = 1; x < W - 1; x++) {
+      const i = rowI + x;
+      if (wd[i]) {
+        // walls absorb
+        tH[i] = 0;
+        tF[i] = 0;
+        continue;
+      }
+      const c = i;
+      const n = rowU + x;
+      const s = rowD + x;
+      const e = rowI + x + 1;
+      const w = rowI + x - 1;
+      // weighted blur
+      const blurH = fH[c] * 0.60 + (fH[n] + fH[s] + fH[e] + fH[w]) * 0.10;
+      const blurF = fF[c] * 0.60 + (fF[n] + fF[s] + fF[e] + fF[w]) * 0.10;
+      tH[i] = blurH * ev;
+      tF[i] = blurF * ev;
+    }
+  }
+  // edges — just evaporate
+  for (let x = 0; x < W; x++) {
+    tH[x] = fH[x] * ev * 0.5;
+    tF[x] = fF[x] * ev * 0.5;
+    const bot = (H - 1) * W + x;
+    tH[bot] = fH[bot] * ev * 0.5;
+    tF[bot] = fF[bot] * ev * 0.5;
+  }
+  for (let y = 0; y < H; y++) {
+    const lf = y * W;
+    const rt = y * W + (W - 1);
+    tH[lf] = fH[lf] * ev * 0.5;
+    tF[lf] = fF[lf] * ev * 0.5;
+    tH[rt] = fH[rt] * ev * 0.5;
+    tF[rt] = fF[rt] * ev * 0.5;
+  }
+  // swap
+  const tmpH = fieldHome, tmpF = fieldFood;
+  fieldHome = tH; fieldFood = tF;
+  fieldHomeTmp = tmpH; fieldFoodTmp = tmpF;
+}
+
+// =======================================================================
+// Field sampling helpers
+// =======================================================================
+function sampleHome(xi, yi) {
+  if (xi < 0) xi = 0; else if (xi >= FIELD_W) xi = FIELD_W - 1;
+  if (yi < 0) yi = 0; else if (yi >= FIELD_H) yi = FIELD_H - 1;
+  return fieldHome[yi * FIELD_W + xi];
+}
+function sampleFood(xi, yi) {
+  if (xi < 0) xi = 0; else if (xi >= FIELD_W) xi = FIELD_W - 1;
+  if (yi < 0) yi = 0; else if (yi >= FIELD_H) yi = FIELD_H - 1;
+  return fieldFood[yi * FIELD_W + xi];
+}
+function sampleSourceR(xi, yi) {
+  if (xi < 0 || xi >= FIELD_W || yi < 0 || yi >= FIELD_H) return 0;
+  return sourceData[(yi * FIELD_W + xi) * 4] / 255;
+}
+function sampleSourceG(xi, yi) {
+  if (xi < 0 || xi >= FIELD_W || yi < 0 || yi >= FIELD_H) return 0;
+  return sourceData[(yi * FIELD_W + xi) * 4 + 1] / 255;
+}
+function isWall(xi, yi) {
+  if (xi < 0 || xi >= FIELD_W || yi < 0 || yi >= FIELD_H) return true;
+  return wallData[yi * FIELD_W + xi] > 128;
+}
+
+// =======================================================================
+// Ant simulation (CPU)
+// =======================================================================
+function tickAnts() {
+  const N = antCount;
+  const W = FIELD_W, H = FIELD_H;
+  // Per-frame movement, sensing
+  const speedCellsPerFrame = 0.85;       // cells per frame
+  const speed = speedCellsPerFrame / W;  // in world coords [0..1]
+  const senseAngle = 0.55;               // radians for left/right sectors
+  const cosL = Math.cos(senseAngle), sinL = Math.sin(senseAngle);
+  const cosR = Math.cos(-senseAngle), sinR = Math.sin(-senseAngle);
+  const turnStrength = 0.62;
+  const noise = 0.20;
+  const sd = senseDist;
+  const str = strength;
+
+  // food/nest hit checks: linearize with squared distance
+  const foodArr = food, nestArr = nests;
+  const nFood = foodArr.length;
+  const nNest = nestArr.length;
+
+  for (let i = 0; i < N; i++) {
+    let x = antX[i], y = antY[i];
+    let hx = antHX[i], hy = antHY[i];
+    const state = antState[i];
+
+    // Sense — three sectors: forward, fwd-left, fwd-right
+    const fxPx = x * W, fyPx = y * H;
+    const fwdX = hx * sd, fwdY = hy * sd;
+    const lX = fwdX*cosL - fwdY*sinL;
+    const lY = fwdX*sinL + fwdY*cosL;
+    const rX = fwdX*cosR - fwdY*sinR;
+    const rY = fwdX*sinR + fwdY*cosR;
+
+    const fxi = (fxPx + fwdX) | 0;
+    const fyi = (fyPx + fwdY) | 0;
+    const lxi = (fxPx + lX) | 0;
+    const lyi = (fyPx + lY) | 0;
+    const rxi = (fxPx + rX) | 0;
+    const ryi = (fyPx + rY) | 0;
+
+    let valFwd, valLft, valRgt;
+    if (state === 0) {
+      // searching → seek food pheromone OR food source directly
+      valFwd = sampleFood(fxi, fyi) + sampleSourceR(fxi, fyi) * 8.0;
+      valLft = sampleFood(lxi, lyi) + sampleSourceR(lxi, lyi) * 8.0;
+      valRgt = sampleFood(rxi, ryi) + sampleSourceR(rxi, ryi) * 8.0;
+    } else {
+      // returning → seek home pheromone OR nest directly
+      valFwd = sampleHome(fxi, fyi) + sampleSourceG(fxi, fyi) * 8.0;
+      valLft = sampleHome(lxi, lyi) + sampleSourceG(lxi, lyi) * 8.0;
+      valRgt = sampleHome(rxi, ryi) + sampleSourceG(rxi, ryi) * 8.0;
+    }
+
+    // Steering
+    let turn;
+    if (valFwd > valLft && valFwd > valRgt) {
+      turn = 0;
+    } else if (valLft > valRgt) {
+      turn = senseAngle * turnStrength;
+    } else if (valRgt > valLft) {
+      turn = -senseAngle * turnStrength;
+    } else {
+      turn = (Math.random() - 0.5) * 0.6;
+    }
+    turn += (Math.random() - 0.5) * noise;
+
+    const c = Math.cos(turn), s = Math.sin(turn);
+    let nhx = hx * c - hy * s;
+    let nhy = hx * s + hy * c;
+
+    let nx = x + nhx * speed;
+    let ny = y + nhy * speed;
+
+    // Wall collision
+    const nxi = (nx * W) | 0;
+    const nyi = (ny * H) | 0;
+    if (isWall(nxi, nyi)) {
+      // try axis slides; otherwise reflect
+      if (!isWall(nxi, (y * H) | 0)) {
+        ny = y;
+        nhy = -nhy;
+      } else if (!isWall((x * W) | 0, nyi)) {
+        nx = x;
+        nhx = -nhx;
+      } else {
+        nx = x; ny = y;
+        // bounce 180 + jitter
+        const jit = (Math.random() - 0.5) * 1.2;
+        const cj = Math.cos(Math.PI + jit), sj = Math.sin(Math.PI + jit);
+        const tx = nhx * cj - nhy * sj;
+        nhy = nhx * sj + nhy * cj;
+        nhx = tx;
+      }
+    }
+
+    // Bounds reflect
+    if (nx < 0.005) { nx = 0.005; nhx = Math.abs(nhx); }
+    else if (nx > 0.995) { nx = 0.995; nhx = -Math.abs(nhx); }
+    if (ny < 0.005) { ny = 0.005; nhy = Math.abs(nhy); }
+    else if (ny > 0.995) { ny = 0.995; nhy = -Math.abs(nhy); }
+
+    // State transitions
+    let newState = state;
+    if (state === 0) {
+      for (let j = 0; j < nFood; j++) {
+        const f = foodArr[j];
+        const dx = nx - f.x, dy = ny - f.y;
+        if (dx*dx + dy*dy < f.r*f.r) {
+          newState = 1;
+          // turn around with jitter
+          const jit = Math.PI + (Math.random() - 0.5) * 0.6;
+          const cj = Math.cos(jit), sj = Math.sin(jit);
+          const tx = nhx * cj - nhy * sj;
+          nhy = nhx * sj + nhy * cj;
+          nhx = tx;
+          break;
+        }
+      }
+    } else {
+      for (let j = 0; j < nNest; j++) {
+        const n = nestArr[j];
+        const dx = nx - n.x, dy = ny - n.y;
+        if (dx*dx + dy*dy < n.r*n.r) {
+          newState = 0;
+          const jit = Math.PI + (Math.random() - 0.5) * 0.6;
+          const cj = Math.cos(jit), sj = Math.sin(jit);
+          const tx = nhx * cj - nhy * sj;
+          nhy = nhx * sj + nhy * cj;
+          nhx = tx;
+          break;
+        }
+      }
+    }
+
+    // Save state
+    antX[i] = nx; antY[i] = ny;
+    antHX[i] = nhx; antHY[i] = nhy;
+    antState[i] = newState;
+
+    // Deposit pheromone at current cell (additive, capped)
+    // Searching ants drop HOME pheromone (mark trail back from nest);
+    // Returning ants drop FOOD pheromone (mark path to food).
+    const cellX = (nx * W) | 0;
+    const cellY = (ny * H) | 0;
+    if (cellX >= 0 && cellX < W && cellY >= 0 && cellY < H) {
+      const idx = cellY * W + cellX;
+      if (!wallData[idx]) {
+        if (newState === 0) {
+          // searching → home pheromone
+          const v = fieldHome[idx] + str;
+          fieldHome[idx] = v > 4.0 ? 4.0 : v;
+        } else {
+          // returning → food pheromone
+          const v = fieldFood[idx] + str;
+          fieldFood[idx] = v > 4.0 ? 4.0 : v;
+        }
+      }
+    }
+  }
+}
+
+// =======================================================================
+// Pack pheromone field into RGBA8 texture for display
+// R = home pheromone (0-255), G = food pheromone (0-255)
+// =======================================================================
+function uploadFieldTexture() {
+  // Map [0..2.5] → [0..255] (gives nice glow before saturating)
+  const scale = 255 / 1.5;
+  for (let i = 0; i < FIELD_CELLS; i++) {
+    let h = fieldHome[i] * scale;
+    let f = fieldFood[i] * scale;
+    if (h > 255) h = 255;
+    if (f > 255) f = 255;
+    const o = i * 4;
+    fieldTexData[o]     = h | 0;
+    fieldTexData[o + 1] = f | 0;
+    fieldTexData[o + 2] = 0;
+    fieldTexData[o + 3] = 255;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, fieldTexData);
+}
+
+// =======================================================================
+// Render
+// =======================================================================
+function renderScreen() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0.012, 0.018, 0.030, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  // Composite field
+  gl.useProgram(progComposite);
+  gl.uniform1i(locComp.field, 0);
+  gl.uniform1i(locComp.source, 1);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, sourceTex);
+  gl.bindVertexArray(vaoQuadComp);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // Ants — instanced
+  const N = antCount;
+  for (let i = 0; i < N; i++) {
+    const o = i * 3;
+    antInstanceArr[o]     = antX[i];
+    antInstanceArr[o + 1] = antY[i];
+    antInstanceArr[o + 2] = antState[i];
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, antInstanceVbo);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, antInstanceArr.subarray(0, N * 3));
+
+  gl.useProgram(progAnt);
+  gl.uniform2f(locAnt.res, canvas.width, canvas.height);
+  gl.uniform1f(locAnt.pointSize, 1.7 * dpr);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindVertexArray(vaoAnts);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, N);
+  gl.disable(gl.BLEND);
+
+  gl.bindVertexArray(null);
+}
+
+// =======================================================================
+// Main loop
+// =======================================================================
+let lastT = performance.now();
+let fpsTimer = 0;
+let fpsFrames = 0;
+const fpsEl = document.getElementById('fps');
+const antsEl = document.getElementById('ants');
+const foodEl = document.getElementById('food');
+const nestsEl = document.getElementById('nests');
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+
+  if (!paused) {
+    diffuseAndEvaporate();
+    tickAnts();
+    uploadFieldTexture();
+  }
+  renderScreen();
+
+  fpsTimer += dt;
+  fpsFrames++;
+  if (fpsTimer >= 0.4) {
+    const fpsValue = Math.round(fpsFrames / fpsTimer);
+    fpsTimer = 0;
+    fpsFrames = 0;
+    fpsEl.textContent = fpsValue;
+  }
+  antsEl.textContent = antCount.toLocaleString();
+  foodEl.textContent = food.length;
+  nestsEl.textContent = nests.length;
+
+  requestAnimationFrame(frame);
+}
+
+// =======================================================================
+// Resize
+// =======================================================================
+function resize() {
+  const cssW = window.innerWidth;
+  const cssH = window.innerHeight;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+  canvas.width  = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+}
+window.addEventListener('resize', resize);
+
+// =======================================================================
+// Input
+// =======================================================================
+let tool = 'food';   // 'food' | 'nest' | 'wall' | 'erase'
+let dragging = false;
+
+function setTool(t) {
+  tool = t;
+  for (const id of ['toolFood', 'toolNest', 'toolWall', 'toolErase']) {
+    document.getElementById(id).classList.remove('active');
+  }
+  const map = { food: 'toolFood', nest: 'toolNest', wall: 'toolWall', erase: 'toolErase' };
+  document.getElementById(map[t]).classList.add('active');
+}
+document.getElementById('toolFood').onclick  = () => setTool('food');
+document.getElementById('toolNest').onclick  = () => setTool('nest');
+document.getElementById('toolWall').onclick  = () => setTool('wall');
+document.getElementById('toolErase').onclick = () => setTool('erase');
+
+function evtToWorld(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (clientX - rect.left) / rect.width;
+  const y = (clientY - rect.top)  / rect.height;
+  return [Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))];
+}
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+canvas.addEventListener('mousedown', e => {
+  e.preventDefault();
+  const [x, y] = evtToWorld(e.clientX, e.clientY);
+  const isShift = e.shiftKey;
+  const isRight = e.button === 2;
+  let useTool = tool;
+  if (isShift || isRight) useTool = 'nest';
+
+  if (useTool === 'food') {
+    food.push({ x, y, r: 0.025 });
+    rebuildSourceTexture();
+  } else if (useTool === 'nest') {
+    nests.push({ x, y, r: 0.025 });
+    rebuildSourceTexture();
+  } else if (useTool === 'wall') {
+    dragging = true;
+    stampWall(x, y, 0.018);
+    uploadSourceTexture();
+  } else if (useTool === 'erase') {
+    dragging = true;
+    eraseAt(x, y, 0.030);
+    rebuildSourceTexture();
+  }
+});
+canvas.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const [x, y] = evtToWorld(e.clientX, e.clientY);
+  if (tool === 'wall') {
+    stampWall(x, y, 0.018);
+    uploadSourceTexture();
+  } else if (tool === 'erase') {
+    eraseAt(x, y, 0.030);
+    rebuildSourceTexture();
+  }
+});
+window.addEventListener('mouseup', () => { dragging = false; });
+
+// Touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const [x, y] = evtToWorld(t.clientX, t.clientY);
+  if (tool === 'food') food.push({ x, y, r: 0.025 });
+  else if (tool === 'nest') nests.push({ x, y, r: 0.025 });
+  else if (tool === 'wall') { stampWall(x, y, 0.018); dragging = true; }
+  rebuildSourceTexture();
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  const [x, y] = evtToWorld(t.clientX, t.clientY);
+  if (tool === 'wall') { stampWall(x, y, 0.018); uploadSourceTexture(); }
+}, { passive: false });
+canvas.addEventListener('touchend', () => { dragging = false; });
+
+// Sliders
+const antCountEl    = document.getElementById('antCount');
+const antCountValEl = document.getElementById('antCountVal');
+const evapEl        = document.getElementById('evap');
+const evapValEl     = document.getElementById('evapVal');
+const strengthEl    = document.getElementById('strength');
+const strengthValEl = document.getElementById('strengthVal');
+const senseEl       = document.getElementById('sense');
+const senseValEl    = document.getElementById('senseVal');
+
+antCountEl.addEventListener('input', () => {
+  const n = parseInt(antCountEl.value, 10);
+  antCountValEl.textContent = n.toLocaleString();
+  setAntCount(n);
+});
+evapEl.addEventListener('input', () => {
+  evap = parseInt(evapEl.value, 10) / 1000;
+  evapValEl.textContent = evap.toFixed(3);
+});
+strengthEl.addEventListener('input', () => {
+  strength = parseInt(strengthEl.value, 10) / 100;
+  strengthValEl.textContent = strength.toFixed(2);
+});
+senseEl.addEventListener('input', () => {
+  senseDist = parseInt(senseEl.value, 10);
+  senseValEl.textContent = senseDist;
+});
+
+function setAntCount(n) {
+  if (n === antCount) return;
+  const oldN = antCount;
+  antCount = n;
+  if (n > oldN) {
+    const nest = nests[0] || { x: 0.5, y: 0.5 };
+    for (let i = oldN; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      antX[i] = nest.x;
+      antY[i] = nest.y;
+      antHX[i] = Math.cos(a);
+      antHY[i] = Math.sin(a);
+      antState[i] = 0;
+    }
+  }
+}
+
+// Buttons
+document.getElementById('btnReset').onclick = () => initWorld();
+document.getElementById('btnClearWalls').onclick = () => {
+  wallData.fill(0);
+  rebuildSourceTexture();
+};
+const btnPause = document.getElementById('btnPause');
+btnPause.onclick = () => {
+  paused = !paused;
+  btnPause.textContent = paused ? 'Resume' : 'Pause';
+  btnPause.classList.toggle('active', paused);
+};
+
+// =======================================================================
+// Boot
+// =======================================================================
+resize();
+initWorld();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

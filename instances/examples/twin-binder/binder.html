@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="rappcards-binder" content="twin-binder">
+<meta name="rappcards-spec" content="1.1.2">
+<title>Twin Binder — Rebuild-from-Memory Demo</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:14px ui-monospace,SFMono-Regular,Menlo,monospace;background:#0d1117;color:#c9d1d9;min-height:100vh;padding:20px}
+h1{font-size:22px;margin-bottom:4px;color:#e6edf3}
+.sub{color:#8b949e;font-size:13px;margin-bottom:18px;line-height:1.5}
+.sub b{color:#ffd480}
+.sub code{background:#161b22;padding:1px 5px;border-radius:3px;color:#79c0ff}
+.grid{display:grid;grid-template-columns:minmax(340px,420px) 1fr;gap:16px;max-width:1400px;margin:0 auto}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px}
+.panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:#8b949e;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.panel h2 .badge{background:#1f6feb22;color:#58a6ff;padding:2px 8px;border-radius:10px;font-size:11px;letter-spacing:0}
+.incants{display:flex;flex-direction:column;gap:6px;max-height:72vh;overflow:auto}
+.incant{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:9px 11px;cursor:pointer;transition:all .12s;display:flex;flex-direction:column;gap:3px}
+.incant:hover{border-color:#58a6ff;background:#0d1117;transform:translateX(2px)}
+.incant.summoned{border-color:#3fb95066;background:#0d2a14}
+.incant .name{color:#e6edf3;font-size:12px;font-weight:600}
+.incant .words{color:#79c0ff;font-size:11px;letter-spacing:.02em}
+.incant.summoned .name::after{content:' ✓';color:#3fb950}
+.ownedwrap{min-height:40vh}
+.owned{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.owned .empty{grid-column:1/-1;padding:40px 20px;text-align:center;color:#6e7681;border:1px dashed #30363d;border-radius:8px}
+.card{background:linear-gradient(135deg,#161b22 0%,#0d1117 100%);border:1px solid #30363d;border-radius:8px;padding:10px;position:relative;overflow:hidden}
+.card.foreign{border-color:#bc8cff44}
+.card .fbadge{position:absolute;top:6px;right:6px;background:#bc8cff22;color:#bc8cff;padding:2px 6px;border-radius:10px;font-size:9px;letter-spacing:.04em}
+.card .cname{font-weight:700;color:#e6edf3;font-size:13px;margin-bottom:4px;padding-right:60px}
+.card .cid{color:#6e7681;font-size:10px;margin-bottom:6px;word-break:break-all}
+.card .cwords{color:#79c0ff;font-size:10px;font-family:ui-monospace,monospace}
+.card .cseed{color:#8b949e;font-size:9px;margin-top:4px;word-break:break-all;opacity:.6}
+.log{background:#010409;border:1px solid #21262d;border-radius:6px;padding:10px;font-size:11px;max-height:220px;overflow:auto;margin-top:12px;line-height:1.7}
+.log .t{color:#6e7681}
+.log .ok{color:#3fb950}
+.log .err{color:#f85149}
+.log .info{color:#79c0ff}
+.log .warn{color:#d29922}
+.toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+.toolbar input{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;color:#c9d1d9;font-family:ui-monospace,monospace;font-size:12px;flex:1;min-width:160px}
+.toolbar button{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:7px 12px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px}
+.toolbar button:hover{background:#30363d;border-color:#58a6ff}
+.toolbar button.primary{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.toolbar button.primary:hover{background:#388bfd}
+.toolbar button.danger{background:#da363322;border-color:#da363366;color:#f85149}
+.stat{display:inline-block;padding:3px 8px;background:#21262d;border-radius:10px;font-size:11px;margin-right:4px}
+.stat b{color:#3fb950}
+.hint{background:#1f6feb11;border-left:3px solid #1f6feb;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#c9d1d9;line-height:1.6;border-radius:0 6px 6px 0}
+.hint b{color:#58a6ff}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<h1>🔮 Twin Binder — Rebuild-from-Memory Demo</h1>
+<div class="sub">
+An <b>empty</b> <code>rappcards-spec 1.1.2</code> binder. No local cards. No federation of its own.<br>
+It has only <b>incantations</b> — and trusts the canonical <code>peers.json</code>.<br>
+Click any incantation → it summons the card from the federation → <b>auto-saves</b> to your local deck. <i>Look up = save.</i>
+</div>
+
+<div class="grid">
+
+  <div class="panel">
+    <h2>📜 Known Incantations <span class="badge" id="incantCount">0</span></h2>
+    <div class="toolbar">
+      <input id="customIncant" placeholder="Or type 7 words: FORGE ANVIL BLADE...">
+      <button class="primary" id="summonBtn">Summon</button>
+      <button id="summonAllBtn" title="Speak every known incantation in sequence">⚡ All</button>
+    </div>
+    <div class="incants" id="incantList"></div>
+  </div>
+
+  <div class="panel ownedwrap">
+    <h2>🎴 Your Deck <span class="badge" id="ownedCount">0 cards</span></h2>
+    <div class="toolbar">
+      <span class="stat">rebuilt <b id="statRebuilt">0</b></span>
+      <span class="stat">from federation <b id="statFed">0</b></span>
+      <button class="danger" id="clearBtn">Clear deck</button>
+      <button id="exportBtn">Export JSON</button>
+    </div>
+    <div class="owned" id="owned"></div>
+    <div class="log" id="log"><span class="t">[boot]</span> <span class="info">Twin binder online. v1.1.2 — resolution is ownership.</span></div>
+  </div>
+
+</div>
+
+<script>
+// ─── SPEC §3.2: authoritative 1024-word mnemonic ───
+const MNEMONIC_WORDS=["FORGE","ANVIL","BLADE","RUNE","SHARD","SMELT","TEMPER","WELD","CHISEL","BRAND","MOLD","CAST","STAMP","ETCH","CARVE","BIND","FUSE","ALLOY","INGOT","RIVET","CLASP","THORN","BARB","SPIKE","PRONG","EDGE","HONE","GRIND","QUENCH","SEAR","HAMMER","STOKE","FIRE","FROST","STORM","TIDE","QUAKE","GUST","BOLT","SURGE","BLAZE","EMBER","PYRE","ASH","SMOKE","SPARK","FLARE","FLASH","FLOOD","GALE","DRIFT","MIST","HAZE","VOID","FLUX","PULSE","WAVE","SHOCK","BURST","CRACK","ROAR","HOWL","ECHO","BOOM","THUNDER","VENOM","BLIGHT","SCORCH","SINGE","CHAR","WITHER","ERODE","CORRODE","DISSOLVE","OAK","PINE","MOSS","FERN","ROOT","VINE","BLOOM","SEED","GROVE","GLEN","VALE","CRAG","PEAK","RIDGE","GORGE","CLIFF","SHORE","REEF","DUNE","MARSH","CAVE","LAIR","DEN","NEST","HIVE","BURROW","STONE","IRON","STEEL","GOLD","JADE","ONYX","RUBY","OPAL","AMBER","PEARL","CORAL","QUARTZ","OBSIDIAN","FLINT","GRANITE","BASALT","COBALT","CHROME","BRONZE","COPPER","NICKEL","RELIC","TOTEM","SIGIL","GLYPH","WARD","CHARM","BANE","DOOM","FATE","OMEN","ORACLE","SAGE","SEER","MAGE","DRUID","SHAMAN","WRAITH","SHADE","PHANTOM","SPECTER","GOLEM","TITAN","DRAKE","WYRM","GRYPHON","SPHINX","HYDRA","CHIMERA","SCROLL","TOME","CODEX","LORE","MYTH","FABLE","SAGA","EPIC","VERSE","CHANT","HYMN","DIRGE","OATH","CREED","VOW","AURA","MANA","ETHER","PRISM","NEXUS","VORTEX","RIFT","WARP","BREACH","PORTAL","GATE","VAULT","SHRINE","ALTAR","CRYPT","SPIRE","STRIKE","SLASH","THRUST","PARRY","GUARD","SHIELD","HELM","LANCE","MACE","PIKE","STAFF","WAND","DAGGER","BOW","ARROW","QUIVER","ARMOR","PLATE","GAUNTLET","VISOR","CLOAK","CAPE","MANTLE","AEGIS","BULWARK","RAMPART","BASTION","CITADEL","KEEP","TOWER","FORT","RALLY","CHARGE","SIEGE","FLANK","AMBUSH","ROUT","VALOR","MIGHT","FURY","WRATH","RAGE","SPITE","MALICE","GRUDGE","HAVOC","CHAOS","DASH","LEAP","SPRINT","LUNGE","DIVE","SOAR","GLIDE","PROWL","STALK","CREEP","SWIFT","FLEET","BRISK","RAPID","SPIN","WHIRL","TWIST","COIL","SPIRAL","ORBIT","ARC","CURVE","BEND","LOOP","DAWN","DUSK","NOON","NIGHT","SHADOW","GLEAM","GLOW","SHINE","BEAM","RAY","HALO","LUSTER","MURK","GLOOM","DREAD","FELL","GRIM","STARK","BLEAK","PALE","ASHEN","DIRE","GRAVE","SOMBER","EBON","ABYSS","SHRIEK","WAIL","RUMBLE","HISS","GROWL","SNARL","BARK","BELLOW","DRONE","CHIME","TOLL","KNELL","CLANG","CLASH","SNAP","THUD","RING","PEAL","GONG","HORN","DRUM","FLUTE","LYRE","PIPE","BOLD","KEEN","FIERCE","STERN","VAST","DEEP","GRAND","PRIME","NOBLE","ROYAL","SACRED","ANCIENT","PRIMAL","ELDER","PURE","VIVID","SHARP","BRIGHT","DARK","WILD","CALM","STILL","SILENT","STRONG","PROUD","BRAVE","WISE","JUST","RAW","DENSE","SOLID","WHOLE","CORE","APEX","ZENITH","NADIR","CUSP","BRINK","VERGE","CREST","STAR","MOON","SUN","COMET","NOVA","SOLAR","LUNAR","ASTRAL","COSMIC","NEBULA","QUASAR","PULSAR","ECLIPSE","AURORA","CORONA","PHASE","WANE","WAX","WOLF","HAWK","EAGLE","RAVEN","SERPENT","VIPER","COBRA","FALCON","STAG","BEAR","LION","TIGER","LYNX","PANTHER","CONDOR","OSPREY","CRANE","HERON","OWL","CROW","BULL","BOAR","RAM","HORSE","MARE","STALLION","AX","ORB","AWE","OAT","EEL","URN","ELK","ELM","ION","IRE","ORE","AIM","ZAP","JAB","JAW","JET","JOT","JAG","HEX","HEW","HUE","HUM","DIN","DUB","DYE","FIN","FIG","FOG","FUR","GAP","GEM","GNU","SOUL","MIND","WILL","FORCE","POWER","CRAFT","SKILL","GRACE","POISE","NERVE","GRIT","METTLE","VIGOR","ZEAL","VERVE","PLUCK","GUILE","CUNNING","WILE","LURE","TRAP","SNARE","BAIT","DECOY","RUSE","FEINT","GAMBIT","PLOY","MESA","TARN","FORD","PASS","BLUFF","KNOLL","MOOR","HEATH","STEPPE","TUNDRA","DELTA","BASIN","PLATEAU","FJORD","ISLE","ATOLL","STRAIT","CHANNEL","HARBOR","COVE","BAY","GULF","SOUND","CREEK","BROOK","RAPIDS","FALLS","CASCADE","ARCH","DOME","PILLAR","COLUMN","BRIDGE","WALL","MOAT","RAMP","LEDGE","STEP","STAIR","HALL","NAVE","ALCOVE","NICHE","SILL","TRUSS","BRACE","STRUT","JOIST","FRAME","PLINTH","DAIS","THRONE","QUEST","HUNT","TRIAL","ORDEAL","RITE","RITUAL","PACT","BOND","PLEDGE","DECREE","EDICT","MANDATE","LAW","RULE","REIGN","CROWN","SCEPTER","BANNER","EMBLEM","BADGE","MARK","SEAL","TOKEN","GUILD","CLAN","TRIBE","ORDER","SECT","COVEN","LEGION","HORDE","SWARM","PACK","FLOCK","BROOD","CLUTCH","CRUX","JINX","GLINT","DINT","STINT","KNIT","SLIT","SPLIT","WHIT","CLEFT","DEFT","HEFT","LEFT","THEFT","WEFT","BEREFT","SHAFT","GRAFT","RAFT","DRAFT","TUFT","LOFT","CROFT","DROIT","BRUNT","BLUNT","STUNT","RUNT","GRUNT","FRONT","FONT","HAUNT","GAUNT","FLAUNT","JAUNT","TAUNT","SALT","MALT","HALT","JOLT","COLT","MOLT","SMOLT","QUALM","BALM","PSALM","FARM","HARM","ALARM","DISARM","FOREARM","PLUME","FUME","LOOM","ZOOM","GROOM","BROOM","VROOM","SCARCE","TERSE","MORSE","COURSE","SOURCE","NORSE","REMORSE","WRENCH","CLENCH","STENCH","TRENCH","DRENCH","FRENCH","BENCH","TORCH","PORCH","MARCH","LARCH","STARCH","SEARCH","PERCH","BIRCH","CHURCH","THATCH","CATCH","MATCH","BATCH","HATCH","LATCH","PATCH","WATCH","SCRATCH","SNATCH","HEDGE","WEDGE","DREDGE","SLEDGE","FRIDGE","DANCE","TRANCE","GLANCE","STANCE","PRANCE","CHANCE","ADVANCE","ENHANCE","BLISS","MISS","KISS","DISMISS","AMISS","REMISS","WHISK","DISK","RISK","FRISK","TUSK","MUSK","RUSK","HUSK","CROAK","SOAK","STROKE","SPOKE","BROKE","WOKE","INVOKE","EVOKE","PROVOKE","VEIN","CHAIN","PLAIN","STRAIN","GRAIN","TRAIN","BRAIN","DOMAIN","TERRAIN","REMAIN","TREAD","SPREAD","THREAD","SHRED","BRED","SLED","STEAD","INSTEAD","COST","LOST","HOST","GHOST","MOST","POST","ROAST","TOAST","COAST","BOAST","STREAM","DREAM","TEAM","CREAM","SCHEME","THEME","SUPREME","EXTREME","SWAY","FRAY","PRAY","STRAY","ARRAY","DECAY","RELAY","CONVEY","OBEY","SURVEY","BETRAY","THROW","FLOW","SNOW","GROW","KNOW","BELOW","HOLLOW","CLIMB","RHYME","SLIME","THYME","SUBLIME","PARADIGM","PROWESS","DURESS","FORTRESS","MISTRESS","COMPASS","BYPASS","SURPASS","AMASS","CRIMSON","LINDEN","MAIDEN","WARDEN","GOLDEN","MOLTEN","FROZEN","CHOSEN","WOVEN","SCYTHE","CRUCIBLE","TORRENT","TEMPEST","MAELSTROM","CINDER","INFERNO","TYPHOON","CYCLONE","GLACIER","ICECAP","PERMAFROST","MONSOON","SOLSTICE","EQUINOX","MERIDIAN","TWILIGHT","MIDNIGHT","DAYBREAK","SENTINEL","WATCHER","HUNTER","RANGER","SCOUT","TRACKER","SEEKER","FINDER","KEEPER","BINDER","ARBITER","HERALD","ENVOY","REGENT","PREFECT","CONSUL","MARSHAL","VASSAL","SQUIRE","KNIGHT","PALADIN","CHAMPION","PARAGON","MONARCH","SOVEREIGN","OVERLORD","WARLORD","CHIEFTAIN","PATRIARCH","MATRIARCH","PROPHET","MYSTIC","HERMIT","ASCETIC","NOMAD","PILGRIM","WANDERER","EXILE","OUTCAST","ROGUE","REBEL","VAGRANT","DRIFTER","MARAUDER","BRIGAND","CORSAIR","BUCCANEER","RAIDER","REAVER","SLAYER","BERSERKER","GLADIATOR","CENTURION","LEGIONNAIRE","TEMPLAR","CRUSADER","INQUISITOR","ZEALOT","HARBINGER","AUGUR","PORTENT","PRESAGE","AUGURY","PROPHECY","DIVINATION","REVELATION","EPIPHANY","REMNANT","VESTIGE","ARTIFACT","FRAGMENT","SPLINTER","SLIVER","MORSEL","CRUMB","PARTICLE","MOTE","FILAMENT","STRAND","FIBER","SINEW","TENDON","LIGAMENT","MARROW","ICHOR","ELIXIR","POTION","TONIC","SALVE","REMEDY","ANTIDOTE","CURE","PANACEA","CATALYST","REAGENT","COMPOUND","TINCTURE","DISTILL","INFUSE","IMBUE","ENCHANT","CONJURE","SUMMON","BANISH","DISPEL","REVOKE","ANNUL","NEGATE","NULLIFY","SUNDER","CLEAVE","REND","SHATTER","FRACTURE","RUPTURE","PIERCE","IMPALE","SKEWER","GORE","MAIM","RAVAGE","DEVASTATE","OBLITERATE","ANNIHILATE","ERADICATE","PURGE","EXPUNGE","EFFACE","EXTINGUISH","QUELL","SUBDUE","VANQUISH","CONQUER","PREVAIL","TRIUMPH","ASCEND","TRANSCEND","EVOLVE","AWAKEN","ARISE","EMERGE","MANIFEST","EMBODY","HARNESS","WIELD","MASTER","COMMAND","PROCLAIM","SANCTIFY","CONSECRATE","ANOINT","BESTOW","ENDOW","BEQUEST","LEGACY","HEIRLOOM","COVENANT","COMPACT","TREATY","ACCORD","ALLIANCE","FEDERATION","DOMINION","REALM","KINGDOM","EMPIRE","DYNASTY","EPOCH","AEON","CYCLE","HELIX","MATRIX","LATTICE","TAPESTRY","MOSAIC","CIPHER","ENIGMA","RIDDLE","PUZZLE","LABYRINTH","MAZE","CAULDRON","CHALICE","GOBLET","GRAIL","TRIDENT","MAUL","FLAIL","HALBERD","GLAIVE","RAPIER","SABRE","KATANA","MACHETE","SCIMITAR","CUTLASS","BROADSWORD","GREATSWORD","LONGBOW","CROSSBOW","BALLISTA","CATAPULT","TREBUCHET","MIRAGE","ILLUSION","REVENANT","LICH","BANSHEE","GHOUL","VAMPIRE","WEREWOLF","GARGOYLE","BASILISK","KRAKEN","LEVIATHAN","BEHEMOTH","COLOSSUS","JUGGERNAUT","MONOLITH","OBELISK","ZIGGURAT","MINARET","PAGODA","DOLMEN","BARROW","CATACOMB","DUNGEON","PARAPET","TURRET","BATTLEMENT","DRAWBRIDGE","PORTCULLIS","BARBICAN","PALISADE","CONDUIT","PYLON","TORQUE","RATCHET","LODESTONE","KEYSTONE","CAPSTONE","BEDROCK","SEQUOIA","REDWOOD","CYPRESS","HEMLOCK","WILLOW","ASPEN","HICKORY","JUNIPER","MAGNOLIA","HAWTHORN","SAFFRON","MYRRH","MANGROVE","ORCHID","THISTLE","POPPY","HEATHER","JASMINE","VECTOR","SCALAR","TENSOR","FULCRUM","PIVOT","CRESCENT","PINNACLE","VERTEX"];
+
+
+const WORD_TO_IDX = Object.fromEntries(MNEMONIC_WORDS.map((w,i)=>[w,i]));
+
+// ─── SPEC §3.2: seed ↔ words ───
+function seedToWords(seed){
+  if (typeof seed !== 'bigint') seed = BigInt(seed);
+  let s = seed & ((1n<<64n)-1n);
+  const idx = [];
+  for (let i=0;i<7;i++){ idx.push(Number(s & 1023n)); s >>= 10n; }
+  return idx.reverse().map(i=>MNEMONIC_WORDS[i]).join(' ');
+}
+function wordsToSeed(m){
+  const ws = m.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (ws.length !== 7) throw new Error('Need exactly 7 words');
+  let s = 0n;
+  for (const w of ws){
+    if (!(w in WORD_TO_IDX)) throw new Error(`Unknown word: ${w}`);
+    s = (s<<10n) | BigInt(WORD_TO_IDX[w]);
+  }
+  return s & ((1n<<64n)-1n);
+}
+
+// BigInt-safe JSON parse (SPEC §5.3)
+function parseBI(txt){
+  return JSON.parse(txt.replace(/("seed"\s*:\s*)(-?\d{10,})/g, '$1"$2"'));
+}
+
+// ─── Demo incantations (precomputed from known federation cards) ───
+const DEMO_INCANTS = [
+  {
+    "id": "@aibast-agents-library/production_line_optimization",
+    "name": "Production Line Optimization Agent",
+    "seed": "11447213470199194507"
+  },
+  {
+    "id": "@aibast-agents-library/regulatory_compliance_fed",
+    "name": "Regulatory Compliance (Federal) Agent",
+    "seed": "16478343906997446426"
+  },
+  {
+    "id": "@aibast-agents-library/license_renewal_expansion",
+    "name": "License Renewal & Expansion Agent",
+    "seed": "7396811422879724128"
+  },
+  {
+    "id": "@aibast-agents-library/deal_progression",
+    "name": "Deal Progression",
+    "seed": "16569251649731306541"
+  },
+  {
+    "id": "@aibast-agents-library/stalled_deal_detection",
+    "name": "Stalled Deal Detection",
+    "seed": "5854357498148564447"
+  },
+  {
+    "id": "@aibast-agents-library/customer_360_speech",
+    "name": "Customer 360 & Speech Agent",
+    "seed": "14861492049442254073"
+  },
+  {
+    "id": "@aibast-agents-library/supply_chain_disruption_alert",
+    "name": "Supply Chain Disruption Alert Agent",
+    "seed": "16804600987838460767"
+  },
+  {
+    "id": "@aibast-agents-library/next_best_action",
+    "name": "Next Best Action",
+    "seed": "10025994443272366861"
+  },
+  {
+    "id": "@kody/manage_memory_agent",
+    "name": "ManageMemory",
+    "seed": "14159894519432621052"
+  },
+  {
+    "id": "@aibast-agents-library/one_click_crm_intake",
+    "name": "One-Click CRM Intake",
+    "seed": "1713805111300072952"
+  },
+  {
+    "id": "@aibast-agents-library/activity_gap",
+    "name": "Activity Gap Analyzer",
+    "seed": "13173877546091689666"
+  },
+  {
+    "id": "@aibast-agents-library/deal_health_score",
+    "name": "Deal Health Score",
+    "seed": "16195268016693984984"
+  },
+  {
+    "id": "@aibast-agents-library/cross_selling",
+    "name": "Cross-Selling Opportunities",
+    "seed": "17617098655100714102"
+  },
+  {
+    "id": "@aibast-agents-library/dynamics_365_connector",
+    "name": "Dynamics 365 Connector",
+    "seed": "14682849978474050837"
+  },
+  {
+    "id": "@aibast-agents-library/stakeholder_intelligence",
+    "name": "Stakeholder Intelligence",
+    "seed": "15018051093375102546"
+  },
+  {
+    "id": "@aibast-agents-library/asset_maintenance_forecast",
+    "name": "Asset Maintenance Forecast Agent",
+    "seed": "5836169530732982279"
+  },
+  {
+    "id": "@kody/context_memory_agent",
+    "name": "ContextMemory",
+    "seed": "15351106387627749856"
+  },
+  {
+    "id": "@aibast-agents-library/sharepoint_document_extractor",
+    "name": "SharePoint Document Extractor",
+    "seed": "3204150057113364789"
+  },
+  {
+    "id": "@kody/github_agent_library_agent",
+    "name": "GitHubAgentLibrary",
+    "seed": "1346218951730281648"
+  },
+  {
+    "id": "@aibast-agents-library/account_risk_assessment",
+    "name": "Account Risk Assessment",
+    "seed": "15010362534912467138"
+  },
+  {
+    "id": "@borg/cardsmith_agent",
+    "name": "CardSmith",
+    "seed": "16145574178551640748"
+  },
+  {
+    "id": "@aibast-agents-library/care_gap_closure",
+    "name": "Care Gap Closure Agent",
+    "seed": "16835577812647426117"
+  },
+  {
+    "id": "@aibast-agents-library/pipeline_velocity",
+    "name": "Pipeline Velocity",
+    "seed": "3953971822722691162"
+  },
+  {
+    "id": "@aibast-agents-library/returns_exchange",
+    "name": "Returns & Exchange Agent",
+    "seed": "16427931656570809614"
+  }
+];
+
+// ─── IndexedDB ───
+const DB_NAME='twin_binder', STORE='cards';
+let db;
+function openDB(){ return new Promise((res,rej)=>{
+  const r=indexedDB.open(DB_NAME,1);
+  r.onupgradeneeded=e=>{ const d=e.target.result; if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE,{keyPath:'_binder_key'}); };
+  r.onsuccess=e=>{ db=e.target.result; res(); };
+  r.onerror=e=>rej(e.target.error);
+}); }
+function dbAll(){ return new Promise((res,rej)=>{ const r=db.transaction(STORE).objectStore(STORE).getAll(); r.onsuccess=e=>res(e.target.result); r.onerror=e=>rej(e.target.error); }); }
+function dbPut(v){ return new Promise((res,rej)=>{ const r=db.transaction(STORE,'readwrite').objectStore(STORE).put(v); r.onsuccess=()=>res(); r.onerror=e=>rej(e.target.error); }); }
+function dbClear(){ return new Promise((res,rej)=>{ const r=db.transaction(STORE,'readwrite').objectStore(STORE).clear(); r.onsuccess=()=>res(); r.onerror=e=>rej(e.target.error); }); }
+
+// ─── State ───
+const state = { owned:new Map(), peers:[] };
+
+// ─── Federation — SPEC §5.4 ───
+const PEERS_URL = 'https://raw.githubusercontent.com/kody-w/RAPPcards/main/peers.json';
+
+async function loadPeers(){
+  try {
+    const r = await fetch(PEERS_URL, {cache:'no-cache'});
+    const j = await r.json();
+    state.peers = j.peers || [];
+    log(`Loaded <b>${state.peers.length}</b> federation peers`, 'ok');
+  } catch(e){ log('Failed to load peers.json: '+e.message, 'err'); state.peers = []; }
+}
+
+async function resolveSeedGlobal(seedStr){
+  for (const p of state.peers){
+    if (p.binder === 'twin-binder') continue; // SPEC §5.4 step 3 — skip self
+    if (!p.seed_index) continue;
+    try {
+      log(`  walking <b>${p.binder}</b>…`, 'info');
+      const idx = JSON.parse(await (await fetch(p.seed_index,{cache:'force-cache'})).text());
+      const hit = idx.seeds && idx.seeds[seedStr];
+      if (!hit) continue;
+      log(`  ✓ found in <b>${p.binder}</b>`, 'ok');
+      // fetch card
+      let card = null;
+      if (hit.url_is_bundle && hit.url){
+        // Bundle: one JSON containing many cards
+        const raw = await (await fetch(hit.url,{cache:'force-cache'})).text();
+        const bundle = parseBI(raw);
+        const cards = bundle.cards || bundle;
+        const bk = hit.bundle_key || hit.id;
+        card = cards[bk];
+      } else if (hit.url){
+        const raw = await (await fetch(hit.url,{cache:'force-cache'})).text();
+        card = parseBI(raw);
+      }
+      if (card && typeof card.seed === 'string') card.seed = BigInt(card.seed);
+      if (!card) continue;
+      return { id: hit.id, card, peer: p };
+    } catch(e){ log(`  ✗ ${p.binder}: ${e.message}`, 'warn'); }
+  }
+  return null;
+}
+
+// ─── Auto-save foreign card (SPEC §5.4 step 8 — MANDATORY in v1.1.2) ───
+async function saveResolved(hit){
+  const key = `${hit.peer.binder}:${hit.id}`;
+  const entry = {
+    _binder_key: key,
+    _added_at: new Date().toISOString(),
+    _foreign_binder: hit.peer.binder,
+    _foreign_home: hit.peer.home || '',
+    _foreign_id: hit.id,
+    id: hit.id,
+    name: hit.card.name || hit.id,
+    seed_str: String(hit.card.seed),
+    foreign: true,
+    card: JSON.parse(JSON.stringify(hit.card, (k,v)=> typeof v==='bigint' ? String(v) : v)),
+  };
+  state.owned.set(key, entry);
+  await dbPut(entry);
+  return entry;
+}
+
+// ─── UI ───
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+function log(html, k='t'){
+  const el=$('#log');
+  const div=document.createElement('div');
+  div.innerHTML=`<span class="t">[${new Date().toLocaleTimeString()}]</span> <span class="${k}">${html}</span>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderIncants(){
+  const list = $('#incantList');
+  $('#incantCount').textContent = DEMO_INCANTS.length;
+  list.innerHTML = DEMO_INCANTS.map((it,i)=>{
+    const words = seedToWords(BigInt(it.seed));
+    const owned = [...state.owned.values()].some(e => e.seed_str === it.seed);
+    return `<div class="incant${owned?' summoned':''}" data-i="${i}">
+      <div class="name">${esc(it.name)}</div>
+      <div class="words">${esc(words)}</div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.incant').forEach(el=>{
+    el.addEventListener('click', ()=> summonIncant(DEMO_INCANTS[+el.dataset.i]));
+  });
+}
+
+function renderDeck(){
+  const el = $('#owned');
+  const list = [...state.owned.values()];
+  $('#ownedCount').textContent = `${list.length} card${list.length===1?'':'s'}`;
+  $('#statRebuilt').textContent = list.length;
+  $('#statFed').textContent = list.filter(e=>e.foreign).length;
+  if (list.length === 0){
+    el.innerHTML = `<div class="empty">Your deck is empty.<br>Click an incantation to begin.</div>`;
+    return;
+  }
+  list.sort((a,b)=> (b._added_at||'').localeCompare(a._added_at||''));
+  el.innerHTML = list.map(e=>{
+    const words = e.seed_str ? esc(seedToWords(BigInt(e.seed_str))) : '';
+    return `<div class="card${e.foreign?' foreign':''}">
+      ${e.foreign?`<span class="fbadge">🌐 ${esc(e._foreign_binder)}</span>`:''}
+      <div class="cname">${esc(e.name)}</div>
+      <div class="cid">${esc(e.id)}</div>
+      <div class="cwords">${words}</div>
+      <div class="cseed">seed: ${esc(e.seed_str)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function summonIncant(it){
+  const words = seedToWords(BigInt(it.seed));
+  log(`Speak: <b>${esc(words)}</b>`, 'info');
+  if ([...state.owned.values()].some(e=>e.seed_str === it.seed)){
+    log(`Already owned — ${esc(it.name)}`, 'warn'); return;
+  }
+  log(`  seed → ${it.seed}`, 't');
+  const hit = await resolveSeedGlobal(it.seed);
+  if (!hit){ log(`  ✗ no peer returned card`, 'err'); return; }
+  await saveResolved(hit);
+  log(`  💾 saved <b>${esc(hit.card.name||hit.id)}</b> (from ${hit.peer.binder})`, 'ok');
+  renderDeck();
+  renderIncants();
+}
+
+async function summonCustom(){
+  const raw = $('#customIncant').value.trim();
+  if (!raw) return;
+  try {
+    const seed = wordsToSeed(raw);
+    const words = seedToWords(seed);
+    log(`Custom: <b>${esc(words)}</b>`, 'info');
+    const hit = await resolveSeedGlobal(String(seed));
+    if (!hit){ log(`  ✗ seed not found in any peer`, 'err'); return; }
+    await saveResolved(hit);
+    log(`  💾 saved <b>${esc(hit.card.name||hit.id)}</b>`, 'ok');
+    $('#customIncant').value = '';
+    renderDeck();
+    renderIncants();
+  } catch(e){ log(`  ✗ ${e.message}`, 'err'); }
+}
+
+async function clearDeck(){
+  if (!confirm('Clear your deck? You can rebuild it with the incantations in your head.')) return;
+  await dbClear();
+  state.owned.clear();
+  log('Deck cleared. Speak to rebuild.', 'warn');
+  renderDeck();
+  renderIncants();
+}
+
+async function exportDeck(){
+  const cards = [...state.owned.values()];
+  const blob = new Blob([JSON.stringify({schema:'rappcards-binder/1.0', version:'1.1.2', exported_at:new Date().toISOString(), cards}, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `twin-binder-${Date.now()}.json`; a.click();
+  URL.revokeObjectURL(url);
+  log(`Exported ${cards.length} cards`, 'ok');
+}
+
+// ─── Hash router (SPEC §5.1) ───
+async function handleHash(){
+  const h = location.hash.slice(1);
+  if (!h) return;
+  const m = h.match(/^(incant|seed)=(.+)$/);
+  if (!m) return;
+  try {
+    const seed = m[1]==='incant'
+      ? wordsToSeed(decodeURIComponent(m[2]).replace(/\+/g,' '))
+      : BigInt(decodeURIComponent(m[2]));
+    log(`Hash route: ${m[1]}=${m[2]}`, 'info');
+    const hit = await resolveSeedGlobal(String(seed));
+    if (hit){ await saveResolved(hit); log(`💾 ${hit.card.name||hit.id}`, 'ok'); renderDeck(); renderIncants(); }
+    else log(`no peer has this seed`, 'err');
+  } catch(e){ log('hash: '+e.message, 'err'); }
+  history.replaceState(null,'',location.pathname);
+}
+
+// ─── Boot ───
+(async ()=>{
+  await openDB();
+  const rows = await dbAll();
+  for (const r of rows) state.owned.set(r._binder_key, r);
+  log(`Loaded ${rows.length} cards from local storage`, 't');
+  renderDeck();
+  await loadPeers();
+  renderIncants();
+  await handleHash();
+})();
+
+async function summonAll(){
+  const remaining = DEMO_INCANTS.filter(it => ![...state.owned.values()].some(e=>e.seed_str===it.seed));
+  if (!remaining.length){ log('All demo incantations already summoned. Clear deck to retry.', 'warn'); return; }
+  log(`Speaking <b>${remaining.length}</b> incantations in sequence…`, 'info');
+  const btn = $('#summonAllBtn'); btn.disabled = true;
+  for (const it of remaining){
+    await summonIncant(it);
+    await new Promise(r=>setTimeout(r,120));
+  }
+  btn.disabled = false;
+  log(`<b>Rebuild complete.</b> ${state.owned.size} cards materialized from the federation.`, 'ok');
+}
+
+$('#summonBtn').addEventListener('click', summonCustom);
+$('#customIncant').addEventListener('keydown', e=>{ if(e.key==='Enter') summonCustom(); });
+$('#summonAllBtn').addEventListener('click', summonAll);
+$('#clearBtn').addEventListener('click', clearDeck);
+$('#exportBtn').addEventListener('click', exportDeck);
+window.addEventListener('hashchange', handleHash);
+</script>
+</body>
+</html>

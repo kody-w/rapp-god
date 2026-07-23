@@ -1,0 +1,42 @@
+name: neighborhood-canon
+# Drift guard: the vBrainstem INLINES the sealed codec (rapp-sealed) and the kited-twin mark
+# (rapp-kited-twin) because it's zero-dependency single-file. This fails CI if those inlined copies
+# diverge from the canonical repos — so the grail can't silently drift.
+on:
+  push: { paths: ['index.html', 'share.html', 'brainstem_bridge.html', 'kited-demo.html', '.github/workflows/neighborhood-canon.yml'] }
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inlined sealed codec + kite mark must match canonical
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          echo "── rapp-sealed: salt + iterations ──"
+          curl -fsSL https://raw.githubusercontent.com/kody-w/rapp-sealed/main/rapp_sealed.mjs -o /tmp/sealed.mjs
+          SALT=$(grep -oE "rapp-neighborhood-5a/[0-9]+" /tmp/sealed.mjs | head -1)
+          ITERS=$(grep -oE "ITERATIONS *= *[0-9]+" /tmp/sealed.mjs | grep -oE "[0-9]+")
+          echo "canonical salt=$SALT iterations=$ITERS"
+          # Only files that actually implement the sealed channel (use AES-GCM) must carry the
+          # canonical salt + iterations. (share.html only DECODES the gzip agent-link, so it has none.)
+          for f in *.html vbridge.sh; do
+            [ -f "$f" ] || continue
+            grep -q "AES-GCM" "$f" || continue
+            grep -q "$SALT" "$f"  || fail "$f: sealed salt drifted from canonical ($SALT)"
+            grep -q "$ITERS" "$f" || fail "$f: sealed iterations drifted from canonical ($ITERS)"
+            echo "  ✓ $f sealed params OK"
+          done
+
+          echo "── rapp-kited-twin: the four panel colours (neutral, no third-party logo) ──"
+          curl -fsSL https://raw.githubusercontent.com/kody-w/rapp-kited-twin/main/kited-twin.svg -o /tmp/kite.svg
+          COLORS=$(grep -oiE "#(e07a5f|81b29a|f2cc8f|3d5a80)" /tmp/kite.svg | tr 'A-Z' 'a-z' | sort -u)
+          for c in $COLORS; do
+            grep -qi "$c" index.html || fail "index.html: kite colour $c drifted from canonical rapp-kited-twin"
+          done
+
+          echo "✅ inlined sealed codec + kite mark are in sync with the canonical repos"

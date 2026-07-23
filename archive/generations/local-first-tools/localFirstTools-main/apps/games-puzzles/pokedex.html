@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creature Dex - Catch & Battle</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a0a0a; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+        canvas { display: block; }
+        #ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        #ui > * { pointer-events: auto; }
+        .ov { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .bx {
+            background: linear-gradient(145deg, #2a1515, #1a0a0a);
+            border: 2px solid #ff6b6b; border-radius: 20px; padding: 35px;
+            text-align: center; max-width: 520px; width: 92%;
+            box-shadow: 0 0 50px rgba(255,107,107,0.3);
+            max-height: 90vh; overflow-y: auto;
+        }
+        .bx h1 { color: #ff6b6b; font-size: 2rem; margin-bottom: 8px; text-shadow: 0 0 15px rgba(255,107,107,0.5); }
+        .bx h2 { color: #cc8888; font-size: 1.1rem; margin-bottom: 20px; font-weight: normal; }
+        .bx p { color: #887766; font-size: 0.85rem; margin-bottom: 15px; line-height: 1.5; }
+        .btn {
+            display: block; width: 100%; padding: 13px; margin: 8px 0;
+            font-size: 1rem; font-weight: bold;
+            border: 2px solid #ff6b6b; border-radius: 12px;
+            background: linear-gradient(135deg, #2a1515, #331a1a);
+            color: #ff6b6b; cursor: pointer; transition: all 0.2s;
+        }
+        .btn:hover { background: linear-gradient(135deg, #3a2020, #442525); border-color: #ff8888; transform: translateY(-2px); box-shadow: 0 4px 20px rgba(255,107,107,0.4); }
+        .btn.sm { padding: 10px; font-size: 0.85rem; }
+        .btn.action { border-color: #4ecdc4; color: #4ecdc4; }
+        .btn.action:hover { border-color: #6eede4; box-shadow: 0 4px 20px rgba(78,205,196,0.4); }
+        .drow { display: flex; gap: 8px; margin: 12px 0; }
+        .db { flex: 1; padding: 10px; font-size: 0.85rem; border: 2px solid #332; border-radius: 10px; background: #1a0a0a; color: #776; cursor: pointer; transition: all 0.2s; }
+        .db.on { border-color: #ff6b6b; color: #ff6b6b; background: #2a1515; box-shadow: 0 0 12px rgba(255,107,107,0.2); }
+        .stat { display: flex; justify-content: space-between; padding: 5px 0; color: #cc8888; font-size: 0.88rem; border-bottom: 1px solid rgba(255,107,107,0.15); }
+        .stat span:last-child { color: #ff6b6b; font-weight: bold; }
+        .creature-card {
+            background: #2a1515; border: 2px solid #332; border-radius: 12px;
+            padding: 12px; margin: 6px 0; cursor: pointer; transition: all 0.2s; text-align: left;
+        }
+        .creature-card:hover { border-color: #ff6b6b; transform: translateY(-1px); }
+        .creature-card .name { color: #ff6b6b; font-weight: bold; font-size: 0.95rem; }
+        .creature-card .info { color: #887766; font-size: 0.75rem; }
+        .type-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem;
+            font-weight: bold; color: #fff; margin-right: 4px;
+        }
+        .hp-bar { width: 100%; height: 10px; background: #1a0a0a; border-radius: 5px; overflow: hidden; margin: 4px 0; }
+        .hp-fill { height: 100%; border-radius: 5px; transition: width 0.5s; }
+        .hint { position: fixed; top: 8px; right: 12px; color: rgba(255,107,107,0.25); font-size: 0.7rem; pointer-events: none; z-index: 5; }
+    </style>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+<meta name="rappterzoo:author" content="agent">
+<meta name="rappterzoo:author-type" content="agent">
+<meta name="rappterzoo:category" content="games_puzzles">
+<meta name="rappterzoo:tags" content="svg,animation,interactive,creative">
+<meta name="rappterzoo:type" content="interactive">
+<meta name="rappterzoo:complexity" content="simple">
+<meta name="rappterzoo:created" content="2025-12-27">
+<meta name="rappterzoo:generation" content="1">
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hint">ESC = Pause | R = Restart</div>
+<div id="ui"></div>
+<script>
+// === AUDIO ===
+let AC=null;
+function initA(){if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();}
+function snd(t,f,d,v){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v||0.12,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}
+function sfxClick(){snd('triangle',600,0.05);}
+function sfxCatch(){snd('sine',880,0.1);setTimeout(()=>snd('sine',1100,0.12),80);setTimeout(()=>snd('sine',1320,0.15),160);}
+function sfxMiss(){snd('sawtooth',200,0.15);setTimeout(()=>snd('sawtooth',160,0.2),100);}
+function sfxHit(){snd('square',300,0.08);setTimeout(()=>snd('square',200,0.1),50);}
+function sfxSuper(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>snd('square',f,0.1),i*80));}
+function sfxBoss(){for(let i=0;i<5;i++)setTimeout(()=>snd('sawtooth',80+i*30,0.12,0.15),i*60);}
+function sfxVictory(){[523,587,659,784,880,1047].forEach((f,i)=>setTimeout(()=>snd('square',f,0.12),i*100));}
+function sfxDefeat(){[440,415,392,370,349,330].forEach((f,i)=>setTimeout(()=>snd('sawtooth',f,0.2),i*130));}
+function sfxEvolve(){[330,440,554,660,880,1047,1320].forEach((f,i)=>setTimeout(()=>snd('sine',f,0.15),i*70));}
+function sfxHeal(){snd('sine',660,0.15);setTimeout(()=>snd('sine',880,0.15),100);}
+
+// === CANVAS ===
+const cv=document.getElementById('c'),cx=cv.getContext('2d');
+let W,H;
+function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;}
+addEventListener('resize',resize);resize();
+
+// === TYPE SYSTEM ===
+const TYPES = {
+    fire:   {color:'#F08030',strong:['grass','ice','bug'],weak:['water','rock','ground']},
+    water:  {color:'#6890F0',strong:['fire','ground','rock'],weak:['grass','electric']},
+    grass:  {color:'#78C850',strong:['water','ground','rock'],weak:['fire','ice','bug']},
+    electric:{color:'#F8D030',strong:['water','flying'],weak:['ground']},
+    ice:    {color:'#98D8D8',strong:['grass','ground','flying','dragon'],weak:['fire','fighting','rock']},
+    fighting:{color:'#C03028',strong:['normal','ice','rock'],weak:['flying','psychic']},
+    poison: {color:'#A040A0',strong:['grass','fairy'],weak:['ground','psychic']},
+    ground: {color:'#E0C068',strong:['fire','electric','poison','rock'],weak:['water','grass','ice']},
+    flying: {color:'#A890F0',strong:['grass','fighting','bug'],weak:['electric','ice','rock']},
+    psychic:{color:'#F85888',strong:['fighting','poison'],weak:['bug','ghost']},
+    bug:    {color:'#A8B820',strong:['grass','psychic'],weak:['fire','flying','rock']},
+    rock:   {color:'#B8A038',strong:['fire','ice','flying','bug'],weak:['water','grass','fighting','ground']},
+    ghost:  {color:'#705898',strong:['psychic','ghost'],weak:['ghost']},
+    dragon: {color:'#7038F8',strong:['dragon'],weak:['ice','dragon','fairy']},
+    normal: {color:'#A8A878',strong:[],weak:['fighting']},
+    fairy:  {color:'#EE99AC',strong:['fighting','dragon'],weak:['poison','steel']},
+};
+
+// === CREATURE DATABASE ===
+const CREATURES = [
+    {id:1,name:'Emberpaw',type:'fire',hp:45,atk:55,def:40,spd:65,moves:['Scratch','Ember','Flame Charge','Fire Blast'],evolves:6,evolveTo:2},
+    {id:2,name:'Blazefang',type:'fire',hp:65,atk:75,def:55,spd:80,moves:['Slash','Flamethrower','Fire Punch','Inferno'],evolves:null},
+    {id:3,name:'Aquasprout',type:'water',hp:50,atk:45,def:55,spd:50,moves:['Tackle','Water Gun','Bubble Beam','Hydro Pump'],evolves:6,evolveTo:4},
+    {id:4,name:'Tidedrake',type:'water',hp:70,atk:65,def:75,spd:60,moves:['Aqua Tail','Surf','Water Pulse','Tsunami'],evolves:null},
+    {id:5,name:'Thornlet',type:'grass',hp:55,atk:50,def:60,spd:45,moves:['Vine Whip','Razor Leaf','Seed Bomb','Solar Beam'],evolves:6,evolveTo:6},
+    {id:6,name:'Oakheart',type:'grass',hp:80,atk:70,def:80,spd:55,moves:['Wood Hammer','Leaf Storm','Power Whip','Petal Dance'],evolves:null},
+    {id:7,name:'Voltmouse',type:'electric',hp:35,atk:60,def:30,spd:90,moves:['Quick Attack','Thunder Shock','Spark','Thunderbolt'],evolves:5,evolveTo:8},
+    {id:8,name:'Stormrat',type:'electric',hp:55,atk:80,def:50,spd:100,moves:['Thunder','Wild Charge','Discharge','Bolt Strike'],evolves:null},
+    {id:9,name:'Frostkit',type:'ice',hp:40,atk:40,def:50,spd:55,moves:['Powder Snow','Ice Shard','Icy Wind','Blizzard'],evolves:7,evolveTo:10},
+    {id:10,name:'Glacefox',type:'ice',hp:65,atk:60,def:70,spd:75,moves:['Ice Beam','Frost Breath','Avalanche','Sheer Cold'],evolves:null},
+    {id:11,name:'Pebblite',type:'rock',hp:60,atk:50,def:70,spd:30,moves:['Rock Throw','Rollout','Rock Slide','Stone Edge'],evolves:8,evolveTo:12},
+    {id:12,name:'Bouldron',type:'rock',hp:90,atk:70,def:95,spd:35,moves:['Rock Wrecker','Earthquake','Head Smash','Meteor Slam'],evolves:null},
+    {id:13,name:'Shadewisp',type:'ghost',hp:40,atk:65,def:35,spd:80,moves:['Lick','Shadow Ball','Night Shade','Phantom Force'],evolves:6,evolveTo:14},
+    {id:14,name:'Dreadshade',type:'ghost',hp:60,atk:90,def:50,spd:95,moves:['Shadow Claw','Dark Pulse','Destiny Bond','Spectral Rush'],evolves:null},
+    {id:15,name:'Pixibell',type:'fairy',hp:50,atk:45,def:55,spd:60,moves:['Fairy Wind','Dazzle','Moonblast','Play Rough'],evolves:7,evolveTo:16},
+    {id:16,name:'Sylphora',type:'fairy',hp:75,atk:65,def:75,spd:70,moves:['Enchant','Starfall','Misty Terrain','Oblivion Wing'],evolves:null},
+    {id:17,name:'Brawlpup',type:'fighting',hp:55,atk:70,def:45,spd:60,moves:['Punch','Karate Chop','Brick Break','Close Combat'],evolves:6,evolveTo:18},
+    {id:18,name:'Ironknuckle',type:'fighting',hp:80,atk:95,def:65,spd:70,moves:['Mega Punch','Focus Blast','Dynamic Punch','Aura Sphere'],evolves:null},
+    {id:19,name:'Drakeling',type:'dragon',hp:55,atk:60,def:55,spd:65,moves:['Dragon Breath','Twister','Dragon Claw','Dragon Pulse'],evolves:8,evolveTo:20},
+    {id:20,name:'Wyvernus',type:'dragon',hp:85,atk:90,def:75,spd:80,moves:['Draco Meteor','Outrage','Dragon Rush','Hyper Beam'],evolves:null},
+    {id:21,name:'Buzzwing',type:'bug',hp:40,atk:50,def:40,spd:70,moves:['Bug Bite','String Shot','X-Scissor','Bug Buzz'],evolves:4,evolveTo:22},
+    {id:22,name:'Mantisaur',type:'bug',hp:60,atk:75,def:60,spd:85,moves:['Fury Cutter','Leech Life','Lunge','Megahorn'],evolves:null},
+    {id:23,name:'Venomsnake',type:'poison',hp:45,atk:55,def:45,spd:65,moves:['Poison Sting','Acid','Sludge Bomb','Toxic'],evolves:5,evolveTo:24},
+    {id:24,name:'Toxidrake',type:'poison',hp:70,atk:75,def:60,spd:80,moves:['Gunk Shot','Venom Drench','Cross Poison','Sludge Wave'],evolves:null},
+    {id:25,name:'Sandmole',type:'ground',hp:55,atk:55,def:65,spd:40,moves:['Mud Slap','Dig','Earth Power','Earthquake'],evolves:6,evolveTo:26},
+    {id:26,name:'Terratusk',type:'ground',hp:85,atk:80,def:90,spd:45,moves:['Fissure','Drill Run','Magnitude','Continental Crush'],evolves:null},
+    {id:27,name:'Skychick',type:'flying',hp:40,atk:45,def:35,spd:75,moves:['Peck','Gust','Aerial Ace','Hurricane'],evolves:5,evolveTo:28},
+    {id:28,name:'Stormhawk',type:'flying',hp:65,atk:70,def:55,spd:95,moves:['Sky Attack','Brave Bird','Air Slash','Tailwind'],evolves:null},
+    {id:29,name:'Psykit',type:'psychic',hp:45,atk:40,def:45,spd:70,moves:['Confusion','Psybeam','Psychic','Future Sight'],evolves:6,evolveTo:30},
+    {id:30,name:'Mindlord',type:'psychic',hp:70,atk:65,def:65,spd:85,moves:['Psyshock','Zen Headbutt','Dream Eater','Psycho Boost'],evolves:null},
+];
+
+// === STATE ===
+let state='menu';
+let diff=1;
+const DNAMES=['Easy','Normal','Hard'];
+let party=[]; // [{creature, level, xp, hp, maxHp, nickname}]
+let dex={}; // {id: true} - seen creatures
+let wildCreature=null; // current wild encounter
+let battleState=null; // {phase:'choose'|'attack'|'catch'|'result', turn, activeIdx, msg}
+let zone=0; // 0-4 exploration zones
+let encounters=0, caught=0, defeated=0, evolved=0;
+let score=0, streak=0, maxStreak=0;
+let particles=[];
+let shakeX=0,shakeY=0,shakeDur=0;
+let bgGrass=[];
+
+// Persistence
+let hs=[], gp=0, tw=0, bestDex=0;
+function loadS(){try{const d=JSON.parse(localStorage.getItem('creature-dex-save'));if(d){hs=d.hs||[];gp=d.gp||0;tw=d.tw||0;bestDex=d.bd||0;}}catch(e){}}
+function saveS(){localStorage.setItem('creature-dex-save',JSON.stringify({hs,gp,tw,bd:bestDex}));}
+loadS();
+
+// Background grass particles
+for(let i=0;i<80;i++){bgGrass.push({x:Math.random()*2000,y:Math.random()*2000,h:10+Math.random()*20,sway:Math.random()*Math.PI*2,speed:0.02+Math.random()*0.03,alpha:0.05+Math.random()*0.1,color:`hsl(${120+Math.random()*40},50%,${20+Math.random()*20}%)`});}
+
+// === HELPERS ===
+function spawn(x,y,n,color,spd){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=(0.5+Math.random())*(spd||3);particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,decay:0.01+Math.random()*0.02,size:2+Math.random()*3,color});}}
+function shake(i,d){shakeX=(Math.random()-0.5)*i;shakeY=(Math.random()-0.5)*i;shakeDur=d;}
+
+function getCreature(id){return CREATURES.find(c=>c.id===id);}
+function typeColor(type){return TYPES[type]?.color||'#aaa';}
+
+function createPartyMember(creatureId, level) {
+    const c = getCreature(creatureId);
+    const lvlMult = 1 + (level - 1) * 0.1;
+    const maxHp = Math.round(c.hp * lvlMult);
+    return { creature: c, level, xp: 0, hp: maxHp, maxHp, nickname: c.name };
+}
+
+function calcDamage(attacker, defender, moveIdx) {
+    const atkStat = attacker.creature.atk * (1 + (attacker.level - 1) * 0.1);
+    const defStat = defender.creature.def * (1 + (defender.level - 1) * 0.1);
+    const baseDmg = (atkStat / defStat) * 10 + 2;
+
+    // Type effectiveness
+    const atkType = attacker.creature.type;
+    const defType = defender.creature.type;
+    let mult = 1;
+    if (TYPES[atkType].strong.includes(defType)) mult = 2;
+    if (TYPES[atkType].weak.includes(defType)) mult = 0.5;
+
+    // Random factor
+    const rand = 0.85 + Math.random() * 0.3;
+    return { damage: Math.max(1, Math.round(baseDmg * mult * rand)), mult };
+}
+
+function getWildLevel() {
+    const base = 1 + zone * 2 + Math.floor(encounters / 3);
+    const variance = Math.floor(Math.random() * 3) - 1;
+    return Math.max(1, Math.min(20, base + variance));
+}
+
+function getWildCreature() {
+    // Filter creatures available in current zone
+    const zoneTypes = [
+        ['fire','grass','bug','normal'],
+        ['water','electric','flying','poison'],
+        ['rock','ground','ice','fighting'],
+        ['ghost','psychic','fairy','dragon'],
+        ['fire','water','grass','electric','dragon'] // mixed
+    ];
+    const types = zoneTypes[zone] || zoneTypes[0];
+    const available = CREATURES.filter(c => types.includes(c.type));
+    const template = available[Math.floor(Math.random() * available.length)];
+    const level = getWildLevel();
+    return createPartyMember(template.id, level);
+}
+
+// === GAME LOGIC ===
+function startGame() {
+    initA();
+    party = [];
+    dex = {};
+    zone = 0;
+    encounters = 0; caught = 0; defeated = 0; evolved = 0;
+    score = 0; streak = 0; maxStreak = 0;
+    wildCreature = null;
+    battleState = null;
+    state = 'choose-starter';
+    sfxClick();
+    showStarterSelect();
+}
+
+function pickStarter(id) {
+    const member = createPartyMember(id, 5);
+    party.push(member);
+    dex[id] = true;
+    sfxCatch();
+    state = 'playing';
+    showExplore();
+}
+
+function encounter() {
+    encounters++;
+    wildCreature = getWildCreature();
+    dex[wildCreature.creature.id] = true;
+
+    // Boss every 10 encounters
+    if (encounters % 10 === 0) {
+        wildCreature.level += 5;
+        wildCreature.maxHp = Math.round(wildCreature.creature.hp * (1 + (wildCreature.level-1)*0.1) * 1.5);
+        wildCreature.hp = wildCreature.maxHp;
+        sfxBoss();
+    }
+
+    battleState = { phase: 'choose', turn: 0, activeIdx: 0, msg: '' };
+    state = 'battle';
+    showBattle();
+}
+
+function doAttack(moveIdx) {
+    if (battleState.phase !== 'choose') return;
+    const active = party[battleState.activeIdx];
+    if (active.hp <= 0) return;
+
+    // Player attacks
+    const { damage, mult } = calcDamage(active, wildCreature, moveIdx);
+    wildCreature.hp = Math.max(0, wildCreature.hp - damage);
+
+    let msg = `${active.nickname} used ${active.creature.moves[moveIdx]}! `;
+    if (mult > 1) { msg += 'Super effective! '; sfxSuper(); spawn(W/2,H/2-50,20,'#ffd700',5); }
+    else if (mult < 1) { msg += 'Not very effective... '; }
+    else sfxHit();
+    msg += `(-${damage} HP)`;
+
+    shake(mult > 1 ? 10 : 5, mult > 1 ? 8 : 4);
+    spawn(W/2+80, H/2-30, 15, typeColor(active.creature.type), 4);
+
+    if (wildCreature.hp <= 0) {
+        // Victory
+        defeated++;
+        streak++;
+        if (streak > maxStreak) maxStreak = streak;
+        const xpGain = wildCreature.level * 10 * (diff === 0 ? 1.5 : diff === 1 ? 1 : 0.7);
+        active.xp += Math.round(xpGain);
+        score += Math.round(xpGain * (1 + streak * 0.1));
+
+        msg += ` ${wildCreature.creature.name} fainted! +${Math.round(xpGain)} XP`;
+
+        // Level up check
+        const xpNeeded = active.level * 20;
+        if (active.xp >= xpNeeded) {
+            active.level++;
+            active.xp -= xpNeeded;
+            const newMaxHp = Math.round(active.creature.hp * (1 + (active.level-1)*0.1));
+            active.hp += (newMaxHp - active.maxHp);
+            active.maxHp = newMaxHp;
+            msg += ` Level up! Lv${active.level}`;
+            sfxEvolve();
+            spawn(W/2-80, H/2-30, 30, '#ffd700', 6);
+
+            // Evolution check
+            if (active.creature.evolves && active.level >= active.creature.evolves) {
+                const evoCreature = getCreature(active.creature.evolveTo);
+                if (evoCreature) {
+                    active.creature = evoCreature;
+                    active.nickname = evoCreature.name;
+                    const evoMaxHp = Math.round(evoCreature.hp * (1 + (active.level-1)*0.1));
+                    active.hp = evoMaxHp;
+                    active.maxHp = evoMaxHp;
+                    dex[evoCreature.id] = true;
+                    evolved++;
+                    msg += ` EVOLVED into ${evoCreature.name}!`;
+                    sfxEvolve();
+                    spawn(W/2-80, H/2-30, 50, typeColor(evoCreature.type), 8);
+                    shake(15, 12);
+                }
+            }
+        }
+
+        battleState.msg = msg;
+        battleState.phase = 'result';
+        sfxVictory();
+        showBattle();
+
+        // Advance zone every 5 catches/defeats
+        if ((caught + defeated) % 8 === 0 && zone < 4) {
+            zone++;
+        }
+        return;
+    }
+
+    // Wild creature counter-attacks
+    const wildMoveIdx = Math.floor(Math.random() * wildCreature.creature.moves.length);
+    const { damage: wDmg, mult: wMult } = calcDamage(wildCreature, active, wildMoveIdx);
+    active.hp = Math.max(0, active.hp - wDmg);
+
+    msg += `\n${wildCreature.creature.name} used ${wildCreature.creature.moves[wildMoveIdx]}! (-${wDmg})`;
+    if (wMult > 1) msg += ' Super effective!';
+
+    if (active.hp <= 0) {
+        msg += ` ${active.nickname} fainted!`;
+        streak = 0;
+
+        // Check if all party fainted
+        const alive = party.filter(p => p.hp > 0);
+        if (alive.length === 0) {
+            battleState.msg = msg + '\nAll creatures fainted!';
+            battleState.phase = 'result';
+            sfxDefeat();
+            showBattle();
+            setTimeout(() => endGame(), 2000);
+            return;
+        } else {
+            // Switch to next alive
+            battleState.activeIdx = party.indexOf(alive[0]);
+        }
+    }
+
+    battleState.msg = msg;
+    battleState.turn++;
+    showBattle();
+}
+
+function tryCatch() {
+    if (battleState.phase !== 'choose') return;
+    const hpRatio = wildCreature.hp / wildCreature.maxHp;
+    const catchRate = diff === 0 ? 0.6 : diff === 1 ? 0.4 : 0.25;
+    const chance = catchRate * (1 - hpRatio * 0.5) * (1 / (wildCreature.level * 0.05 + 0.5));
+
+    sfxClick();
+    spawn(W/2+80, H/2-30, 15, '#ff6b6b', 3);
+    shake(5, 4);
+
+    if (Math.random() < chance && party.length < 6) {
+        // Caught!
+        caught++;
+        streak++;
+        if (streak > maxStreak) maxStreak = streak;
+        wildCreature.hp = wildCreature.maxHp; // Heal on catch
+        party.push(wildCreature);
+        dex[wildCreature.creature.id] = true;
+        score += wildCreature.level * 20;
+
+        battleState.msg = `Caught ${wildCreature.creature.name}! Added to party.`;
+        battleState.phase = 'result';
+        sfxCatch();
+        spawn(W/2, H/2, 40, typeColor(wildCreature.creature.type), 6);
+        shake(8, 6);
+    } else if (party.length >= 6) {
+        battleState.msg = 'Party is full! (Max 6 creatures)';
+        sfxMiss();
+    } else {
+        battleState.msg = `${wildCreature.creature.name} broke free!`;
+        sfxMiss();
+
+        // Wild attacks back
+        const active = party[battleState.activeIdx];
+        const wmi = Math.floor(Math.random() * wildCreature.creature.moves.length);
+        const { damage } = calcDamage(wildCreature, active, wmi);
+        active.hp = Math.max(0, active.hp - damage);
+        battleState.msg += ` It attacks! (-${damage})`;
+
+        if (active.hp <= 0) {
+            const alive = party.filter(p => p.hp > 0);
+            if (alive.length === 0) {
+                setTimeout(() => endGame(), 1500);
+            } else {
+                battleState.activeIdx = party.indexOf(alive[0]);
+            }
+        }
+    }
+
+    showBattle();
+}
+
+function runAway() {
+    sfxClick();
+    streak = 0;
+    state = 'playing';
+    showExplore();
+}
+
+function healParty() {
+    for (const p of party) {
+        p.hp = p.maxHp;
+    }
+    sfxHeal();
+    spawn(W/2, H/2, 20, '#44ff88', 3);
+}
+
+function endGame() {
+    state = 'gameover';
+    gp++;
+    const dexCount = Object.keys(dex).length;
+    if (dexCount > bestDex) bestDex = dexCount;
+
+    let ending = '';
+    if (dexCount >= 25) { ending = 'Dex Master'; tw++; }
+    else if (dexCount >= 15) { ending = 'Creature Expert'; tw++; }
+    else if (dexCount >= 10) ending = 'Collector';
+    else if (caught >= 5) ending = 'Novice Trainer';
+    else ending = 'Beginner';
+
+    hs.push({ score, dex: dexCount, caught, defeated, evolved, rounds: encounters, diff: DNAMES[diff], ending, date: new Date().toLocaleDateString() });
+    hs.sort((a,b) => b.score - a.score);
+    hs = hs.slice(0, 10);
+    saveS();
+    showGameOver(ending, dexCount);
+}
+
+// === DRAW ===
+function drawBg(t) {
+    // Zone-based background
+    const zoneColors = [
+        ['#0a1a0a','#152515'], // forest
+        ['#0a0a2a','#101540'], // ocean
+        ['#1a1510','#252015'], // mountain
+        ['#150a1a','#200f25'], // mystic
+        ['#1a0a0a','#251510'], // mixed
+    ];
+    const [c1,c2] = zoneColors[zone] || zoneColors[0];
+    const grad = cx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,c1);
+    grad.addColorStop(1,c2);
+    cx.fillStyle = grad;
+    cx.fillRect(0,0,W,H);
+
+    // Grass
+    for(const g of bgGrass){
+        g.sway+=g.speed;
+        const sx=Math.sin(g.sway)*5;
+        cx.globalAlpha=g.alpha;
+        cx.strokeStyle=g.color;
+        cx.lineWidth=2;
+        cx.beginPath();
+        cx.moveTo(g.x%W,g.y%H);
+        cx.lineTo(g.x%W+sx,(g.y%H)-g.h);
+        cx.stroke();
+    }
+    cx.globalAlpha=1;
+
+    // Particles
+    for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.04;p.life-=p.decay;if(p.life<=0){particles.splice(i,1);continue;}cx.globalAlpha=p.life;cx.fillStyle=p.color;cx.beginPath();cx.arc(p.x,p.y,p.size,0,Math.PI*2);cx.fill();}
+    cx.globalAlpha=1;
+
+    if(shakeDur>0){shakeDur--;shakeX=(Math.random()-0.5)*shakeDur*1.5;shakeY=(Math.random()-0.5)*shakeDur*1.5;}else{shakeX=0;shakeY=0;}
+}
+
+function draw(t){resize();cx.save();cx.translate(shakeX,shakeY);drawBg(t);cx.restore();}
+
+// === MENUS ===
+function showMenu() {
+    const ui=document.getElementById('ui');
+    let hsHTML='';
+    if(hs.length>0){hsHTML='<div style="margin-top:10px;">';for(let i=0;i<Math.min(5,hs.length);i++){const h=hs[i];hsHTML+=`<div class="stat"><span>#${i+1} ${h.ending} (${h.dex} seen)</span><span>${h.score}</span></div>`;}hsHTML+='</div>';}
+    let stats='';
+    if(gp>0){stats=`<div style="margin:12px 0;padding:8px;border:1px solid rgba(255,107,107,0.2);border-radius:8px;"><div class="stat"><span>Games</span><span>${gp}</span></div><div class="stat"><span>Best Dex</span><span>${bestDex}/${CREATURES.length}</span></div></div>`;}
+    ui.innerHTML=`<div class="ov" id="mm"><div class="bx">
+        <h1>CREATURE DEX</h1><h2>Catch & Battle</h2>
+        <p>Explore zones, encounter wild creatures, battle and catch them. Build your party, evolve your team, and fill the Dex!</p>
+        <div style="margin-bottom:12px;"><div style="color:#cc8888;font-size:0.85rem;margin-bottom:6px;">Difficulty:</div>
+            <div class="drow"><button class="db ${diff===0?'on':''}" onclick="diff=0;showMenu();">Easy</button><button class="db ${diff===1?'on':''}" onclick="diff=1;showMenu();">Normal</button><button class="db ${diff===2?'on':''}" onclick="diff=2;showMenu();">Hard</button></div>
+            <div style="color:#776;font-size:0.7rem;">${diff===0?'High catch rate, bonus XP':diff===1?'Standard rates':'Low catch rate, reduced XP'}</div>
+        </div>
+        <button class="btn" onclick="document.getElementById('mm').remove();startGame();">Begin Adventure</button>
+        ${hsHTML?'<div style="color:#cc8888;font-size:0.85rem;margin-top:10px;">High Scores:</div>'+hsHTML:''}${stats}
+    </div></div>`;
+}
+
+function showStarterSelect() {
+    const ui=document.getElementById('ui');
+    const starters=[1,3,5]; // fire, water, grass
+    let html='';
+    for(const id of starters){
+        const c=getCreature(id);
+        html+=`<div class="creature-card" onclick="pickStarter(${id})">
+            <div class="name">${c.name}</div>
+            <span class="type-badge" style="background:${typeColor(c.type)}">${c.type}</span>
+            <div class="info">HP:${c.hp} ATK:${c.atk} DEF:${c.def} SPD:${c.spd}</div>
+            <div class="info">Moves: ${c.moves.join(', ')}</div>
+        </div>`;
+    }
+    ui.innerHTML=`<div class="ov" id="ss"><div class="bx">
+        <h1>Choose Your Starter</h1><h2>Pick one creature to begin</h2>${html}
+    </div></div>`;
+}
+
+function showExplore() {
+    const ui=document.getElementById('ui');
+    const zoneNames=['Forest','Shore','Mountains','Mystic Realm','Chaos Zone'];
+    const dexCount=Object.keys(dex).length;
+
+    let partyHTML='';
+    for(const p of party){
+        const hpPct=Math.round(p.hp/p.maxHp*100);
+        const hpColor=hpPct>50?'#44ff88':hpPct>25?'#ffaa44':'#ff4466';
+        partyHTML+=`<div class="creature-card" style="padding:8px;">
+            <div style="display:flex;justify-content:space-between;"><span class="name">${p.nickname} Lv${p.level}</span><span class="type-badge" style="background:${typeColor(p.creature.type)}">${p.creature.type}</span></div>
+            <div class="hp-bar"><div class="hp-fill" style="width:${hpPct}%;background:${hpColor};"></div></div>
+            <div class="info">HP: ${p.hp}/${p.maxHp} | XP: ${p.xp}/${p.level*20}</div>
+        </div>`;
+    }
+
+    ui.innerHTML=`<div class="ov" id="ex"><div class="bx">
+        <div style="color:#887766;font-size:0.8rem;">Zone: ${zoneNames[zone]} | Dex: ${dexCount}/${CREATURES.length} | Score: ${score}</div>
+        <h1 style="font-size:1.5rem;">Exploration</h1>
+        <div style="margin:10px 0;">${partyHTML}</div>
+        <button class="btn" onclick="document.getElementById('ex').remove();encounter();">Search for Wild Creature</button>
+        <button class="btn action" onclick="healParty();showExplore();" style="font-size:0.85rem;">Rest & Heal Party</button>
+        ${zone<4?`<button class="btn sm" onclick="zone++;showExplore();">Travel to ${zoneNames[zone+1]}</button>`:''}
+        <button class="btn sm" onclick="endGame();">End Adventure</button>
+    </div></div>`;
+}
+
+function showBattle() {
+    const ui=document.getElementById('ui');
+    const active=party[battleState.activeIdx];
+    const wild=wildCreature;
+    const isBoss=encounters%10===0;
+
+    const aHpPct=Math.round(active.hp/active.maxHp*100);
+    const wHpPct=Math.round(wild.hp/wild.maxHp*100);
+    const aHpCol=aHpPct>50?'#44ff88':aHpPct>25?'#ffaa44':'#ff4466';
+    const wHpCol=wHpPct>50?'#44ff88':wHpPct>25?'#ffaa44':'#ff4466';
+
+    let movesHTML='';
+    if(battleState.phase==='choose'){
+        for(let i=0;i<active.creature.moves.length;i++){
+            movesHTML+=`<button class="btn sm" onclick="doAttack(${i})" style="font-size:0.8rem;">${active.creature.moves[i]}</button>`;
+        }
+        movesHTML+=`<button class="btn action sm" onclick="tryCatch()">Throw Ball</button>`;
+        movesHTML+=`<button class="btn sm" onclick="runAway()">Run</button>`;
+    } else if(battleState.phase==='result'){
+        movesHTML=`<button class="btn" onclick="document.getElementById('bt').remove();state='playing';showExplore();">Continue</button>`;
+    }
+
+    ui.innerHTML=`<div class="ov" id="bt"><div class="bx" style="max-width:550px;">
+        <div style="color:${isBoss?'#ffd700':'#887766'};font-size:0.8rem;">${isBoss?'BOSS BATTLE!':'Wild Encounter'} #${encounters}</div>
+        <div style="display:flex;gap:15px;margin:10px 0;">
+            <div style="flex:1;text-align:left;">
+                <div class="name">${active.nickname} Lv${active.level}</div>
+                <span class="type-badge" style="background:${typeColor(active.creature.type)}">${active.creature.type}</span>
+                <div class="hp-bar"><div class="hp-fill" style="width:${aHpPct}%;background:${aHpCol};"></div></div>
+                <div class="info">HP: ${active.hp}/${active.maxHp}</div>
+            </div>
+            <div style="color:#776;font-size:1.2rem;align-self:center;">VS</div>
+            <div style="flex:1;text-align:right;">
+                <div class="name" style="color:${isBoss?'#ffd700':'#ff6b6b'};">${wild.creature.name} Lv${wild.level}</div>
+                <span class="type-badge" style="background:${typeColor(wild.creature.type)}">${wild.creature.type}</span>
+                <div class="hp-bar"><div class="hp-fill" style="width:${wHpPct}%;background:${wHpCol};"></div></div>
+                <div class="info">HP: ${wild.hp}/${wild.maxHp}</div>
+            </div>
+        </div>
+        ${battleState.msg?`<div style="background:#1a0a0a;padding:10px;border-radius:8px;margin:8px 0;color:#cc8888;font-size:0.8rem;white-space:pre-line;text-align:left;">${battleState.msg}</div>`:''}
+        ${movesHTML}
+    </div></div>`;
+}
+
+function showGameOver(ending, dexCount) {
+    const ui=document.getElementById('ui');
+    const eColor=dexCount>=10?'#44ff88':'#ff4466';
+    ui.innerHTML=`<div class="ov" id="go"><div class="bx">
+        <h1 style="color:${eColor};">Adventure Over</h1>
+        <h2 style="color:${eColor};font-size:1.3rem;">${ending}</h2>
+        <div style="margin:12px 0;padding:8px;border:1px solid rgba(255,107,107,0.2);border-radius:8px;">
+            <div class="stat"><span>Score</span><span style="color:#ffd700;">${score}</span></div>
+            <div class="stat"><span>Dex Entries</span><span>${dexCount}/${CREATURES.length}</span></div>
+            <div class="stat"><span>Caught</span><span>${caught}</span></div>
+            <div class="stat"><span>Defeated</span><span>${defeated}</span></div>
+            <div class="stat"><span>Evolved</span><span>${evolved}</span></div>
+            <div class="stat"><span>Encounters</span><span>${encounters}</span></div>
+            <div class="stat"><span>Best Streak</span><span>${maxStreak}</span></div>
+        </div>
+        <button class="btn" onclick="document.getElementById('go').remove();startGame();">New Adventure</button>
+        <button class="btn sm" onclick="document.getElementById('go').remove();state='menu';showMenu();">Main Menu</button>
+    </div></div>`;
+}
+
+// === INPUT ===
+document.addEventListener('keydown',(e)=>{
+    initA();
+    if(e.key==='Escape'){
+        if(state==='playing'){state='paused';
+            const ui=document.getElementById('ui');
+            ui.innerHTML=`<div class="ov" id="pa"><div class="bx"><h1>PAUSED</h1>
+                <div style="margin:12px 0;padding:8px;border:1px solid rgba(255,107,107,0.2);border-radius:8px;">
+                    <div class="stat"><span>Score</span><span>${score}</span></div>
+                    <div class="stat"><span>Dex</span><span>${Object.keys(dex).length}/${CREATURES.length}</span></div>
+                    <div class="stat"><span>Party</span><span>${party.length}</span></div>
+                    <div class="stat"><span>Zone</span><span>${zone+1}/5</span></div>
+                </div>
+                <button class="btn" onclick="document.getElementById('pa').remove();state='playing';showExplore();">Resume</button>
+                <button class="btn sm" onclick="document.getElementById('pa').remove();state='menu';showMenu();">Quit</button>
+            </div></div>`;
+        }
+    }
+    if((e.key==='r'||e.key==='R')&&(state==='playing'||state==='gameover')){
+        document.querySelectorAll('.ov').forEach(m=>m.remove());startGame();
+    }
+    if(state==='menu'&&(e.key===' '||e.key==='Enter')){document.getElementById('mm')?.remove();startGame();}
+    if(state==='battle'&&battleState?.phase==='choose'){
+        const idx=parseInt(e.key)-1;
+        if(idx>=0&&idx<party[battleState.activeIdx].creature.moves.length) doAttack(idx);
+        if(e.key==='c'||e.key==='C') tryCatch();
+        if(e.key==='f'||e.key==='F') runAway();
+    }
+});
+cv.addEventListener('click',()=>initA());
+cv.addEventListener('touchstart',(e)=>{e.preventDefault();initA();});
+
+// === LOOP ===
+function loop(t){draw(t);requestAnimationFrame(loop);}
+showMenu();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

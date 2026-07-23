@@ -1,0 +1,1276 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>rapp-lantern — load any holographic organism</title>
+<style>
+ :root{ --bg:#0a0d13; --panel:#131924; --line:#26303f; --ink:#e8eef7; --muted:#8b98a9; --accent:#58a6ff; --accent2:#bc8cff; }
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,system-ui,Segoe UI,sans-serif;line-height:1.5}
+ body.drag{outline:3px dashed var(--accent);outline-offset:-8px}
+ .wrap{max-width:900px;margin:0 auto;padding:26px 18px 60px}
+ h1{margin:0 0 4px;font-size:24px;letter-spacing:-.3px}
+ .sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+ a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+ code{font-family:ui-monospace,Menlo,monospace;font-size:.86em;background:#0a1018;border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+ .stage{position:relative;border:1px solid var(--line);border-radius:16px;background:#05080d;overflow:hidden;aspect-ratio:1/1;max-height:560px;margin:0 auto 8px;width:100%}
+ #player{display:none;width:100%;height:100%;border:0}
+ #drop{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);text-align:center;padding:20px;cursor:pointer}
+ #drop .big{font-size:44px;opacity:.8}
+ #drop b{color:var(--ink)}
+ .meta{display:flex;align-items:baseline;gap:10px;min-height:24px;margin:2px 0 14px;flex-wrap:wrap}
+ .meta #title{font-weight:700;font-size:16px;max-width:100%;overflow-wrap:anywhere;min-width:0} .meta #born{color:var(--muted);font-size:13px;max-width:100%;overflow-wrap:anywhere} .meta #hint{color:var(--muted);font-size:12px;margin-left:auto}
+ .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+ .share-dock{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:-3px 0 14px;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--panel)}
+ .share-dock[hidden]{display:none}.share-dock .share-status{flex-basis:100%;margin:0}
+ .share-output{flex-basis:100%;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
+ .share-output[hidden]{display:none}.share-output input{flex:1;min-width:220px}
+ #loader-qr{background:#fff;border-radius:8px;image-rendering:pixelated}
+ #loader-qr-link{min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+ button,.btn{font:inherit;font-size:13px;cursor:pointer;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 13px}
+ button:hover{border-color:var(--accent)} button:disabled{opacity:.4;cursor:default;border-color:var(--line)}
+ button:focus-visible,.btn:focus-visible,input:focus-visible,textarea:focus-visible,#drop:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+ button.primary{background:#12365e;border-color:#2f6bb0;color:#cfe6ff}
+ input[type=text]{flex:1;min-width:180px;background:#05080d;border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:8px 11px;font:inherit;font-size:13px}
+ .input-label{font-size:12px;color:var(--muted)}
+ textarea{width:100%;background:#05080d;border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:9px 11px;font-family:ui-monospace,Menlo,monospace;font-size:12px;min-height:70px;resize:vertical}
+ .eggs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 2px}
+ .eggs .egg{border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px;background:var(--panel);cursor:pointer}
+ .eggs .egg:hover{border-color:var(--accent2)}
+ .journal{margin-top:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px}
+ .journal-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+ .journal-head h2{font-size:16px;margin:0}.journal-head .count{font-size:12px;color:var(--muted)}
+ .journal-head input{margin-left:auto;max-width:240px}
+ .journal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:9px}
+ .specimen-card{border:1px solid var(--line);border-radius:10px;background:#0a1018;padding:10px;min-width:0}
+ .specimen-card h3{font-size:13px;margin:0 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .specimen-card p{font-size:11px;color:var(--muted);margin:0 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .specimen-card .card-actions{display:flex;gap:5px;flex-wrap:wrap}.specimen-card button{font-size:11px;padding:5px 8px}
+ .journal-empty{color:var(--muted);font-size:12px;margin:4px 0}
+ .label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:16px 0 6px}
+ .status{color:var(--muted);font-size:12.5px;min-height:18px;margin-top:8px;min-width:0;max-width:100%;overflow-wrap:anywhere}
+ .status.err{color:#ff8080}
+ details{margin-top:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:0 14px}
+ summary{cursor:pointer;padding:12px 0;color:var(--muted);font-size:13px}
+ details p{margin:0 0 12px;color:var(--muted);font-size:13px}
+ @media(max-width:600px){input[type=text],textarea{font-size:16px}}
+ @media(pointer:coarse){button,.btn,.eggs .egg{min-height:44px}}
+</style></head>
+<body>
+<main class="wrap">
+ <h1>🔮 rapp-lantern</h1>
+ <p class="sub">The universal player. Drop in <b>any</b> holographic organism — an <code>.egg</code> — and orbit it, whatever its source or species. Nothing leaves your device; nothing phones home.</p>
+
+ <div class="stage">
+  <iframe id="player" title="hologram lantern"></iframe>
+  <div id="drop" role="button" tabindex="0" aria-label="Choose an egg file">
+   <div class="big">⬡</div>
+   <div><b>Drop an .egg here</b> — or choose one below</div>
+   <div style="font-size:12px">a weather sky, a moon, a crossbred hybrid, an original… any <code>hologram-cartridge/1.0</code></div>
+  </div>
+ </div>
+
+ <div class="meta">
+  <span id="title"></span><span id="born"></span>
+  <span id="hint">drag to orbit · click the view, then scroll to zoom</span>
+ </div>
+ <div class="status" id="status" role="status" aria-live="polite" aria-atomic="true"></div>
+
+ <div class="bar">
+  <button class="primary" id="pick">📂 Load .egg…</button>
+  <button id="unload" disabled>× Unload</button>
+  <input type="file" id="file" accept=".egg,.json,application/json" style="display:none">
+  <label class="input-label" for="url">Egg URL</label>
+  <input type="text" id="url" placeholder="…or paste an .egg URL (raw.githubusercontent.com/…)">
+  <button id="loadurl">Load URL</button>
+ </div>
+ <div class="share-dock" id="share-dock" hidden aria-label="Share confirmed specimen">
+  <button id="share-native" disabled>Share</button>
+  <button id="share-copy" disabled>Copy link</button>
+  <button id="share-qr" disabled aria-controls="loader-qr-output" aria-expanded="false">QR</button>
+  <button id="share-download">Download .egg</button>
+  <div id="loader-share-status" class="status share-status" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="loader-copy-output" class="share-output" hidden>
+   <input id="loader-share-url" aria-label="Share link" readonly>
+  </div>
+  <div id="loader-qr-output" class="share-output" hidden>
+   <canvas id="loader-qr" width="1" height="1" aria-label="QR code for the confirmed specimen"></canvas>
+   <span id="loader-qr-link" class="status"></span>
+  </div>
+ </div>
+
+ <div class="label">example eggs — different sources, different species</div>
+ <div class="eggs" id="eggs"></div>
+
+ <section class="journal" aria-labelledby="journal-title">
+  <div class="journal-head">
+   <h2 id="journal-title">Field journal</h2>
+   <span class="count" id="journal-count">0 saved</span>
+   <input type="text" id="journal-search" aria-label="Search saved specimens" placeholder="Search specimens">
+   <button id="journal-persist">Protect storage</button>
+   <button id="journal-clear" disabled>Clear recents</button>
+  </div>
+  <div id="journal-status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="journal-grid" class="journal-grid"></div>
+ </section>
+
+ <details>
+  <summary>Paste an egg &amp; the format</summary>
+  <label class="input-label" for="paste">Egg JSON</label>
+  <textarea id="paste" placeholder='paste a hologram-cartridge/1.0 JSON here'></textarea>
+  <div style="margin:8px 0 14px"><button id="loadpaste">Hatch pasted egg</button></div>
+  <p>An <code>.egg</code> is a <code>hologram-cartridge/1.0</code> JSON — a self-describing, content-addressed organism: a layered genome (form / surface / motion) the player interprets with zero per-species code. It renders in genuine 3D you drag to orbit. Make your own in the <a href="https://kody-w.github.io/rapp-static-apis/hologram/" target="_blank" rel="noopener">cabinet</a>, or convert any source into one.</p>
+ </details>
+
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const iframe = $('player'), drop = $('drop'), stage = document.querySelector('.stage');
+const MAX_CART_BYTES = 2 * 1024 * 1024;
+const LOAD_TIMEOUT_MS = 15000;
+const PROTOCOL_VERSION = 1;
+const FALLBACK_CART = {"schema":"hologram-cartridge/1.0","id":"d45a79d29e99","title":"Lumina","author":"@kody-w","born":{"coord":"0,0","from":"genesis"},"parents":[],"genome":{"layers":[{"role":"form","k":30,"shape":"blob","limbs":0,"segments":8,"symmetry":"radial","body_r":0.3,"limb_len":0},{"role":"surface","k":85,"palette":["#00ccff","#0088ff","#ffffff","#aaddff"],"pattern":"glow","glow":0.8,"opacity":0.85},{"role":"motion","k":60,"breathe":0.2,"drift":0.5,"pulse":0.8,"reach":0}],"compose":{"windows":[[0,1,2]],"loop":true}},"sig":""};
+const JOURNAL_DB = 'rapp-lantern';
+const JOURNAL_STORE = 'specimens';
+const JOURNAL_RECENT_LIMIT = 8;
+const JOURNAL_PINNED_LIMIT = 16;
+const JOURNAL_BYTE_LIMIT = 24 * 1024 * 1024;
+let loadSequence = 0, activeFetch = null;
+let playerPort = null, playerReady = null;
+let confirmedCart = null, confirmedResult = null, preparedShare = null, loaderQrVisible = false;
+let sharePreparationToken = 0;
+let journalDbPromise = null;
+const pendingPlayerLoads = new Map();
+const pendingShareRequests = new Map();
+const pendingDropSequences = new Map();
+const journalChannel = window.BroadcastChannel ? new window.BroadcastChannel('rapp-lantern-journal') : null;
+if (journalChannel) journalChannel.onmessage = () => refreshJournal();
+
+function status(message, error = false) {
+  const el = $('status');
+  el.className = 'status' + (error ? ' err' : '');
+  el.setAttribute('role', error ? 'alert' : 'status');
+  el.setAttribute('aria-live', error ? 'assertive' : 'polite');
+  el.textContent = message || '';
+}
+
+function loaderShareStatus(message, error = false) {
+  const element = $('loader-share-status');
+  element.className = 'status share-status' + (error ? ' err' : '');
+  element.setAttribute('role', error ? 'alert' : 'status');
+  element.setAttribute('aria-live', error ? 'assertive' : 'polite');
+  element.textContent = message || '';
+}
+
+function clearLoaderShare() {
+  sharePreparationToken++;
+  preparedShare = null;
+  loaderQrVisible = false;
+  $('share-dock').hidden = true;
+  $('share-native').disabled = true;
+  $('share-copy').disabled = true;
+  $('share-qr').disabled = true;
+  $('share-qr').setAttribute('aria-expanded', 'false');
+  $('loader-copy-output').hidden = true;
+  $('loader-qr-output').hidden = true;
+  $('loader-share-url').value = '';
+  $('loader-qr-link').textContent = '';
+  loaderShareStatus('');
+  for (const pending of pendingShareRequests.values())
+    pending.reject(new Error('Share preparation was cancelled.'));
+  pendingShareRequests.clear();
+}
+
+function parseEggText(text) {
+  const clean = String(text).replace(/^\uFEFF/, '');
+  if (new TextEncoder().encode(clean).byteLength > MAX_CART_BYTES)
+    throw new Error('Cartridge exceeds the 2 MiB limit.');
+  return JSON.parse(clean);
+}
+
+function decodeUtf8Bytes(bytes, label = 'Cartridge') {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch { throw new Error(`${label} is not valid UTF-8.`); }
+}
+
+function parseKeepFragment(fragment) {
+  const encoded = String(fragment);
+  if (!encoded || !/^[A-Za-z0-9_-]+$/.test(encoded) || encoded.length % 4 === 1)
+    throw new Error('The Journal handoff fragment is invalid.');
+  if (Math.floor(encoded.length * 3 / 4) > MAX_CART_BYTES)
+    throw new Error('The Journal handoff exceeds the 2 MiB limit.');
+  let padded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+  while (padded.length % 4) padded += '=';
+  const binary = atob(padded);
+  const canonical = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  if (canonical !== encoded) throw new Error('The Journal handoff is not canonical base64url.');
+  return parseEggText(decodeURIComponent(escape(binary)));
+}
+
+function hasWellFormedUnicode(value) {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(++index);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
+
+function estimateGenomeFaces(layers, windows) {
+  const unique = new Set();
+  let total = 0;
+  for (const refs of windows) {
+    const signature = [...refs].sort((a, b) => a - b).join(',');
+    if (unique.has(signature)) continue;
+    unique.add(signature);
+    const active = new Set(refs);
+    let form = layers.find(layer => layer.role === 'form') || {};
+    layers.forEach((layer, index) => {
+      if (active.has(index) && layer.role === 'form') form = layer;
+    });
+    const segments = Math.max(3, Math.min(24, Math.round(form.segments ?? 6)));
+    const limbs = Math.max(0, Math.min(14, Math.round(form.limbs ?? 0)));
+    const spikes = Math.max(0, Math.min(14, Math.round(form.spikes ?? 0)));
+    const shape = form.shape || 'blob';
+    let faces = 172 + limbs * 16 + (shape === 'ring' ? 0 : spikes * 18);
+    if (shape === 'blob') faces += 2 * (segments + 3) * segments * 2;
+    else if (shape === 'star') faces += 2 * (segments + 4) * (segments * 2 + 2);
+    else if (shape === 'ring') faces += 2 * (segments * 2 + 4) * Math.max(8, segments + 3);
+    else faces += segments * 140;
+    if (faces > 5000) throw new Error('A genome window exceeds the 5,000-face render budget.');
+    total += faces;
+  }
+  if (total > 24000) throw new Error('Genome windows exceed the 24,000-face framing budget.');
+}
+
+function validateEgg(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj))
+    throw new Error('Expected a hologram-cartridge/1.0 object.');
+  let values = 0;
+  const stack = new WeakSet();
+  const inspect = (value, depth) => {
+    if (depth > 32) throw new Error('Cartridge nesting is too deep.');
+    if (++values > 50000) throw new Error('Cartridge exceeds the 50,000-value complexity limit.');
+    const type = typeof value;
+    if (type === 'string') {
+      if (!hasWellFormedUnicode(value)) throw new Error('Cartridge strings must contain valid Unicode.');
+      return;
+    }
+    if (value === null || type === 'boolean') return;
+    if (type === 'number' && !Number.isFinite(value))
+      throw new Error('Cartridge numbers must be finite.');
+    if (type === 'number') return;
+    if (type !== 'object') throw new Error('Cartridge data must contain only JSON values.');
+    if (!Array.isArray(value) && Object.prototype.toString.call(value) !== '[object Object]')
+      throw new Error('Cartridge objects must be plain JSON objects.');
+    if (Array.isArray(value) && value.length > 50000)
+      throw new Error('Cartridge arrays cannot contain more than 50,000 entries.');
+    if (stack.has(value)) throw new Error('Cartridge data cannot contain cycles.');
+    stack.add(value);
+    if (Array.isArray(value)) {
+      for (const child of value) inspect(child, depth + 1);
+    } else {
+      for (const [key, child] of Object.entries(value)) {
+        if (!hasWellFormedUnicode(key)) throw new Error('Cartridge keys must contain valid Unicode.');
+        inspect(child, depth + 1);
+      }
+    }
+    stack.delete(value);
+  };
+  inspect(obj, 0);
+  const serialized = JSON.stringify(obj);
+  if (new TextEncoder().encode(serialized).byteLength > MAX_CART_BYTES)
+    throw new Error('Cartridge exceeds the 2 MiB limit.');
+  if (obj.schema !== 'hologram-cartridge/1.0')
+    throw new Error('Expected schema hologram-cartridge/1.0.');
+  for (const key of ['id', 'title', 'author', 'sig']) {
+    if (obj[key] != null && typeof obj[key] !== 'string')
+      throw new Error(`Cartridge ${key} must be a string.`);
+  }
+  if (obj.title && new TextEncoder().encode(obj.title).byteLength > 512)
+    throw new Error('Cartridge title exceeds 512 UTF-8 bytes.');
+  if (obj.author && new TextEncoder().encode(obj.author).byteLength > 256)
+    throw new Error('Cartridge author exceeds 256 UTF-8 bytes.');
+  if (obj.id && (obj.id.length > 256 || /[\u0000-\u001f]/.test(obj.id)))
+    throw new Error('Cartridge id is invalid.');
+  if (obj.parents != null && (!Array.isArray(obj.parents) || obj.parents.length > 128 ||
+      obj.parents.some(parent => typeof parent !== 'string')))
+    throw new Error('Cartridge parents must be an array of strings.');
+  if (!obj.genome || Object.prototype.toString.call(obj.genome) !== '[object Object]')
+    throw new Error('Cartridge genome must be an object.');
+  const compose = obj.genome.compose;
+  if (compose != null && Object.prototype.toString.call(compose) !== '[object Object]')
+    throw new Error('Genome compose must be an object.');
+  if (compose && compose.loop != null && typeof compose.loop !== 'boolean')
+    throw new Error('Genome compose.loop must be boolean.');
+  const layers = obj.genome.layers;
+  if (!Array.isArray(layers) || !layers.length || layers.length > 128)
+    throw new Error('Genome layers must contain between 1 and 128 entries.');
+  const numericKeys = new Set(['k', 'limbs', 'segments', 'body_r', 'limb_len', 'spikes', 'glow', 'opacity', 'breathe', 'drift', 'pulse', 'reach']);
+  for (const layer of layers) {
+    if (!layer || typeof layer !== 'object' || Array.isArray(layer) || typeof layer.role !== 'string')
+      throw new Error('Every genome layer needs a role.');
+    for (const key of numericKeys) {
+      if (layer[key] != null && (!Number.isFinite(layer[key]) || Math.abs(layer[key]) > 10000))
+        throw new Error(`Invalid numeric trait: ${key}.`);
+    }
+    if (layer.palette != null) {
+      if (!Array.isArray(layer.palette) || !layer.palette.length || layer.palette.length > 64 ||
+          layer.palette.some(color => typeof color !== 'string' || !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(color)))
+        throw new Error('Surface palettes must contain between 1 and 64 hex colors.');
+    }
+    const inRange = (key, min, max, integer = false) => {
+      if (layer[key] == null) return;
+      if (layer[key] < min || layer[key] > max || (integer && !Number.isInteger(layer[key])))
+        throw new Error(`Trait ${key} must be ${integer ? 'an integer ' : ''}between ${min} and ${max}.`);
+    };
+    inRange('k', 0, 100);
+    if (layer.role === 'form') {
+      if (layer.shape != null && !['blob', 'star', 'ring', 'segment'].includes(layer.shape))
+        throw new Error(`Unsupported form shape: ${layer.shape}.`);
+      if (layer.symmetry != null && !['radial', 'bilateral'].includes(layer.symmetry))
+        throw new Error(`Unsupported form symmetry: ${layer.symmetry}.`);
+      inRange('limbs', 0, 14, true); inRange('segments', 3, 24, true);
+      inRange('spikes', 0, 14, true); inRange('body_r', 0, 1); inRange('limb_len', 0, 1);
+    } else if (layer.role === 'surface') {
+      if (layer.pattern != null && !['solid', 'stripe', 'spot', 'glow'].includes(layer.pattern))
+        throw new Error(`Unsupported surface pattern: ${layer.pattern}.`);
+      inRange('glow', 0, 1); inRange('opacity', 0, 1);
+    } else if (layer.role === 'motion') {
+      for (const key of ['breathe', 'drift', 'pulse', 'reach']) inRange(key, 0, 1);
+    }
+  }
+  if (!layers.some(layer => layer.role === 'form') || !layers.some(layer => layer.role === 'surface'))
+    throw new Error('Genome needs at least one form and one surface layer.');
+  const windows = compose && compose.windows;
+  if (windows != null) {
+    if (!Array.isArray(windows) || !windows.length || windows.length > 32)
+      throw new Error('Genome windows must contain between 1 and 32 entries.');
+    let refs = 0;
+    for (const windowLayers of windows) {
+      if (!Array.isArray(windowLayers) || !windowLayers.length)
+        throw new Error('Each genome window must reference at least one layer.');
+      refs += windowLayers.length;
+      if (refs > 4096 || windowLayers.some(index => !Number.isInteger(index) || index < 0 || index >= layers.length))
+        throw new Error('Genome windows contain invalid layer references.');
+    }
+  } else if (compose && compose.loop != null) {
+    throw new Error('Genome compose.loop requires windows.');
+  }
+  const reachableWindows = windows
+    ? (compose.loop ? windows : [windows[0]])
+    : [layers.map((_, index) => index)];
+  estimateGenomeFaces(layers, reachableWindows);
+  return obj;
+}
+
+function journalStatus(message, error = false) {
+  const element = $('journal-status');
+  element.className = 'status' + (error ? ' err' : '');
+  element.setAttribute('role', error ? 'alert' : 'status');
+  element.setAttribute('aria-live', error ? 'assertive' : 'polite');
+  element.textContent = message || '';
+}
+
+function openJournal() {
+  if (journalDbPromise) return journalDbPromise;
+  journalDbPromise = new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error('Local journal storage is unavailable.'));
+      return;
+    }
+    const request = window.indexedDB.open(JOURNAL_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(JOURNAL_STORE))
+        db.createObjectStore(JOURNAL_STORE, { keyPath: 'contentId' });
+    };
+    request.onsuccess = () => {
+      request.result.onversionchange = () => {
+        request.result.close();
+        journalDbPromise = null;
+        journalStatus('The journal was upgraded in another tab. Reloading...');
+        setTimeout(() => location.reload(), 0);
+      };
+      resolve(request.result);
+    };
+    request.onblocked = () => reject(new Error('Close other Lantern tabs to upgrade the field journal.'));
+    request.onerror = () => reject(request.error || new Error('Could not open the field journal.'));
+  }).catch(error => {
+    journalDbPromise = null;
+    throw error;
+  });
+  return journalDbPromise;
+}
+
+function journalRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Journal request failed.'));
+  });
+}
+
+function journalTransaction(transaction) {
+  return new Promise((resolve, reject) => {
+    let requestError = null;
+    transaction.oncomplete = resolve;
+    transaction.onerror = event => {
+      requestError = (event.target && event.target.error) || requestError;
+    };
+    transaction.onabort = () => reject(
+      transaction.journalError || transaction.error || requestError || new Error('Journal transaction was aborted.')
+    );
+  });
+}
+
+function journalChanged() {
+  if (journalChannel) journalChannel.postMessage({ type: 'changed' });
+}
+
+function cartridgeBytes(cart) {
+  return new TextEncoder().encode(JSON.stringify(cart)).byteLength;
+}
+
+function storedBytes(record) {
+  return Number.isFinite(record.bytes) ? record.bytes : cartridgeBytes(record.cart);
+}
+
+async function allSpecimens() {
+  const db = await openJournal();
+  return journalRequest(db.transaction(JOURNAL_STORE).objectStore(JOURNAL_STORE).getAll());
+}
+
+function enforceJournalRetention(store, transaction, protectedContentId = null, options = {}) {
+  const request = store.getAll();
+  request.onsuccess = () => {
+    const records = request.result;
+    if (records.filter(record => record.pinned).length > JOURNAL_PINNED_LIMIT && !options.allowPolicyReduction) {
+      transaction.journalError = new Error(`The journal supports at most ${JOURNAL_PINNED_LIMIT} pinned specimens.`);
+      transaction.abort();
+      return;
+    }
+    const unpinned = records.filter(record => !record.pinned)
+      .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+    const removals = new Set(unpinned.slice(JOURNAL_RECENT_LIMIT).map(record => record.contentId));
+    let bytes = records.filter(record => !removals.has(record.contentId))
+      .reduce((total, record) => total + storedBytes(record), 0);
+    const oldest = unpinned.slice().reverse();
+    for (const record of oldest) {
+      if (bytes <= JOURNAL_BYTE_LIMIT) break;
+      if (record.contentId === protectedContentId || removals.has(record.contentId)) continue;
+      removals.add(record.contentId);
+      bytes -= storedBytes(record);
+    }
+    if (bytes > JOURNAL_BYTE_LIMIT && !options.allowPolicyReduction) {
+      transaction.journalError = new Error('Pinned specimens fill the 24 MiB journal budget. Unpin or remove one before saving.');
+      transaction.abort();
+      return;
+    }
+    for (const contentId of removals) store.delete(contentId);
+  };
+}
+
+async function commitSpecimen(cart, result, quotaEvictionCount = 0, expectedFingerprint = null, options = {}) {
+  const db = await openJournal();
+  const now = Date.now();
+  const transaction = db.transaction(JOURNAL_STORE, 'readwrite');
+  const store = transaction.objectStore(JOURNAL_STORE);
+  let candidateCount = 0, candidateFingerprint = '', appliedEvictions = 0;
+  const recordsRequest = store.getAll();
+  recordsRequest.onsuccess = () => {
+    const records = recordsRequest.result;
+    const existing = records.find(record => record.contentId === result.contentId);
+    const candidates = records.filter(record => !record.pinned && record.contentId !== result.contentId)
+      .sort((a, b) => a.lastOpenedAt - b.lastOpenedAt);
+    candidateCount = candidates.length;
+    candidateFingerprint = records.slice().sort((a, b) => a.contentId.localeCompare(b.contentId))
+      .map(record => `${record.contentId}:${Number(record.pinned)}:${storedBytes(record)}:${record.lastOpenedAt}`)
+      .join('|');
+    const requestedEvictions = expectedFingerprint != null && expectedFingerprint !== candidateFingerprint
+      ? 0
+      : quotaEvictionCount;
+    appliedEvictions = Math.min(requestedEvictions, candidateCount);
+    for (const record of candidates.slice(0, appliedEvictions)) store.delete(record.contentId);
+    store.put({
+      contentId: result.contentId,
+      declaredId: result.declared || '',
+      title: cart.title || 'Untitled organism',
+      author: cart.author || '',
+      trust: result.trust,
+      cart,
+      bytes: cartridgeBytes(cart),
+      pinned: Boolean(options.pin || (existing && existing.pinned)),
+      addedAt: existing ? existing.addedAt : now,
+      lastOpenedAt: now,
+      opens: (existing ? existing.opens : 0) + 1
+    });
+    enforceJournalRetention(store, transaction, result.contentId);
+  };
+  try {
+    await journalTransaction(transaction);
+  } catch (error) {
+    const wrapped = new Error(error.message || String(error));
+    wrapped.name = error.name || 'Error';
+    wrapped.candidateCount = candidateCount;
+    wrapped.candidateFingerprint = candidateFingerprint;
+    wrapped.appliedEvictions = appliedEvictions;
+    throw wrapped;
+  }
+}
+
+async function saveSpecimen(cart, result, focusTarget = null, options = {}) {
+  if (!result.contentId) throw new Error('Player did not return a cartridge content id.');
+  let quotaEvictionCount = 0;
+  let candidateFingerprint = null;
+  while (true) {
+    try {
+      await commitSpecimen(cart, result, quotaEvictionCount, candidateFingerprint, options);
+      break;
+    } catch (error) {
+      const quotaError = error.name === 'QuotaExceededError' || /quota/i.test(error.message || '');
+      if (!quotaError)
+        throw error;
+      if (!Number.isInteger(error.candidateCount) ||
+          !Number.isInteger(error.appliedEvictions) ||
+          typeof error.candidateFingerprint !== 'string')
+        throw new Error('Browser storage quota is unavailable before the journal can inspect safe eviction candidates.');
+      if (error.candidateFingerprint !== candidateFingerprint) {
+        candidateFingerprint = error.candidateFingerprint;
+        if (error.candidateCount === 0)
+          throw new Error('Browser storage is full. Pinned specimens were preserved; unpin or remove one and retry.');
+        quotaEvictionCount = 1;
+      } else {
+        if (error.appliedEvictions >= error.candidateCount)
+          throw new Error('Browser storage is full after trying every unpinned recent; pinned specimens were preserved.');
+        quotaEvictionCount = error.appliedEvictions + 1;
+      }
+    }
+  }
+  journalChanged();
+  await refreshJournal(focusTarget);
+  journalStatus(options.pin ? 'Specimen saved and pinned.' : 'Specimen saved.');
+}
+
+async function updateSpecimen(contentId, update, focusAction = null, initiator = null) {
+  const db = await openJournal();
+  const transaction = db.transaction(JOURNAL_STORE, 'readwrite');
+  const store = transaction.objectStore(JOURNAL_STORE);
+  const request = store.get(contentId);
+  request.onsuccess = () => {
+    if (request.result) {
+      const allowPolicyReduction = request.result.pinned && update.pinned === false;
+      store.put({ ...request.result, ...update });
+      enforceJournalRetention(store, transaction, contentId, { allowPolicyReduction });
+    }
+  };
+  await journalTransaction(transaction);
+  journalChanged();
+  await refreshJournal(focusAction ? { contentId, action: focusAction, initiator } : null);
+}
+
+async function removeSpecimen(contentId, initiator = null) {
+  const db = await openJournal();
+  const transaction = db.transaction(JOURNAL_STORE, 'readwrite');
+  transaction.objectStore(JOURNAL_STORE).delete(contentId);
+  await journalTransaction(transaction);
+  journalChanged();
+  await refreshJournal({ contentId, action: 'remove', initiator });
+}
+
+async function clearJournal() {
+  const db = await openJournal();
+  const transaction = db.transaction(JOURNAL_STORE, 'readwrite');
+  const store = transaction.objectStore(JOURNAL_STORE);
+  const request = store.getAll();
+  request.onsuccess = () => {
+    for (const record of request.result) if (!record.pinned) store.delete(record.contentId);
+  };
+  await journalTransaction(transaction);
+  journalChanged();
+  await refreshJournal();
+}
+
+function specimenCard(record, focusCandidates) {
+  const card = document.createElement('article');
+  card.className = 'specimen-card';
+  const title = document.createElement('h3');
+  title.textContent = (record.pinned ? '★ ' : '') + record.title;
+  const details = document.createElement('p');
+  const shortHash = record.contentId.slice(0, 12);
+  details.textContent = `${record.author || 'unknown author'} · #${shortHash} · ${record.trust || 'unclaimed'} · opened ${record.opens || 1}×`;
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+  const open = document.createElement('button');
+  open.textContent = 'Open';
+  open.setAttribute('aria-label', `Open ${record.title}`);
+  open.onclick = async () => {
+    try {
+      const result = await loadEgg(record.cart, record.title, undefined, { collect: false });
+      if (result) await saveSpecimen(record.cart, result, { contentId: record.contentId, action: 'open', initiator: open });
+    } catch (error) {
+      journalStatus(error.message || String(error), true);
+    }
+  };
+  const pin = document.createElement('button');
+  pin.textContent = record.pinned ? 'Unpin' : 'Pin';
+  pin.setAttribute('aria-label', `${record.pinned ? 'Unpin' : 'Pin'} ${record.title}`);
+  pin.onclick = () => updateSpecimen(record.contentId, { pinned: !record.pinned }, 'pin', pin)
+    .catch(error => journalStatus(error.message, true));
+  const remove = document.createElement('button');
+  remove.textContent = 'Remove';
+  remove.setAttribute('aria-label', `Remove ${record.title}, hash ${shortHash}`);
+  remove.onclick = () => {
+    if (!window.confirm(`Remove ${record.title} (#${shortHash}) from the Field Journal?`)) return;
+    removeSpecimen(record.contentId, remove)
+      .catch(error => journalStatus(error.message, true));
+  };
+  focusCandidates.set(`${record.contentId}:open`, open);
+  focusCandidates.set(`${record.contentId}:pin`, pin);
+  focusCandidates.set(`${record.contentId}:remove`, remove);
+  for (const [action, button] of [['open', open], ['pin', pin], ['remove', remove]]) {
+    button.dataset.contentId = record.contentId;
+    button.dataset.journalAction = action;
+  }
+  actions.append(open, pin, remove);
+  card.append(title, details, actions);
+  return card;
+}
+
+async function refreshJournal(focusTarget = null) {
+  try {
+    const records = await allSpecimens();
+    const query = $('journal-search').value.trim().toLowerCase();
+    const visible = records.filter(record =>
+      !query || `${record.title} ${record.author} ${record.contentId}`.toLowerCase().includes(query))
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastOpenedAt - a.lastOpenedAt);
+    const bytes = records.reduce((total, record) => total + storedBytes(record), 0);
+    const pinned = records.filter(record => record.pinned).length;
+    $('journal-count').textContent = `${records.length} saved · ${(bytes / 1048576).toFixed(1)} / 24 MiB · ${pinned} / 16 pinned`;
+    $('journal-clear').disabled = !records.some(record => !record.pinned);
+    const grid = $('journal-grid');
+    let shouldRestoreFocus = Boolean(focusTarget) && (
+      !focusTarget.initiator ||
+      document.activeElement === focusTarget.initiator ||
+      document.activeElement === document.body
+    );
+    if (grid.contains(document.activeElement)) {
+      const active = document.activeElement;
+      if (active.dataset.contentId && active.dataset.journalAction) {
+        focusTarget = { contentId: active.dataset.contentId, action: active.dataset.journalAction };
+        shouldRestoreFocus = true;
+      }
+    }
+    const focusCandidates = new Map();
+    grid.replaceChildren();
+    if (!visible.length) {
+      const empty = document.createElement('p');
+      empty.className = 'journal-empty';
+      empty.textContent = records.length ? 'No saved specimens match.' : 'Deliberately open an example or load an .egg to save it here.';
+      grid.appendChild(empty);
+    } else {
+      for (const record of visible) grid.appendChild(specimenCard(record, focusCandidates));
+    }
+    journalStatus('');
+    if (focusTarget && shouldRestoreFocus) {
+      const target = focusCandidates.get(`${focusTarget.contentId}:${focusTarget.action}`);
+      (target || focusCandidates.values().next().value || $('journal-search')).focus();
+    }
+  } catch (error) {
+    journalStatus(error.message || String(error), true);
+  }
+}
+
+function restoreConfirmedPlayer() {
+  if (!playerPort || !confirmedCart) return;
+  playerPort.postMessage({
+    type: 'load-cartridge',
+    version: PROTOCOL_VERSION,
+    loadId: `restore-${loadSequence}`,
+    restore: true,
+    cart: confirmedCart
+  });
+}
+
+function cancelPendingPlayerLoads(message = 'Load was cancelled.', restore = true) {
+  if (playerPort) playerPort.postMessage({ type: 'cancel-loads', version: PROTOCOL_VERSION });
+  for (const pending of pendingPlayerLoads.values()) pending.reject(new Error(message));
+  pendingPlayerLoads.clear();
+  if (restore) restoreConfirmedPlayer();
+}
+
+function beginLoad({ restore = true } = {}) {
+  loadSequence += 1;
+  stage.setAttribute('aria-busy', 'false');
+  pendingDropSequences.clear();
+  if (activeFetch) activeFetch.abort();
+  activeFetch = null;
+  cancelPendingPlayerLoads('Load was replaced by a newer request.', restore);
+  if (confirmedCart && confirmedResult && !preparedShare) {
+    const cart = confirmedCart, result = confirmedResult, sequence = loadSequence;
+    setTimeout(() => {
+      if (confirmedCart === cart && confirmedResult === result && !preparedShare)
+        activateShareDock(cart, result, sequence);
+    }, 0);
+  }
+  return loadSequence;
+}
+
+async function readBounded(response) {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_CART_BYTES)
+    throw new Error('Cartridge exceeds the 2 MiB limit.');
+  if (!response.body || !response.body.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > MAX_CART_BYTES)
+      throw new Error('Cartridge exceeds the 2 MiB limit.');
+    return decodeUtf8Bytes(bytes);
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > MAX_CART_BYTES) {
+      await reader.cancel();
+      throw new Error('Cartridge exceeds the 2 MiB limit.');
+    }
+    chunks.push(value);
+  }
+  const merged = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
+  return decodeUtf8Bytes(merged);
+}
+
+async function fetchEgg(input, sequence) {
+  const url = new URL(input, location.href);
+  if (!/^https?:$/.test(url.protocol)) throw new Error('Only HTTP(S) egg URLs are supported.');
+  const controller = new AbortController();
+  activeFetch = controller;
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, LOAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(url.href, {
+      signal: controller.signal,
+      credentials: url.origin === location.origin ? 'same-origin' : 'omit',
+      referrerPolicy: url.origin === location.origin ? 'strict-origin-when-cross-origin' : 'no-referrer'
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status} while fetching the egg.`);
+    const text = (await readBounded(response)).replace(/^\uFEFF/, '');
+    if (sequence !== loadSequence) return null;
+    try { return JSON.parse(text); }
+    catch (error) { throw new Error(`Egg JSON is invalid: ${error.message}`); }
+  } catch (error) {
+    if (error.name === 'AbortError')
+      throw new Error(timedOut ? 'Egg request timed out after 15 seconds.' : 'Egg request was replaced by a newer load.');
+    if (error instanceof TypeError)
+      throw new Error('Could not fetch that egg. Use an HTTPS URL whose server allows cross-origin (CORS) access.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (activeFetch === controller) activeFetch = null;
+  }
+}
+
+function handlePlayerMessage(event, readyResolve, readyReject) {
+  const message = event.data || {};
+  if (message.type === 'ready') {
+    if (message.version !== PROTOCOL_VERSION) {
+      readyReject(new Error(`Unsupported player protocol version: ${message.version || 'unknown'}.`));
+      return;
+    }
+    readyResolve();
+    return;
+  }
+  if (message.version != null && message.version !== PROTOCOL_VERSION) return;
+  if (message.type === 'drop-started' && typeof message.dropId === 'string') {
+    const sequence = beginLoad();
+    pendingDropSequences.set(message.dropId, sequence);
+    return;
+  }
+  if (message.type === 'cartridge-dropped' && typeof message.dropId === 'string') {
+    const sequence = pendingDropSequences.get(message.dropId);
+    pendingDropSequences.delete(message.dropId);
+    if (sequence == null || sequence !== loadSequence) return;
+    loadEgg(message.cart, message.name || 'dropped specimen', sequence)
+      .catch(error => { if (sequence === loadSequence) status(error.message || String(error), true); });
+    return;
+  }
+  if (message.type === 'drop-error' && typeof message.dropId === 'string') {
+    const sequence = pendingDropSequences.get(message.dropId);
+    pendingDropSequences.delete(message.dropId);
+    if (sequence === loadSequence)
+      status(message.message || 'Could not read the dropped egg.', true);
+    return;
+  }
+  if (message.type === 'protocol-error') {
+    readyReject(new Error(message.message || 'The player rejected this protocol version.'));
+    return;
+  }
+  if (message.requestId && (message.type === 'share-ready' || message.type === 'share-error')) {
+    const pending = pendingShareRequests.get(message.requestId);
+    if (!pending) return;
+    pendingShareRequests.delete(message.requestId);
+    if (message.type === 'share-ready') pending.resolve(message);
+    else pending.reject(new Error(message.message || 'Could not prepare sharing.'));
+    return;
+  }
+  if (!message.loadId) return;
+  const pending = pendingPlayerLoads.get(message.loadId);
+  if (!pending) return;
+  if (message.type === 'rendered') pending.resolve(message);
+  else if (message.type === 'error') pending.reject(new Error(message.message || 'The player could not render this egg.'));
+  else return;
+  pendingPlayerLoads.delete(message.loadId);
+}
+
+async function prepareConfirmedShare(result, requestId) {
+  if (!playerPort || !result.contentId) throw new Error('Confirmed content identity is unavailable.');
+  const response = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingShareRequests.delete(requestId);
+      reject(new Error('Share preparation timed out.'));
+    }, LOAD_TIMEOUT_MS * 2);
+    pendingShareRequests.set(requestId, {
+      resolve: value => { clearTimeout(timer); resolve(value); },
+      reject: error => { clearTimeout(timer); reject(error); }
+    });
+  });
+  playerPort.postMessage({
+    type: 'prepare-share',
+    version: PROTOCOL_VERSION,
+    requestId,
+    contentId: result.contentId
+  });
+  return response;
+}
+
+function activateShareDock(cart, result, sequence) {
+  const token = ++sharePreparationToken;
+  confirmedResult = result;
+  preparedShare = null;
+  loaderQrVisible = false;
+  $('share-dock').hidden = false;
+  $('share-native').disabled = true;
+  $('share-copy').disabled = true;
+  $('share-qr').disabled = true;
+  $('share-qr').setAttribute('aria-expanded', 'false');
+  $('loader-copy-output').hidden = true;
+  $('loader-qr-output').hidden = true;
+  $('loader-share-url').value = '';
+  $('loader-qr-link').textContent = '';
+  loaderShareStatus('Preparing a content-bound share link...');
+  prepareConfirmedShare(result, `share-${sequence}-${token}`).then(prepared => {
+    if (token !== sharePreparationToken || confirmedCart !== cart || prepared.contentId !== result.contentId) return;
+    preparedShare = prepared;
+    $('share-native').disabled = false;
+    $('share-copy').disabled = false;
+    $('share-qr').disabled = !prepared.qrEligible;
+    loaderShareStatus(prepared.qrEligible ? 'Ready to share.' : 'Link ready; QR is too large, so use Share, Copy, or Download.');
+  }).catch(error => {
+    if (token === sharePreparationToken && confirmedCart === cart) {
+      $('share-native').disabled = false;
+      loaderShareStatus(`Link unavailable; Share will use the .egg file. ${error.message || error}`, true);
+    }
+  });
+}
+
+function confirmedEggArtifact() {
+  if (!confirmedCart || !confirmedResult) throw new Error('No confirmed specimen is available.');
+  const bytes = JSON.stringify(confirmedCart);
+  const filename = safeEggFilename(confirmedCart.title, confirmedResult.contentId);
+  const blob = new Blob([bytes], { type: 'application/json' });
+  const file = typeof File === 'function' ? new File([blob], filename, { type: blob.type }) : null;
+  return { bytes, blob, file, filename, contentId: confirmedResult.contentId };
+}
+
+function canNativeShareFile(file) {
+  if (!file || !navigator.canShare) return false;
+  try { return navigator.canShare({ files: [file] }); }
+  catch { return false; }
+}
+
+function shareIsCurrent(share) {
+  return Boolean(share && preparedShare === share && confirmedResult && confirmedResult.contentId === share.contentId);
+}
+
+function safeEggFilename(title, contentId = '') {
+  const cleaned = String(title || 'cartridge').normalize('NFKC')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'cartridge';
+  let base = '';
+  for (const character of cleaned) {
+    if (new TextEncoder().encode(base + character).byteLength > 120) break;
+    base += character;
+  }
+  const suffix = contentId ? '-' + contentId.slice(0, 8) : '';
+  return `${base || 'cartridge'}${suffix}.egg`;
+}
+
+async function copyPreparedShare(share = preparedShare) {
+  if (!shareIsCurrent(share)) throw new Error('Share link is not ready.');
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText)
+      throw new Error('Clipboard access is unavailable.');
+    await navigator.clipboard.writeText(share.url);
+    if (!shareIsCurrent(share)) return;
+    loaderShareStatus('Share link copied.');
+  } catch (error) {
+    if (!shareIsCurrent(share)) return;
+    $('loader-share-url').value = share.url;
+    $('loader-copy-output').hidden = false;
+    $('loader-share-url').focus();
+    $('loader-share-url').select();
+    loaderShareStatus('Clipboard access failed. The link is selected for manual copy.', true);
+  }
+}
+
+function downloadConfirmedEgg() {
+  try {
+    const artifact = confirmedEggArtifact();
+    const url = URL.createObjectURL(artifact.blob);
+    const anchor = Object.assign(document.createElement('a'), { href: url, download: artifact.filename });
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    loaderShareStatus(`Downloaded ${artifact.filename}.`);
+  } catch (error) {
+    loaderShareStatus(error.message || String(error), true);
+  }
+}
+
+function ensurePlayer() {
+  if (playerReady) return playerReady;
+  playerReady = new Promise((resolve, reject) => {
+    const channel = new MessageChannel();
+    let settled = false;
+    const finishError = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      playerReady = null;
+      reject(error);
+    };
+    const timer = setTimeout(() => finishError(new Error('The hologram player did not start.')), LOAD_TIMEOUT_MS);
+    const finishReady = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    playerPort = channel.port1;
+    playerPort.onmessage = event => handlePlayerMessage(event, finishReady, finishError);
+    playerPort.start && playerPort.start();
+    iframe.addEventListener('load', () => {
+      const targetOrigin = location.origin === 'null' ? '*' : location.origin;
+      iframe.contentWindow.postMessage({ type: 'hologram-init', version: PROTOCOL_VERSION }, targetOrigin, [channel.port2]);
+    }, { once: true });
+    iframe.src = 'player.html?embed=1';
+  });
+  return playerReady;
+}
+
+async function renderEgg(obj, sequence) {
+  await ensurePlayer();
+  if (sequence !== loadSequence) return null;
+  const loadId = `loader-${sequence}`;
+  const rendered = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingPlayerLoads.delete(loadId);
+      reject(new Error('The egg took too long to render.'));
+    }, LOAD_TIMEOUT_MS);
+    pendingPlayerLoads.set(loadId, {
+      resolve: value => { clearTimeout(timer); resolve(value); },
+      reject: error => { clearTimeout(timer); reject(error); }
+    });
+  });
+  playerPort.postMessage({ type: 'load-cartridge', version: PROTOCOL_VERSION, loadId, cart: obj });
+  return rendered;
+}
+
+async function loadEgg(obj, name, sequence = beginLoad(), options = {}) {
+  stage.setAttribute('aria-busy', 'true');
+  status('Hatching egg...');
+  try {
+    const cart = validateEgg(obj);
+    const result = await renderEgg(cart, sequence);
+    if (!result || sequence !== loadSequence) return false;
+    iframe.style.display = 'block';
+    drop.style.display = 'none';
+    confirmedCart = cart;
+    activateShareDock(cart, result, sequence);
+    $('title').textContent = cart.title || name || 'organism';
+    $('born').textContent = (cart.born && cart.born.from) ? '· ' + cart.born.from : '';
+    $('unload').disabled = false;
+    if (options.focusPlayer !== false) iframe.focus();
+    const trust = result.trust === 'verified' ? 'genome ID verified' :
+      (result.trust === 'unclaimed' ? 'unclaimed genome' : 'rendered as a remix');
+    status(`Loaded ${cart.title || name || 'organism'} (${trust}) — drag, use the view controls, or press the arrow keys.`);
+    if (options.collect !== false) {
+      journalStatus('Saving specimen...');
+      if (options.awaitCollection) {
+        try { await saveSpecimen(cart, result, null, { pin: Boolean(options.pinOnSave) }); }
+        catch (error) {
+          const message = error.message || String(error);
+          journalStatus(message, true);
+          status(`Specimen rendered but was not saved: ${message}`, true);
+          return false;
+        }
+      } else {
+        saveSpecimen(cart, result).catch(error => journalStatus(error.message || String(error), true));
+      }
+    }
+    return result;
+  } catch (error) {
+    if (sequence === loadSequence) {
+      restoreConfirmedPlayer();
+      status(error.message || String(error), true);
+    }
+    return false;
+  } finally {
+    if (sequence === loadSequence) stage.setAttribute('aria-busy', 'false');
+  }
+}
+
+function unload() {
+  beginLoad({ restore: false });
+  if (playerPort) playerPort.postMessage({ type: 'dispose', version: PROTOCOL_VERSION });
+  iframe.src = 'about:blank'; iframe.style.display = 'none'; drop.style.display = 'flex';
+  playerPort && playerPort.close();
+  playerPort = null; playerReady = null;
+  confirmedCart = null; confirmedResult = null;
+  clearLoaderShare();
+  stage.setAttribute('aria-busy', 'false');
+  $('title').textContent = ''; $('born').textContent = ''; $('unload').disabled = true; status('');
+  drop.focus();
+}
+async function loadFile(file) {
+  const sequence = beginLoad();
+  if (file.size > MAX_CART_BYTES) {
+    status('Cartridge exceeds the 2 MiB limit.', true);
+    return;
+  }
+  status('Reading egg...');
+  try {
+    const text = decodeUtf8Bytes(new Uint8Array(await file.arrayBuffer()));
+    if (sequence !== loadSequence) return;
+    await loadEgg(parseEggText(text), file.name.replace(/\.(egg|json)$/i, ''), sequence);
+  } catch (error) {
+    if (sequence === loadSequence) status(`Could not read that egg: ${error.message}`, true);
+  }
+}
+
+function chooseEggFile() {
+  $('file').value = '';
+  $('file').click();
+}
+$('pick').onclick = chooseEggFile;
+$('file').onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+$('unload').onclick = unload;
+drop.onclick = chooseEggFile;
+drop.addEventListener('keydown', event => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    chooseEggFile();
+  }
+});
+$('loadpaste').onclick = async () => {
+  const sequence = beginLoad();
+  $('paste').setAttribute('aria-invalid', 'false');
+  try {
+    const result = await loadEgg(parseEggText($('paste').value), 'pasted', sequence);
+    if (!result && sequence === loadSequence) $('paste').setAttribute('aria-invalid', 'true');
+  } catch (error) {
+    if (sequence === loadSequence) {
+      $('paste').setAttribute('aria-invalid', 'true');
+      status(`That is not valid JSON: ${error.message}`, true);
+    }
+  }
+};
+$('loadurl').onclick = async () => {
+  const input = $('url').value.trim();
+  if (!input) {
+    $('url').setAttribute('aria-invalid', 'true');
+    status('Enter an egg URL first.', true);
+    return;
+  }
+  $('url').setAttribute('aria-invalid', 'false');
+  const sequence = beginLoad();
+  status('Fetching egg...');
+  try {
+    const cart = await fetchEgg(input, sequence);
+    if (cart) {
+      const result = await loadEgg(cart, new URL(input, location.href).pathname.split('/').pop(), sequence);
+      if (!result && sequence === loadSequence) $('url').setAttribute('aria-invalid', 'true');
+    }
+  } catch (error) {
+    if (sequence === loadSequence) {
+      $('url').setAttribute('aria-invalid', 'true');
+      status(error.message || String(error), true);
+    }
+  }
+};
+$('url').addEventListener('keydown', e => { if (e.key === 'Enter') $('loadurl').click(); });
+$('share-copy').onclick = () => copyPreparedShare()
+  .catch(error => loaderShareStatus(error.message || String(error), true));
+$('share-native').onclick = async () => {
+  const share = preparedShare;
+  const cart = confirmedCart;
+  let artifact;
+  try { artifact = confirmedEggArtifact(); }
+  catch (error) { loaderShareStatus(error.message || String(error), true); return; }
+  const artifactIsCurrent = () =>
+    confirmedCart === cart && confirmedResult && confirmedResult.contentId === artifact.contentId;
+  if (!navigator.share) {
+    if (shareIsCurrent(share)) await copyPreparedShare(share);
+    else downloadConfirmedEgg();
+    return;
+  }
+  const hasShareUrl = shareIsCurrent(share);
+  const canShareFile = !hasShareUrl && canNativeShareFile(artifact.file);
+  const payload = hasShareUrl
+    ? {
+            title: cart && cart.title ? cart.title : 'Holographic organism',
+            text: 'Open this holographic organism in rapp-lantern.',
+            url: share.url
+          }
+    : (canShareFile
+        ? {
+            title: cart && cart.title ? cart.title : 'Holographic organism',
+            text: 'Keep this holographic organism as an .egg file.',
+            files: [artifact.file]
+          }
+        : null);
+  if (payload) {
+    try {
+      await navigator.share(payload);
+      if (artifactIsCurrent()) loaderShareStatus(canShareFile ? 'Shared .egg file.' : 'Shared link.');
+      return;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      if (!artifactIsCurrent()) return;
+      loaderShareStatus(
+        canShareFile ? 'File sharing was unavailable; use Download.' : 'Link sharing was unavailable; use Copy link.',
+        true
+      );
+      return;
+    }
+  }
+  if (!artifactIsCurrent()) return;
+  if (shareIsCurrent(share)) await copyPreparedShare(share);
+  else downloadConfirmedEgg();
+};
+$('share-download').onclick = downloadConfirmedEgg;
+$('share-qr').onclick = async () => {
+  const share = preparedShare;
+  if (!shareIsCurrent(share) || !share.qrEligible) return;
+  if (loaderQrVisible) {
+    loaderQrVisible = false;
+    $('loader-qr-output').hidden = true;
+    $('share-qr').setAttribute('aria-expanded', 'false');
+    loaderShareStatus('QR code hidden.');
+    return;
+  }
+  try {
+    const { qr } = await import('./qr.mjs');
+    if (!shareIsCurrent(share)) return;
+    const { size, modules } = qr(share.url, { ecl: 'M' });
+    const quiet = 4, scale = Math.max(2, Math.floor(240 / (size + quiet * 2)));
+    const dimension = (size + quiet * 2) * scale;
+    const canvas = $('loader-qr');
+    canvas.width = dimension; canvas.height = dimension;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff'; context.fillRect(0, 0, dimension, dimension);
+    context.fillStyle = '#000';
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++)
+      if (modules[y][x]) context.fillRect((x + quiet) * scale, (y + quiet) * scale, scale, scale);
+    if (!shareIsCurrent(share)) return;
+    $('loader-qr-link').textContent = share.url;
+    $('loader-qr-output').hidden = false;
+    loaderQrVisible = true;
+    $('share-qr').setAttribute('aria-expanded', 'true');
+    loaderShareStatus('QR code ready to scan.');
+  } catch (error) {
+    if (!shareIsCurrent(share)) return;
+    loaderShareStatus(error.message || String(error), true);
+  }
+};
+
+// drag & drop anywhere
+addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag'); });
+addEventListener('dragleave', e => { if (e.relatedTarget === null) document.body.classList.remove('drag'); });
+addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+
+// example eggs
+const EGGS = [
+  ['🌙 weather sky (Huila)', 'weather-huila.egg'],
+  ['🌫️ fog-ring (San Francisco)', 'fog-sanfrancisco.egg'],
+  ['🌔 the moon', 'moon.egg'],
+  ['🧬 crossbred hybrid', 'cross-ushuaia-dubai.egg'],
+  ['🕷️ original (box-species)', 'original-frenzy.egg'],
+  ['✨ Lumina (genesis)', 'lumina.egg'],
+  ['⭐ atlas star (stripe)', 'atlas-star-stripe.egg'],
+  ['🔗 atlas segments (spot + shift)', 'atlas-segment-spot.egg'],
+];
+const eggsEl = $('eggs');
+for (const [label, file] of EGGS) {
+  const b = document.createElement('button'); b.className = 'egg'; b.textContent = label;
+  b.onclick = async () => {
+    const sequence = beginLoad();
+    status(`Fetching ${file}...`);
+    try {
+      const cart = await fetchEgg('eggs/' + file, sequence);
+      if (cart) await loadEgg(cart, label, sequence);
+    } catch (error) {
+      if (sequence === loadSequence) status(`Could not load ${file}: ${error.message}`, true);
+    }
+  };
+  eggsEl.appendChild(b);
+}
+$('journal-search').addEventListener('input', () => refreshJournal());
+$('journal-clear').onclick = () => {
+  if (!window.confirm('Clear every unpinned recent specimen? Pinned specimens will stay.')) return;
+  clearJournal().catch(error => journalStatus(error.message || String(error), true));
+};
+$('journal-persist').onclick = async () => {
+  try {
+    if (!navigator.storage || !navigator.storage.persist)
+      throw new Error('Persistent browser storage is unavailable.');
+    const granted = await navigator.storage.persist();
+    journalStatus(granted ? 'Browser storage protection granted.' : 'The browser did not grant persistent storage.');
+  } catch (error) {
+    journalStatus(error.message || String(error), true);
+  }
+};
+refreshJournal();
+(async () => {
+  const sequence = beginLoad();
+  const keepRequested = new URLSearchParams(location.search).get('keep') === '1';
+  if (keepRequested) {
+    try {
+      const cart = parseKeepFragment((location.hash || '').slice(1));
+      const result = await loadEgg(cart, cart.title || 'shared specimen', sequence, { awaitCollection: true, pinOnSave: true });
+      if (result && sequence === loadSequence)
+        history.replaceState(null, '', new URL('index.html', location.href).href);
+    } catch (error) {
+      if (sequence === loadSequence)
+        status(`Could not keep this specimen: ${error.message || error}`, true);
+    }
+    return;
+  }
+  // Keep the ordinary first visit from opening on an empty stage.
+  try {
+    const cart = await fetchEgg('eggs/' + EGGS[0][1], sequence);
+    if (cart) await loadEgg(cart, EGGS[0][0], sequence, { collect: false, focusPlayer: false });
+  } catch (error) {
+    if (sequence !== loadSequence) return;
+    const loaded = await loadEgg(FALLBACK_CART, 'Lumina', sequence, { collect: false, focusPlayer: false });
+    if (loaded && sequence === loadSequence)
+      status(`Could not load the example egg; showing the built-in organism. ${error.message}`, true);
+  }
+})();
+</script>
+</body></html>

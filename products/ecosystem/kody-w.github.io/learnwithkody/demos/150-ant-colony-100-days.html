@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Colony — 100 Days</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;padding:0;background:#08070a;color:#e8d8b8;font-family:Georgia,"Times New Roman",serif;overflow:hidden;height:100%;-webkit-font-smoothing:antialiased}
+  canvas{display:block}
+  #c{width:100vw;height:100vh;position:fixed;inset:0}
+  #map{position:absolute;top:14px;right:14px;width:230px;height:170px;background:rgba(8,7,10,0.7);border:1px solid rgba(232,216,184,0.25);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.5)}
+  .panel{position:absolute;background:linear-gradient(180deg,rgba(8,7,10,0.85),rgba(8,7,10,0.55));color:#f0e0c0;padding:10px 14px;border-radius:4px;border-left:3px solid #d99553;font-family:"Helvetica Neue",Arial,sans-serif;letter-spacing:0.5px;pointer-events:none;user-select:none;backdrop-filter:blur(2px)}
+  #era{top:14px;left:14px;font-size:14px;font-weight:600;text-transform:uppercase;max-width:380px}
+  #era .sub{display:block;color:#c8a878;font-weight:400;font-size:11px;margin-top:3px;letter-spacing:1.5px}
+  #gen{top:80px;left:14px;font-size:11px;color:#c8a878;border-left:3px solid #886030;letter-spacing:1px}
+  #chyron{bottom:84px;left:50%;transform:translateX(-50%);font-size:15px;max-width:min(72vw,780px);text-align:center;border:none;border-bottom:1px solid #d99553;background:rgba(0,0,0,0.55);padding:10px 26px 8px;font-style:italic;line-height:1.45}
+  #lower{bottom:24px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:2.5px;border:none;color:#d99553;background:transparent;text-align:center;padding:0;text-transform:uppercase}
+  #lower .name{font-size:19px;color:#f3e2c0;font-style:italic;letter-spacing:1px;display:block;margin-bottom:4px;text-transform:none;font-family:Georgia,serif}
+  #cam{bottom:22px;left:22px;font-size:10px;color:#9a7a58;border-left:2px solid #4a3520;padding:5px 10px;background:rgba(0,0,0,0.45);letter-spacing:1.5px;text-transform:uppercase}
+  #stats{bottom:22px;right:22px;font-size:10px;color:#9a7a58;border-left:2px solid #4a3520;padding:5px 10px;background:rgba(0,0,0,0.45);letter-spacing:1px;line-height:1.5;text-align:right}
+  #vignette{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 240px rgba(0,0,0,0.85)}
+  #title{top:50%;left:50%;transform:translate(-50%,-50%);font-size:34px;font-style:italic;letter-spacing:3px;color:#f0e0c0;text-align:center;border:none;background:transparent;padding:0;opacity:0;transition:opacity 1.6s ease}
+  #title .sub{display:block;font-size:13px;color:#c8a878;letter-spacing:6px;margin-top:8px;font-style:normal;text-transform:uppercase}
+</style>
+</head>
+<body>
+<!-- ROUND16_EPOCH v1 -->
+<canvas id="c"></canvas>
+<canvas id="map" width="230" height="170"></canvas>
+<div id="era" class="panel">DAY 1 — THE QUEEN ARRIVES<span class="sub">YEAR 1 · GENERATION 1</span></div>
+<div id="gen" class="panel">GEN 1 OF 3 · COLONY ALIVE</div>
+<div id="chyron" class="panel">A queen has chosen this place.</div>
+<div id="lower" class="panel"><span class="name">Queen Vermilia</span>FOUNDRESS · GENERATION 1</div>
+<div id="cam" class="panel">CAM 01 — QUEEN CRADLE</div>
+<div id="stats" class="panel">Workers: 0 · Brood: 1 · Chambers: 1</div>
+<div id="title" class="panel">The Colony<span class="sub">A 100-day epoch</span></div>
+<div id="vignette"></div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+// ============ DISPOSABLE REGISTRY ============
+const _disp = [];
+function reg(x){ _disp.push(x); return x; }
+function disposeAll(){
+  while(_disp.length){
+    const o = _disp.pop();
+    if(!o) continue;
+    if(o.dispose){ try{ o.dispose(); }catch(e){} }
+    if(o.geometry && o.geometry.dispose){ try{ o.geometry.dispose(); }catch(e){} }
+    if(o.material){
+      const ms = Array.isArray(o.material) ? o.material : [o.material];
+      for(const m of ms){ if(m && m.dispose){ try{ m.dispose(); }catch(e){} } }
+    }
+    if(o.parent) o.parent.remove(o);
+  }
+}
+window.addEventListener('beforeunload', disposeAll);
+
+// ============ PERSISTENT MEMORY ============
+const MEM_KEY = 'ant_colony_memory_v1';
+function loadMemory(){
+  try { const s = localStorage.getItem(MEM_KEY); if(s) return JSON.parse(s); } catch(e){}
+  return null;
+}
+function saveMemory(m){
+  try { localStorage.setItem(MEM_KEY, JSON.stringify(m)); } catch(e){}
+}
+
+const FEATURED_BASE = [
+  { name:"Queen Vermilia",   role:"queen",    born:0,  state:"founding",   bio:"FOUNDRESS · GENERATION 1" },
+  { name:"Soldier Tannak",   role:"soldier",  born:14, state:"vigilant",   bio:"FIRST-HATCHED SOLDIER" },
+  { name:"Scout Pip",        role:"scout",    born:18, state:"curious",    bio:"MAPPER OF THE SURFACE" },
+  { name:"Forager Wisp",     role:"forager",  born:21, state:"diligent",   bio:"SEED GATHERER" },
+  { name:"Nurse Mira",       role:"nurse",    born:17, state:"tender",     bio:"TENDER OF BROOD" },
+  { name:"Soldier Brask",    role:"soldier",  born:32, state:"watchful",   bio:"GUARD OF THE SOUTH TUNNEL" },
+  { name:"Forager Tessa",    role:"forager",  born:24, state:"persistent", bio:"LEAF-CUTTER VETERAN" },
+  { name:"Scout Bram",       role:"scout",    born:28, state:"silent",     bio:"READER OF PHEROMONE TRAILS" },
+  { name:"Nurse Kell",       role:"nurse",    born:30, state:"patient",    bio:"PUPA-TURNER" },
+  { name:"Forager Quint",    role:"forager",  born:35, state:"steady",     bio:"HONEYDEW TENDER" },
+  { name:"Sub-Queen Velura", role:"subqueen", born:70, state:"emergent",   bio:"DAUGHTER OF VERMILIA" },
+  { name:"Elder Hask",       role:"elder",    born:11, state:"slow",       bio:"ELDEST WORKER" }
+];
+
+let memory = loadMemory();
+let generation = 1;
+if(!memory || !Array.isArray(memory.ants) || !memory.ants.length){
+  memory = { gen: 1, ants: FEATURED_BASE.map(a => Object.assign({}, a, { age: 0, seenDays: 0 })) };
+} else {
+  generation = (memory.gen||1) + 1;
+  for(const a of memory.ants){
+    a.age = (a.age||0) + 100;
+    a.seenDays = (a.seenDays||0) + 100;
+    if(a.role === 'worker' && a.age > 240){ a.role = 'elder'; a.state = 'slow'; a.bio = 'ELDER WORKER · SEEN ' + a.seenDays + ' DAYS'; }
+    if(a.role === 'elder' && a.age > 500){
+      const stem = a.name.replace(/ II+$/,'');
+      a.name = stem + ' II';
+      a.role = 'worker';
+      a.age = 0;
+      a.state = 'reborn';
+      a.bio = 'NAMED FOR THE PASSED · GEN ' + generation;
+    }
+  }
+  memory.gen = generation;
+}
+saveMemory(memory);
+
+const GEN_DISPLAY = ((generation - 1) % 3) + 1;
+document.getElementById('gen').textContent = 'GEN ' + GEN_DISPLAY + ' OF 3 · COLONY ALIVE';
+
+const featured = memory.ants.map((a,i) => Object.assign({}, FEATURED_BASE[i] || {}, a));
+
+const NAME_POOL = ['Othan','Veska','Mol','Brel','Tika','Sava','Onnu','Ravi','Lirex','Pemb','Tuki','Voln','Hass','Zira','Olan','Sora','Drix','Teek','Norra','Yelv','Jent','Kavi','Roth','Ulin','Mavi','Dren','Kosh','Brey','Ostra','Velna','Pim','Kara','Solm','Tirex','Holk','Wenn','Fenn','Ansa','Brell','Carn','Doth','Esk','Faro','Garn','Heth','Imm','Jek','Kalo','Lome','Mern','Nox','Olle','Pello','Quor','Risk','Som','Toll','Urn','Vask','Wol','Xan','Yom','Zell','Briv','Crek','Dosh','Em','Frin','Gov','Holm','Ish','Jorn','Kemb','Larn','Maro','Nilo','Otra','Prek','Quin','Rann','Selv','Torn','Ulla','Voro','Wesp','Xen','Yav','Zar'];
+
+// ============ THREE.JS SETUP ============
+const W = () => window.innerWidth;
+const H = () => window.innerHeight;
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(W(), H(), false);
+renderer.setClearColor(0x06050a, 1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.fog = reg(new THREE.FogExp2(0x0d0a08, 0.018));
+
+const camera = new THREE.PerspectiveCamera(40, W()/H(), 0.05, 600);
+camera.position.set(8, 6, 14);
+camera.lookAt(0, -2, 0);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(W(), H(), false);
+  camera.aspect = W()/H();
+  camera.updateProjectionMatrix();
+});
+
+// ============ LIGHTING ============
+const ambient = reg(new THREE.AmbientLight(0x4a3018, 0.45));
+scene.add(ambient);
+const sun = reg(new THREE.DirectionalLight(0xffd9a0, 0.8));
+sun.position.set(20, 30, 10);
+scene.add(sun);
+const moon = reg(new THREE.DirectionalLight(0x6088c0, 0.18));
+moon.position.set(-15, 20, -10);
+scene.add(moon);
+
+// ============ NOISE / TEXTURES ============
+function hash(x,y){ const s = Math.sin(x*12.9898 + y*78.233)*43758.5453; return s - Math.floor(s); }
+function smoothNoise(x,y){
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const a = hash(xi,yi), b = hash(xi+1,yi), c = hash(xi,yi+1), d = hash(xi+1,yi+1);
+  const u = xf*xf*(3-2*xf), v = yf*yf*(3-2*yf);
+  return a*(1-u)*(1-v) + b*u*(1-v) + c*(1-u)*v + d*u*v;
+}
+function fbm(x,y){
+  let v = 0, a = 0.5, f = 1;
+  for(let i=0;i<4;i++){ v += a*smoothNoise(x*f, y*f); f *= 2; a *= 0.5; }
+  return v;
+}
+function makeTex(rFn){
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(256,256);
+  for(let y=0;y<256;y++) for(let x=0;x<256;x++){
+    const rgb = rFn(x,y);
+    const i = (y*256+x)*4;
+    img.data[i]   = Math.max(0, Math.min(255, rgb[0]));
+    img.data[i+1] = Math.max(0, Math.min(255, rgb[1]));
+    img.data[i+2] = Math.max(0, Math.min(255, rgb[2]));
+    img.data[i+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  reg(tex);
+  return tex;
+}
+const sandTex = makeTex((x,y) => {
+  const n = fbm(x*0.04, y*0.04);
+  const m = fbm(x*0.2+99, y*0.2+99);
+  return [128 + n*70 + m*15 - 30, 96 + n*55 + m*15 - 30, 60 + n*38 + m*8 - 28];
+});
+sandTex.repeat.set(8,8);
+const dirtTex = makeTex((x,y) => {
+  const n = fbm(x*0.05, y*0.05);
+  const m = fbm(x*0.3+50, y*0.3+50);
+  return [60 + n*40 + m*10, 38 + n*30 + m*8, 22 + n*22 + m*5];
+});
+dirtTex.repeat.set(4,4);
+
+// ============ SURFACE GROUND ============
+const groundGeo = reg(new THREE.PlaneGeometry(120, 120, 96, 96));
+{
+  const pos = groundGeo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), y = pos.getY(i);
+    const h = fbm(x*0.05, y*0.05)*0.6 + fbm(x*0.2,y*0.2)*0.15;
+    pos.setZ(i, h);
+  }
+  pos.needsUpdate = true;
+  groundGeo.computeVertexNormals();
+}
+const groundMat = reg(new THREE.MeshStandardMaterial({ map: sandTex, color: 0xa07050, roughness: 0.95, metalness: 0.0 }));
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+// Underground void/dirt
+const undergroundGeo = reg(new THREE.BoxGeometry(120, 30, 120));
+const undergroundMat = reg(new THREE.MeshStandardMaterial({ map: dirtTex, color: 0x2a1c10, roughness: 1.0, side: THREE.BackSide }));
+const underground = new THREE.Mesh(undergroundGeo, undergroundMat);
+underground.position.y = -15;
+scene.add(underground);
+
+// ============ SURFACE SCATTER ============
+const surfaceGroup = new THREE.Group();
+scene.add(surfaceGroup);
+const tuftGeo = reg(new THREE.ConeGeometry(0.08, 0.55, 4));
+const tuftMat = reg(new THREE.MeshStandardMaterial({ color: 0x6a7a3a, roughness: 0.9 }));
+for(let i=0;i<220;i++){
+  const t = new THREE.Mesh(tuftGeo, tuftMat);
+  const ang = Math.random()*Math.PI*2;
+  const r = 6 + Math.random()*44;
+  t.position.set(Math.cos(ang)*r, 0.27, Math.sin(ang)*r);
+  t.rotation.y = Math.random()*Math.PI*2;
+  t.scale.set(0.5+Math.random()*0.7, 0.4+Math.random()*1.1, 0.5+Math.random()*0.7);
+  surfaceGroup.add(t);
+}
+const pebbleGeo = reg(new THREE.IcosahedronGeometry(0.18, 0));
+const pebbleMat = reg(new THREE.MeshStandardMaterial({ color: 0x8a7660, roughness: 0.85 }));
+for(let i=0;i<70;i++){
+  const p = new THREE.Mesh(pebbleGeo, pebbleMat);
+  const ang = Math.random()*Math.PI*2;
+  const r = 4 + Math.random()*32;
+  p.position.set(Math.cos(ang)*r, 0.06, Math.sin(ang)*r);
+  p.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+  p.scale.setScalar(0.4 + Math.random()*1.2);
+  surfaceGroup.add(p);
+}
+
+// ============ DEW POND ============
+const pondGeo = reg(new THREE.CircleGeometry(2.6, 32));
+const pondMat = reg(new THREE.MeshPhysicalMaterial({ color: 0x224050, roughness: 0.18, metalness: 0.05, transparent: true, opacity: 0.78 }));
+const pond = new THREE.Mesh(pondGeo, pondMat);
+pond.rotation.x = -Math.PI/2;
+pond.position.set(-12, 0.07, 8);
+scene.add(pond);
+
+const dewGeo = reg(new THREE.SphereGeometry(0.07, 8, 6));
+const dewMat = reg(new THREE.MeshPhysicalMaterial({ color: 0x88ccdd, transparent: true, opacity: 0.7, roughness: 0.05, metalness: 0.1, emissive: 0x113344 }));
+for(let i=0;i<35;i++){
+  const d = new THREE.Mesh(dewGeo, dewMat);
+  const ang = Math.random()*Math.PI*2;
+  const r = 8 + Math.random()*22;
+  d.position.set(Math.cos(ang)*r, 0.24, Math.sin(ang)*r);
+  surfaceGroup.add(d);
+}
+
+// ============ LEAF-CUTTER TRAIL ============
+const trailGroup = new THREE.Group();
+scene.add(trailGroup);
+const leafGeo = reg(new THREE.PlaneGeometry(0.45, 0.65));
+const leafMat = reg(new THREE.MeshStandardMaterial({ color: 0x3a8030, roughness: 0.7, side: THREE.DoubleSide }));
+for(let i=0;i<48;i++){
+  const l = new THREE.Mesh(leafGeo, leafMat);
+  const t = i/48;
+  const cx = -8 + t*22;
+  const cz = 18 + Math.sin(t*Math.PI*4)*1.6;
+  l.position.set(cx + (Math.random()-0.5)*0.8, 0.12 + Math.random()*0.18, cz + (Math.random()-0.5)*0.8);
+  l.rotation.set(-Math.PI/2 + (Math.random()-0.5)*0.3, Math.random()*Math.PI*2, 0);
+  trailGroup.add(l);
+}
+
+// ============ CHAMBER SCHEDULE ============
+const CHAMBER_SCHEDULE = [
+  { day:1,  name:"Queen's Chamber",  type:'queen',    pos:[ 0, -4,   0], r:3.2 },
+  { day:8,  name:"Nursery",          type:'nursery',  pos:[-6, -5.5, 2], r:2.8 },
+  { day:17, name:"Food Storage I",   type:'food',     pos:[ 6, -4.5,-2], r:2.4 },
+  { day:25, name:"Garbage Chamber",  type:'garbage',  pos:[10, -8,   5], r:2.0 },
+  { day:35, name:"Soldier Barracks", type:'barracks', pos:[-8, -7,  -4], r:2.6 },
+  { day:45, name:"Food Storage II",  type:'food',     pos:[ 4, -9,   7], r:2.3 },
+  { day:55, name:"Brood Wing",       type:'nursery',  pos:[-3,-10,   5], r:2.4 },
+  { day:65, name:"Food Storage III", type:'food',     pos:[ 8,-11,  -3], r:2.3 },
+  { day:70, name:"Sub-Queen Hall",   type:'subqueen', pos:[ 1,-12,  -7], r:2.8 },
+  { day:78, name:"Forager Lounge",   type:'rest',     pos:[-10,-11, 1], r:2.0 },
+  { day:86, name:"Deep Storage",     type:'food',     pos:[ 3,-14,   9], r:2.1 },
+  { day:95, name:"Honey Pot Vault",  type:'food',     pos:[-2,-15,  -9], r:2.4 },
+  { day:99, name:"Memorial Hollow",  type:'memorial', pos:[-12,-13, -3], r:2.0 }
+];
+
+const SURFACE_LOCS = [
+  { name:'Foraging Plain',    pos:[15, 0.8, 0],  r:5 },
+  { name:'Dew Pond',          pos:[-12, 0.2, 8], r:2.8 },
+  { name:'Leaf-cutter Trail', pos:[3, 0.2, 18],  r:4 }
+];
+
+// ============ BUILD CHAMBERS ============
+const chamberGroup = new THREE.Group();
+scene.add(chamberGroup);
+
+const wallTex = makeTex((x,y) => {
+  const n = fbm(x*0.06, y*0.06);
+  const m = fbm(x*0.4+11, y*0.4+11);
+  return [80 + n*55 + m*10, 50 + n*40 + m*8, 28 + n*25 + m*5];
+});
+wallTex.repeat.set(2, 2);
+
+function buildChamber(c){
+  const grp = new THREE.Group();
+  grp.position.set(c.pos[0], c.pos[1], c.pos[2]);
+
+  const wallGeo = reg(new THREE.SphereGeometry(c.r, 28, 20));
+  // distort sphere a little for organic feel
+  {
+    const pp = wallGeo.attributes.position;
+    for(let i=0;i<pp.count;i++){
+      const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
+      const n = fbm(x*0.6+17, z*0.6+y*0.3);
+      const len = Math.sqrt(x*x+y*y+z*z);
+      const k = 1 + (n-0.5)*0.18;
+      pp.setXYZ(i, x*k, y*k, z*k);
+      void len;
+    }
+    pp.needsUpdate = true;
+    wallGeo.computeVertexNormals();
+  }
+  const wallCol = c.type==='queen' ? 0x6a4830 : c.type==='subqueen' ? 0x7a4232 : c.type==='memorial' ? 0x4a3a4c : 0x4a3018;
+  const wallMat = reg(new THREE.MeshStandardMaterial({
+    map: wallTex, color: wallCol, roughness: 1.0, side: THREE.BackSide,
+    emissive: 0x180a06, emissiveIntensity: 0.45
+  }));
+  const wall = new THREE.Mesh(wallGeo, wallMat);
+  grp.add(wall);
+
+  const floorGeo = reg(new THREE.CircleGeometry(c.r*0.9, 24));
+  const floorMat = reg(new THREE.MeshStandardMaterial({ color: 0x6a4830, roughness: 0.95 }));
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI/2;
+  floor.position.y = -c.r*0.7;
+  grp.add(floor);
+
+  const lightColor = c.type==='queen' ? 0xffaa66 : c.type==='subqueen' ? 0xff8855 : c.type==='nursery' ? 0xffcc88 : c.type==='food' ? 0xffbb55 : c.type==='garbage' ? 0x886622 : c.type==='memorial' ? 0xaa88dd : c.type==='barracks' ? 0xff7744 : 0xffaa66;
+  const light = reg(new THREE.PointLight(lightColor, 1.0, c.r*5.5, 2));
+  light.position.y = c.r*0.3;
+  grp.add(light);
+  c._light = light;
+
+  c._contents = new THREE.Group();
+  grp.add(c._contents);
+
+  if(c.type === 'nursery'){
+    const broodMat = reg(new THREE.MeshStandardMaterial({ color: 0xeed7a8, roughness: 0.55, emissive: 0x553010, emissiveIntensity: 0.25 }));
+    c._brood = [];
+    for(let i=0;i<14;i++){
+      const stage = i % 4;
+      let geo;
+      if(stage === 0) geo = reg(new THREE.SphereGeometry(0.12, 8, 6));
+      else if(stage === 1) geo = reg(new THREE.SphereGeometry(0.16, 10, 8));
+      else if(stage === 2) geo = (THREE.CapsuleGeometry ? reg(new THREE.CapsuleGeometry(0.12, 0.18, 4, 8)) : reg(new THREE.SphereGeometry(0.18, 10, 8)));
+      else geo = reg(new THREE.SphereGeometry(0.18, 10, 8));
+      const m = new THREE.Mesh(geo, broodMat);
+      const ang = (i/14)*Math.PI*2;
+      const rr = 0.6 + (i%3)*0.4;
+      m.position.set(Math.cos(ang)*rr, -c.r*0.65 + 0.1, Math.sin(ang)*rr);
+      if(stage>=2) m.scale.set(0.9, 1.1, 0.9);
+      m.userData.stage = stage;
+      m.userData.cycle = Math.random()*100;
+      c._contents.add(m);
+      c._brood.push(m);
+    }
+  } else if(c.type === 'food'){
+    const seedMat = reg(new THREE.MeshStandardMaterial({ color: 0xcaa370, roughness: 0.7 }));
+    const seedGeo = reg(new THREE.IcosahedronGeometry(0.16, 0));
+    for(let i=0;i<26;i++){
+      const m = new THREE.Mesh(seedGeo, seedMat);
+      const ang = Math.random()*Math.PI*2;
+      const rr = Math.random()*c.r*0.7;
+      m.position.set(Math.cos(ang)*rr, -c.r*0.65 + Math.random()*0.45, Math.sin(ang)*rr);
+      m.scale.setScalar(0.5 + Math.random()*1.1);
+      m.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+      c._contents.add(m);
+    }
+  } else if(c.type === 'garbage'){
+    const wasteMat = reg(new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 1.0 }));
+    const wasteGeo = reg(new THREE.IcosahedronGeometry(0.12, 0));
+    for(let i=0;i<14;i++){
+      const m = new THREE.Mesh(wasteGeo, wasteMat);
+      const ang = Math.random()*Math.PI*2;
+      const rr = Math.random()*c.r*0.6;
+      m.position.set(Math.cos(ang)*rr, -c.r*0.65 + Math.random()*0.25, Math.sin(ang)*rr);
+      m.scale.setScalar(0.4 + Math.random()*1.2);
+      c._contents.add(m);
+    }
+  } else if(c.type === 'memorial'){
+    const stoneMat = reg(new THREE.MeshStandardMaterial({ color: 0x6a5a4a, roughness: 0.9, emissive: 0x222018, emissiveIntensity: 0.5 }));
+    const stoneGeo = reg(new THREE.IcosahedronGeometry(0.22, 0));
+    for(let i=0;i<8;i++){
+      const m = new THREE.Mesh(stoneGeo, stoneMat);
+      const ang = (i/8)*Math.PI*2;
+      m.position.set(Math.cos(ang)*0.65, -c.r*0.65 + (i%2)*0.22, Math.sin(ang)*0.65);
+      m.scale.setScalar(0.5 + Math.random()*0.6);
+      c._contents.add(m);
+    }
+  } else if(c.type === 'barracks'){
+    // small pillar / weapon racks suggestion (just bumps)
+    const pmat = reg(new THREE.MeshStandardMaterial({ color: 0x5a3220, roughness: 0.9 }));
+    const pgeo = reg(new THREE.CylinderGeometry(0.18, 0.22, 0.7, 6));
+    for(let i=0;i<5;i++){
+      const m = new THREE.Mesh(pgeo, pmat);
+      const ang = (i/5)*Math.PI*2;
+      m.position.set(Math.cos(ang)*c.r*0.55, -c.r*0.65 + 0.35, Math.sin(ang)*c.r*0.55);
+      c._contents.add(m);
+    }
+  }
+
+  c._group = grp;
+  c._wall = wall;
+  c._visible = false;
+  grp.visible = false;
+  grp.scale.setScalar(0.001);
+  chamberGroup.add(grp);
+}
+
+for(const c of CHAMBER_SCHEDULE) buildChamber(c);
+
+// ============ TUNNELS ============
+const tunnelGroup = new THREE.Group();
+scene.add(tunnelGroup);
+
+for(let i=1;i<CHAMBER_SCHEDULE.length;i++){
+  const c = CHAMBER_SCHEDULE[i];
+  let best = null, bd = Infinity;
+  for(let j=0;j<i;j++){
+    const cj = CHAMBER_SCHEDULE[j];
+    const dx = c.pos[0]-cj.pos[0], dy = c.pos[1]-cj.pos[1], dz = c.pos[2]-cj.pos[2];
+    const d = dx*dx + dy*dy + dz*dz;
+    if(d < bd){ bd = d; best = cj; }
+  }
+  c._connectsTo = best;
+
+  const a = new THREE.Vector3(...best.pos);
+  const b = new THREE.Vector3(...c.pos);
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  mid.y -= 0.4 + Math.random()*0.6;
+  mid.x += (Math.random()-0.5)*1.0;
+  mid.z += (Math.random()-0.5)*1.0;
+  const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+  const tubeGeo = reg(new THREE.TubeGeometry(curve, 22, 0.32, 8, false));
+  const tubeMat = reg(new THREE.MeshStandardMaterial({
+    color: 0x3a2618, side: THREE.BackSide, roughness: 1.0,
+    emissive: 0x180a04, emissiveIntensity: 0.55
+  }));
+  const tube = new THREE.Mesh(tubeGeo, tubeMat);
+  tube.visible = false;
+  tunnelGroup.add(tube);
+  c._tunnel = tube;
+  c._tunnelCurve = curve;
+
+  // Spider-silk strands inside the tunnel
+  const silkPts = [];
+  const N = 36;
+  for(let k=0;k<N;k++){
+    const tt = k/(N-1);
+    const p = curve.getPoint(tt);
+    const off = new THREE.Vector3((Math.random()-0.5)*0.12, (Math.random()-0.5)*0.12, (Math.random()-0.5)*0.12);
+    silkPts.push(p.clone().add(off));
+  }
+  const silkGeo = reg(new THREE.BufferGeometry().setFromPoints(silkPts));
+  const silkMat = reg(new THREE.LineBasicMaterial({ color: 0xcfa074, transparent: true, opacity: 0.32 }));
+  const silk = new THREE.Line(silkGeo, silkMat);
+  silk.visible = false;
+  tunnelGroup.add(silk);
+  c._silk = silk;
+}
+
+// Surface entrance over Queen's chamber
+{
+  const hillGeo = reg(new THREE.ConeGeometry(1.0, 0.45, 18, 1, true));
+  const hillMat = reg(new THREE.MeshStandardMaterial({ color: 0xa07050, roughness: 1.0, side: THREE.DoubleSide }));
+  const hill = new THREE.Mesh(hillGeo, hillMat);
+  hill.position.set(0, 0.12, 0);
+  scene.add(hill);
+  const holeGeo = reg(new THREE.CircleGeometry(0.28, 16));
+  const holeMat = reg(new THREE.MeshBasicMaterial({ color: 0x000000 }));
+  const hole = new THREE.Mesh(holeGeo, holeMat);
+  hole.rotation.x = -Math.PI/2;
+  hole.position.set(0, 0.36, 0);
+  scene.add(hole);
+}
+
+// ============ ANT BUILDER ============
+function makeAntMesh(role){
+  const g = new THREE.Group();
+  const sizes = { queen: 1.7, subqueen: 1.4, soldier: 1.15, scout: 0.85, forager: 0.92, nurse: 0.88, worker: 0.85, elder: 0.78 };
+  const cols = { queen: 0xa84a26, subqueen: 0xa05a30, soldier: 0x5a2010, scout: 0x6a3520, forager: 0x754020, nurse: 0x8a4830, worker: 0x6c3a1f, elder: 0x40281a };
+  const s = sizes[role] || 0.9;
+  const c = cols[role] || 0x6c3a1f;
+  const mat = reg(new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.18, emissive: 0x110804, emissiveIntensity: 0.35 }));
+
+  const headGeo = reg(new THREE.SphereGeometry(0.2*s, 12, 10));
+  const head = new THREE.Mesh(headGeo, mat);
+  head.position.set(0.34*s, 0.1*s, 0);
+
+  const thoraxGeo = reg(new THREE.SphereGeometry(0.17*s, 12, 10));
+  const thorax = new THREE.Mesh(thoraxGeo, mat);
+  thorax.position.set(0, 0.06*s, 0);
+
+  const abdomenGeo = reg(new THREE.SphereGeometry(0.24*s, 12, 10));
+  const abdomen = new THREE.Mesh(abdomenGeo, mat);
+  abdomen.position.set(-0.36*s, 0.05*s, 0);
+  if(role === 'queen' || role === 'subqueen'){
+    abdomen.scale.set(1.7, 1.2, 1.05);
+    abdomen.position.x = -0.5*s;
+  } else {
+    abdomen.scale.set(1.35, 1.0, 1.0);
+  }
+
+  g.add(head, thorax, abdomen);
+
+  const legGeo = reg(new THREE.CylinderGeometry(0.014*s, 0.014*s, 0.34*s, 5));
+  for(let i=0;i<6;i++){
+    const leg = new THREE.Mesh(legGeo, mat);
+    const side = i%2 === 0 ? -1 : 1;
+    const fwd = (Math.floor(i/2) - 1) * 0.18;
+    leg.position.set(fwd*s, -0.05*s, 0.14*s*side);
+    leg.rotation.x = side*0.3;
+    leg.rotation.z = Math.PI/2;
+    g.add(leg);
+  }
+
+  const antGeo = reg(new THREE.CylinderGeometry(0.009*s, 0.005*s, 0.34*s, 4));
+  antGeo.translate(0, 0.17*s, 0);
+
+  const antBase = new THREE.Group();
+  antBase.position.set(0.42*s, 0.18*s, 0);
+  g.add(antBase);
+
+  const ant1 = new THREE.Mesh(antGeo, mat);
+  ant1.position.set(0.04*s, 0, 0.07*s);
+  ant1.rotation.set(0.2, 0, -Math.PI/3);
+  const ant2 = new THREE.Mesh(antGeo, mat);
+  ant2.position.set(0.04*s, 0, -0.07*s);
+  ant2.rotation.set(-0.2, 0, -Math.PI/3);
+
+  antBase.add(ant1, ant2);
+  g.userData.antennae = [ant1, ant2];
+
+  if(role === 'soldier' || role === 'queen'){
+    const mandGeo = reg(new THREE.ConeGeometry(0.05*s, 0.18*s, 5));
+    const m1 = new THREE.Mesh(mandGeo, mat);
+    m1.position.set(0.54*s, 0.07*s, 0.07*s);
+    m1.rotation.z = -Math.PI/2.1;
+    const m2 = m1.clone();
+    m2.position.z = -0.07*s;
+    g.add(m1, m2);
+  }
+
+  g.userData.role = role;
+  g.userData.headObj = head;
+  g.userData.legs = g.children.filter(o => o.geometry === legGeo);
+  return g;
+}
+
+// ============ FEATURED ANT ENTITIES ============
+const featuredAnts = [];
+for(const a of featured){
+  const mesh = makeAntMesh(a.role);
+  scene.add(mesh);
+
+  let homeIdx = 0;
+  if(a.role === 'queen') homeIdx = 0;
+  else if(a.role === 'subqueen') homeIdx = 8;
+  else if(a.role === 'nurse') homeIdx = (a.name.indexOf('Kell')>=0 ? 6 : 1);
+  else if(a.role === 'soldier') homeIdx = 4;
+  else if(a.role === 'elder') homeIdx = 12;
+  else if(a.role === 'forager' || a.role === 'scout') homeIdx = -1;
+  else homeIdx = 0;
+
+  featuredAnts.push({
+    data: a,
+    mesh: mesh,
+    homeIdx: homeIdx,
+    pos: new THREE.Vector3(0, -4, 0),
+    target: new THREE.Vector3(0, -4, 0),
+    surfaceTarget: new THREE.Vector3(15, 0.4, 0),
+    phase: Math.random()*100,
+    speed: 0.5 + Math.random()*0.5,
+    onSurface: false,
+    activeFromDay: a.role==='queen' ? 1 : (a.born || 1)
+  });
+}
+
+// ============ WORKER SWARM (instanced) ============
+const SWARM_COUNT = 200;
+const workerGeo = reg(new THREE.SphereGeometry(0.18, 7, 5));
+const workerMat = reg(new THREE.MeshStandardMaterial({ color: 0x6c3a1f, roughness: 0.6, emissive: 0x110804, emissiveIntensity: 0.25 }));
+const workerSwarm = new THREE.InstancedMesh(workerGeo, workerMat, SWARM_COUNT);
+workerSwarm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(workerSwarm);
+
+const workerData = [];
+for(let i=0;i<SWARM_COUNT;i++){
+  const homeChamber = i % CHAMBER_SCHEDULE.length;
+  workerData.push({
+    pos: new THREE.Vector3(0, -4, 0),
+    target: new THREE.Vector3(0, -4, 0),
+    speed: 0.4 + Math.random()*0.6,
+    phase: Math.random()*100,
+    homeChamber: homeChamber,
+    onSurface: false,
+    activeFromDay: Math.floor(Math.random()*100),
+    name: 'Worker ' + NAME_POOL[i % NAME_POOL.length],
+    nextRetarget: Math.random()*4
+  });
+}
+const _wm = new THREE.Matrix4();
+const _wp = new THREE.Vector3();
+const _wq = new THREE.Quaternion();
+const _ws = new THREE.Vector3(1,1,1);
+
+// ============ PREDATOR (off-camera implication) ============
+const predator = new THREE.Group();
+{
+  const bodyGeo = reg(new THREE.SphereGeometry(0.45, 14, 10));
+  const bodyMat = reg(new THREE.MeshStandardMaterial({ color: 0x080806, roughness: 0.9 }));
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.scale.set(1.3, 0.7, 1);
+  predator.add(body);
+  for(let i=0;i<8;i++){
+    const leg = new THREE.Mesh(reg(new THREE.CylinderGeometry(0.025, 0.025, 1.1, 4)), bodyMat);
+    const ang = (i/8)*Math.PI*2;
+    leg.position.set(Math.cos(ang)*0.32, 0, Math.sin(ang)*0.32);
+    leg.rotation.x = Math.PI/2;
+    leg.rotation.z = -ang;
+    predator.add(leg);
+  }
+}
+predator.position.set(40, 0.45, 0);
+predator.visible = false;
+scene.add(predator);
+
+// ============ TIME & ERA ============
+const SIM_DURATION_S = 600; // ~10 min for 100 days
+const startTime = performance.now() / 1000;
+let prevWall = startTime;
+let lastDay = 0;
+
+const ERA_TITLES = [
+  { day: 1,   title: "DAY 1 — THE QUEEN ARRIVES" },
+  { day: 5,   title: "DAY 5 — THE FIRST EGGS" },
+  { day: 10,  title: "DAY 10 — THE FIRST CHAMBER WIDENS" },
+  { day: 17,  title: "DAY 17 — FIRST WORKERS HATCH" },
+  { day: 22,  title: "DAY 22 — SCOUTS REACH THE SURFACE" },
+  { day: 30,  title: "DAY 30 — THE FORAGE LINE BEGINS" },
+  { day: 35,  title: "DAY 35 — SOLDIERS POSTED" },
+  { day: 42,  title: "DAY 42 — THE GARBAGE TRAIL" },
+  { day: 50,  title: "DAY 50 — HALF A SEASON" },
+  { day: 58,  title: "DAY 58 — A DEEP TUNNEL OPENS" },
+  { day: 65,  title: "DAY 65 — STORM ABOVE" },
+  { day: 70,  title: "DAY 70 — A SUB-QUEEN STIRS" },
+  { day: 78,  title: "DAY 78 — THE COLD CREEPS IN" },
+  { day: 86,  title: "DAY 86 — DEEP STORAGE SEALED" },
+  { day: 92,  title: "DAY 92 — THE FIRST ELDERS REST" },
+  { day: 96,  title: "DAY 96 — A SECOND GENERATION STIRS" },
+  { day: 100, title: "DAY 100 — THE COLONY ENDURES" }
+];
+function eraForDay(d){
+  let t = ERA_TITLES[0].title;
+  for(const e of ERA_TITLES){ if(d >= e.day) t = e.title; else break; }
+  return t;
+}
+function chamberByDay(d){
+  const built = CHAMBER_SCHEDULE.filter(c => c.day <= d);
+  return built[built.length-1] || CHAMBER_SCHEDULE[0];
+}
+function builtChambers(d){ return CHAMBER_SCHEDULE.filter(c => c.day <= d); }
+
+// ============ EVENT TEMPLATES ============
+function pickName(){ return NAME_POOL[Math.floor(Math.random()*NAME_POOL.length)]; }
+function pickFeatured(){ return featured[Math.floor(Math.random()*featured.length)]; }
+function pickFood(d){ const a = CHAMBER_SCHEDULE.filter(x => x.type==='food' && x.day<=d); return a[Math.floor(Math.random()*a.length)]; }
+
+function makeEvent(day){
+  const f = pickFeatured();
+  const c = chamberByDay(day);
+  const surfaceLoc = SURFACE_LOCS[Math.floor(Math.random()*SURFACE_LOCS.length)];
+  const seed = 1 + Math.floor(Math.random()*240);
+  const food = pickFood(day) || { name: 'Food Storage I' };
+  const garb = (CHAMBER_SCHEDULE.filter(x => x.type==='garbage' && x.day<=day)[0]) || { name: 'the garbage chamber' };
+
+  const lines = [
+    () => f.name + " is seen leaving " + chamberByDay(Math.max(1, day-2)).name + ".",
+    () => "A scout returns. " + pickName() + " brings news from the " + surfaceLoc.name + ".",
+    () => "Forager Wisp returns with seed " + seed + " — added to " + food.name + ".",
+    () => "Nurse Mira turns the pupae. The brood breathes slow.",
+    () => "Soldier Tannak holds the south tunnel. All quiet.",
+    () => "Scout Pip touches antennae with " + pickName() + " at the entrance.",
+    () => "Worker " + pickName() + " carries a grain of sand from " + c.name + ".",
+    () => "Queen Vermilia lays. The Nursery answers.",
+    () => "The dew pond stirs. " + pickName() + " drinks and returns.",
+    () => "Down in " + c.name + ", the colony hums.",
+    () => "On the leaf-cutter trail, " + pickName() + " carries a cut " + (Math.random()<0.5?'leaf':'petal') + ".",
+    () => "A pebble blocks the entrance. " + pickName() + " and " + pickName() + " push it aside together.",
+    () => "Elder Hask rests near the queen. He has seen many days.",
+    () => "Forager Tessa and Forager Quint share food — antenna to antenna.",
+    () => "A drop of rain finds " + c.name + ". The colony absorbs it.",
+    () => "Soldier Brask repels a beetle at the surface. The threat passes.",
+    () => "In " + garb.name + ", waste is sorted with care.",
+    () => "Scout Bram lays a new pheromone trail toward the " + surfaceLoc.name + ".",
+    () => day >= 70 ? "Sub-Queen Velura is tended in the Sub-Queen Hall." : "A new tunnel is being widened. Patient mandibles, patient grains.",
+    () => "A leaf is delivered. " + food.name + " welcomes it.",
+    () => "Sun above. Wind in the grass. The colony works.",
+    () => "Moon above. The colony slows but does not stop.",
+    () => f.name + " grooms " + pickName() + ". A small kindness in the dark.",
+    () => "A predator approaches. Soldiers post. The threat passes.",
+    () => "Two workers meet in the tunnel and pass without sound.",
+    () => "From " + chamberByDay(Math.max(1,day-5)).name + " to " + c.name + " — a single grain travels three hours.",
+    () => pickName() + " of generation " + GEN_DISPLAY + " is named today.",
+    () => "Pheromone-fresh: the trail to the " + surfaceLoc.name + " runs strong.",
+    () => "Forager Wisp pauses on a stone. Watching. Then on."
+  ];
+  return lines[Math.floor(Math.random()*lines.length)]();
+}
+
+// ============ HUD UPDATES ============
+const dom = {
+  era: document.getElementById('era'),
+  gen: document.getElementById('gen'),
+  chyron: document.getElementById('chyron'),
+  lower: document.getElementById('lower'),
+  cam: document.getElementById('cam'),
+  stats: document.getElementById('stats'),
+  title: document.getElementById('title')
+};
+
+let lastEraTxt = '';
+function setEra(day){
+  const t = eraForDay(day);
+  if(t !== lastEraTxt){
+    lastEraTxt = t;
+    const yr = 1 + Math.floor((generation-1)/3);
+    dom.era.innerHTML = t + '<span class="sub">YEAR ' + yr + ' · GENERATION ' + GEN_DISPLAY + '</span>';
+  }
+}
+
+let chyronTimer = 0;
+function updateChyron(dt, day){
+  chyronTimer -= dt;
+  if(chyronTimer <= 0){
+    chyronTimer = 5 + Math.random()*4.5;
+    dom.chyron.textContent = makeEvent(day);
+  }
+}
+
+let lowerTimer = 0, lowerIdx = 0;
+function updateLower(dt){
+  lowerTimer -= dt;
+  if(lowerTimer <= 0){
+    lowerTimer = 7 + Math.random()*4;
+    lowerIdx = (lowerIdx + 1) % featured.length;
+    const f = featured[lowerIdx];
+    dom.lower.innerHTML = '<span class="name">' + f.name + '</span>WHO IS ' + f.name.toUpperCase() + ' · ' + (f.bio || ('GEN ' + GEN_DISPLAY));
+  }
+}
+
+function updateStats(day){
+  const built = builtChambers(day).length;
+  const workers = Math.min(SWARM_COUNT, Math.floor(day*2.2));
+  const brood = Math.min(56, Math.floor(day*0.6) + 4);
+  dom.stats.innerHTML = 'WORKERS: ' + workers + ' · BROOD: ' + brood + ' · CHAMBERS: ' + built + '<br>YEAR ' + (1+Math.floor((generation-1)/3)) + ' · DAY ' + day + ' / 100';
+}
+
+// ============ MINI-MAP ============
+const mapCanvas = document.getElementById('map');
+const mapCtx = mapCanvas.getContext('2d');
+function drawMinimap(day, focusChamber){
+  const w = mapCanvas.width, h = mapCanvas.height;
+  mapCtx.clearRect(0,0,w,h);
+  const grad = mapCtx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0, '#3a2614');
+  grad.addColorStop(0.18, '#1a0e08');
+  grad.addColorStop(1, '#08050a');
+  mapCtx.fillStyle = grad;
+  mapCtx.fillRect(0,0,w,h);
+
+  mapCtx.strokeStyle = '#a07050';
+  mapCtx.lineWidth = 1;
+  mapCtx.beginPath();
+  mapCtx.moveTo(0, h*0.2);
+  mapCtx.lineTo(w, h*0.2);
+  mapCtx.stroke();
+
+  const mx = x => (x+18)/36 * w;
+  const my = y => (3-y)/22 * h;
+
+  mapCtx.strokeStyle = 'rgba(207,160,116,0.45)';
+  mapCtx.lineWidth = 1.5;
+  for(const c of CHAMBER_SCHEDULE){
+    if(c.day > day) continue;
+    if(c._connectsTo && c._connectsTo.day <= day){
+      mapCtx.beginPath();
+      mapCtx.moveTo(mx(c.pos[0]), my(c.pos[1]));
+      mapCtx.lineTo(mx(c._connectsTo.pos[0]), my(c._connectsTo.pos[1]));
+      mapCtx.stroke();
+    }
+  }
+
+  for(const c of CHAMBER_SCHEDULE){
+    if(c.day > day) continue;
+    const r = Math.max(3, c.r*2.0);
+    const isFocus = focusChamber && focusChamber === c;
+    mapCtx.fillStyle = isFocus ? '#ffaa55' : c.type==='queen' ? '#d99553' : c.type==='nursery' ? '#e8c878' : c.type==='food' ? '#cca055' : c.type==='garbage' ? '#6a5028' : c.type==='barracks' ? '#a04030' : c.type==='subqueen' ? '#cc7740' : c.type==='memorial' ? '#a888cc' : '#886040';
+    mapCtx.beginPath();
+    mapCtx.arc(mx(c.pos[0]), my(c.pos[1]), r, 0, Math.PI*2);
+    mapCtx.fill();
+    if(isFocus){
+      mapCtx.strokeStyle = '#ffe0a0';
+      mapCtx.lineWidth = 2;
+      mapCtx.beginPath();
+      mapCtx.arc(mx(c.pos[0]), my(c.pos[1]), r+2 + Math.sin(performance.now()*0.005)*1.5, 0, Math.PI*2);
+      mapCtx.stroke();
+    }
+  }
+
+  mapCtx.fillStyle = '#6a8030';
+  for(const s of SURFACE_LOCS){
+    mapCtx.beginPath();
+    mapCtx.arc(mx(s.pos[0]), my(s.pos[1])+2, 3, 0, Math.PI*2);
+    mapCtx.fill();
+  }
+
+  mapCtx.fillStyle = '#d99553';
+  mapCtx.font = '10px Helvetica, Arial';
+  mapCtx.fillText('THE COLONY · DAY ' + day, 8, 14);
+  mapCtx.fillStyle = '#9a7a58';
+  mapCtx.fillText('GEN ' + GEN_DISPLAY, w - 50, 14);
+}
+
+// ============ CAMERA DIRECTOR ============
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+const directorCams = [
+  { name:'CAM 01 — QUEEN CRADLE', fn:(ctx)=>{
+    const c = CHAMBER_SCHEDULE[0];
+    const ang = ctx.shotT*0.18;
+    camera.position.set(c.pos[0]+Math.cos(ang)*5, c.pos[1]+1.4, c.pos[2]+Math.sin(ang)*5);
+    camera.lookAt(c.pos[0], c.pos[1], c.pos[2]);
+    ctx.focusChamber = c;
+  }},
+  { name:'CAM 02 — TUNNEL POV', fn:(ctx)=>{
+    const built = CHAMBER_SCHEDULE.filter(c => c.day <= ctx.day && c._tunnelCurve);
+    if(!built.length){ camera.position.set(0,-2,4); camera.lookAt(0,-4,0); return; }
+    const c = built[Math.floor(ctx.shotT*0.07) % built.length];
+    const tt = (ctx.shotT*0.07) % 1;
+    const p = c._tunnelCurve.getPoint(tt);
+    const lk = c._tunnelCurve.getPoint(Math.min(1, tt+0.06));
+    camera.position.copy(p);
+    camera.lookAt(lk);
+    ctx.focusChamber = c;
+  }},
+  { name:'CAM 03 — SURFACE CHOPPER', fn:(ctx)=>{
+    const ang = ctx.shotT*0.05;
+    camera.position.set(Math.cos(ang)*22, 12, Math.sin(ang)*22);
+    camera.lookAt(0, -1, 0);
+  }},
+  { name:'CAM 04 — FORAGE TRAIL', fn:(ctx)=>{
+    const s = SURFACE_LOCS[2];
+    const ang = ctx.shotT*0.16;
+    camera.position.set(s.pos[0]+Math.cos(ang)*4, 1.6, s.pos[2]+Math.sin(ang)*4);
+    camera.lookAt(s.pos[0], 0.3, s.pos[2]);
+  }},
+  { name:'CAM 05 — PUPA CLOSEUP', fn:(ctx)=>{
+    const c = CHAMBER_SCHEDULE[1];
+    if(c.day > ctx.day){ const cc = CHAMBER_SCHEDULE[0]; camera.position.set(cc.pos[0]+4, cc.pos[1]+1, cc.pos[2]+4); camera.lookAt(cc.pos[0],cc.pos[1],cc.pos[2]); return; }
+    const ang = ctx.shotT*0.22 + 1.2;
+    camera.position.set(c.pos[0]+Math.cos(ang)*1.5, c.pos[1]-c.r*0.4 + 0.35, c.pos[2]+Math.sin(ang)*1.5);
+    camera.lookAt(c.pos[0], c.pos[1]-c.r*0.55, c.pos[2]);
+    ctx.focusChamber = c;
+  }},
+  { name:'CAM 06 — SOLDIER WATCH', fn:(ctx)=>{
+    const c = CHAMBER_SCHEDULE[4];
+    if(!c || c.day > ctx.day){ camera.position.set(0,-2,8); camera.lookAt(0,-4,0); return; }
+    const ang = ctx.shotT*0.14 + 2.4;
+    camera.position.set(c.pos[0]+Math.cos(ang)*4, c.pos[1]+0.7, c.pos[2]+Math.sin(ang)*4);
+    camera.lookAt(c.pos[0], c.pos[1]-0.2, c.pos[2]);
+    ctx.focusChamber = c;
+  }},
+  { name:'CAM 07 — DEW DROP MACRO', fn:(ctx)=>{
+    const ang = ctx.shotT*0.12;
+    camera.position.set(-12+Math.cos(ang)*1.7, 0.5, 8+Math.sin(ang)*1.7);
+    camera.lookAt(-12, 0.1, 8);
+  }},
+  { name:'CAM 08 — FOOD STORAGE WIDE', fn:(ctx)=>{
+    const c = CHAMBER_SCHEDULE[2];
+    if(c.day > ctx.day){ camera.position.set(8,-2,8); camera.lookAt(0,-4,0); return; }
+    const ang = ctx.shotT*0.16;
+    camera.position.set(c.pos[0]+Math.cos(ang)*4.4, c.pos[1]+1.0, c.pos[2]+Math.sin(ang)*4.4);
+    camera.lookAt(c.pos[0], c.pos[1]-0.3, c.pos[2]);
+    ctx.focusChamber = c;
+  }},
+  { name:'CAM 09 — GARBAGE DRIFT', fn:(ctx)=>{
+    const c = CHAMBER_SCHEDULE[3];
+    if(!c || c.day > ctx.day){ camera.position.set(8,-4,8); camera.lookAt(0,-4,0); return; }
+    const ang = ctx.shotT*0.1 + 1.8;
+    camera.position.set(c.pos[0]+Math.cos(ang)*3.6, c.pos[1]+0.5, c.pos[2]+Math.sin(ang)*3.6);
+    camera.lookAt(c.pos[0], c.pos[1]-0.2, c.pos[2]);
+    ctx.focusChamber = c;
+  }},
+  { name:'CAM 10 — CRANE REVEAL', fn:(ctx)=>{
+    const tt = Math.min(1, ctx.shotT/9);
+    const y = lerp(8, 18, tt);
+    const z = lerp(20, 32, tt);
+    camera.position.set(0, y, z);
+    camera.lookAt(0, -6, 0);
+  }},
+  { name:'CAM 11 — ANT EYE LEVEL', fn:(ctx)=>{
+    const ang = ctx.shotT*0.28;
+    camera.position.set(15+Math.cos(ang)*3, 0.4, Math.sin(ang)*3);
+    camera.lookAt(15, 0.3, 0);
+  }},
+  { name:'CAM 12 — SUB-QUEEN REVEAL', fn:(ctx)=>{
+    const c = CHAMBER_SCHEDULE[8];
+    if(!c || c.day > ctx.day){
+      const cc = CHAMBER_SCHEDULE[0];
+      camera.position.set(cc.pos[0]+5, cc.pos[1]+2, cc.pos[2]+5);
+      camera.lookAt(cc.pos[0],cc.pos[1],cc.pos[2]);
+      return;
+    }
+    const ang = ctx.shotT*0.11 + 0.5;
+    camera.position.set(c.pos[0]+Math.cos(ang)*4.6, c.pos[1]+0.9, c.pos[2]+Math.sin(ang)*4.6);
+    camera.lookAt(c.pos[0], c.pos[1], c.pos[2]);
+    ctx.focusChamber = c;
+  }},
+  { name:'CAM 13 — CROSS SECTION', fn:(ctx)=>{
+    const tt = ctx.shotT*0.04;
+    camera.position.set(-22, -6, Math.cos(tt)*4);
+    camera.lookAt(0, -8, 0);
+  }},
+  { name:'CAM 14 — DAWN SURFACE', fn:(ctx)=>{
+    const ang = ctx.shotT*0.07 + 0.7;
+    camera.position.set(Math.cos(ang)*16, 0.8, Math.sin(ang)*16);
+    camera.lookAt(0, 0.4, 0);
+  }},
+  { name:'CAM 15 — DUSK ENTRANCE', fn:(ctx)=>{
+    const ang = ctx.shotT*0.15 + 3.2;
+    camera.position.set(Math.cos(ang)*2.6, 0.5, Math.sin(ang)*2.6);
+    camera.lookAt(0, 0.1, 0);
+  }},
+  { name:'CAM 16 — PHEROMONE LOW', fn:(ctx)=>{
+    const t2 = (ctx.shotT*0.2) % (Math.PI*2);
+    camera.position.set(Math.cos(t2)*9, 0.25, Math.sin(t2)*9);
+    camera.lookAt(0, 0.2, 0);
+  }},
+  { name:'CAM 17 — DEEP CRADLE', fn:(ctx)=>{
+    const built = builtChambers(ctx.day);
+    const c = built[built.length-1] || CHAMBER_SCHEDULE[0];
+    const ang = ctx.shotT*0.1;
+    camera.position.set(c.pos[0]+Math.cos(ang)*4.8, c.pos[1]+0.6, c.pos[2]+Math.sin(ang)*4.8);
+    camera.lookAt(c.pos[0], c.pos[1]-0.2, c.pos[2]);
+    ctx.focusChamber = c;
+  }}
+];
+
+let camIdx = 0;
+let shotStart = 0;
+let shotDuration = 9;
+function pickShot(day){
+  // bias picks based on day
+  const pool = [];
+  for(let i=0;i<directorCams.length;i++){
+    if(i===4 && day < 8) continue; // pupa (nursery)
+    if(i===5 && day < 35) continue; // soldier watch
+    if(i===8 && day < 25) continue; // garbage
+    if(i===11 && day < 70) continue; // sub-queen
+    if(i===16 && day < 12) continue; // deep cradle
+    pool.push(i);
+  }
+  // avoid same shot twice
+  let idx;
+  do { idx = pool[Math.floor(Math.random()*pool.length)]; } while(idx === camIdx && pool.length > 1);
+  camIdx = idx;
+  shotDuration = 8 + Math.random()*7;
+  shotStart = performance.now()/1000;
+  dom.cam.textContent = directorCams[camIdx].name;
+}
+
+// ============ ANT MOVEMENT HELPERS ============
+function chamberInteriorPoint(c, t, ringR){
+  const ang = t * 1.2 + (c.day%7);
+  const r = (ringR != null) ? ringR : (c.r*0.55*Math.random());
+  return new THREE.Vector3(c.pos[0] + Math.cos(ang)*r, c.pos[1] - c.r*0.6 + 0.06, c.pos[2] + Math.sin(ang)*r);
+}
+function surfaceWanderPoint(loc, t){
+  const ang = t*0.5;
+  const r = Math.random()*loc.r;
+  return new THREE.Vector3(loc.pos[0] + Math.cos(ang)*r, 0.32, loc.pos[2] + Math.sin(ang)*r);
+}
+
+function pickWorkerTarget(w, day){
+  const built = builtChambers(day);
+  // 30% chance to go surface if foragers
+  if(Math.random() < 0.32 && day >= 18){
+    w.onSurface = true;
+    const loc = SURFACE_LOCS[Math.floor(Math.random()*SURFACE_LOCS.length)];
+    w.target.copy(surfaceWanderPoint(loc, performance.now()/1000 + w.phase));
+    return;
+  }
+  w.onSurface = false;
+  const c = built[Math.floor(Math.random()*built.length)] || CHAMBER_SCHEDULE[0];
+  w.target.copy(chamberInteriorPoint(c, performance.now()/1000 + w.phase));
+}
+
+// ============ ANIMATION LOOP ============
+let lastSec = performance.now()/1000;
+let elapsed = 0;
+let titleShown = false;
+
+// Show title briefly at start
+setTimeout(()=>{ dom.title.style.opacity = '1'; }, 200);
+setTimeout(()=>{ dom.title.style.opacity = '0'; }, 4200);
+
+function animate(){
+  const now = performance.now()/1000;
+  const dt = Math.min(0.1, now - lastSec);
+  lastSec = now;
+  elapsed += dt;
+
+  // === Time / sim day ===
+  let cycleT = (elapsed % SIM_DURATION_S) / SIM_DURATION_S; // 0..1
+  // reseed at every wrap
+  if(elapsed > 0 && Math.floor(elapsed / SIM_DURATION_S) > Math.floor((elapsed - dt) / SIM_DURATION_S)){
+    // advance memory and reload
+    let mem = loadMemory() || memory;
+    mem.gen = (mem.gen||1) + 1;
+    for(const a of mem.ants){
+      a.age = (a.age||0) + 100;
+      a.seenDays = (a.seenDays||0) + 100;
+      if(a.role === 'worker' && a.age > 240){ a.role = 'elder'; a.state = 'slow'; a.bio = 'ELDER WORKER'; }
+      if(a.role === 'elder' && a.age > 500){
+        const stem = a.name.replace(/ II+$/,'');
+        a.name = stem + ' II';
+        a.role = 'worker';
+        a.age = 0;
+        a.state = 'reborn';
+        a.bio = 'NAMED FOR THE PASSED · GEN ' + mem.gen;
+      }
+    }
+    saveMemory(mem);
+    memory = mem;
+    generation = mem.gen;
+    // update displayed gen but keep mod 3
+    const g = ((generation - 1) % 3) + 1;
+    dom.gen.textContent = 'GEN ' + g + ' OF 3 · COLONY ALIVE';
+    // refresh featured roster (advance roles in current scene)
+    for(let i=0;i<featured.length && i<memory.ants.length;i++){
+      featured[i].name = memory.ants[i].name;
+      featured[i].role = memory.ants[i].role;
+      featured[i].state = memory.ants[i].state;
+      featured[i].bio = memory.ants[i].bio || featured[i].bio;
+    }
+    lastEraTxt = ''; // force re-render
+  }
+
+  const day = Math.max(1, Math.min(100, Math.floor(cycleT*100) + 1));
+  setEra(day);
+  updateChyron(dt, day);
+  updateLower(dt);
+  updateStats(day);
+
+  // === Reveal chambers as days progress ===
+  let focusChamber = null;
+  for(const c of CHAMBER_SCHEDULE){
+    if(c.day <= day){
+      if(!c._visible){
+        c._visible = true;
+        c._group.visible = true;
+        c._revealStart = elapsed;
+        if(c._tunnel){ c._tunnel.visible = true; }
+        if(c._silk){ c._silk.visible = true; }
+      }
+      // reveal scale animation
+      const since = elapsed - (c._revealStart||0);
+      const k = Math.min(1, since/2.5);
+      c._group.scale.setScalar(0.001 + 0.999*k*k*(3-2*k));
+      // pulse light
+      if(c._light){
+        c._light.intensity = 0.7 + 0.25*Math.sin(elapsed*1.3 + c.day);
+      }
+    }
+  }
+
+  // === Brood morphing in nurseries ===
+  for(const c of CHAMBER_SCHEDULE){
+    if(c.type !== 'nursery' || !c._brood) continue;
+    if(c.day > day) continue;
+    for(const m of c._brood){
+      m.userData.cycle += dt * (0.05 + 0.02*Math.sin(elapsed*0.4));
+      const phase = (m.userData.cycle % 1);
+      const stage = m.userData.stage;
+      // gentle pulse + slow stage breathing
+      const breathe = 1 + 0.04*Math.sin(elapsed*1.6 + m.userData.cycle*4);
+      let sx = 1, sy = 1, sz = 1;
+      if(stage === 0){ sx = sy = sz = 0.7 + phase*0.3; }
+      else if(stage === 1){ sx = 1 + phase*0.2; sy = 1; sz = 1; }
+      else if(stage === 2){ sx = 0.9; sy = 1.0 + phase*0.15; sz = 0.9; }
+      else { sx = sy = sz = 1.0 + phase*0.12; }
+      m.scale.set(sx*breathe, sy*breathe, sz*breathe);
+      m.rotation.y = m.userData.cycle * 0.6;
+    }
+  }
+
+  // === Featured ants ===
+  for(const ent of featuredAnts){
+    if(day < ent.activeFromDay - 1){ ent.mesh.visible = false; continue; }
+    ent.mesh.visible = true;
+
+    // Decide target
+    if(ent.data.role === 'queen'){
+      const c = CHAMBER_SCHEDULE[0];
+      ent.target.set(c.pos[0] + Math.sin(elapsed*0.3 + ent.phase)*0.6, c.pos[1] - c.r*0.6 + 0.06, c.pos[2] + Math.cos(elapsed*0.3 + ent.phase)*0.6);
+    } else if(ent.data.role === 'subqueen'){
+      const c = CHAMBER_SCHEDULE[8];
+      if(day >= 70){
+        ent.target.set(c.pos[0] + Math.sin(elapsed*0.4 + ent.phase)*0.7, c.pos[1] - c.r*0.6 + 0.06, c.pos[2] + Math.cos(elapsed*0.4 + ent.phase)*0.7);
+      } else {
+        ent.target.set(0, -8, 0);
+        ent.mesh.visible = false;
+      }
+    } else if(ent.data.role === 'forager' || ent.data.role === 'scout'){
+      // alternate surface and tunnel
+      const period = 24 + (ent.phase * 3) % 12;
+      const t2 = (elapsed + ent.phase*7) % period;
+      if(t2 < period*0.6){
+        // on surface
+        const loc = SURFACE_LOCS[Math.floor((ent.phase + Math.floor(t2)) % SURFACE_LOCS.length)];
+        ent.target.copy(surfaceWanderPoint(loc, elapsed + ent.phase));
+        ent.onSurface = true;
+      } else {
+        const c = chamberByDay(day);
+        ent.target.copy(chamberInteriorPoint(c, elapsed + ent.phase));
+        ent.onSurface = false;
+      }
+    } else {
+      // others: in their home chamber
+      let c = CHAMBER_SCHEDULE[ent.homeIdx] || CHAMBER_SCHEDULE[0];
+      if(c.day > day) c = chamberByDay(day);
+      ent.target.copy(chamberInteriorPoint(c, elapsed + ent.phase));
+    }
+
+    // smooth move
+    const dir = new THREE.Vector3().subVectors(ent.target, ent.pos);
+    const dist = dir.length();
+    if(dist > 0.02){
+      dir.multiplyScalar(Math.min(1, ent.speed*dt/dist));
+      ent.pos.add(dir);
+    }
+    ent.mesh.position.copy(ent.pos);
+    // face direction
+    const aimDir = new THREE.Vector3().subVectors(ent.target, ent.pos);
+    if(aimDir.lengthSq() > 1e-4){
+      const ang = Math.atan2(aimDir.z, aimDir.x);
+      ent.mesh.rotation.y = -ang;
+    }
+
+    // antenna twitch
+    if(ent.mesh.userData.antennae){
+      const t = elapsed*4 + ent.phase;
+      ent.mesh.userData.antennae[0].rotation.x = 0.2 + Math.sin(t)*0.3;
+      ent.mesh.userData.antennae[1].rotation.x = -0.2 - Math.sin(t+0.7)*0.3;
+    }
+
+    // bobbing
+    ent.mesh.position.y += Math.sin(elapsed*8 + ent.phase)*0.012;
+  }
+
+  // === Worker swarm ===
+  const built = builtChambers(day);
+  const activeWorkers = Math.min(SWARM_COUNT, Math.max(0, Math.floor((day-12)*2.5)));
+  for(let i=0;i<SWARM_COUNT;i++){
+    const w = workerData[i];
+    const visible = i < activeWorkers && day >= w.activeFromDay;
+    if(!visible){
+      _wm.makeScale(0.001, 0.001, 0.001);
+      workerSwarm.setMatrixAt(i, _wm);
+      continue;
+    }
+    w.nextRetarget -= dt;
+    if(w.nextRetarget <= 0 || w.pos.distanceToSquared(w.target) < 0.02){
+      w.nextRetarget = 1.5 + Math.random()*4;
+      pickWorkerTarget(w, day);
+    }
+    const dir = new THREE.Vector3().subVectors(w.target, w.pos);
+    const d = dir.length();
+    if(d > 0.01){ dir.multiplyScalar(Math.min(1, w.speed*dt/d)); w.pos.add(dir); }
+    _wp.copy(w.pos);
+    _wp.y += Math.sin(elapsed*9 + w.phase)*0.014;
+    const ang = Math.atan2(w.target.z - w.pos.z, w.target.x - w.pos.x);
+    _wq.setFromEuler(new THREE.Euler(0, -ang, 0));
+    _wm.compose(_wp, _wq, _ws);
+    workerSwarm.setMatrixAt(i, _wm);
+  }
+  workerSwarm.instanceMatrix.needsUpdate = true;
+
+  // === Predator implication ===
+  if(day >= 30){
+    const cycle = (elapsed % 38);
+    if(cycle > 26 && cycle < 33){
+      predator.visible = true;
+      const t2 = (cycle - 26)/7;
+      predator.position.x = lerp(40, 24, t2);
+      predator.position.z = Math.sin(elapsed*2)*1.5;
+    } else {
+      predator.visible = false;
+    }
+  }
+  built.length;
+
+  // === Director shot picking ===
+  if((now - shotStart) > shotDuration){ pickShot(day); }
+  const ctx = { shotT: now - shotStart, day: day, focusChamber: null };
+  directorCams[camIdx].fn(ctx);
+
+  drawMinimap(day, ctx.focusChamber);
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+pickShot(1);
+animate();
+
+})();
+</script>
+</body>
+</html>

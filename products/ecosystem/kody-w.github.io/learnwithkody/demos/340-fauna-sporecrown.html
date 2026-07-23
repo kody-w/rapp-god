@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sporecrown · Learn with Kody</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cellipse cx='16' cy='17' rx='8' ry='10' fill='%236cf0a0'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#e9f6f0; --dim:#8fb7ad; --edge:rgba(140,255,220,.14);
+    --panel:rgba(6,16,15,.62); --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#01070a;color:var(--ink);font-family:var(--sans);overflow:hidden}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%}
+
+  /* ── overlay chrome ─────────────────────────────────────────── */
+  .hud{position:fixed;left:16px;top:14px;max-width:min(92vw,430px);z-index:5;
+       pointer-events:none;text-shadow:0 1px 14px rgba(0,0,0,.75)}
+  .titlerow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .species{font-size:23px;font-weight:680;letter-spacing:.4px}
+  .species .glyph{filter:drop-shadow(0 0 10px #6effc0)}
+  .rarity{font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;
+          padding:2px 9px;border-radius:999px;border:1px solid var(--edge);color:#062;
+          background:linear-gradient(180deg,#8effc8,#37d9a4)}
+  .idline{font-family:var(--mono);font-size:12px;color:var(--dim);margin-top:4px;letter-spacing:.3px}
+  .idline b{color:#aef7dc;font-weight:600}
+  .caption{margin-top:7px;font-size:12px;color:var(--dim);line-height:1.45;max-width:390px}
+
+  .controls{position:fixed;left:16px;bottom:16px;z-index:6;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button,.filelbl{pointer-events:auto;cursor:pointer;font-family:var(--sans);font-size:13px;font-weight:600;
+    color:var(--ink);background:var(--panel);border:1px solid var(--edge);border-radius:11px;
+    padding:9px 13px;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+    transition:border-color .18s,transform .1s,background .18s}
+  button:hover,.filelbl:hover{border-color:#6effc0;background:rgba(12,30,26,.7)}
+  button:active{transform:translateY(1px)}
+  .primary{background:linear-gradient(180deg,rgba(20,60,48,.85),rgba(8,26,22,.85));border-color:#59e6ac}
+  .filelbl input{display:none}
+
+  .dna{position:fixed;right:16px;top:14px;z-index:6;width:min(340px,86vw);pointer-events:auto}
+  .dna summary{list-style:none;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.6px;
+    color:var(--dim);text-align:right;padding:6px 2px;user-select:none}
+  .dna summary::-webkit-details-marker{display:none}
+  .dna summary::before{content:"⬡ ";color:#6effc0}
+  .dna[open] summary{color:#aef7dc}
+  .dna pre{margin:6px 0 0;max-height:56vh;overflow:auto;font-family:var(--mono);font-size:11px;line-height:1.5;
+    color:#bfe9db;background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:12px 13px;
+    backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+
+  .loadbox{position:fixed;right:16px;bottom:16px;z-index:6;width:min(340px,86vw);pointer-events:auto}
+  .loadbox summary{list-style:none;cursor:pointer;text-align:right;font-size:12px;font-weight:700;
+    letter-spacing:.6px;color:var(--dim);padding:6px 2px}
+  .loadbox summary::-webkit-details-marker{display:none}
+  .loadbox summary::before{content:"⤓ ";color:#6effc0}
+  .loadbox textarea{width:100%;height:74px;margin-top:6px;resize:vertical;font-family:var(--mono);font-size:10px;
+    color:#bfe9db;background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:9px;outline:none}
+  .loadbox textarea:focus{border-color:#6effc0}
+  .loadrow{display:flex;gap:8px;margin-top:6px;justify-content:flex-end}
+  .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%) translateY(-16px);z-index:20;
+    font-size:12.5px;font-weight:600;color:#04140f;background:linear-gradient(180deg,#9dffcf,#41d9a6);
+    padding:8px 15px;border-radius:999px;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;
+    box-shadow:0 6px 26px rgba(0,80,60,.4)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (max-width:640px){
+    .dna,.loadbox{width:min(300px,90vw)} .species{font-size:20px}
+    .caption{max-width:78vw}
+  }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div class="hud">
+  <div class="titlerow">
+    <span class="species"><span class="glyph">✦</span> Sporecrown</span>
+    <span class="rarity" id="rarity">—</span>
+  </div>
+  <div class="idline">genome <b id="idtxt">············</b> · born <span id="borntxt">—</span></div>
+  <div class="caption" id="caption">A fungal L-system: it germinates from a seed, branches, blooms glowing caps, then casts spores and regrows.</div>
+</div>
+
+<div class="controls">
+  <button class="primary" id="btnNew">✦ New Sporecrown</button>
+  <button id="btnSave">🥚 Save .egg</button>
+  <label class="filelbl">Load .egg<input type="file" id="fileIn" accept=".egg,.txt,text/plain"></label>
+</div>
+
+<details class="dna">
+  <summary>GENOME · DNA</summary>
+  <pre id="dna">{}</pre>
+</details>
+
+<details class="loadbox">
+  <summary>PASTE .egg</summary>
+  <textarea id="pasteIn" placeholder="paste a rappter .egg string here…" spellcheck="false"></textarea>
+  <div class="loadrow"><button id="btnPaste">Render paste</button></div>
+</details>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   FAUNA-EGG CORE — verified byte-exact against openrappter-vui / genome.js.
+   Embed VERBATIM in each demo. Do NOT edit: genomeId must stay reproducible
+   or the .egg will not load in rapp·go. (Verified: genomeId of the reference
+   egg === "fb18657910a5", and re-encode reproduces the original bytes.)
+   ══════════════════════════════════════════════════════════════════════════ */
+const EGG = (() => {
+  const b64enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const b64dec = s => { s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); };
+  async function sha256hex(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  function canonical(v){
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v!==null&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  async function genomeId(genome){ return (await sha256hex(canonical(genome))).slice(0,12); }
+  // xmur3 → mulberry32 deterministic PRNG (byte-identical to genome.js mkRng)
+  function mkRng(seed){ let h=1779033703^seed.length; for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),3432918353);h=h<<13|h>>>19;} h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); let s=(h^=h>>>16)>>>0; return function(){s+=0x6D2B79F5;let t=Math.imul(s^s>>>15,1|s);t=(t+Math.imul(t^t>>>7,61|t))^t;return((t^t>>>14)>>>0)/4294967296;}; }
+  // geohash encode (precision 6) so each egg carries a plausible born.coord
+  function geohash(lat,lng,precision=6){ const B='0123456789bcdefghjkmnpqrstuvwxyz'; let even=true,hash='',bits=0,hc=0; const la=[-90,90],lo=[-180,180]; while(hash.length<precision){ if(even){const m=(lo[0]+lo[1])/2; if(lng>m){hc=(hc<<1)|1;lo[0]=m;}else{hc<<=1;lo[1]=m;}} else {const m=(la[0]+la[1])/2; if(lat>m){hc=(hc<<1)|1;la[0]=m;}else{hc<<=1;la[1]=m;}} even=!even; if(++bits===5){hash+=B[hc];bits=0;hc=0;} } return hash; }
+
+  // Pack a genome into a canonical .egg payload (matches openrappter-vui exactly).
+  async function pack(genome, meta={}){
+    const id = await genomeId(genome);
+    const rng = mkRng(id);
+    const payload = {
+      genome, id,
+      born: meta.born || { coord: geohash((rng()*140)-70, (rng()*360)-180), t: 0 },
+      title: meta.title || 'a rappter',
+      rarity: meta.rarity || 'uncommon',
+      source: meta.source || 'learnwithkody-fauna'
+    };
+    return { egg: b64enc(JSON.stringify(payload)), id, payload };
+  }
+  function unpack(b64){ return JSON.parse(b64dec(b64.trim())); }
+  function download(b64, id){ const a=document.createElement('a'); a.href='data:application/octet-stream;base64,'+btoa(b64); /* raw text egg */ a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(b64); a.download=`rappter-${String(id).slice(0,8)}.egg`; document.body.appendChild(a); a.click(); a.remove(); }
+  return { b64enc, b64dec, genomeId, mkRng, geohash, pack, unpack, download };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SPORECROWN — a fungal L-system rappter.  New model: a recursive branching
+   stalk whose topology (depth, angle, split count) is read from the genome's
+   form layer; glowing fruiting caps sprout at the tips.  New animation: it
+   germinates from a seed, extends its branches outward generation by
+   generation, blooms + illuminates its caps, releases drifting spores, then
+   fades and regrows a fresh structure.  breathe → sway, glow → cap luminance.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const ease  = t=>t*t*(3-2*t);
+const easeOut= t=>1-Math.pow(1-t,3);
+
+function hexRgb(h){ h=h.replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join('');
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function rgba(rgb,a){ return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`; }
+function mix(a,b,t){ return [Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t))]; }
+
+/* ── Sporecrown-biased palettes: bioluminescent, uncanny, alive ──────────── */
+const PALETTES = [
+  { stalk:'#0c3b34', cap:'#3affc0', spore:'#b6ffe4', name:'aurora-flesh' },
+  { stalk:'#241042', cap:'#b06bff', spore:'#e8c6ff', name:'violet-veil'  },
+  { stalk:'#12301a', cap:'#7bff4d', spore:'#d8ffb0', name:'witchlight'   },
+  { stalk:'#082238', cap:'#3fd6ff', spore:'#bff0ff', name:'deep-glow'    },
+  { stalk:'#3a0e2a', cap:'#ff5fc4', spore:'#ffc6ec', name:'coral-fungus' },
+  { stalk:'#2b2205', cap:'#ffcf3a', spore:'#fff0b8', name:'amber-cap'    },
+];
+const SHAPES = ['star','star','ring','blob'];   // biased to the crowned 'star'
+
+/* ── generate a fresh, unique Sporecrown genome (real rappter schema) ────── */
+function makeGenome(){
+  const seed = Math.random().toString(36).slice(2,11);
+  const r = EGG.mkRng(seed);
+  const pal = PALETTES[Math.floor(r()*PALETTES.length)];
+  const stalk = hexRgb(pal.stalk), cap = hexRgb(pal.cap);
+
+  const shape    = SHAPES[Math.floor(r()*SHAPES.length)];
+  const symmetry = r()<0.55 ? 'radial' : 'bilateral';
+  const segments = 4 + Math.floor(r()*9);            // 4-12  → recursion depth
+  const limbs    = 1 + Math.floor(r()*5);            // 1-5   → primary stalks
+  const body_r   = +(0.22 + r()*0.30).toFixed(3);    // stalk thickness
+  const limb_len = +(0.15 + r()*0.42).toFixed(3);    // branch length
+
+  const glow    = +(0.42 + r()*0.55).toFixed(3);
+  const opacity = +(0.82 + r()*0.16).toFixed(3);
+
+  const genome = {
+    layers: [
+      { role:'form', k:40, shape, limbs, segments, symmetry, body_r, limb_len,
+        // ── Sporecrown extension fields (hash into the id; still a valid egg) ──
+        organism:'fungal-lsystem',
+        branch_angle:+(20+r()*22).toFixed(2),   // degrees between siblings
+        splits: r()<0.42?3:2,                    // children per node
+        taper:+(0.62+r()*0.16).toFixed(3),       // length falloff per generation
+        jitter:+(0.10+r()*0.30).toFixed(3),      // angular wander
+        cap_r:+(0.028+r()*0.05).toFixed(3) },    // fruiting-cap radius
+      { role:'surface', k:60,
+        palette:[pal.stalk, pal.cap, pal.spore], pattern:'glow', glow, opacity,
+        cap_hex:pal.cap, spore_hex:pal.spore, veil:+(r()*0.7).toFixed(3), lineage:pal.name },
+      { role:'motion', k:50,
+        breathe:+(0.30+r()*0.55).toFixed(3),     // sway amplitude
+        drift:+(0.28+r()*0.55).toFixed(3),       // spore drift
+        pulse:+(0.35+r()*0.60).toFixed(3),       // cap glow throb
+        reach:+(0.30+r()*0.55).toFixed(3),       // growth vigor
+        bloom:+(0.45+r()*0.5).toFixed(3),        // cap bloom speed
+        spore:+(0.30+r()*0.6).toFixed(3) }       // spore emission rate
+    ],
+    compose:{ windows:[[0,1,2]], loop:true }
+  };
+  return genome;
+}
+
+function rarityOf(g){
+  const f=g.layers[0], s=g.layers[1], m=g.layers[2];
+  const sc = s.glow*1.2 + (f.segments/12)*0.85 + (f.limbs/5)*0.55 + m.pulse*0.6 + (f.splits===3?0.45:0);
+  if(sc>3.05) return 'legendary';
+  if(sc>2.55) return 'epic';
+  if(sc>2.00) return 'rare';
+  if(sc>1.45) return 'uncommon';
+  return 'common';
+}
+
+/* ── build the L-system tree from the genome (topology from form layer) ───── */
+function buildTree(genome, seedStr){
+  const f = genome.layers[0];
+  const r = EGG.mkRng(seedStr);
+  const maxGen = clamp(2 + Math.round((f.segments-4)/8 * 4), 2, 6);   // 2..6
+  const splits = f.splits, taper = f.taper, jitter = f.jitter;
+  const branchAngle = (f.branch_angle*Math.PI/180);
+  const baseLen = 0.105 + f.limb_len*0.11;
+  let count = 0;
+
+  function grow(gen, len){
+    const b = { gen, len, theta0:0, phase:r()*Math.PI*2, capJit:r(), children:[], tip:false };
+    if(gen>=maxGen || count>1300){ b.tip=true; return b; }
+    let n = splits + (r()<0.22?1:0);
+    for(let i=0;i<n;i++){
+      count++;
+      const child = grow(gen+1, len*taper*(0.82+r()*0.34));
+      const spread = branchAngle*(0.75+gen*0.06);
+      const t = n===1?0:(i/(n-1)-0.5)*2;
+      child.theta0 = t*spread + (r()-0.5)*jitter*branchAngle;
+      b.children.push(child);
+    }
+    return b;
+  }
+
+  const trunks = clamp(1+Math.round(f.limbs/1.6),1,5);
+  const trunkSpread = (f.symmetry==='radial'?0.62:0.30);
+  const roots = [];
+  for(let i=0;i<trunks;i++){
+    count++;
+    const root = grow(0, baseLen);
+    root.theta0 = trunks===1 ? (r()-0.5)*0.08
+                 : ((i/(trunks-1))-0.5)*2*trunkSpread + (r()-0.5)*0.12;
+    roots.push(root);
+  }
+  return { roots, maxGen, count };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RENDERER
+   ══════════════════════════════════════════════════════════════════════════ */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = cv.clientWidth; H = cv.clientHeight;
+  cv.width = Math.max(1,Math.round(W*DPR));
+  cv.height= Math.max(1,Math.round(H*DPR));
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+
+// current creature state
+let cur = null;          // { genome, id, eggB64, rarity, born, title }
+let tree = null;
+let cycleCounter = 0;
+let lastCyc = 0;
+let spores = [];
+let motes  = [];         // ambient background drifting motes
+
+// timeline (seconds)
+const CYCLE=8.4, GROW_SPREAD=3.7, BLOOM_START=2.2, BLOOM_DUR=2.3,
+      SPORE_A=4.1, SPORE_B=6.6, FADE_A=6.9, FADE_B=8.15;
+
+function seedMotes(){
+  motes = [];
+  for(let i=0;i<46;i++) motes.push({
+    x:Math.random(), y:Math.random(), z:0.3+Math.random(),
+    ph:Math.random()*6.28, sp:0.2+Math.random()*0.5 });
+}
+seedMotes();
+
+function rebuildTree(){
+  tree = buildTree(cur.genome, cur.id + ':' + cycleCounter);
+}
+
+/* draw one branch (recursive); returns nothing, pushes caps as it reaches tips */
+function drawBranch(b, x, y, baseAngle, ctxState){
+  const { cyc, now, growEl, drawScale, stalkRgb, capRgb, glowBase, swayAmp, swaySpeed,
+          maxGen, form, motion, plantAlpha, capR } = ctxState;
+  const gen = b.gen;
+  const gStart = gen/(maxGen+1)*GROW_SPREAD;
+  const gEnd   = (gen+1)/(maxGen+1)*GROW_SPREAD;
+  const gf = clamp((growEl - gStart)/(gEnd-gStart), 0, 1);
+  if(gf<=0) return;
+
+  const sway = swayAmp * Math.sin(now*swaySpeed + b.phase + gen*0.55) * (0.25+gen*0.16);
+  const theta = baseAngle + b.theta0 + sway;
+  const L = b.len * easeOut(gf) * drawScale;
+  const x2 = x + Math.sin(theta)*L;
+  const y2 = y - Math.cos(theta)*L;
+
+  // tapered, faintly glowing stroke
+  const w = Math.max(0.7, (2.2 + form.body_r*11) * Math.pow(form.taper*1.02, gen) );
+  const lightT = clamp(gen/maxGen,0,1);
+  const col = mix(stalkRgb, capRgb, lightT*0.55 + 0.12*Math.sin(now*1.3+b.phase));
+  ctx.lineCap='round';
+  ctx.strokeStyle = rgba(col, plantAlpha*(0.55+0.35*lightT));
+  ctx.shadowColor = rgba(capRgb, plantAlpha*0.5*glowBase);
+  ctx.shadowBlur  = (4+gen*2.2)*glowBase;
+  ctx.lineWidth = w;
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  if(gf>=1){
+    for(const c of b.children) drawBranch(c, x2, y2, theta, ctxState);
+    if(b.tip) drawCap(x2, y2, theta, ctxState, b);
+  } else {
+    // still extending: a small living nub of light at the growth front
+    const g = ctx.createRadialGradient(x2,y2,0,x2,y2, w*2.4);
+    g.addColorStop(0, rgba(capRgb, plantAlpha*0.8*glowBase));
+    g.addColorStop(1, rgba(capRgb, 0));
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x2,y2,w*2.4,0,6.283); ctx.fill();
+  }
+}
+
+function drawCap(x, y, theta, s, b){
+  const { cyc, now, capR, capRgb, sporeRgb, motion, surface, plantAlpha, form } = s;
+  // per-cap bloom: staggered start once its branch has grown
+  const cs = BLOOM_START + b.capJit*1.1;
+  const bloom = clamp((cyc - cs)/BLOOM_DUR, 0, 1);
+  if(bloom<=0) return;
+  const rr = capR * (0.22 + 0.78*ease(bloom)) * (0.75 + b.capJit*0.7);
+  // glow → luminance, throbbing with pulse
+  const throb = 0.6 + 0.4*Math.sin(now*(1.6+motion.pulse*2.4) + b.phase*2.0);
+  const lum = clamp(surface.glow * throb * bloom * (0.45+motion.pulse*0.55), 0, 1) * plantAlpha;
+
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(theta*0.4);   // caps lean slightly along the branch direction
+
+  // outer halo
+  const halo = ctx.createRadialGradient(0,0,0,0,0, rr*3.6);
+  halo.addColorStop(0, rgba(capRgb, 0.55*lum));
+  halo.addColorStop(0.5, rgba(capRgb, 0.14*lum));
+  halo.addColorStop(1, rgba(capRgb, 0));
+  ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(0,0,rr*3.6,0,6.283); ctx.fill();
+
+  const shape = form.shape;
+  ctx.shadowColor = rgba(capRgb, lum*0.9);
+  ctx.shadowBlur = rr*1.6;
+
+  if(shape==='ring'){
+    // luminous torus cap
+    ctx.lineWidth = Math.max(1.4, rr*0.42);
+    ctx.strokeStyle = rgba(mix(capRgb,[255,255,255], 0.25*lum), plantAlpha*(0.6+0.4*bloom));
+    ctx.beginPath(); ctx.arc(0,-rr*0.3, rr, 0, 6.283); ctx.stroke();
+    ctx.fillStyle = rgba(sporeRgb, 0.45*lum);
+    ctx.beginPath(); ctx.arc(0,-rr*0.3, rr*0.4,0,6.283); ctx.fill();
+  } else if(shape==='star'){
+    // pointed, crown-like fruiting body
+    const pts = 6;
+    ctx.beginPath();
+    for(let i=0;i<pts*2;i++){
+      const a = (i/(pts*2))*Math.PI*2 - Math.PI/2;
+      const rad = (i%2===0? rr*1.15 : rr*0.5);
+      const px=Math.cos(a)*rad, py=Math.sin(a)*rad - rr*0.3;
+      i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+    }
+    ctx.closePath();
+    const gg = ctx.createRadialGradient(0,-rr*0.3,0,0,-rr*0.3,rr*1.2);
+    gg.addColorStop(0, rgba(mix(capRgb,[255,255,255],0.4*lum), plantAlpha));
+    gg.addColorStop(1, rgba(capRgb, plantAlpha*0.55));
+    ctx.fillStyle=gg; ctx.fill();
+  } else {
+    // soft dome (blob) with gills
+    const gg = ctx.createRadialGradient(0,-rr*0.55,0, 0,-rr*0.3, rr*1.25);
+    gg.addColorStop(0, rgba(mix(capRgb,[255,255,255],0.45*lum), plantAlpha));
+    gg.addColorStop(1, rgba(capRgb, plantAlpha*0.5));
+    ctx.fillStyle=gg;
+    ctx.beginPath(); ctx.ellipse(0,-rr*0.3, rr*1.15, rr*0.85, 0, Math.PI, 0); ctx.fill();
+    // gills
+    ctx.shadowBlur=0;
+    ctx.strokeStyle = rgba(sporeRgb, plantAlpha*0.35*bloom);
+    ctx.lineWidth=0.8;
+    for(let i=-2;i<=2;i++){ ctx.beginPath(); ctx.moveTo(i*rr*0.28,-rr*0.3); ctx.lineTo(i*rr*0.4, rr*0.15); ctx.stroke(); }
+  }
+
+  // bright core
+  ctx.shadowBlur = rr*2.0;
+  const core = ctx.createRadialGradient(0,-rr*0.3,0,0,-rr*0.3,rr*0.7);
+  core.addColorStop(0, rgba([255,255,255], 0.9*lum*plantAlpha));
+  core.addColorStop(1, rgba(capRgb, 0));
+  ctx.fillStyle=core; ctx.beginPath(); ctx.arc(0,-rr*0.3, rr*0.7,0,6.283); ctx.fill();
+  ctx.restore();
+
+  // emit spores during the release window
+  if(cyc>SPORE_A && cyc<SPORE_B && bloom>0.55 && spores.length<520){
+    if(Math.random() < motion.spore*0.30){
+      spores.push({ x, y:y-rr*0.3, vx:(Math.random()-0.5)*8,
+        vy:-(6+Math.random()*16), life:1, r:0.6+Math.random()*1.7,
+        hue: Math.random()<0.5?capRgb:sporeRgb, ph:Math.random()*6.28 });
+    }
+  }
+}
+
+function drawBackground(now){
+  // deep radial vignette
+  const g = ctx.createRadialGradient(W*0.5,H*0.62,H*0.05, W*0.5,H*0.55,H*0.95);
+  g.addColorStop(0,'#04141a'); g.addColorStop(0.55,'#02090e'); g.addColorStop(1,'#01060a');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // faint volumetric shaft from above
+  const shaft = ctx.createLinearGradient(0,0,0,H);
+  shaft.addColorStop(0,'rgba(90,220,180,0.05)'); shaft.addColorStop(0.6,'rgba(40,120,100,0.02)');
+  shaft.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=shaft; ctx.fillRect(0,0,W,H);
+
+  // ambient motes
+  ctx.save();
+  for(const m of motes){
+    const mx = (m.x*W + Math.sin(now*m.sp+m.ph)*22*m.z);
+    const my = ((m.y - (now*0.012*m.sp)%1 +1)%1)*H;
+    const a = 0.05+0.12*m.z*(0.6+0.4*Math.sin(now*1.4+m.ph));
+    ctx.fillStyle = `rgba(150,255,215,${a})`;
+    ctx.beginPath(); ctx.arc(mx,my, m.z*1.4, 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function updateSpores(dt, drift){
+  for(const s of spores){
+    s.life -= dt*0.16;
+    s.vy += -dt*3.0;                    // buoyant rise
+    s.vx += Math.sin(s.ph + performance.now()*0.001)*drift*7*dt;
+    s.x += s.vx*dt; s.y += s.vy*dt;
+    s.ph += dt*0.8;
+  }
+  spores = spores.filter(s=>s.life>0 && s.y>-40);
+}
+function drawSpores(){
+  for(const s of spores){
+    const a = clamp(s.life,0,1);
+    ctx.save();
+    ctx.shadowColor = rgba(s.hue, a*0.8); ctx.shadowBlur = s.r*4;
+    ctx.fillStyle = rgba(mix(s.hue,[255,255,255],0.4), a*0.85);
+    ctx.beginPath(); ctx.arc(s.x,s.y, s.r*(0.6+a*0.7), 0, 6.283); ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ── the animation loop ──────────────────────────────────────────────────── */
+let prevT = performance.now();
+function frame(){
+  const t = performance.now();
+  const dt = Math.min(0.05,(t-prevT)/1000); prevT=t;
+  const now = t/1000;
+
+  drawBackground(now);
+
+  if(cur && tree){
+    const g = cur.genome, form=g.layers[0], surface=g.layers[1], motion=g.layers[2];
+    let cyc = now % CYCLE;
+    if(cyc < lastCyc){ cycleCounter++; rebuildTree(); }   // wrapped → regrow fresh structure
+    lastCyc = cyc;
+
+    const growEl = Math.min(cyc, GROW_SPREAD);
+    const plantAlpha = surface.opacity * (cyc<FADE_A ? 1
+        : cyc<FADE_B ? clamp(1-(cyc-FADE_A)/(FADE_B-FADE_A)*0.95,0.05,1) : 0.05);
+
+    const drawScale = Math.min(W,H) * (1.05 + motion.reach*0.5);
+    const baseX = W*0.5, baseY = H*0.90;
+    const state = {
+      cyc, now, growEl, drawScale,
+      stalkRgb: hexRgb(surface.palette[0]),
+      capRgb:   hexRgb(surface.cap_hex),
+      sporeRgb: hexRgb(surface.spore_hex),
+      glowBase: 0.4 + surface.glow*0.9,
+      swayAmp:  0.03 + motion.breathe*0.16,
+      swaySpeed: 0.5 + motion.drift*1.3,
+      maxGen: tree.maxGen, form, motion, surface, plantAlpha,
+      capR: (form.cap_r||0.05) * Math.min(W,H) * 0.62
+    };
+
+    // seed glow at the base (always alive)
+    const seedPulse = 0.5+0.5*Math.sin(now*2.2);
+    const sg = ctx.createRadialGradient(baseX,baseY,0,baseX,baseY, 40+seedPulse*14);
+    sg.addColorStop(0, rgba(state.capRgb, 0.5*(0.5+0.5*seedPulse)));
+    sg.addColorStop(1, rgba(state.capRgb,0));
+    ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(baseX,baseY, 40+seedPulse*14,0,6.283); ctx.fill();
+
+    ctx.globalCompositeOperation='lighter';
+    for(const root of tree.roots) drawBranch(root, baseX, baseY, root.theta0, state);
+    updateSpores(dt, motion.drift);
+    drawSpores();
+    ctx.globalCompositeOperation='source-over';
+  }
+
+  window.FAUNA.frame++;
+  requestAnimationFrame(frame);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   UI + STATE WIRING
+   ══════════════════════════════════════════════════════════════════════════ */
+const el = id => document.getElementById(id);
+function toast(msg){
+  const t=el('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),1900);
+}
+function paintHud(){
+  el('idtxt').textContent = cur.id;
+  el('borntxt').textContent = cur.born?.coord || '—';
+  const rr = el('rarity'); rr.textContent = cur.rarity;
+  el('dna').textContent = JSON.stringify(cur.genome, null, 2);
+  el('caption').textContent =
+    `${cur.genome.layers[1].lineage} lineage · ${tree.count} branches over ${tree.maxGen} generations · `+
+    `${cur.genome.layers[0].splits}-way splits · caps at ${(cur.genome.layers[1].glow*100|0)}% glow.`;
+}
+
+async function setFromPayload(payload, eggB64){
+  cur = {
+    genome: payload.genome, id: payload.id, eggB64,
+    rarity: payload.rarity, born: payload.born, title: payload.title
+  };
+  cycleCounter = 0; lastCyc = 0; spores = [];
+  rebuildTree();
+  paintHud();
+  return cur.id;
+}
+
+async function newCreature(){
+  const genome = makeGenome();
+  const rarity = rarityOf(genome);
+  const { egg, id, payload } = await EGG.pack(genome, {
+    title:'Sporecrown', rarity, source:'learnwithkody-fauna' });
+  await setFromPayload(payload, egg);
+  return id;
+}
+
+async function loadEgg(b64){
+  const payload = EGG.unpack(b64);
+  if(!payload || !payload.genome || !payload.id) throw new Error('not a valid .egg');
+  await setFromPayload(payload, b64.trim());
+  return payload.id;
+}
+
+// buttons
+el('btnNew').addEventListener('click', async ()=>{ const id=await newCreature(); toast('✦ new Sporecrown '+id.slice(0,8)); });
+el('btnSave').addEventListener('click', ()=>{ if(cur){ EGG.download(cur.eggB64, cur.id); toast('🥚 saved '+cur.id.slice(0,8)+'.egg'); } });
+el('btnPaste').addEventListener('click', async ()=>{
+  const v = el('pasteIn').value.trim(); if(!v){ toast('paste an .egg first'); return; }
+  try{ const id=await loadEgg(v); toast('loaded '+id.slice(0,8)); }
+  catch(e){ toast('⚠ '+e.message); }
+});
+el('fileIn').addEventListener('change', async (ev)=>{
+  const f = ev.target.files && ev.target.files[0]; if(!f) return;
+  try{ const txt = await f.text(); const id=await loadEgg(txt); toast('loaded '+id.slice(0,8)); }
+  catch(e){ toast('⚠ '+e.message); }
+  ev.target.value='';
+});
+
+/* ── DEBUG HOOK (set only after first creature is live) ──────────────────── */
+window.FAUNA = {
+  title:'Sporecrown',
+  frame:0,
+  get genome(){ return cur ? cur.genome : null; },
+  get id(){ return cur ? cur.id : null; },
+  get eggB64(){ return cur ? cur.eggB64 : null; },
+  newCreature: async ()=> await newCreature(),
+  loadEgg: async (b64)=> await loadEgg(b64)
+};
+
+/* ── boot ────────────────────────────────────────────────────────────────── */
+(async function boot(){
+  resize();
+  await newCreature();      // first creature generated + rendering before loop
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

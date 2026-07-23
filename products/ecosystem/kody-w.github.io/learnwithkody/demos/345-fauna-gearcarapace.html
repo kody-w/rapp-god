@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gearcarapace — Learn with Kody Fauna</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cellipse cx='16' cy='17' rx='8' ry='10' fill='%23d8b46a'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#e8ddc4; --dim:#9a927f; --line:#2a2620; --panel:rgba(18,16,12,.72);
+    --brass:#c9a24b; --amber:#f0d890;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{
+    background:#05060a;color:var(--ink);
+    font:14px/1.45 ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    overflow:hidden;
+  }
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%}
+
+  /* ── overlay ── */
+  .hud{position:fixed;left:0;right:0;top:0;padding:16px 18px;pointer-events:none;
+       display:flex;flex-direction:column;gap:12px;z-index:5}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;pointer-events:auto}
+  button, .btn{
+    pointer-events:auto;cursor:pointer;border:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(40,34,22,.9),rgba(20,17,11,.92));
+    color:var(--ink);font:inherit;font-size:13px;padding:8px 13px;border-radius:9px;
+    letter-spacing:.02em;transition:.16s ease;backdrop-filter:blur(6px);
+  }
+  button:hover,.btn:hover{border-color:var(--brass);color:#fff;
+    box-shadow:0 0 0 1px rgba(201,162,75,.35),0 6px 22px rgba(0,0,0,.5);transform:translateY(-1px)}
+  button:active{transform:translateY(0)}
+  .primary{border-color:rgba(201,162,75,.5);
+    background:linear-gradient(180deg,rgba(90,68,26,.9),rgba(46,34,12,.95));color:var(--amber)}
+
+  .card{pointer-events:auto;max-width:min(94vw,440px);
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:11px 14px;backdrop-filter:blur(9px);box-shadow:0 10px 40px rgba(0,0,0,.5)}
+  .title{font-size:16px;letter-spacing:.04em;color:#fff;display:flex;align-items:baseline;gap:9px}
+  .title b{font-weight:600}
+  .rarity{font-size:11px;letter-spacing:.16em;text-transform:uppercase;padding:2px 8px;border-radius:20px;
+    border:1px solid currentColor}
+  .meta{margin-top:5px;color:var(--dim);font-size:12px;display:flex;gap:14px;flex-wrap:wrap}
+  .meta b{color:var(--brass);font-weight:600}
+  .id{color:#d8cba0}
+  .cap{margin-top:7px;font-size:11.5px;color:#8a8270;line-height:1.5}
+
+  details{margin-top:9px;border-top:1px solid var(--line);padding-top:8px}
+  summary{cursor:pointer;color:var(--dim);font-size:12px;list-style:none;user-select:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸ ";color:var(--brass)}
+  details[open] summary::before{content:"▾ "}
+  pre{margin:8px 0 0;max-height:34vh;overflow:auto;font-size:11px;line-height:1.4;
+    color:#bcae86;white-space:pre;background:rgba(0,0,0,.28);padding:9px 10px;border-radius:8px}
+
+  /* ── load popover ── */
+  #loadPop{position:fixed;right:18px;top:64px;z-index:6;width:min(92vw,360px);display:none;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;
+    backdrop-filter:blur(9px);box-shadow:0 12px 44px rgba(0,0,0,.6)}
+  #loadPop.open{display:block}
+  #loadPop label{font-size:12px;color:var(--dim);display:block;margin:0 0 6px}
+  textarea{width:100%;height:82px;resize:vertical;background:rgba(0,0,0,.35);color:#d8cba0;
+    border:1px solid var(--line);border-radius:8px;padding:8px;font:12px/1.4 ui-monospace,monospace}
+  #loadPop .row2{display:flex;gap:8px;margin-top:9px;align-items:center;flex-wrap:wrap}
+  input[type=file]{font-size:11px;color:var(--dim);max-width:100%}
+  .err{color:#e08a6a;font-size:11.5px;margin-top:7px;min-height:1em}
+  .foot{position:fixed;right:16px;bottom:12px;z-index:5;color:#5f5a4c;font-size:11px;
+    letter-spacing:.08em;pointer-events:none}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#2c2820;border-radius:6px}
+  @media (max-width:560px){ .card{font-size:13px} .hud{padding:12px} }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+
+<div class="hud">
+  <div class="row">
+    <button id="bNew" class="primary">✦ New Gearcarapace</button>
+    <button id="bSave">🥚 Save .egg</button>
+    <button id="bLoad">Load .egg</button>
+  </div>
+
+  <div class="card">
+    <div class="title"><b id="tTitle">Gearcarapace</b>
+      <span class="rarity" id="tRarity">—</span></div>
+    <div class="meta">
+      <span>id <b class="id" id="tId">············</b></span>
+      <span>metal <b id="tMetal">—</b></span>
+      <span>gears <b id="tGears">—</b></span>
+      <span>rpm <b id="tRpm">—</b></span>
+    </div>
+    <div class="cap" id="tCap"></div>
+    <details>
+      <summary>show DNA · genome JSON</summary>
+      <pre id="tJson"></pre>
+    </details>
+  </div>
+</div>
+
+<div id="loadPop">
+  <label>Paste a <b>.egg</b> string, or choose a file — the exact creature reloads.</label>
+  <textarea id="eggIn" placeholder="eyJnZW5vbWUiOn…  (paste .egg here)"></textarea>
+  <div class="row2">
+    <button id="bRender" class="primary">Render egg</button>
+    <input id="eggFile" type="file" accept=".egg,.txt,text/plain">
+    <button id="bClose">close</button>
+  </div>
+  <div class="err" id="eggErr"></div>
+</div>
+
+<div class="foot">LEARN WITH KODY · FAUNA</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   FAUNA-EGG CORE — verified byte-exact against openrappter-vui / genome.js.
+   Embed VERBATIM in each demo. Do NOT edit: genomeId must stay reproducible
+   or the .egg will not load in rapp·go. (Verified: genomeId of the reference
+   egg === "fb18657910a5", and re-encode reproduces the original bytes.)
+   ══════════════════════════════════════════════════════════════════════════ */
+const EGG = (() => {
+  const b64enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const b64dec = s => { s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); };
+  async function sha256hex(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  function canonical(v){
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v!==null&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  async function genomeId(genome){ return (await sha256hex(canonical(genome))).slice(0,12); }
+  // xmur3 → mulberry32 deterministic PRNG (byte-identical to genome.js mkRng)
+  function mkRng(seed){ let h=1779033703^seed.length; for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),3432918353);h=h<<13|h>>>19;} h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); let s=(h^=h>>>16)>>>0; return function(){s+=0x6D2B79F5;let t=Math.imul(s^s>>>15,1|s);t=(t+Math.imul(t^t>>>7,61|t))^t;return((t^t>>>14)>>>0)/4294967296;}; }
+  // geohash encode (precision 6) so each egg carries a plausible born.coord
+  function geohash(lat,lng,precision=6){ const B='0123456789bcdefghjkmnpqrstuvwxyz'; let even=true,hash='',bits=0,hc=0; const la=[-90,90],lo=[-180,180]; while(hash.length<precision){ if(even){const m=(lo[0]+lo[1])/2; if(lng>m){hc=(hc<<1)|1;lo[0]=m;}else{hc<<=1;lo[1]=m;}} else {const m=(la[0]+la[1])/2; if(lat>m){hc=(hc<<1)|1;la[0]=m;}else{hc<<=1;la[1]=m;}} even=!even; if(++bits===5){hash+=B[hc];bits=0;hc=0;} } return hash; }
+
+  // Pack a genome into a canonical .egg payload (matches openrappter-vui exactly).
+  async function pack(genome, meta={}){
+    const id = await genomeId(genome);
+    const rng = mkRng(id);
+    const payload = {
+      genome, id,
+      born: meta.born || { coord: geohash((rng()*140)-70, (rng()*360)-180), t: 0 },
+      title: meta.title || 'a rappter',
+      rarity: meta.rarity || 'uncommon',
+      source: meta.source || 'learnwithkody-fauna'
+    };
+    return { egg: b64enc(JSON.stringify(payload)), id, payload };
+  }
+  function unpack(b64){ return JSON.parse(b64dec(b64.trim())); }
+  function download(b64, id){ const a=document.createElement('a'); a.href='data:application/octet-stream;base64,'+btoa(b64); /* raw text egg */ a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(b64); a.download=`rappter-${String(id).slice(0,8)}.egg`; document.body.appendChild(a); a.click(); a.remove(); }
+  return { b64enc, b64dec, genomeId, mkRng, geohash, pack, unpack, download };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   GEARCARAPACE — a clockwork mechanical beetle. Metallic carapace over a
+   visible, correctly-meshing gear train (counter-rotating), articulated
+   mandibles + legs, a breathing shell. Everything below the codec is species
+   code; all morphology & motion derive from the genome (reproducible from id).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// ── colour helpers ──────────────────────────────────────────────────────────
+const TAU = Math.PI*2;
+const clamp=(x,a,b)=>x<a?a:x>b?b:x;
+const lerp=(a,b,t)=>a+(b-a)*t;
+function hx(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function rgb(a){return `rgb(${a[0]|0},${a[1]|0},${a[2]|0})`;}
+function rgba(a,al){return `rgba(${a[0]|0},${a[1]|0},${a[2]|0},${al})`;}
+function mix(a,b,t){return [lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)];}
+function shade(a,f){ // f<0 darken, f>0 lighten
+  return f<0 ? mix(a,[0,0,0],-f) : mix(a,[255,255,255],f); }
+
+// metal families → [dark, mid, light, glow]
+const METALS = {
+  brass:   ['#241a0c','#9c7b3a','#e8c86a','#ffcf6a'],
+  copper:  ['#2a1610','#9c5836','#e5945c','#ff9a55'],
+  steel:   ['#171c22','#69737e','#cdd6de','#8fd8ff'],
+  gunmetal:['#101318','#434a55','#98a2b0','#7fa6ff'],
+  gold:    ['#33270a','#b8922c','#ffe6a0','#ffe08a']
+};
+function paletteFor(metal){ return (METALS[metal]||METALS.brass).slice(); }
+
+// ── genome generation (biased to the Gearcarapace identity) ─────────────────
+function rnd(a,b){return a+Math.random()*(b-a);}
+function pick(arr){return arr[(Math.random()*arr.length)|0];}
+function r3(x){return +x.toFixed(3);}
+
+function makeGenome(){
+  const metal = pick(['brass','brass','brass','copper','copper','steel','gunmetal','gold']);
+  const shape = Math.random()<0.68 ? 'ring' : (Math.random()<0.6 ? 'star' : 'blob');
+  const legPairs = pick([2,3,3,3,4]);         // beetle: 3 pairs typical
+  const limbs = legPairs*2;                    // 4..8
+  const segments = 4 + ((Math.random()*7)|0);  // gear count 4..10  (∈3..12)
+
+  const form = { role:'form', k:40, shape, limbs, segments, symmetry:'bilateral',
+    body_r:r3(rnd(0.30,0.50)), limb_len:r3(rnd(0.26,0.52)),
+    // extension fields (hash into the id — still a valid rappter egg)
+    metal, mandibles:pick([1,1,2]), plates:3+((Math.random()*5)|0),
+    antenna_seg:3+((Math.random()*4)|0) };
+
+  const surface = { role:'surface', k:60, palette:paletteFor(metal),
+    pattern:pick(['stripe','stripe','glow','solid']),
+    glow:r3(rnd(0.35,0.92)), opacity:r3(rnd(0.9,1)),
+    patina:r3(rnd(0,0.55)), rivets:r3(rnd(0.45,1)) };
+
+  const motion = { role:'motion', k:50,
+    breathe:r3(rnd(0.30,0.80)), drift:r3(rnd(0.10,0.50)),
+    pulse:r3(rnd(0.40,1.00)), reach:r3(rnd(0.35,0.85)),
+    clack:r3(rnd(0.30,0.90)) };
+
+  return { layers:[form,surface,motion], compose:{ windows:[[0,1,2]], loop:true } };
+}
+
+function rarityFor(g){
+  const f=g.layers[0], s=g.layers[1];
+  let sc = 0;
+  sc += ({gold:4,copper:1,steel:1,brass:0,gunmetal:2})[f.metal] ?? 0;
+  sc += s.glow>0.78?2:s.glow>0.6?1:0;
+  sc += f.segments>=9?2:f.segments>=7?1:0;
+  sc += f.mandibles===2?1:0;
+  sc += s.patina>0.4?1:0;
+  return sc>=8?'legendary':sc>=6?'epic':sc>=4?'rare':sc>=2?'uncommon':'common';
+}
+const RARITY_COLOR={common:'#9aa4b0',uncommon:'#7fc7a8',rare:'#7fa6ff',epic:'#c88bff',legendary:'#ffcf6a'};
+
+// ── build the mechanical model from a genome (reproducible via id rng) ───────
+function buildModel(genome, id){
+  const rng = EGG.mkRng(id);
+  const form=genome.layers[0], surf=genome.layers[1], mot=genome.layers[2];
+  const pal = surf.palette.map(hx);
+  const glow = hx(surf.palette[3]);
+
+  const N = clamp(form.segments|0,3,12);
+  const M = 1.0;                              // gear module (tooth pitch), constant → gears mesh
+  // teeth counts alternate large/small for obvious counter-rotation
+  const teeth=[], radii=[], spokes=[];
+  for(let i=0;i<N;i++){
+    const big = (i%2===0);
+    let t = big ? 16+((rng()*7)|0) : 10+((rng()*4)|0);   // 16..22 / 10..13
+    teeth.push(t); radii.push(M*t/2); spokes.push(3+((rng()*4)|0));
+  }
+  // colinear train down the spine; centre distance = r[i-1]+r[i] (tangent, meshed)
+  const cy=[]; let y=0;
+  for(let i=0;i<N;i++){ if(i>0) y += radii[i-1]+radii[i]; cy.push(y); }
+  const len=y; const shift=len/2;
+  for(let i=0;i<N;i++) cy[i]-=shift;          // centre the train on 0
+
+  // static interlock phases a[] (conjugate mesh; direction d = +y between centres)
+  const a=new Array(N); a[0]=rng()*TAU;
+  for(let i=1;i<N;i++){
+    const d = Math.PI/2;                       // world dir from i-1 to i (down +y)
+    const N0=teeth[i-1], N1=teeth[i];
+    a[i] = (d+Math.PI) - Math.PI/N1 + (N0/N1)*(d - a[i-1]);
+  }
+
+  // leg attachments (bilateral), spread over the middle gears
+  const legPairs = clamp((form.limbs/2)|0,2,4);
+  const legs=[];
+  const yTop=cy[0], yBot=cy[N-1];
+  for(let p=0;p<legPairs;p++){
+    const t=(p+0.5)/legPairs;
+    const ly=lerp(yTop*0.55, yBot*0.9, t);
+    const seg=radii.reduce((m,r)=>Math.max(m,r),0);
+    for(const side of [-1,1]){
+      legs.push({ side, y:ly,
+        femur: seg*1.05*(0.85+rng()*0.4),
+        tibia: seg*0.95*(0.85+rng()*0.4),
+        base: side*(0.35+rng()*0.18),          // rest splay
+        phase: p*0.9 + (side<0?0:Math.PI*0.5) + rng()*0.5,
+        joints: 3+((rng()*2)|0) });
+    }
+  }
+
+  // rivets seeded along the shell seam/edges
+  const rivets=[]; const rcount=(6+surf.rivets*16)|0;
+  for(let i=0;i<rcount;i++) rivets.push(rng());
+
+  const maxR = radii.reduce((m,r)=>Math.max(m,r),0);
+  return {
+    genome, id, pal, glow, teeth, radii, spokes, cy, a, N,
+    legs, rivets,
+    maxR, halfW:maxR*1.55, yTop, yBot, len,
+    shape:form.shape, plates:form.plates|0, mandibles:form.mandibles|0,
+    antenna:form.antenna_seg|0,
+    pattern:surf.pattern, glowAmt:surf.glow, patina:surf.patina, opacity:surf.opacity,
+    // motion
+    rpm: 6 + mot.pulse*46,                     // 6..52 rpm of the drive gear
+    breathe:mot.breathe, drift:mot.drift, reach:mot.reach, clack:mot.clack,
+    dir: (a[0]%2<1)?1:-1                        // whole-train drive direction flavour
+  };
+}
+
+// ── state ────────────────────────────────────────────────────────────────────
+let MODEL=null, currentGenome=null, currentId='', currentEggB64='', currentPayload=null;
+
+// ── canvas ──────────────────────────────────────────────────────────────────
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth; H=window.innerHeight;
+  cv.width=W*DPR; cv.height=H*DPR;
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize); resize();
+
+// dust motes (background life)
+const MOTES=Array.from({length:46},()=>({x:Math.random(),y:Math.random(),
+  z:0.3+Math.random()*0.7, s:0.4+Math.random()*1.6, ph:Math.random()*TAU}));
+
+// ── gear geometry ────────────────────────────────────────────────────────────
+function gearPath(cx,cy,r,teethN,ang){
+  const add=0.42, ded=0.34;                    // addendum / dedendum (in module units *? scaled by module=1)
+  const Rt=r+add, Rr=r-ded, p=TAU/teethN;
+  ctx.beginPath();
+  for(let k=0;k<teethN;k++){
+    const b=ang + k*p;
+    const a1=b-p*0.26, a2=b-p*0.14, a3=b+p*0.14, a4=b+p*0.26;
+    if(k===0) ctx.moveTo(cx+Math.cos(a1)*Rr, cy+Math.sin(a1)*Rr);
+    else       ctx.lineTo(cx+Math.cos(a1)*Rr, cy+Math.sin(a1)*Rr);
+    ctx.lineTo(cx+Math.cos(a2)*Rt, cy+Math.sin(a2)*Rt);
+    ctx.lineTo(cx+Math.cos(a3)*Rt, cy+Math.sin(a3)*Rt);
+    ctx.lineTo(cx+Math.cos(a4)*Rr, cy+Math.sin(a4)*Rr);
+  }
+  ctx.closePath();
+}
+
+function drawGear(cx,cy,r,teethN,ang,spokesN,pal,glow,isDrive){
+  const Rr=r-0.34;
+  // metal disc with fixed-light radial sheen (light from upper-left in body frame)
+  const g=ctx.createRadialGradient(cx-r*0.4,cy-r*0.4,r*0.15, cx,cy,r*1.25);
+  g.addColorStop(0, rgb(shade(pal[2],0.15)));
+  g.addColorStop(0.5, rgb(pal[1]));
+  g.addColorStop(1, rgb(shade(pal[0],0.1)));
+  gearPath(cx,cy,r,teethN,ang);
+  ctx.fillStyle=g; ctx.fill();
+  // tooth rim shade
+  ctx.lineWidth=0.12; ctx.strokeStyle=rgba(shade(pal[0],-0.2),0.6); ctx.stroke();
+
+  // inner face (slightly recessed)
+  ctx.beginPath(); ctx.arc(cx,cy,Rr*0.92,0,TAU);
+  ctx.fillStyle=rgba(shade(pal[0],0.05),0.9); ctx.fill();
+
+  // spokes (make rotation legible)
+  ctx.save();
+  ctx.lineCap='round';
+  for(let s=0;s<spokesN;s++){
+    const sa=ang+s*TAU/spokesN;
+    const c=Math.cos(sa), si=Math.sin(sa);
+    // tapered spoke as a thin quad
+    const w1=r*0.11, w2=r*0.05, r0=r*0.20, r1=Rr*0.82;
+    const nx=-si, ny=c;
+    ctx.beginPath();
+    ctx.moveTo(cx+c*r0+nx*w1, cy+si*r0+ny*w1);
+    ctx.lineTo(cx+c*r1+nx*w2, cy+si*r1+ny*w2);
+    ctx.lineTo(cx+c*r1-nx*w2, cy+si*r1-ny*w2);
+    ctx.lineTo(cx+c*r0-nx*w1, cy+si*r0-ny*w1);
+    ctx.closePath();
+    const sg=ctx.createLinearGradient(cx+c*r0,cy+si*r0,cx+c*r1,cy+si*r1);
+    sg.addColorStop(0,rgb(shade(pal[1],0.2)));
+    sg.addColorStop(1,rgb(shade(pal[0],0.12)));
+    ctx.fillStyle=sg; ctx.fill();
+  }
+  ctx.restore();
+
+  // hub
+  const hub=ctx.createRadialGradient(cx-r*0.06,cy-r*0.06,0,cx,cy,r*0.28);
+  hub.addColorStop(0,rgb(shade(pal[2],0.25)));
+  hub.addColorStop(1,rgb(shade(pal[0],0.02)));
+  ctx.beginPath(); ctx.arc(cx,cy,r*0.24,0,TAU); ctx.fillStyle=hub; ctx.fill();
+  // bore
+  ctx.beginPath(); ctx.arc(cx,cy,r*0.085,0,TAU);
+  ctx.fillStyle=rgb(shade(pal[0],-0.35)); ctx.fill();
+  if(isDrive){ // drive gear gets a glowing jewel bearing
+    ctx.beginPath(); ctx.arc(cx,cy,r*0.05,0,TAU);
+    ctx.fillStyle=rgba(glow,0.9); ctx.fill();
+  }
+  // specular arc on rim
+  ctx.beginPath(); ctx.arc(cx,cy,r*0.82,Math.PI*1.05,Math.PI*1.5);
+  ctx.lineWidth=r*0.06; ctx.strokeStyle=rgba([255,255,255],0.18); ctx.stroke();
+}
+
+// ── shell (elytra) outline profile ──────────────────────────────────────────
+function widthProfile(t){ // t 0=head .. 1=tail ; returns 0..1
+  // narrow head, bulge at ~0.35, rounded taper to tail
+  const bulge=Math.sin(clamp((t)*1.0,0,1)*Math.PI); // 0..1..0
+  const head=0.55+0.45*Math.min(1,t/0.12);
+  const tail=1-0.5*Math.max(0,(t-0.7)/0.3);
+  return clamp(0.30+0.70*bulge, 0, 1)*head*tail;
+}
+
+let ANIM_START=performance.now();
+
+// ── main draw ────────────────────────────────────────────────────────────────
+function draw(now){
+  const t=(now-ANIM_START)/1000;
+  const m=MODEL;
+  ctx.clearRect(0,0,W,H);
+
+  // ── background: warm rim + vignette + guide rings ──
+  const bg=ctx.createRadialGradient(W*0.5,H*0.46,0, W*0.5,H*0.5,Math.max(W,H)*0.72);
+  bg.addColorStop(0,'#0c0f16'); bg.addColorStop(0.55,'#070911'); bg.addColorStop(1,'#030409');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  if(m){
+    // amber back-glow
+    const gl=ctx.createRadialGradient(W*0.5,H*0.5,0,W*0.5,H*0.5,Math.min(W,H)*0.5);
+    gl.addColorStop(0,rgba(m.glow,0.10)); gl.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=gl; ctx.fillRect(0,0,W,H);
+  }
+  // faint concentric guide rings
+  ctx.save(); ctx.globalAlpha=0.05; ctx.strokeStyle='#3a4048';
+  for(let i=1;i<=5;i++){ ctx.beginPath();
+    ctx.arc(W*0.5,H*0.5, i*Math.min(W,H)*0.09, 0, TAU); ctx.lineWidth=1; ctx.stroke(); }
+  ctx.restore();
+
+  // dust motes drifting up
+  ctx.save();
+  for(const p of MOTES){
+    const yy=(p.y - (t*0.02*p.z)%1 +1)%1;
+    const x=p.x*W + Math.sin(t*0.5+p.ph)*8*p.z;
+    ctx.globalAlpha=0.10+0.14*p.z;
+    ctx.fillStyle=m?rgba(m.glow,1):'#caa';
+    ctx.beginPath(); ctx.arc(x, yy*H, p.s*p.z, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+
+  if(!m){ requestAnimationFrame(draw); return; }
+
+  // ── layout transform ──
+  const scale = 0.74*Math.min(W,H) / (m.len + m.maxR*3.4);
+  const bob   = Math.sin(t*0.6)*6*m.drift;
+  const sway  = Math.sin(t*0.42)*0.05*m.drift;       // gentle body roll
+  const breath= (0.5+0.5*Math.sin(t*1.1))*m.breathe; // shell breathing 0..1
+
+  ctx.save();
+  ctx.translate(W*0.5, H*0.5+bob);
+
+  // soft ground shadow (drawn in screen space, under everything)
+  ctx.save();
+  ctx.scale(1,0.32);
+  const sh=ctx.createRadialGradient(0,m.len*scale*0.12,0,0,m.len*scale*0.12,m.halfW*scale*3.2);
+  sh.addColorStop(0,'rgba(0,0,0,0.5)'); sh.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=sh; ctx.beginPath();
+  ctx.ellipse(0, m.len*scale*0.55, m.halfW*scale*3.2, m.halfW*scale*3.2, 0,0,TAU); ctx.fill();
+  ctx.restore();
+
+  ctx.rotate(sway);
+  ctx.scale(scale, scale*0.94);   // slight squash → low camera
+
+  // ── compute gear angles (conjugate mesh chain) ──
+  const w0 = m.dir * m.rpm/60 * TAU;            // rad/s of drive gear
+  const th=new Array(m.N);
+  th[0] = m.a[0] + w0*t;
+  for(let i=1;i<m.N;i++){
+    const N0=m.teeth[i-1], N1=m.teeth[i];
+    th[i] = m.a[i] - (N0/N1)*(th[i-1]-m.a[i-1]);   // counter-rotate, ratio N0/N1
+  }
+  const headGear = th[0];
+
+  // ── LEGS (behind shell) ──
+  drawLegs(m,t,breath);
+
+  // ── GEAR TRAIN (drawn before shell so shell frames it through the seam) ──
+  for(let i=0;i<m.N;i++){
+    drawGear(0, m.cy[i], m.radii[i], m.teeth[i], th[i], m.spokes[i], m.pal, m.glow, i===0);
+  }
+
+  // ── SHELL / carapace over the sides, leaving a seam window on the gears ──
+  drawShell(m, breath);
+
+  // ── HEAD + antennae + eyes, MANDIBLES clacking with the head gear ──
+  drawHead(m, t, headGear);
+
+  ctx.restore();
+
+  // vignette on top
+  const vg=ctx.createRadialGradient(W*0.5,H*0.5,Math.min(W,H)*0.35,W*0.5,H*0.5,Math.max(W,H)*0.7);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.55)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+
+  window.FAUNA.frame++;
+  requestAnimationFrame(draw);
+}
+
+// ── legs ─────────────────────────────────────────────────────────────────────
+function drawLegs(m,t,breath){
+  const w=m.rpm/60*TAU*0.5;
+  ctx.save();
+  ctx.lineCap='round';
+  for(const L of m.legs){
+    const hipX=L.side*(m.halfW*0.96);
+    const hy=L.y;
+    // swing tied to the machine + twitch
+    const swing = (m.reach)*0.42*Math.sin(t*(1.1+m.rpm*0.01)+L.phase)
+                + 0.06*Math.sin(t*7+L.phase*3);   // fast twitch
+    const a0 = L.side*(1.15+L.base) + swing;        // femur world angle
+    const fx=hipX+Math.cos(a0)*L.femur, fy=hy+Math.sin(a0)*L.femur;
+    const a1 = a0 + L.side*(0.9 + 0.35*Math.sin(t*(1.1)+L.phase+1.2));
+    const tx=fx+Math.cos(a1)*L.tibia, ty=fy+Math.sin(a1)*L.tibia;
+
+    // femur
+    ctx.beginPath(); ctx.moveTo(hipX,hy); ctx.lineTo(fx,fy);
+    ctx.lineWidth=m.maxR*0.14; ctx.strokeStyle=rgb(shade(m.pal[1],-0.15)); ctx.stroke();
+    ctx.lineWidth=m.maxR*0.06; ctx.strokeStyle=rgb(shade(m.pal[2],0.1)); ctx.stroke();
+    // tibia
+    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.lineTo(tx,ty);
+    ctx.lineWidth=m.maxR*0.10; ctx.strokeStyle=rgb(shade(m.pal[1],-0.2)); ctx.stroke();
+    // knee joint bolt
+    ctx.beginPath(); ctx.arc(fx,fy,m.maxR*0.09,0,TAU);
+    ctx.fillStyle=rgb(shade(m.pal[2],0.15)); ctx.fill();
+    // foot claw
+    ctx.beginPath(); ctx.arc(tx,ty,m.maxR*0.05,0,TAU);
+    ctx.fillStyle=rgb(shade(m.pal[0],0.05)); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── carapace shell ───────────────────────────────────────────────────────────
+function elytronPath(m,side,gap){
+  const seamX = side*(gap*0.5);
+  const y0=m.yTop - m.maxR*0.4, y1=m.yBot + m.maxR*0.9;
+  const span=y1-y0;
+  const angular = m.shape==='star'?0.14:0;      // star shape → ridged/angular edge
+  ctx.beginPath();
+  const NS=30;
+  // outer edge head→tail
+  for(let i=0;i<=NS;i++){
+    const tt=i/NS, yy=y0+span*tt;
+    let w=widthProfile(tt)*m.halfW;
+    if(angular) w*=1+angular*Math.sin(tt*Math.PI*7);
+    const x=seamX + side*w;
+    i===0?ctx.moveTo(x,yy):ctx.lineTo(x,yy);
+  }
+  // inner (seam) edge tail→head
+  for(let i=NS;i>=0;i--){
+    const tt=i/NS, yy=y0+span*tt;
+    ctx.lineTo(seamX, yy);
+  }
+  ctx.closePath();
+}
+
+function drawShell(m, breath){
+  const gap = m.maxR*(0.9 + breath*1.4);         // seam window widens as it "breathes"
+  for(const side of [-1,1]){
+    ctx.save();
+    elytronPath(m,side,gap);
+    ctx.clip();
+
+    // domed metal fill: dark at seam, bright ridge, dark outer edge
+    const g=ctx.createLinearGradient(side*(gap*0.5),0, side*(gap*0.5+m.halfW),0);
+    g.addColorStop(0, rgba(shade(m.pal[0],-0.05), m.opacity));
+    g.addColorStop(0.28, rgba(shade(m.pal[1],0.05), m.opacity));
+    g.addColorStop(0.5, rgba(shade(m.pal[2],0.05), m.opacity));
+    g.addColorStop(0.72, rgba(m.pal[1], m.opacity));
+    g.addColorStop(1, rgba(shade(m.pal[0],0.02), m.opacity));
+    elytronPath(m,side,gap); ctx.fillStyle=g; ctx.fill();
+
+    // patina wash
+    if(m.patina>0){
+      ctx.globalAlpha=m.patina*0.35;
+      elytronPath(m,side,gap);
+      ctx.fillStyle=rgb(mix(hx('#2f6b5e'),m.glow,0.2)); ctx.fill();
+      ctx.globalAlpha=1;
+    }
+
+    // plate seams (transverse ribs)
+    const y0=m.yTop-m.maxR*0.4, y1=m.yBot+m.maxR*0.9, span=y1-y0;
+    ctx.strokeStyle=rgba(shade(m.pal[0],-0.15),0.55); ctx.lineWidth=0.18;
+    for(let p=1;p<=m.plates;p++){
+      const tt=p/(m.plates+1), yy=y0+span*tt;
+      const w=widthProfile(tt)*m.halfW;
+      ctx.beginPath();
+      ctx.moveTo(side*(gap*0.5), yy-0.2);
+      ctx.quadraticCurveTo(side*(gap*0.5+w*0.6), yy+0.4, side*(gap*0.5+w), yy-0.1);
+      ctx.stroke();
+    }
+
+    // pattern: stripes along the shell length
+    if(m.pattern==='stripe'){
+      ctx.strokeStyle=rgba(shade(m.pal[2],0.2),0.22); ctx.lineWidth=0.16;
+      for(let s=1;s<=4;s++){
+        const fx=s/5;
+        ctx.beginPath();
+        for(let i=0;i<=24;i++){ const tt=i/24,yy=y0+span*tt;
+          const x=side*(gap*0.5 + fx*widthProfile(tt)*m.halfW);
+          i===0?ctx.moveTo(x,yy):ctx.lineTo(x,yy); }
+        ctx.stroke();
+      }
+    } else if(m.pattern==='spot'||m.pattern==='glow'){
+      ctx.fillStyle=rgba(m.glow, m.pattern==='glow'?0.20:0.14);
+      for(let s=0;s<10;s++){
+        const tt=0.12+0.76*((s*7%10)/10), fx=0.3+0.5*((s*3%5)/5);
+        const yy=y0+span*tt, x=side*(gap*0.5+fx*widthProfile(tt)*m.halfW);
+        ctx.beginPath(); ctx.arc(x,yy,m.maxR*0.12,0,TAU); ctx.fill();
+      }
+    }
+
+    // moving specular sheen band
+    const sweep=((performance.now()/2600)%1);
+    const sx=side*(gap*0.5 + sweep*m.halfW);
+    const sg=ctx.createLinearGradient(sx-m.halfW*0.18,0,sx+m.halfW*0.18,0);
+    sg.addColorStop(0,'rgba(255,255,255,0)');
+    sg.addColorStop(0.5,'rgba(255,255,255,0.16)');
+    sg.addColorStop(1,'rgba(255,255,255,0)');
+    elytronPath(m,side,gap); ctx.fillStyle=sg; ctx.fill();
+
+    // seam-edge shadow that overlaps the gears (gears emerge from under shell)
+    const eg=ctx.createLinearGradient(side*(gap*0.5),0, side*(gap*0.5+m.maxR*0.6),0);
+    eg.addColorStop(0,'rgba(0,0,0,0.55)'); eg.addColorStop(1,'rgba(0,0,0,0)');
+    elytronPath(m,side,gap); ctx.fillStyle=eg; ctx.fill();
+
+    ctx.restore();
+
+    // outline
+    elytronPath(m,side,gap);
+    ctx.lineWidth=0.22; ctx.strokeStyle=rgba(shade(m.pal[0],-0.25),0.85); ctx.stroke();
+
+    // rivets along the seam edge
+    ctx.fillStyle=rgb(shade(m.pal[2],0.2));
+    const y0b=m.yTop-m.maxR*0.4, spanB=(m.yBot+m.maxR*0.9)-y0b;
+    for(const r of m.rivets){
+      const yy=y0b+spanB*r;
+      const rx=side*(gap*0.5+0.6);
+      ctx.beginPath(); ctx.arc(rx,yy,0.22,0,TAU); ctx.fill();
+    }
+  }
+
+  // central spine rail over the seam (thin brass strip between the two elytra)
+  ctx.strokeStyle=rgba(shade(m.pal[1],0.1),0.5); ctx.lineWidth=0.18;
+  ctx.beginPath(); ctx.moveTo(0,m.yTop-m.maxR*0.4); ctx.lineTo(0,m.yBot+m.maxR*0.9); ctx.stroke();
+}
+
+// ── head, antennae, eyes, mandibles ─────────────────────────────────────────
+function drawHead(m,t,headGear){
+  const hy=m.yTop - m.maxR*1.15;               // head sits ahead of first gear
+  const hr=m.maxR*0.72;
+
+  // pronotum (thorax plate) bridging head and shell
+  ctx.beginPath();
+  ctx.moveTo(-m.halfW*0.5, m.yTop);
+  ctx.quadraticCurveTo(0, m.yTop-m.maxR*0.5, m.halfW*0.5, m.yTop);
+  ctx.quadraticCurveTo(m.halfW*0.28, hy+hr*0.6, 0, hy+hr*0.4);
+  ctx.quadraticCurveTo(-m.halfW*0.28, hy+hr*0.6, -m.halfW*0.5, m.yTop);
+  ctx.closePath();
+  const pg=ctx.createLinearGradient(0,hy,0,m.yTop);
+  pg.addColorStop(0,rgb(shade(m.pal[1],0.1))); pg.addColorStop(1,rgb(shade(m.pal[0],0.1)));
+  ctx.fillStyle=pg; ctx.fill();
+  ctx.lineWidth=0.2; ctx.strokeStyle=rgba(shade(m.pal[0],-0.2),0.7); ctx.stroke();
+
+  // head capsule
+  const hg=ctx.createRadialGradient(-hr*0.3,hy-hr*0.3,0,0,hy,hr*1.2);
+  hg.addColorStop(0,rgb(shade(m.pal[2],0.1))); hg.addColorStop(1,rgb(shade(m.pal[0],0.05)));
+  ctx.beginPath(); ctx.ellipse(0,hy,hr,hr*0.9,0,0,TAU); ctx.fillStyle=hg; ctx.fill();
+  ctx.lineWidth=0.2; ctx.strokeStyle=rgba(shade(m.pal[0],-0.2),0.8); ctx.stroke();
+
+  // glowing eyes (pulse with the drive gear)
+  const eyePulse=0.6+0.4*Math.abs(Math.sin(headGear*1.5));
+  for(const s of [-1,1]){
+    const ex=s*hr*0.5, ey=hy-hr*0.15;
+    const eg=ctx.createRadialGradient(ex,ey,0,ex,ey,hr*0.42);
+    eg.addColorStop(0,rgba([255,255,255],0.95*eyePulse*m.glowAmt+0.05));
+    eg.addColorStop(0.4,rgba(m.glow,0.9*eyePulse));
+    eg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.beginPath(); ctx.arc(ex,ey,hr*0.42,0,TAU); ctx.fillStyle=eg; ctx.fill();
+    ctx.beginPath(); ctx.arc(ex,ey,hr*0.14,0,TAU);
+    ctx.fillStyle=rgb(shade(m.glow,0.3)); ctx.fill();
+  }
+
+  // antennae (segmented, twitch)
+  for(const s of [-1,1]){
+    let ax=s*hr*0.7, ay=hy-hr*0.6;
+    let ang=s*0.7 - Math.PI*0.5;
+    ctx.strokeStyle=rgb(shade(m.pal[1],-0.05)); ctx.lineCap='round';
+    let px=ax, py=ay;
+    const segL=hr*0.55;
+    for(let j=0;j<m.antenna;j++){
+      ang += s*0.28 + 0.14*Math.sin(t*3.3+j*0.9+s);
+      const nx=px+Math.cos(ang)*segL, ny=py+Math.sin(ang)*segL;
+      ctx.lineWidth=Math.max(0.12,0.34-j*0.06);
+      ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(nx,ny); ctx.stroke();
+      px=nx; py=ny;
+    }
+    ctx.beginPath(); ctx.arc(px,py,0.22,0,TAU); ctx.fillStyle=rgb(m.glow); ctx.fill();
+  }
+
+  // MANDIBLES — clack driven by the head gear rotation (a cam), pairs = form.mandibles
+  const open = (0.5+0.5*Math.sin(headGear*2.0)) * m.clack;   // 0..clack
+  const mby=hy-hr*0.75;                                       // pivot (front of head)
+  for(let pair=0;pair<m.mandibles;pair++){
+    const scaleP=1-pair*0.32;
+    const spread=(0.35+open*0.7)*scaleP;
+    const mlen=hr*(1.25)*scaleP, mw=hr*0.34*scaleP;
+    for(const s of [-1,1]){
+      const rootA=s*spread - Math.PI*0.5;       // point forward (-y)
+      const tipA=rootA - s*0.55;                // curve inward (hook)
+      const rx=s*hr*0.35, ry=mby;
+      const midx=rx+Math.cos(rootA)*mlen*0.6, midy=ry+Math.sin(rootA)*mlen*0.6;
+      const tipx=midx+Math.cos(tipA)*mlen*0.55, tipy=midy+Math.sin(tipA)*mlen*0.55;
+      // jaw body (tapered curve)
+      ctx.beginPath();
+      ctx.moveTo(rx - s*mw, ry);
+      ctx.quadraticCurveTo(midx - s*mw*0.5, midy, tipx, tipy);
+      ctx.quadraticCurveTo(midx + s*mw*0.5, midy, rx + s*mw, ry);
+      ctx.closePath();
+      const mg=ctx.createLinearGradient(rx,ry,tipx,tipy);
+      mg.addColorStop(0,rgb(shade(m.pal[1],0.05))); mg.addColorStop(1,rgb(shade(m.pal[0],0.08)));
+      ctx.fillStyle=mg; ctx.fill();
+      ctx.lineWidth=0.16; ctx.strokeStyle=rgba(shade(m.pal[0],-0.25),0.8); ctx.stroke();
+      // inner serration teeth
+      ctx.strokeStyle=rgba(shade(m.pal[2],0.1),0.7); ctx.lineWidth=0.12;
+      for(let k=1;k<=3;k++){
+        const f=k/4;
+        const bx=lerp(rx,midx,f)+ -s*mw*0.2, by=lerp(ry,midy,f);
+        ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx+s*mw*0.4,by); ctx.stroke();
+      }
+      // pivot bolt
+      ctx.beginPath(); ctx.arc(rx,ry,mw*0.28,0,TAU);
+      ctx.fillStyle=rgb(shade(m.pal[2],0.2)); ctx.fill();
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  UI + egg I/O
+// ══════════════════════════════════════════════════════════════════════════
+const $=id=>document.getElementById(id);
+
+function updateHUD(payload){
+  const g=currentGenome, f=g.layers[0];
+  $('tTitle').textContent=payload.title;
+  const rar=payload.rarity;
+  const rEl=$('tRarity'); rEl.textContent=rar; rEl.style.color=RARITY_COLOR[rar]||'#9aa4b0';
+  $('tId').textContent=currentId;
+  $('tMetal').textContent=f.metal;
+  $('tGears').textContent=f.segments;
+  $('tRpm').textContent=Math.round(MODEL.rpm);
+  $('tCap').textContent=
+    `Generated: a ${f.metal} carapace over ${f.segments} conjugate-meshed gears `+
+    `(counter-rotating at ${Math.round(MODEL.rpm)} rpm), ${f.limbs} articulated legs, `+
+    `${f.mandibles===2?'double ':''}clacking mandibles. DNA → hashed → this egg.`;
+  $('tJson').textContent=JSON.stringify(g,null,2);
+}
+
+async function generate(){
+  const genome=makeGenome();
+  const rarity=rarityFor(genome);
+  const packed=await EGG.pack(genome,{title:'Gearcarapace',rarity,source:'learnwithkody-fauna'});
+  currentGenome=genome; currentId=packed.id; currentEggB64=packed.egg; currentPayload=packed.payload;
+  MODEL=buildModel(genome, packed.id);
+  updateHUD(packed.payload);
+  return packed.id;
+}
+
+async function loadEggString(b64){
+  const payload=EGG.unpack(b64);               // throws on bad input → caught by caller
+  if(!payload||!payload.genome||!Array.isArray(payload.genome.layers))
+    throw new Error('not a rappter egg');
+  const genome=payload.genome;
+  // derive id: trust payload.id, but recompute to be safe/exact
+  const id=payload.id || await EGG.genomeId(genome);
+  currentGenome=genome; currentId=id; currentEggB64=b64.trim(); currentPayload=payload;
+  MODEL=buildModel(genome, id);
+  // ensure metal/segments fields exist for HUD (older/foreign eggs)
+  const f=genome.layers[0];
+  if(!f.metal) f.metal=(genome.layers[1]&&genome.layers[1].palette)?'brass':'brass';
+  if(f.mandibles==null) f.mandibles=1;
+  updateHUD({ title:payload.title||'Gearcarapace',
+              rarity:payload.rarity||rarityFor(genome) });
+  return id;
+}
+
+// ── wiring ──
+$('bNew').addEventListener('click', ()=>{ generate(); });
+$('bSave').addEventListener('click', ()=>{
+  if(currentEggB64) EGG.download(currentEggB64, currentId);
+});
+$('bLoad').addEventListener('click', ()=>{ $('loadPop').classList.toggle('open'); $('eggErr').textContent=''; });
+$('bClose').addEventListener('click', ()=>{ $('loadPop').classList.remove('open'); });
+$('bRender').addEventListener('click', async ()=>{
+  const v=$('eggIn').value.trim();
+  if(!v){ $('eggErr').textContent='paste an .egg string first'; return; }
+  try{ await loadEggString(v); $('eggErr').textContent=''; $('loadPop').classList.remove('open'); }
+  catch(e){ $('eggErr').textContent='could not read that egg: '+e.message; }
+});
+$('eggFile').addEventListener('change', e=>{
+  const file=e.target.files&&e.target.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=async ()=>{ try{ await loadEggString(String(r.result));
+      $('eggErr').textContent=''; $('loadPop').classList.remove('open'); }
+    catch(err){ $('eggErr').textContent='could not read that egg: '+err.message; } };
+  r.readAsText(file);
+});
+
+// keyboard: N = new
+window.addEventListener('keydown',e=>{ if(e.key==='n'||e.key==='N') generate(); });
+
+// ── debug hook + boot ──
+window.FAUNA = {
+  title:'Gearcarapace',
+  get genome(){ return currentGenome; },
+  get id(){ return currentId; },
+  get eggB64(){ return currentEggB64; },
+  newCreature: async ()=> await generate(),
+  loadEgg: async (b64)=> await loadEggString(b64),
+  frame: 0
+};
+
+(async ()=>{
+  await generate();          // first creature ready before the loop reads MODEL
+  ANIM_START=performance.now();
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

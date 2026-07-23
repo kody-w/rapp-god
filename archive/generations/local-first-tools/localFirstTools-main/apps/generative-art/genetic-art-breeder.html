@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Genetic Art Breeder</title>
+    <meta name="rappterzoo:author" content="RappterZoo">
+    <meta name="rappterzoo:author-type" content="agent">
+    <meta name="rappterzoo:category" content="generative-art">
+    <meta name="rappterzoo:tags" content="genetic,algorithm,svg,creatures,evolution,breeding,procedural-audio">
+    <meta name="rappterzoo:type" content="interactive">
+    <meta name="rappterzoo:complexity" content="advanced">
+    <meta name="rappterzoo:created" content="2025-01-01">
+    <meta name="rappterzoo:generation" content="4">
+    <meta name="description" content="Evolve unique SVG creatures using genetic algorithms with scoring, generations, combo breeding, and procedural audio">
+    <style>
+        :root {
+            --bg: #0f0f14;
+            --card: #1a1a24;
+            --hl: #00ff9d;
+            --txt: #e0e0e0;
+            --border: #2a2a3a;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--txt);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        canvas { position: fixed; top: 0; left: 0; z-index: 0; pointer-events: none; }
+        #ui { position: relative; z-index: 1; }
+
+        /* Title Screen */
+        #title-screen {
+            position: fixed; inset: 0;
+            background: radial-gradient(ellipse, #1a1a30, #0f0f14);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 1000; transition: opacity 0.8s;
+        }
+        #title-screen h1 { font-size: clamp(28px, 5vw, 48px); color: var(--hl); margin-bottom: 10px; }
+        #title-screen p { color: #888; max-width: 500px; text-align: center; margin-bottom: 30px; }
+
+        /* Buttons */
+        .mbtn {
+            padding: 14px 40px; margin: 8px;
+            background: linear-gradient(180deg, #1a3a2a, #0a2a1a);
+            border: 1px solid rgba(0, 255, 157, 0.3);
+            color: var(--hl); font-size: 16px;
+            cursor: pointer; border-radius: 8px;
+            transition: all 0.3s; font-family: inherit;
+        }
+        .mbtn:hover {
+            background: linear-gradient(180deg, #2a5a3a, #1a4a2a);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 255, 157, 0.2);
+        }
+        .btn {
+            padding: 8px 18px; background: #222;
+            border: 1px solid var(--border);
+            color: var(--txt); cursor: pointer;
+            border-radius: 6px; font-size: 13px;
+            transition: all 0.2s; font-family: inherit;
+        }
+        .btn:hover { background: #333; border-color: var(--hl); }
+        .btn.primary { background: var(--hl); color: #000; border: none; font-weight: bold; }
+        .btn.primary:hover { background: #00cc7d; transform: scale(1.05); }
+
+        /* HUD */
+        #hud {
+            position: fixed; top: 0; left: 0; right: 0;
+            display: none; justify-content: space-between;
+            padding: 10px 20px;
+            background: linear-gradient(180deg, rgba(15, 15, 20, 0.95), transparent);
+            z-index: 50;
+        }
+        .hs {
+            display: flex; flex-direction: column;
+            align-items: center; color: #888;
+            font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+        }
+        .hv { font-size: 20px; color: var(--hl); }
+
+        /* Controls */
+        #controls {
+            display: none; padding: 10px 20px;
+            background: var(--card); border-bottom: 1px solid var(--border);
+            gap: 10px; align-items: center;
+            flex-wrap: wrap; justify-content: center;
+        }
+
+        /* Creature Grid */
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 15px; padding: 20px;
+            max-width: 1200px; margin: 0 auto;
+        }
+        .creature {
+            background: var(--card); border: 2px solid transparent;
+            border-radius: 10px; padding: 10px;
+            cursor: pointer; transition: all 0.2s;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .creature:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        .creature.sel {
+            border-color: var(--hl); background: #1a2a2a;
+            box-shadow: 0 0 15px rgba(0, 255, 157, 0.3);
+        }
+        .creature svg { width: 100%; height: 130px; overflow: visible; }
+        .stats { font-size: 11px; color: #666; margin-top: 5px; font-family: monospace; }
+        .fitness { font-size: 12px; color: var(--hl); margin-top: 3px; font-weight: bold; }
+
+        /* Pause Overlay */
+        #pause-overlay {
+            position: fixed; inset: 0;
+            background: rgba(15, 15, 20, 0.9);
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 500;
+        }
+        #pause-overlay h2 { color: var(--hl); font-size: 32px; margin-bottom: 20px; }
+
+        /* Difficulty Selector */
+        .diff-sel { display: flex; gap: 10px; margin-bottom: 20px; }
+        .diff {
+            padding: 10px 24px;
+            background: rgba(0, 255, 157, 0.1);
+            border: 1px solid rgba(0, 255, 157, 0.3);
+            color: var(--hl); cursor: pointer;
+            border-radius: 6px; font-family: inherit; transition: all 0.3s;
+        }
+        .diff.sel { background: var(--hl); color: #000; }
+
+        /* Combo + Notifications */
+        #combo {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px; color: var(--hl);
+            text-shadow: 0 0 30px rgba(0, 255, 157, 0.5);
+            opacity: 0; transition: opacity 0.3s;
+            pointer-events: none; z-index: 300;
+        }
+        #notifs { position: fixed; top: 70px; right: 20px; z-index: 200; }
+        .notif {
+            background: rgba(15, 15, 20, 0.95);
+            border: 1px solid var(--border);
+            padding: 10px 16px; border-radius: 8px;
+            color: var(--txt); font-size: 13px;
+            transform: translateX(120%); transition: transform 0.4s;
+            max-width: 260px; margin-bottom: 8px;
+        }
+        .notif.show { transform: translateX(0); }
+
+        @media (max-width: 600px) {
+            #grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; padding: 10px; }
+            .hv { font-size: 16px; }
+        }
+    </style>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+</head>
+<body>
+<canvas id="bgc"></canvas>
+<div id="ui">
+    <div id="title-screen">
+        <h1>Genetic Art Breeder</h1>
+        <p>Select creatures, evolve them, score points for mutations and rare traits.</p>
+        <div class="diff-sel">
+            <button class="diff sel" data-d="easy">Casual</button>
+            <button class="diff" data-d="normal">Breeder</button>
+            <button class="diff" data-d="hard">Geneticist</button>
+        </div>
+        <button class="mbtn" id="startBtn">Begin Evolution</button>
+        <button class="mbtn" id="contBtn" style="display:none">Continue</button>
+    </div>
+    <div id="hud">
+        <div class="hs"><span class="hv" id="hudScore">0</span>Score</div>
+        <div class="hs"><span class="hv" id="hudGen">1</span>Gen</div>
+        <div class="hs"><span class="hv" id="hudCombo">0</span>Combo</div>
+        <div class="hs"><span class="hv" id="hudBest">0</span>Best</div>
+        <div class="hs"><span class="hv" id="hudMuts">0</span>Muts</div>
+    </div>
+    <div id="controls">
+        <button class="btn primary" id="evoBtn">Evolve</button>
+        <button class="btn" id="rndBtn">Random</button>
+        <button class="btn" id="autoBtn">Auto-Select</button>
+        <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:12px;color:#888">Mutation:</label>
+            <input type="range" id="mutRange" min="0" max="100" value="15">
+        </div>
+    </div>
+    <div id="grid"></div>
+    <div id="pause-overlay">
+        <h2>Paused</h2>
+        <button class="mbtn" id="resBtn">Resume</button>
+        <button class="mbtn" id="quitBtn">Save and Quit</button>
+    </div>
+    <div id="combo"></div>
+    <div id="notifs"></div>
+</div>
+<script>
+(function() {
+    "use strict";
+
+    /* ── Constants ── */
+    var POPULATION_SIZE = 18;
+    var GENE_COUNT = 12;
+    var STORAGE_KEY = 'gab:s';
+
+    /* ── Cached DOM Elements ── */
+    var dom = {
+        canvas: document.getElementById('bgc'),
+        grid: document.getElementById('grid'),
+        titleScreen: document.getElementById('title-screen'),
+        hud: document.getElementById('hud'),
+        controls: document.getElementById('controls'),
+        pauseOverlay: document.getElementById('pause-overlay'),
+        combo: document.getElementById('combo'),
+        notifs: document.getElementById('notifs'),
+        hudScore: document.getElementById('hudScore'),
+        hudGen: document.getElementById('hudGen'),
+        hudCombo: document.getElementById('hudCombo'),
+        hudBest: document.getElementById('hudBest'),
+        hudMuts: document.getElementById('hudMuts'),
+        mutRange: document.getElementById('mutRange'),
+        startBtn: document.getElementById('startBtn'),
+        contBtn: document.getElementById('contBtn'),
+        resBtn: document.getElementById('resBtn'),
+        quitBtn: document.getElementById('quitBtn'),
+        evoBtn: document.getElementById('evoBtn'),
+        rndBtn: document.getElementById('rndBtn'),
+        autoBtn: document.getElementById('autoBtn')
+    };
+
+    var ctx = dom.canvas.getContext('2d');
+    var canvasW = 0;
+    var canvasH = 0;
+
+    /* ── Audio Engine ── */
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    var audioCtx = null;
+
+    function initAudio() {
+        if (!audioCtx) {
+            try {
+                audioCtx = new AudioCtx();
+            } catch (e) {
+                audioCtx = null;
+            }
+        }
+    }
+
+    function createTone(type, freq, endFreq, gain, duration, delay) {
+        if (!audioCtx) { return; }
+        try {
+            var now = audioCtx.currentTime + (delay || 0);
+            var osc = audioCtx.createOscillator();
+            var gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, now);
+            osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration * 0.6);
+            gainNode.gain.setValueAtTime(gain, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+            osc.start(now);
+            osc.stop(now + duration);
+        } catch (e) {
+            /* Audio failure is non-critical */
+        }
+    }
+
+    function playSound(type, param) {
+        if (!audioCtx) { return; }
+        if (type === 's') {
+            createTone('sine', 600, 800, 0.08, 0.12);
+        } else if (type === 'e') {
+            createTone('triangle', 300, 900, 0.1, 0.4);
+        } else if (type === 'r') {
+            /* Rare trait fanfare: three ascending tones */
+            for (var i = 0; i < 3; i++) {
+                createTone('sine', 500 + i * 200, 700 + i * 250, 0.08, 0.3, i * 0.12);
+            }
+        } else if (type === 'c') {
+            var p = param || 0;
+            createTone('square', 400 + p * 60, 700 + p * 80, 0.04, 0.1);
+        } else if (type === 'm') {
+            createTone('sine', 500, 700, 0.06, 0.1);
+        }
+    }
+
+    /* ── Genome: stores creature traits as float array ── */
+    function Genome(genes) {
+        if (genes) {
+            this.genes = genes;
+        } else {
+            this.genes = new Float32Array(GENE_COUNT);
+            for (var i = 0; i < GENE_COUNT; i++) {
+                this.genes[i] = Math.random();
+            }
+        }
+    }
+
+    Genome.prototype.copy = function() {
+        return new Genome(new Float32Array(this.genes));
+    };
+
+    Genome.prototype.mutate = function(rate) {
+        for (var i = 0; i < GENE_COUNT; i++) {
+            if (Math.random() < rate) {
+                if (Math.random() < 0.5) {
+                    this.genes[i] += (Math.random() - 0.5) * 0.2;
+                } else {
+                    this.genes[i] = Math.random();
+                }
+                this.genes[i] = Math.max(0, Math.min(1, this.genes[i]));
+            }
+        }
+    };
+
+    Genome.crossover = function(parentA, parentB) {
+        var child = new Float32Array(GENE_COUNT);
+        var crossPoint = Math.floor(Math.random() * GENE_COUNT);
+        for (var i = 0; i < GENE_COUNT; i++) {
+            child[i] = i < crossPoint ? parentA.genes[i] : parentB.genes[i];
+        }
+        return new Genome(child);
+    };
+
+    /* Fitness: weighted sum of gene values rewarding diversity and complexity */
+    Genome.prototype.fitness = function() {
+        var g = this.genes;
+        var f = 0;
+        f += g[3] * 30;            // body size contribution
+        f += g[6] * 15;            // eye size
+        f += (g[7] / 8) * 20;     // limb count (normalized)
+        f += g[11] * 15;           // detail/complexity
+        f += Math.abs(g[0] - 0.5) * 20; // hue distance from midpoint
+        return Math.round(f);
+    };
+
+    /* ── Creature: decodes genome into visual traits and renders SVG ── */
+    function Creature(genome) {
+        this.genome = genome;
+        this.traits = this.decode(genome);
+    }
+
+    Creature.prototype.decode = function(genome) {
+        var g = genome.genes;
+        return {
+            hue: Math.floor(g[0] * 360),
+            sat: 50 + g[1] * 50,
+            lit: 40 + g[2] * 40,
+            bodySize: 30 + g[3] * 30,
+            bodyShape: Math.floor(g[4] * 3),
+            eyeCount: Math.floor(g[5] * 4) + 1,
+            eyeSize: 5 + g[6] * 10,
+            limbCount: Math.floor(g[7] * 8),
+            limbLen: 20 + g[8] * 40,
+            limbType: Math.floor(g[9] * 3),
+            symmetry: g[10] > 0.5 ? 'r' : 'b',
+            detail: g[11]
+        };
+    };
+
+    Creature.prototype.renderEye = function(x, y, size) {
+        return '<g transform="translate(' + x + ',' + y + ')">' +
+            '<circle r="' + size + '" fill="#fff"/>' +
+            '<circle r="' + (size * 0.4) + '" fill="#000"/>' +
+            '<circle cx="' + (size * 0.15) + '" cy="' + (-size * 0.15) + '" r="' + (size * 0.15) + '" fill="#fff"/>' +
+            '</g>';
+    };
+
+    Creature.prototype.render = function() {
+        var t = this.traits;
+        var color = 'hsl(' + t.hue + ',' + t.sat + '%,' + t.lit + '%)';
+        var svg = '<g transform="translate(75,65)">';
+
+        /* Limbs radiate outward from center */
+        var limbCount = Math.max(t.limbCount, 1);
+        var angleStep = (Math.PI * 2) / limbCount;
+        for (var i = 0; i < t.limbCount; i++) {
+            var angle = i * angleStep;
+            if (t.symmetry === 'b' && i % 2 === 0) { angle = -angle; }
+            var endX = Math.cos(angle) * (t.bodySize + t.limbLen);
+            var endY = Math.sin(angle) * (t.bodySize + t.limbLen);
+
+            if (t.limbType === 0) {
+                svg += '<line x1="0" y1="0" x2="' + endX + '" y2="' + endY + '" stroke="' + color + '" stroke-width="4" stroke-linecap="round"/>';
+            } else if (t.limbType === 1) {
+                var mx = endX * 0.5 + Math.sin(angle * 5) * 10;
+                var my = endY * 0.5 + Math.cos(angle * 5) * 10;
+                svg += '<path d="M0,0 Q' + mx + ',' + my + ' ' + endX + ',' + endY + '" stroke="' + color + '" stroke-width="4" fill="none" stroke-linecap="round"/>';
+            } else {
+                var jx = endX * 0.6;
+                var jy = endY * 0.6;
+                svg += '<polyline points="0,0 ' + jx + ',' + jy + ' ' + endX + ',' + endY + '" stroke="' + color + '" stroke-width="4" fill="none" stroke-linecap="round"/>';
+            }
+        }
+
+        /* Body shape */
+        if (t.bodyShape === 0) {
+            svg += '<circle r="' + t.bodySize + '" fill="' + color + '"/>';
+        } else if (t.bodyShape === 1) {
+            var rectSize = t.bodySize * 1.6;
+            svg += '<rect x="' + (-rectSize / 2) + '" y="' + (-rectSize / 2) + '" width="' + rectSize + '" height="' + rectSize + '" rx="10" fill="' + color + '"/>';
+        } else {
+            var points = [];
+            var sides = 3 + Math.floor(t.detail * 4);
+            for (var j = 0; j < sides; j++) {
+                var a = (j / sides) * Math.PI * 2;
+                points.push(Math.cos(a) * t.bodySize + ',' + Math.sin(a) * t.bodySize);
+            }
+            svg += '<polygon points="' + points.join(' ') + '" fill="' + color + '"/>';
+        }
+
+        /* Eyes positioned around center of body */
+        var eyeOffset = t.bodySize * 0.4;
+        if (t.eyeCount === 1) {
+            svg += this.renderEye(0, 0, t.eyeSize);
+        } else {
+            for (var k = 0; k < t.eyeCount; k++) {
+                var eyeAngle = (k / t.eyeCount) * Math.PI * 2 - Math.PI / 2;
+                svg += this.renderEye(
+                    Math.cos(eyeAngle) * eyeOffset,
+                    Math.sin(eyeAngle) * eyeOffset,
+                    t.eyeSize
+                );
+            }
+        }
+
+        svg += '</g>';
+        return svg;
+    };
+
+    /* ── Game State ── */
+    var state = {
+        phase: 'title',
+        difficulty: 'easy',
+        score: 0,
+        generation: 1,
+        combo: 0,
+        comboTimer: 0,
+        bestFitness: 0,
+        mutations: 0,
+        population: [],
+        selected: new Set(),
+        highScore: 0,
+        shake: { x: 0, y: 0, intensity: 0 },
+        particles: [],
+        time: 0
+    };
+
+    /* ── Canvas Setup ── */
+    function resizeCanvas() {
+        canvasW = dom.canvas.width = innerWidth;
+        canvasH = dom.canvas.height = innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    /* ── Background Rendering ── */
+    function drawBackground() {
+        ctx.fillStyle = '#0f0f14';
+        ctx.fillRect(0, 0, canvasW, canvasH);
+
+        /* Floating ambient orbs */
+        ctx.fillStyle = 'rgba(0,255,157,0.02)';
+        for (var i = 0; i < 20; i++) {
+            var x = Math.sin(state.time * 0.3 + i) * canvasW * 0.3 + canvasW / 2;
+            var y = Math.cos(state.time * 0.2 + i * 0.5) * canvasH * 0.3 + canvasH / 2;
+            ctx.beginPath();
+            ctx.arc(x, y, 50 + i * 10, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        /* Update and draw particles */
+        for (var j = state.particles.length - 1; j >= 0; j--) {
+            var p = state.particles[j];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.02;
+            p.life -= 0.02;
+            if (p.life <= 0) {
+                state.particles.splice(j, 1);
+                continue;
+            }
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,255,157,' + (p.life * 0.5) + ')';
+            ctx.fill();
+        }
+    }
+
+    function spawnParticles(x, y, count) {
+        for (var i = 0; i < count; i++) {
+            state.particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 5,
+                vy: (Math.random() - 0.5) * 5 - 2,
+                size: 2 + Math.random() * 3,
+                life: 0.5 + Math.random() * 0.5
+            });
+        }
+    }
+
+    /* ── Population Management ── */
+    function initPopulation() {
+        state.population = [];
+        state.selected.clear();
+        for (var i = 0; i < POPULATION_SIZE; i++) {
+            state.population.push(new Genome());
+        }
+        renderGrid();
+    }
+
+    function renderGrid() {
+        dom.grid.innerHTML = '';
+        if (state.population.length === 0) { return; }
+
+        state.population.forEach(function(genome, index) {
+            var creature = new Creature(genome);
+            var fit = genome.fitness();
+            var card = document.createElement('div');
+            card.className = 'creature' + (state.selected.has(index) ? ' sel' : '');
+            card.innerHTML =
+                '<svg viewBox="0 0 150 130">' + creature.render() + '</svg>' +
+                '<div class="fitness">Fitness: ' + fit + '</div>' +
+                '<div class="stats">Gen ' + state.generation + ' #' + (index + 1) + '</div>';
+
+            card.addEventListener('click', function() {
+                initAudio();
+                if (state.selected.has(index)) {
+                    state.selected.delete(index);
+                } else {
+                    state.selected.add(index);
+                }
+                playSound('s');
+                renderGrid();
+            });
+
+            dom.grid.appendChild(card);
+            if (fit > state.bestFitness) {
+                state.bestFitness = fit;
+                updateHUD();
+            }
+        });
+    }
+
+    /* ── Evolution ── */
+    function evolve() {
+        if (state.selected.size < 2) {
+            showNotification('Select 2+ parents!');
+            return;
+        }
+        initAudio();
+
+        var parents = Array.from(state.selected).map(function(i) { return state.population[i]; });
+        var nextGen = [];
+
+        /* Preserve top parents unchanged */
+        nextGen.push(parents[0].copy());
+        if (parents.length > 1) { nextGen.push(parents[1].copy()); }
+
+        var mutationRate = dom.mutRange.value / 100;
+        var mutationCount = 0;
+
+        /* Fill remaining slots via crossover + mutation */
+        while (nextGen.length < POPULATION_SIZE) {
+            var p1 = parents[Math.floor(Math.random() * parents.length)];
+            var p2 = parents[Math.floor(Math.random() * parents.length)];
+            var child = Genome.crossover(p1, p2);
+            var oldGenes = Array.prototype.slice.call(child.genes);
+            child.mutate(mutationRate);
+            for (var i = 0; i < GENE_COUNT; i++) {
+                if (child.genes[i] !== oldGenes[i]) { mutationCount++; }
+            }
+            nextGen.push(child);
+        }
+
+        state.mutations += mutationCount;
+        state.population = nextGen;
+        state.selected.clear();
+        state.generation++;
+
+        /* Score: best fitness × generation, multiplied by combo streak */
+        var bestFit = 0;
+        for (var j = 0; j < state.population.length; j++) {
+            var f = state.population[j].fitness();
+            if (f > bestFit) { bestFit = f; }
+        }
+        var points = bestFit * state.generation;
+        state.combo++;
+        state.comboTimer = 5;
+        if (state.combo > 1) {
+            points = Math.floor(points * (1 + state.combo * 0.3));
+        }
+        state.score += points;
+
+        if (bestFit > 80) {
+            playSound('r');
+            state.shake.intensity = 8;
+            spawnParticles(canvasW / 2, canvasH / 2, 30);
+            showNotification('EXCEPTIONAL! Fitness ' + bestFit);
+        } else {
+            playSound('e');
+            spawnParticles(canvasW / 2, canvasH / 2, 15);
+        }
+
+        if (state.combo >= 3) {
+            playSound('c', state.combo);
+            showCombo(state.combo + 'x COMBO!');
+        }
+
+        renderGrid();
+        updateHUD();
+        saveGame();
+    }
+
+    function autoSelect() {
+        state.selected.clear();
+        var indexed = state.population.map(function(g, i) {
+            return { index: i, fit: g.fitness() };
+        });
+        indexed.sort(function(a, b) { return b.fit - a.fit; });
+
+        /* Difficulty determines how many top creatures are auto-selected */
+        var count = state.difficulty === 'hard' ? 2 : (state.difficulty === 'normal' ? 3 : 4);
+        for (var i = 0; i < count && i < indexed.length; i++) {
+            state.selected.add(indexed[i].index);
+        }
+        renderGrid();
+        playSound('m');
+    }
+
+    /* ── UI Feedback ── */
+    function showCombo(text) {
+        dom.combo.textContent = text;
+        dom.combo.style.opacity = '1';
+        setTimeout(function() {
+            dom.combo.style.opacity = '0';
+        }, 1200);
+    }
+
+    function showNotification(text) {
+        var el = document.createElement('div');
+        el.className = 'notif';
+        el.textContent = text;
+        dom.notifs.appendChild(el);
+        setTimeout(function() { el.classList.add('show'); }, 50);
+        setTimeout(function() {
+            el.classList.remove('show');
+            setTimeout(function() {
+                if (el.parentNode) { el.parentNode.removeChild(el); }
+            }, 400);
+        }, 3000);
+    }
+
+    function updateHUD() {
+        dom.hudScore.textContent = state.score;
+        dom.hudGen.textContent = state.generation;
+        dom.hudCombo.textContent = state.combo > 0 ? state.combo + 'x' : '0';
+        dom.hudBest.textContent = state.bestFitness;
+        dom.hudMuts.textContent = state.mutations;
+    }
+
+    /* ── Persistence ── */
+    function saveGame() {
+        try {
+            var data = {
+                sc: state.score,
+                gn: state.generation,
+                bf: state.bestFitness,
+                mu: state.mutations,
+                df: state.difficulty,
+                po: state.population.map(function(g) { return Array.prototype.slice.call(g.genes); }),
+                hi: Math.max(state.highScore, state.score)
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+            /* Storage full or unavailable */
+        }
+    }
+
+    function loadGame() {
+        try {
+            var raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) { return false; }
+            var data = JSON.parse(raw);
+            if (!data || typeof data !== 'object') { return false; }
+            state.score = data.sc || 0;
+            state.generation = data.gn || 1;
+            state.bestFitness = data.bf || 0;
+            state.mutations = data.mu || 0;
+            state.difficulty = data.df || 'easy';
+            state.highScore = data.hi || 0;
+            if (Array.isArray(data.po) && data.po.length > 0) {
+                state.population = data.po.map(function(g) {
+                    return new Genome(new Float32Array(g));
+                });
+            }
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /* ── Game Loop ── */
+    var lastTime = 0;
+
+    function gameLoop(timestamp) {
+        var dt = Math.min((timestamp - lastTime) / 1000, 0.1);
+        lastTime = timestamp;
+        state.time += dt;
+        drawBackground();
+
+        /* Combo timer decay: reset combo when timer expires */
+        if (state.phase === 'playing' && state.comboTimer > 0) {
+            state.comboTimer -= dt;
+            if (state.comboTimer <= 0) {
+                state.combo = 0;
+                updateHUD();
+            }
+        }
+
+        /* Screen shake decay */
+        if (state.shake.intensity > 0) {
+            state.shake.intensity *= 0.9;
+            if (state.shake.intensity < 0.1) { state.shake.intensity = 0; }
+            dom.grid.style.transform = 'translateX(' + ((Math.random() - 0.5) * state.shake.intensity) + 'px)';
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    /* ── Screen Transitions ── */
+    function showGameUI() {
+        dom.titleScreen.style.opacity = '0';
+        setTimeout(function() {
+            dom.titleScreen.style.display = 'none';
+        }, 800);
+        dom.hud.style.display = 'flex';
+        dom.controls.style.display = 'flex';
+    }
+
+    function hideGameUI() {
+        dom.pauseOverlay.style.display = 'none';
+        dom.hud.style.display = 'none';
+        dom.controls.style.display = 'none';
+        dom.grid.innerHTML = '';
+        dom.titleScreen.style.display = 'flex';
+        dom.titleScreen.style.opacity = '1';
+    }
+
+    function startNewGame() {
+        initAudio();
+        state.phase = 'playing';
+        state.score = 0;
+        state.generation = 1;
+        state.combo = 0;
+        state.comboTimer = 0;
+        state.bestFitness = 0;
+        state.mutations = 0;
+        showGameUI();
+        initPopulation();
+        updateHUD();
+    }
+
+    function continueGame() {
+        initAudio();
+        state.phase = 'playing';
+        showGameUI();
+        renderGrid();
+        updateHUD();
+    }
+
+    function quitGame() {
+        state.phase = 'title';
+        saveGame();
+        hideGameUI();
+        setupTitleScreen();
+    }
+
+    function togglePause() {
+        if (state.phase === 'playing') {
+            state.phase = 'paused';
+            dom.pauseOverlay.style.display = 'flex';
+            playSound('m');
+            saveGame();
+        } else if (state.phase === 'paused') {
+            state.phase = 'playing';
+            dom.pauseOverlay.style.display = 'none';
+            playSound('m');
+        }
+    }
+
+    /* ── Title Screen Setup ── */
+    function setupTitleScreen() {
+        var hasSave = loadGame();
+        dom.contBtn.style.display = (hasSave && state.generation > 1) ? 'block' : 'none';
+        document.querySelectorAll('.diff').forEach(function(btn) {
+            btn.classList.toggle('sel', btn.dataset.d === state.difficulty);
+        });
+    }
+
+    /* ── Event Listeners ── */
+    dom.startBtn.addEventListener('click', startNewGame);
+    dom.contBtn.addEventListener('click', continueGame);
+    dom.resBtn.addEventListener('click', function() {
+        state.phase = 'playing';
+        dom.pauseOverlay.style.display = 'none';
+        playSound('m');
+    });
+    dom.quitBtn.addEventListener('click', quitGame);
+    dom.evoBtn.addEventListener('click', evolve);
+    dom.rndBtn.addEventListener('click', function() {
+        initPopulation();
+        playSound('m');
+    });
+    dom.autoBtn.addEventListener('click', autoSelect);
+
+    document.querySelectorAll('.diff').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            state.difficulty = btn.dataset.d;
+            document.querySelectorAll('.diff').forEach(function(b) {
+                b.classList.remove('sel');
+            });
+            btn.classList.add('sel');
+            playSound('m');
+        });
+    });
+
+    window.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            togglePause();
+        }
+        if (state.phase === 'playing') {
+            if (e.key === 'e') { evolve(); }
+            else if (e.key === 'r') {
+                initPopulation();
+                state.generation = 1;
+                state.score = 0;
+                state.combo = 0;
+                state.bestFitness = 0;
+                state.mutations = 0;
+                updateHUD();
+            }
+            else if (e.key === 'a') { autoSelect(); }
+        }
+    });
+
+    /* ── Initialize ── */
+    setupTitleScreen();
+    requestAnimationFrame(gameLoop);
+})();
+</script>
+</body>
+</html>

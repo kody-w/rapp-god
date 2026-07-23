@@ -1,0 +1,1666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Stealth Heist · learnwithkody</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin:0; padding:0; height:100%; background:#000; color:#cfe; font-family: 'Courier New', ui-monospace, monospace; overflow:hidden; user-select:none; }
+  #app { position:fixed; inset:0; }
+  canvas { display:block; outline:none; }
+
+  /* Scanlines + vignette + cam tint */
+  #fx {
+    pointer-events:none; position:fixed; inset:0; z-index:5;
+    background:
+      radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(0,0,0,0.85) 100%),
+      repeating-linear-gradient(0deg, rgba(0,0,0,0) 0 2px, rgba(0,0,30,0.18) 2px 3px),
+      linear-gradient(rgba(20,40,80,0.10), rgba(0,10,30,0.20));
+    mix-blend-mode: multiply;
+  }
+  #flash { pointer-events:none; position:fixed; inset:0; z-index:6; background:rgba(255,40,40,0); transition:background .15s linear; }
+
+  /* HUD */
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; font-size:12px; letter-spacing:1px; text-shadow:0 0 6px #0af, 0 0 1px #fff; }
+  .corner { position:absolute; padding:10px 12px; background:rgba(0,12,24,0.45); border:1px solid rgba(120,200,255,0.25); backdrop-filter: blur(2px); }
+  #tl { top:10px; left:10px; min-width:220px; }
+  #tr { top:10px; right:10px; text-align:right; min-width:200px; }
+  #bl { bottom:10px; left:10px; }
+  #br { bottom:10px; right:10px; text-align:right; }
+
+  .row { display:flex; justify-content:space-between; gap:10px; margin:2px 0; }
+  .label { color:#7adfff; }
+  .val   { color:#dff; }
+
+  /* Light meter bar */
+  .bar { width:200px; height:8px; background:rgba(255,255,255,0.08); border:1px solid rgba(120,200,255,0.3); position:relative; overflow:hidden; margin-top:4px; }
+  .bar > i { display:block; height:100%; background:linear-gradient(90deg, #2cf, #ff8, #f44); width:0%; transition: width .12s linear; }
+  .bar.alarm > i { background:#f44 !important; }
+
+  /* Crosshair */
+  #xhair { position:fixed; left:50%; top:50%; width:14px; height:14px; transform:translate(-50%,-50%); pointer-events:none; z-index:8; }
+  #xhair:before, #xhair:after { content:''; position:absolute; background:#9ff; opacity:.7; box-shadow:0 0 4px #0ef; }
+  #xhair:before { left:6px; top:0; width:2px; height:14px; }
+  #xhair:after  { top:6px; left:0; height:2px; width:14px; }
+
+  /* Center prompt */
+  #prompt { position:fixed; left:50%; top:60%; transform:translateX(-50%); z-index:9;
+    padding:6px 12px; background:rgba(0,12,24,0.65); border:1px solid #2af; color:#cff; font-size:13px; letter-spacing:2px; display:none; }
+
+  /* Subtitles / radio */
+  #radio { position:fixed; left:50%; bottom:80px; transform:translateX(-50%); z-index:9; padding:6px 12px; background:rgba(0,0,0,0.55); border-left:3px solid #fc4; color:#fec; font-size:12px; opacity:0; transition:opacity .25s; max-width:60%; }
+  #radio.show { opacity:1; }
+
+  /* Center alert */
+  #alert { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:11; pointer-events:none; }
+  #alert div { font-size:42px; color:#f55; text-shadow:0 0 12px #f00, 0 0 30px #f00; letter-spacing:8px; opacity:0; transition:opacity .2s; }
+  #alert.on div { opacity:1; animation: pulse .6s infinite alternate; }
+  @keyframes pulse { from{ transform:scale(1);} to{ transform:scale(1.05); filter:brightness(1.4);} }
+
+  /* Start / fail screen */
+  #screen { position:fixed; inset:0; z-index:30; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 40%, rgba(20,40,80,0.85), rgba(0,0,0,0.95));
+    color:#cfe; text-align:center; padding:20px;
+  }
+  #screen.hide { display:none; }
+  #screen h1 { font-size:42px; margin:0 0 8px 0; color:#9ff; letter-spacing:6px; text-shadow:0 0 14px #08f; }
+  #screen p  { margin:4px 0; max-width:680px; line-height:1.5; color:#bdf; }
+  #screen .keys { margin-top:18px; padding:14px 18px; background:rgba(0,20,40,0.6); border:1px solid #2af; font-size:13px; line-height:1.8; }
+  #screen button { margin-top:22px; padding:12px 28px; background:#2af; color:#001; border:0; cursor:pointer; font-family:inherit; font-size:14px; letter-spacing:3px; }
+  #screen button:hover { background:#5cf; }
+  .small { font-size:11px; opacity:.7; }
+
+  #intel { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:20; max-width:520px;
+    background:rgba(0,8,20,0.92); border:1px solid #2af; padding:18px 22px; color:#cff; font-size:13px; line-height:1.6; display:none; }
+  #intel h3 { margin:0 0 8px 0; color:#9ff; letter-spacing:4px; }
+  #intel .small { margin-top:10px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="fx"></div>
+<div id="flash"></div>
+
+<div id="xhair"></div>
+<div id="prompt">[E] INTERACT</div>
+<div id="radio"></div>
+<div id="alert"><div id="alertText">DETECTED</div></div>
+
+<div id="hud">
+  <div id="tl" class="corner">
+    <div class="row"><span class="label">VISIBILITY</span><span class="val" id="visVal">0%</span></div>
+    <div class="bar" id="visBar"><i></i></div>
+    <div class="row"><span class="label">NOISE</span><span class="val" id="noiseVal">0%</span></div>
+    <div class="bar" id="noiseBar"><i></i></div>
+    <div class="row"><span class="label">STATE</span><span class="val" id="stateVal">CLEAR</span></div>
+  </div>
+  <div id="tr" class="corner">
+    <div class="row"><span class="label">FLOOR</span><span class="val" id="floorVal">1</span></div>
+    <div class="row"><span class="label">INTEL</span><span class="val" id="intelVal">0 / 3</span></div>
+    <div class="row"><span class="label">OBJECTIVE</span></div>
+    <div class="val" id="objVal" style="font-size:11px;">Reach the vault on Floor 3</div>
+  </div>
+  <div id="bl" class="corner">
+    <div class="val small">WASD move · SHIFT sprint · CTRL crouch</div>
+    <div class="val small">Q/E lean · SPACE jump · CLICK takedown</div>
+    <div class="val small">F interact · V cones · ESC release mouse</div>
+  </div>
+  <div id="br" class="corner">
+    <div class="row"><span class="label">STANCE</span><span class="val" id="stanceVal">STAND</span></div>
+    <div class="row"><span class="label">SCORE</span><span class="val" id="scoreVal">0</span></div>
+  </div>
+</div>
+
+<div id="intel">
+  <h3 id="intelTitle">INTEL</h3>
+  <div id="intelBody"></div>
+  <div class="small">[F] CLOSE</div>
+</div>
+
+<div id="screen">
+  <h1 id="title">STEALTH HEIST</h1>
+  <p id="lead">Three floors of corporate security. One vault on the roof. Stay in shadow, stay quiet, stay alive.</p>
+  <div class="keys">
+    WASD move · MOUSE look · SHIFT sprint · CTRL crouch<br/>
+    SPACE jump · Q/E lean · F interact · CLICK silent takedown · V toggle vision cones · ESC mouse release
+  </div>
+  <p class="small" id="subtitle">Click PLAY to lock the cursor and infiltrate.</p>
+  <button id="playBtn">PLAY</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ---------- AUDIO (Web Audio synth — no external files) ---------- */
+const Audio = (() => {
+  let ctx = null, masterGain = null, droneNode = null;
+  let lastFootT = 0;
+  function ensure(){
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = ctx.createGain(); masterGain.gain.value = 0.55; masterGain.connect(ctx.destination);
+    startDrone();
+  }
+  function startDrone(){
+    // Tense pad: two detuned sawtooths + lowpass + slow LFO on filter
+    const out = ctx.createGain(); out.gain.value = 0.10;
+    const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=380; lp.Q.value=4;
+    const o1 = ctx.createOscillator(); o1.type='sawtooth'; o1.frequency.value=55;
+    const o2 = ctx.createOscillator(); o2.type='sawtooth'; o2.frequency.value=55*1.005;
+    const o3 = ctx.createOscillator(); o3.type='sine'; o3.frequency.value=82.4; // E
+    const g3 = ctx.createGain(); g3.gain.value=0.4;
+    o1.connect(lp); o2.connect(lp); o3.connect(g3); g3.connect(lp); lp.connect(out); out.connect(masterGain);
+    const lfo = ctx.createOscillator(); lfo.frequency.value=0.06;
+    const lfoG = ctx.createGain(); lfoG.gain.value=200;
+    lfo.connect(lfoG); lfoG.connect(lp.frequency);
+    o1.start(); o2.start(); o3.start(); lfo.start();
+    droneNode = out;
+  }
+  function setTension(level){ // 0..1
+    if (!droneNode) return;
+    const t = ctx.currentTime;
+    droneNode.gain.cancelScheduledValues(t);
+    droneNode.gain.linearRampToValueAtTime(0.08 + level*0.18, t+0.4);
+  }
+  function footstep(loud, surface){
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const minGap = loud ? 0.22 : 0.36;
+    if (now - lastFootT < minGap) return;
+    lastFootT = now;
+    const dur = 0.08;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++){
+      const env = Math.pow(1 - i/d.length, 2.5);
+      d[i] = (Math.random()*2-1) * env;
+    }
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const bp = ctx.createBiquadFilter(); bp.type = surface==='tile'?'highpass':'lowpass';
+    bp.frequency.value = surface==='tile' ? 900 : 380; bp.Q.value=1;
+    const g = ctx.createGain(); g.gain.value = (loud?0.45:0.18) * (surface==='tile'?1.3:1.0);
+    src.connect(bp); bp.connect(g); g.connect(masterGain);
+    src.start(now);
+  }
+  function blip(freq, dur, vol=0.2, type='square'){
+    if (!ctx) return;
+    const o = ctx.createOscillator(); o.type=type; o.frequency.value=freq;
+    const g = ctx.createGain(); g.gain.value=0;
+    o.connect(g); g.connect(masterGain);
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.start(t); o.stop(t+dur+0.02);
+  }
+  function alarmKlaxon(){
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    for (let i=0;i<6;i++){
+      const o = ctx.createOscillator(); o.type='sawtooth';
+      const g = ctx.createGain(); g.gain.value=0;
+      const t = t0 + i*0.32;
+      o.frequency.setValueAtTime(420, t);
+      o.frequency.linearRampToValueAtTime(840, t+0.18);
+      o.frequency.linearRampToValueAtTime(420, t+0.30);
+      g.gain.setValueAtTime(0,t);
+      g.gain.linearRampToValueAtTime(0.35, t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+0.30);
+      o.connect(g); g.connect(masterGain);
+      o.start(t); o.stop(t+0.32);
+    }
+  }
+  function takedownThump(){ blip(120, 0.18, 0.4, 'sine'); blip(60, 0.22, 0.3, 'sine'); }
+  function pickup(){ blip(880, 0.06, 0.18,'square'); blip(1320, 0.10, 0.18,'square'); }
+  function uiClick(){ blip(660, 0.04, 0.15,'square'); }
+  function radioStatic(){
+    if (!ctx) return;
+    const dur = 0.18;
+    const buf = ctx.createBuffer(1, ctx.sampleRate*dur, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/d.length, 2);
+    const src = ctx.createBufferSource(); src.buffer=buf;
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400; bp.Q.value=8;
+    const g = ctx.createGain(); g.gain.value=0.12;
+    src.connect(bp); bp.connect(g); g.connect(masterGain);
+    src.start();
+  }
+  return { ensure, footstep, blip, alarmKlaxon, takedownThump, pickup, uiClick, radioStatic, setTension };
+})();
+
+/* ---------- THREE SETUP ---------- */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = false;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05080d);
+scene.fog = new THREE.Fog(0x05080d, 6, 36);
+
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.05, 200);
+camera.position.set(0, 1.6, 0);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* Ambient blue */
+scene.add(new THREE.HemisphereLight(0x6ca5ff, 0x0a0d18, 0.18));
+const moon = new THREE.DirectionalLight(0x9ec0ff, 0.18);
+moon.position.set(20, 40, 12); scene.add(moon);
+
+/* ---------- PROCEDURAL OFFICE BUILDING ---------- */
+const FLOORS = 3;
+const FLOOR_HEIGHT = 3.2;
+const GRID = 18; // grid cells per floor side
+const CELL = 2.4; // size of each cell
+const HALF = (GRID*CELL)/2;
+
+const colliders = []; // {min:Vec3, max:Vec3, type:'wall'|'door'|'desk'} for AABB
+const lampLights = []; // {pos:Vec3, intensity, radius, on:bool, isLamp, mesh}
+const cameras = []; // security cams
+const guards = [];
+const interactables = []; // {type, pos, ...}
+const intelDocs = [];
+const switchObjs = [];
+
+const floorMaterials = [
+  new THREE.MeshStandardMaterial({ color:0x1a1f2a, roughness:0.92, metalness:0.05 }),
+  new THREE.MeshStandardMaterial({ color:0x12161e, roughness:0.95, metalness:0.02 }),
+  new THREE.MeshStandardMaterial({ color:0x1a1620, roughness:0.85, metalness:0.05 })
+];
+const wallMat = new THREE.MeshStandardMaterial({ color:0x2a3340, roughness:0.85, metalness:0.05 });
+const trimMat = new THREE.MeshStandardMaterial({ color:0x4a5b78, roughness:0.6, metalness:0.2 });
+const carpetMatA = new THREE.MeshStandardMaterial({ color:0x142133, roughness:1.0 });
+const carpetMatB = new THREE.MeshStandardMaterial({ color:0x1a2440, roughness:1.0 });
+const tileMat = new THREE.MeshStandardMaterial({ color:0x2c3540, roughness:0.4, metalness:0.1 });
+const vaultMat = new THREE.MeshStandardMaterial({ color:0x6a4a18, roughness:0.5, metalness:0.7, emissive:0x301800, emissiveIntensity:0.5 });
+const deskMat = new THREE.MeshStandardMaterial({ color:0x151a22, roughness:0.6, metalness:0.3 });
+const screenMat = new THREE.MeshStandardMaterial({ color:0x000, emissive:0x0066aa, emissiveIntensity:0.9, roughness:0.2 });
+
+/* Surface markers per cell (for footstep sound). 0=carpet, 1=tile */
+const surfaceGrid = []; // [floor][i*GRID+j]
+for (let f=0; f<FLOORS; f++) surfaceGrid[f] = new Uint8Array(GRID*GRID);
+
+/* Generate per-floor wall maps. We use a simple corridor + room layout per floor.
+   Each floor: a corridor cross plus some interior rooms. */
+function rng(seed){ let s=seed>>>0; return () => { s = (s*1664525 + 1013904223)>>>0; return (s>>>0)/0xffffffff; }; }
+const rand = rng(42);
+
+function inBounds(i,j){ return i>=0 && i<GRID && j>=0 && j<GRID; }
+
+const floorPlans = []; // each: { walls:Set<"i,j,dir">, stairCells:[ {i,j} ] }
+
+function makeFloorPlan(floorIndex){
+  // Wall on south or east edge of cell, stored as "i,j,S" or "i,j,E".
+  // Outer walls always present.
+  const walls = new Set();
+  const addEdge = (i,j,dir)=>{
+    if (!inBounds(i,j)) return;
+    walls.add(`${i},${j},${dir}`);
+  };
+  // Outer perimeter
+  for (let i=0;i<GRID;i++){
+    addEdge(i,0,'S'); addEdge(i,GRID-1,'N');
+    addEdge(0,i,'W'); addEdge(GRID-1,i,'E');
+  }
+  // helper aliases for walls inside
+  const edgeBetween = (i1,j1,i2,j2) => {
+    // returns key
+    if (i1===i2 && j2===j1+1) return `${i1},${j1},N`;
+    if (i1===i2 && j2===j1-1) return `${i1},${j1},S`;
+    if (j1===j2 && i2===i1+1) return `${i1},${j1},E`;
+    if (j1===j2 && i2===i1-1) return `${i1},${j1},W`;
+    return null;
+  };
+  const setEdge = (i1,j1,i2,j2)=>{
+    const k = edgeBetween(i1,j1,i2,j2); if(!k) return;
+    walls.add(k);
+  };
+
+  // Generate rooms by recursive partitioning
+  const rooms = [];
+  function partition(x,y,w,h, depth){
+    if (depth >= 4 || w<4 || h<4){
+      rooms.push({x,y,w,h});
+      return;
+    }
+    const horizontal = (w<h) ? false : (w>h ? true : Math.random()<0.5);
+    if (horizontal){
+      const cut = 2 + Math.floor(Math.random()*(w-3));
+      // wall along east edge of column x+cut-1
+      for (let jj=y; jj<y+h; jj++) setEdge(x+cut-1, jj, x+cut, jj);
+      // door
+      const door = y + 1 + Math.floor(Math.random()*(h-2));
+      walls.delete(`${x+cut-1},${door},E`);
+      partition(x,y,cut,h,depth+1);
+      partition(x+cut,y,w-cut,h,depth+1);
+    } else {
+      const cut = 2 + Math.floor(Math.random()*(h-3));
+      for (let ii=x; ii<x+w; ii++) setEdge(ii, y+cut-1, ii, y+cut);
+      const door = x + 1 + Math.floor(Math.random()*(w-2));
+      walls.delete(`${door},${y+cut-1},N`);
+      partition(x,y,w,cut,depth+1);
+      partition(x,y+cut,w,h-cut,depth+1);
+    }
+  }
+  // Reserve a vertical corridor down the middle (stays open)
+  const corrW = 3;
+  const corrXStart = Math.floor(GRID/2) - 1;
+  // partition left & right of corridor only
+  partition(0, 0, corrXStart, GRID, 0);
+  partition(corrXStart+corrW, 0, GRID-(corrXStart+corrW), GRID, 0);
+  // Carve corridor open (no internal walls inside corridor)
+  // Open doors from corridor to adjacent rooms occasionally
+  for (let jj=0; jj<GRID; jj++){
+    // left side door
+    if (jj%4 === 1 || jj%5===2){
+      walls.delete(`${corrXStart-1},${jj},E`);
+    }
+    if (jj%4 === 2 || jj%5===0){
+      walls.delete(`${corrXStart+corrW},${jj},W`);
+      // ensure other side too
+      walls.delete(`${corrXStart+corrW-1},${jj},E`);
+    }
+  }
+
+  // Stair cells (place near south end on left, north end on right alternating per floor)
+  let stairCell;
+  if (floorIndex % 2 === 0){
+    stairCell = { i: 1, j: 1 };
+  } else {
+    stairCell = { i: GRID-2, j: GRID-2 };
+  }
+  // Make sure stair cell is accessible — strip walls around it lightly
+  ['N','S','E','W'].forEach(d => walls.delete(`${stairCell.i},${stairCell.j},${d}`));
+
+  return { walls, rooms, stairCell, corrXStart, corrW };
+}
+
+for (let f=0; f<FLOORS; f++) floorPlans.push(makeFloorPlan(f));
+
+/* Build geometry from plans */
+const wallH = 3.0;
+const wallT = 0.18;
+function addWallBox(x, y, z, sx, sy, sz, mat){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+  m.position.set(x, y, z);
+  scene.add(m);
+  colliders.push({
+    min:new THREE.Vector3(x-sx/2, y-sy/2, z-sz/2),
+    max:new THREE.Vector3(x+sx/2, y+sy/2, z+sz/2),
+    type:'wall', mesh:m
+  });
+  return m;
+}
+
+function cellToWorld(i,j,f){
+  const x = (i - GRID/2 + 0.5) * CELL;
+  const z = (j - GRID/2 + 0.5) * CELL;
+  const y = f * FLOOR_HEIGHT;
+  return new THREE.Vector3(x, y, z);
+}
+
+/* Lights helpers */
+function addLamp(pos, color, intensity, range, isWarm){
+  const l = new THREE.PointLight(color, intensity, range, 1.6);
+  l.position.copy(pos);
+  scene.add(l);
+  // Visual lamp
+  const geom = new THREE.SphereGeometry(0.07, 8, 6);
+  const mat = new THREE.MeshBasicMaterial({ color });
+  const bulb = new THREE.Mesh(geom, mat);
+  bulb.position.copy(pos);
+  scene.add(bulb);
+  // small fixture
+  const fix = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,0.05,10),
+    new THREE.MeshStandardMaterial({ color:0x222629, roughness:0.8 }));
+  fix.position.copy(pos).y += 0.04;
+  scene.add(fix);
+  const lampObj = { pos: pos.clone(), color, intensity, range, on:true, isWarm, light:l, bulb, baseI: intensity };
+  lampLights.push(lampObj);
+  return lampObj;
+}
+
+function addEmergencyStrip(pos){
+  const geom = new THREE.BoxGeometry(0.04, 0.04, 0.6);
+  const mat = new THREE.MeshBasicMaterial({ color:0xff3030 });
+  const s = new THREE.Mesh(geom, mat); s.position.copy(pos); scene.add(s);
+}
+
+/* Build all 3 floors */
+for (let f=0; f<FLOORS; f++){
+  const plan = floorPlans[f];
+
+  // Floor & Ceiling
+  const floorGeom = new THREE.PlaneGeometry(GRID*CELL, GRID*CELL, 1, 1);
+  const fmesh = new THREE.Mesh(floorGeom, floorMaterials[f]);
+  fmesh.rotation.x = -Math.PI/2;
+  fmesh.position.y = f*FLOOR_HEIGHT;
+  scene.add(fmesh);
+
+  const ceilMat = new THREE.MeshStandardMaterial({ color:0x10141c, roughness:1, metalness:0 });
+  const ceil = new THREE.Mesh(floorGeom, ceilMat);
+  ceil.rotation.x = Math.PI/2;
+  ceil.position.y = f*FLOOR_HEIGHT + wallH;
+  scene.add(ceil);
+
+  // floor outer perimeter as visible trim
+  const trimGeom = new THREE.BoxGeometry(GRID*CELL, 0.06, 0.05);
+  const trim1 = new THREE.Mesh(trimGeom, trimMat);
+  trim1.position.set(0, f*FLOOR_HEIGHT+0.03, -HALF+0.025); scene.add(trim1);
+  const trim2 = trim1.clone(); trim2.position.z = HALF-0.025; scene.add(trim2);
+
+  // surfaces: corridor & top floor mostly tile, others carpet
+  for (let i=0;i<GRID;i++) for (let j=0;j<GRID;j++){
+    const corridor = (i>=plan.corrXStart && i<plan.corrXStart+plan.corrW);
+    const surfTile = corridor || (f===2 && Math.random()<0.6);
+    surfaceGrid[f][i*GRID+j] = surfTile ? 1 : 0;
+    // place carpet patches in some non-corridor cells (decorative, but we already have base floor; skip extra meshes for perf)
+  }
+
+  // Walls
+  plan.walls.forEach(key => {
+    const [iS,jS,dir] = key.split(',');
+    const i = +iS, j = +jS;
+    const c = cellToWorld(i,j,f);
+    let x=c.x, z=c.z, sx, sz;
+    if (dir === 'N') { z += CELL/2; sx = CELL+wallT; sz = wallT; }
+    else if (dir === 'S') { z -= CELL/2; sx = CELL+wallT; sz = wallT; }
+    else if (dir === 'E') { x += CELL/2; sx = wallT; sz = CELL+wallT; }
+    else { x -= CELL/2; sx = wallT; sz = CELL+wallT; }
+    addWallBox(x, f*FLOOR_HEIGHT + wallH/2, z, sx, wallH, sz, wallMat);
+  });
+
+  // Stairwell (only if not top floor: place opening that connects to floor above)
+  // We model stairs visually as a ramp box; player teleports up via a step trigger zone (auto step up climb).
+  if (f < FLOORS - 1){
+    const sc = plan.stairCell;
+    const w = cellToWorld(sc.i, sc.j, f);
+    // remove ceiling tile above this cell (visual): add black hole rectangle
+    const holeGeom = new THREE.PlaneGeometry(CELL*0.95, CELL*0.95);
+    const holeMat = new THREE.MeshBasicMaterial({ color:0x000 });
+    const hole = new THREE.Mesh(holeGeom, holeMat);
+    hole.rotation.x = Math.PI/2;
+    hole.position.set(w.x, f*FLOOR_HEIGHT + wallH - 0.01, w.z);
+    scene.add(hole);
+    // Build a ramp from floor to floor above
+    const rampGeom = new THREE.BoxGeometry(CELL*0.9, 0.1, CELL*1.6);
+    const rampMat = new THREE.MeshStandardMaterial({ color:0x202833, roughness:0.7 });
+    const ramp = new THREE.Mesh(rampGeom, rampMat);
+    const angle = Math.atan2(FLOOR_HEIGHT, CELL*1.6);
+    ramp.rotation.x = -angle;
+    ramp.position.set(w.x, f*FLOOR_HEIGHT + FLOOR_HEIGHT/2, w.z + CELL*0.6);
+    scene.add(ramp);
+    // Mark colliders for the ramp as a sloped collider via trigger + auto-step
+    colliders.push({
+      min: new THREE.Vector3(w.x - CELL*0.5, f*FLOOR_HEIGHT, w.z - 0.2),
+      max: new THREE.Vector3(w.x + CELL*0.5, f*FLOOR_HEIGHT + FLOOR_HEIGHT + 0.4, w.z + CELL*1.6),
+      type:'stairUp',
+      basePos: new THREE.Vector3(w.x, f*FLOOR_HEIGHT, w.z + 0.0),
+      slopeDir: new THREE.Vector3(0, 0, 1),
+      slopeLen: CELL*1.6,
+      bottomY: f*FLOOR_HEIGHT,
+      topY: (f+1)*FLOOR_HEIGHT
+    });
+    // small handrails
+    const railMat = new THREE.MeshStandardMaterial({ color:0x303a48, roughness:0.7, metalness:0.4 });
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.0, CELL*1.6), railMat);
+    rail.position.set(w.x - CELL*0.45, f*FLOOR_HEIGHT + 0.5, w.z + CELL*0.6);
+    rail.rotation.x = -angle;
+    scene.add(rail);
+    const rail2 = rail.clone(); rail2.position.x = w.x + CELL*0.45; scene.add(rail2);
+  }
+
+  // ----- Lighting per floor -----
+  // Place ceiling lights along corridor
+  for (let j=2; j<GRID-2; j+=4){
+    const c = cellToWorld(plan.corrXStart+1, j, f);
+    const lampPos = new THREE.Vector3(c.x, f*FLOOR_HEIGHT + wallH - 0.25, c.z);
+    addLamp(lampPos, 0xb6d8ff, 1.6, 6.5, false);
+  }
+  // sparse lamps in some rooms (warm)
+  for (let n=0; n<6; n++){
+    const ri = Math.floor(Math.random()*GRID);
+    const rj = Math.floor(Math.random()*GRID);
+    if (ri >= plan.corrXStart && ri < plan.corrXStart+plan.corrW) continue;
+    const c = cellToWorld(ri, rj, f);
+    const warm = Math.random()<0.6;
+    addLamp(new THREE.Vector3(c.x, f*FLOOR_HEIGHT + wallH - 0.4, c.z),
+      warm ? 0xffb066 : 0x99c8ff,
+      warm ? 1.4 : 1.0,
+      warm ? 4.5 : 5.0,
+      warm);
+  }
+
+  // ----- Decor: desks & screens in non-corridor cells -----
+  for (let i=0;i<GRID;i++) for (let j=0;j<GRID;j++){
+    if (i>=plan.corrXStart && i<plan.corrXStart+plan.corrW) continue;
+    if (Math.random() < 0.18){
+      const c = cellToWorld(i,j,f);
+      const dx = (Math.random()*0.8-0.4);
+      const dz = (Math.random()*0.8-0.4);
+      const desk = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.55), deskMat);
+      desk.position.set(c.x+dx, f*FLOOR_HEIGHT + 0.35, c.z+dz);
+      scene.add(desk);
+      colliders.push({
+        min:new THREE.Vector3(c.x+dx-0.45, f*FLOOR_HEIGHT, c.z+dz-0.275),
+        max:new THREE.Vector3(c.x+dx+0.45, f*FLOOR_HEIGHT+0.7, c.z+dz+0.275),
+        type:'desk', mesh:desk
+      });
+      // monitor
+      if (Math.random()<0.7){
+        const sc = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.28, 0.04), screenMat);
+        sc.position.set(c.x+dx, f*FLOOR_HEIGHT + 0.85, c.z+dz - 0.18);
+        sc.rotation.y = Math.random()*0.4-0.2;
+        scene.add(sc);
+        // screen as faint lamp
+        const sl = new THREE.PointLight(0x66bbff, 0.18, 1.6, 2);
+        sl.position.copy(sc.position).z += 0.05;
+        scene.add(sl);
+        lampLights.push({ pos: sl.position.clone(), color:0x66bbff, intensity:0.18, range:1.6, on:true, isWarm:false, light:sl, bulb:null, baseI:0.18, screen:true });
+      }
+    } else if (Math.random() < 0.04){
+      // file cabinet
+      const c = cellToWorld(i,j,f);
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.2, 0.5),
+        new THREE.MeshStandardMaterial({ color:0x44505e, roughness:0.6, metalness:0.5 }));
+      cab.position.set(c.x, f*FLOOR_HEIGHT + 0.6, c.z);
+      scene.add(cab);
+      colliders.push({
+        min:new THREE.Vector3(c.x-0.25, f*FLOOR_HEIGHT, c.z-0.25),
+        max:new THREE.Vector3(c.x+0.25, f*FLOOR_HEIGHT+1.2, c.z+0.25),
+        type:'desk', mesh:cab
+      });
+    }
+  }
+
+  // ----- Light Switches (interactive) — one per floor near a wall -----
+  {
+    const sw = new THREE.Group();
+    const swCell = { i: plan.corrXStart - 1, j: 4 + f };
+    const c = cellToWorld(swCell.i, swCell.j, f);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.04),
+      new THREE.MeshStandardMaterial({ color:0x202830, roughness:0.6 }));
+    plate.position.set(c.x + CELL/2 - 0.04, f*FLOOR_HEIGHT + 1.3, c.z);
+    sw.add(plate);
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.025,8,8),
+      new THREE.MeshBasicMaterial({ color:0x44ff66 }));
+    led.position.copy(plate.position);
+    led.position.x -= 0.03;
+    sw.add(led);
+    scene.add(sw);
+    switchObjs.push({
+      pos: plate.position.clone(),
+      floor: f,
+      led,
+      controls: 'corridor', // toggles all corridor lamps on this floor
+      on: true
+    });
+  }
+
+  // ----- Security cameras: 1-2 per floor (top floor 2) -----
+  const cams = (f===2)?2:1;
+  for (let n=0;n<cams;n++){
+    const ci = (n===0)? plan.corrXStart+1 : plan.corrXStart+1;
+    const cj = (n===0)? 2 : GRID-3;
+    const c = cellToWorld(ci, cj, f);
+    const camG = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8),
+      new THREE.MeshStandardMaterial({ color:0x1a1f28, roughness:0.5, metalness:0.7 }));
+    const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.08,8),
+      new THREE.MeshStandardMaterial({ color:0x000, emissive:0xff2020, emissiveIntensity:1.0 }));
+    lens.rotation.z = Math.PI/2;
+    lens.position.x = 0.12;
+    camG.add(base); camG.add(lens);
+    camG.position.set(c.x, f*FLOOR_HEIGHT + wallH - 0.2, c.z);
+    scene.add(camG);
+    cameras.push({
+      group: camG, lens, basePos: camG.position.clone(),
+      yaw:0, baseYaw: (cj < GRID/2)? 0 : Math.PI,
+      cone: 1.05, // half angle
+      range: 9.5, on: true, t: Math.random()*Math.PI*2,
+      floor: f
+    });
+  }
+
+  // ----- Intel docs: 1 per floor, on a desk far from corridor -----
+  let intelPlaced = false, attempts=0;
+  while (!intelPlaced && attempts<60){
+    attempts++;
+    const ri = Math.floor(Math.random()*GRID);
+    const rj = Math.floor(Math.random()*GRID);
+    if (ri>=plan.corrXStart && ri<plan.corrXStart+plan.corrW) continue;
+    const c = cellToWorld(ri,rj,f);
+    const folder = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.20),
+      new THREE.MeshStandardMaterial({ color:0xa33, emissive:0x441111, emissiveIntensity:0.5, roughness:0.6 }));
+    folder.position.set(c.x, f*FLOOR_HEIGHT + 0.78, c.z);
+    scene.add(folder);
+    const docTexts = [
+      { title:'MEMO 1138', body:'CEO requesting transfer of Project HALO assets to the new offshore vault. Budget approved. — V. Kane' },
+      { title:'INVENTORY 9X', body:'Vault contents: 1x cryptographic keystone, 3x prototype boards, sealed manuscript. Access list: 4 names.' },
+      { title:'GUARD ROTATION', body:'Floor 3 patrols extended. East elevator out of service. New camera installed near server room.' },
+    ];
+    intelDocs.push({
+      mesh: folder, taken:false, floor:f,
+      pos: folder.position.clone(),
+      title: docTexts[f].title,
+      body: docTexts[f].body
+    });
+    intelPlaced = true;
+  }
+}
+
+/* ----- Vault on top floor ----- */
+{
+  const f = FLOORS - 1;
+  const plan = floorPlans[f];
+  // pick a corner cell
+  const vi = GRID-3, vj = 2;
+  const c = cellToWorld(vi, vj, f);
+  // Vault geometry: chunky door
+  const vaultDoor = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9, 0.9, 0.18, 32),
+    vaultMat
+  );
+  vaultDoor.rotation.x = Math.PI/2;
+  vaultDoor.position.set(c.x, f*FLOOR_HEIGHT + 1.1, c.z);
+  scene.add(vaultDoor);
+  // Spinning combination wheel
+  const wheel = new THREE.Mesh(
+    new THREE.TorusGeometry(0.55, 0.07, 10, 24),
+    new THREE.MeshStandardMaterial({ color:0xffd070, emissive:0x402000, emissiveIntensity:0.6, metalness:0.9, roughness:0.3 })
+  );
+  wheel.position.copy(vaultDoor.position);
+  wheel.position.z += 0.12;
+  scene.add(wheel);
+  interactables.push({
+    type:'vault', pos: vaultDoor.position.clone(), mesh:vaultDoor, wheel
+  });
+  // gold glow lamp
+  addLamp(new THREE.Vector3(c.x, f*FLOOR_HEIGHT + wallH - 0.4, c.z), 0xffc060, 1.2, 5, true);
+}
+
+/* ----- Server room: dim cyan glow on Floor 2 ----- */
+{
+  const f = 1;
+  const plan = floorPlans[f];
+  const sCell = { i: 2, j: GRID-3 };
+  const c = cellToWorld(sCell.i, sCell.j, f);
+  // a couple server racks
+  for (let n=0;n<3;n++){
+    const rack = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.9, 0.5),
+      new THREE.MeshStandardMaterial({ color:0x101820, roughness:0.6, metalness:0.7, emissive:0x002233, emissiveIntensity:0.4 }));
+    rack.position.set(c.x + (n-1)*0.7, f*FLOOR_HEIGHT + 0.95, c.z);
+    scene.add(rack);
+    colliders.push({
+      min: new THREE.Vector3(rack.position.x-0.3, f*FLOOR_HEIGHT, rack.position.z-0.25),
+      max: new THREE.Vector3(rack.position.x+0.3, f*FLOOR_HEIGHT+1.9, rack.position.z+0.25),
+      type:'desk', mesh:rack
+    });
+    // cyan blip lights
+    addLamp(new THREE.Vector3(rack.position.x, f*FLOOR_HEIGHT + 1.5, rack.position.z + 0.3), 0x33ddff, 0.5, 2.0, false);
+  }
+}
+
+/* ---------- GUARDS ---------- */
+const guardBodyMat = new THREE.MeshStandardMaterial({ color:0x232c39, roughness:0.6 });
+const guardHeadMat = new THREE.MeshStandardMaterial({ color:0x2c3540, roughness:0.5 });
+const flashlightMat = new THREE.MeshBasicMaterial({ color:0xffffaa });
+const coneMat = new THREE.MeshBasicMaterial({ color:0xffff66, transparent:true, opacity:0.10, side:THREE.DoubleSide, depthWrite:false });
+
+function buildGuard(floor, pathCells){
+  const g = new THREE.Group();
+  // body
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 1.2, 12), guardBodyMat);
+  body.position.y = 0.7;
+  g.add(body);
+  // head
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), guardHeadMat);
+  head.position.y = 1.55;
+  g.add(head);
+  // cap
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.06, 12),
+    new THREE.MeshStandardMaterial({ color:0x111418, roughness:0.5 }));
+  cap.position.y = 1.72;
+  g.add(cap);
+  // alert glyph above head
+  const glyphGeom = new THREE.SphereGeometry(0.12, 8, 6);
+  const glyphMat = new THREE.MeshBasicMaterial({ color:0xffd000, transparent:true, opacity:0 });
+  const glyph = new THREE.Mesh(glyphGeom, glyphMat);
+  glyph.position.y = 2.0;
+  g.add(glyph);
+
+  // flashlight cone (visualize vision)
+  const coneR = 4.2;
+  const coneA = Math.tan(0.55) * coneR;
+  const coneGeom = new THREE.ConeGeometry(coneA, coneR, 16, 1, true);
+  const cone = new THREE.Mesh(coneGeom, coneMat);
+  cone.rotation.x = Math.PI/2;
+  cone.position.z = -coneR/2;
+  cone.position.y = 1.3;
+  g.add(cone);
+
+  // flashlight bulb (visible faint light glow)
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), flashlightMat);
+  bulb.position.set(0, 1.3, -0.25);
+  g.add(bulb);
+
+  scene.add(g);
+
+  const startCell = pathCells[0];
+  const sw = cellToWorld(startCell.i, startCell.j, floor);
+  g.position.set(sw.x, floor*FLOOR_HEIGHT, sw.z);
+
+  return {
+    group:g, body, head, cap, glyph, glyphMat, cone,
+    floor,
+    pathCells, // array of {i,j}
+    pathIndex: 0,
+    state: 'PATROL', // PATROL | SUSPICIOUS | ALERT | KO
+    suspicion: 0, // 0..1 toward ALERT
+    seenT: 0,
+    target: null, // Vector3 to investigate
+    speed: 1.4,
+    chaseSpeed: 3.4,
+    yaw: 0, // facing
+    yawTarget: 0,
+    visionRange: coneR,
+    visionAngle: 0.55, // half angle
+    awareCooldown: 0,
+    lastChatter: 0,
+    ko: false
+  };
+}
+
+/* Build patrol routes */
+function makePatrolPath(floor){
+  const plan = floorPlans[floor];
+  const pts = [];
+  // Walk along corridor with detours into 2 random rooms
+  const corridor = plan.corrXStart + 1;
+  const start = 1, end = GRID-2;
+  for (let j=start; j<=end; j+=4){
+    pts.push({ i: corridor, j });
+  }
+  // Add a side detour
+  const detourJ = 4 + Math.floor(Math.random()*4);
+  pts.splice(1, 0, { i: Math.max(1, corridor-3), j: detourJ });
+  pts.push({ i: Math.min(GRID-2, corridor+3), j: end-2 });
+  return pts;
+}
+
+guards.push(buildGuard(0, makePatrolPath(0)));
+guards.push(buildGuard(0, makePatrolPath(0).reverse()));
+guards.push(buildGuard(1, makePatrolPath(1)));
+guards.push(buildGuard(2, makePatrolPath(2)));
+guards.push(buildGuard(2, makePatrolPath(2).reverse()));
+
+/* ---------- PLAYER ---------- */
+const player = {
+  pos: new THREE.Vector3(0, 0, 0),
+  vel: new THREE.Vector3(),
+  yaw: 0,
+  pitch: 0,
+  height: 1.65, // standing eye height above floor
+  crouchH: 1.05,
+  curEyeH: 1.65,
+  radius: 0.3,
+  onGround: true,
+  crouching: false,
+  sprinting: false,
+  lean: 0, // -1..+1
+  targetLean: 0,
+  noiseLevel: 0,
+  visibility: 0,
+  alive: true,
+  detected: false,
+  intel: 0,
+  score: 0,
+  lastFootSurface: 0
+};
+
+/* Spawn at floor 0 stairwell-opposite corner, near the entry */
+{
+  const startCell = { i: GRID-3, j: GRID-3 };
+  const w = cellToWorld(startCell.i, startCell.j, 0);
+  player.pos.set(w.x, 0, w.z);
+  camera.position.set(w.x, w.y + 1.65, w.z);
+}
+
+/* ---------- INPUT ---------- */
+const keys = {};
+let mouseDown = false;
+let pointerLocked = false;
+const sensitivity = 0.0022;
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Tab') e.preventDefault();
+  if (e.code === 'Escape'){ document.exitPointerLock(); }
+  keys[e.code] = true;
+  if (e.code === 'KeyV'){ toggleVisionCones(); }
+  if (e.code === 'KeyF'){
+    if (intelPanelOpen){ closeIntelPanel(); }
+    else { tryInteract(); }
+  }
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+document.addEventListener('mousemove', e => {
+  if (!pointerLocked) return;
+  player.yaw -= e.movementX * sensitivity;
+  player.pitch -= e.movementY * sensitivity;
+  player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+});
+document.addEventListener('mousedown', e => {
+  if (!pointerLocked) return;
+  mouseDown = true;
+  tryTakedown();
+});
+document.addEventListener('mouseup', () => { mouseDown = false; });
+
+renderer.domElement.addEventListener('click', () => {
+  if (!pointerLocked && player.alive) renderer.domElement.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = (document.pointerLockElement === renderer.domElement);
+});
+
+let conesVisible = true;
+function toggleVisionCones(){
+  conesVisible = !conesVisible;
+  guards.forEach(g => g.cone.visible = conesVisible && !g.ko);
+  cameras.forEach(c => { if (c.coneMesh) c.coneMesh.visible = conesVisible && c.on; });
+  Audio.uiClick();
+}
+
+/* Build cone mesh for security cameras */
+cameras.forEach(c => {
+  const r = c.range;
+  const a = Math.tan(c.cone) * r;
+  const g = new THREE.ConeGeometry(a, r, 16, 1, true);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color:0xff4040, transparent:true, opacity:0.07, side:THREE.DoubleSide, depthWrite:false }));
+  m.rotation.x = Math.PI/2;
+  m.position.copy(c.basePos);
+  m.position.y -= 0.05;
+  scene.add(m);
+  c.coneMesh = m;
+});
+
+/* ---------- COLLISION HELPERS ---------- */
+const tmpVec = new THREE.Vector3();
+function collideAndSlide(np){
+  // Resolve AABB collisions for player as a vertical capsule (cylinder).
+  // We'll just push out of any wall AABB the player intersects in XZ.
+  const px = np.x, pz = np.z;
+  let ny = np.y;
+  const r = player.radius;
+  let outX = px, outZ = pz;
+  // Collect collisions and push apart on smallest overlap axis
+  for (let n=0; n<colliders.length; n++){
+    const c = colliders[n];
+    if (c.type === 'stairUp') continue;
+    // ignore if outside floor band
+    const playerBottom = ny - 0.05;
+    const playerTop = ny + 1.7;
+    if (c.max.y < playerBottom - 0.1) continue;
+    if (c.min.y > playerTop + 0.1) continue;
+    // closest point in XZ
+    const closestX = Math.max(c.min.x, Math.min(outX, c.max.x));
+    const closestZ = Math.max(c.min.z, Math.min(outZ, c.max.z));
+    const dx = outX - closestX;
+    const dz = outZ - closestZ;
+    const distSq = dx*dx + dz*dz;
+    if (distSq < r*r){
+      const dist = Math.sqrt(distSq) || 0.001;
+      const push = (r - dist);
+      outX += (dx/dist) * push;
+      outZ += (dz/dist) * push;
+    }
+  }
+  return new THREE.Vector3(outX, ny, outZ);
+}
+
+/* Stair handling: if player overlaps stair trigger, raise their Y based on slope progress */
+function applyStairs(pos){
+  for (let n=0; n<colliders.length; n++){
+    const c = colliders[n];
+    if (c.type !== 'stairUp') continue;
+    if (pos.x >= c.min.x && pos.x <= c.max.x && pos.z >= c.min.z && pos.z <= c.max.z){
+      // local progress along slope
+      const t = Math.max(0, Math.min(1, (pos.z - c.basePos.z) / c.slopeLen));
+      const targetY = c.bottomY + (c.topY - c.bottomY) * t;
+      if (pos.y < targetY) pos.y = targetY;
+    }
+  }
+  return pos;
+}
+
+/* Raycast helper for line-of-sight (against wall colliders only) */
+const rayObjects = []; // built once after walls placed
+function buildRayMeshes(){
+  // Use the wall meshes already in scene; collect them
+  scene.traverse(obj => {
+    if (obj.isMesh && obj.geometry && obj.material === wallMat) rayObjects.push(obj);
+  });
+}
+buildRayMeshes();
+
+const raycaster = new THREE.Raycaster();
+function lineOfSightClear(from, to){
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const dist = dir.length();
+  if (dist < 0.0001) return true;
+  dir.normalize();
+  raycaster.set(from, dir);
+  raycaster.far = dist;
+  const hits = raycaster.intersectObjects(rayObjects, false);
+  return hits.length === 0;
+}
+
+/* ---------- LIGHT METER ---------- */
+function computeVisibility(){
+  // Sum contribution from active lamps within range (including line-of-sight check for cheaper compute, only test closest few)
+  let intensitySum = 0;
+  const eye = camera.position;
+  for (let i=0;i<lampLights.length;i++){
+    const L = lampLights[i];
+    if (!L.on) continue;
+    const dx = L.pos.x - eye.x;
+    const dy = L.pos.y - eye.y;
+    const dz = L.pos.z - eye.z;
+    const d2 = dx*dx + dy*dy + dz*dz;
+    const r = L.range;
+    if (d2 > r*r) continue;
+    const d = Math.sqrt(d2);
+    // attenuation
+    const att = Math.max(0, 1 - d/r);
+    // optional LOS check for stronger lamps
+    if (L.intensity > 1.0){
+      if (!lineOfSightClear(L.pos, eye)) continue;
+    }
+    intensitySum += att * L.intensity;
+  }
+  // Crouch reduces visibility a bit, lean barely
+  let crouchReduce = player.crouching ? 0.5 : 1.0;
+  let v = Math.min(1.0, intensitySum * 0.42) * crouchReduce;
+  return v;
+}
+
+/* ---------- INTERACT ---------- */
+const promptEl = document.getElementById('prompt');
+const intelEl = document.getElementById('intel');
+const intelTitleEl = document.getElementById('intelTitle');
+const intelBodyEl = document.getElementById('intelBody');
+let currentInteract = null;
+let intelPanelOpen = false;
+
+function findInteract(){
+  const eye = camera.position;
+  // compute camera forward
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
+  const candidates = [];
+
+  // Light switches
+  for (const sw of switchObjs){
+    if (Math.abs(sw.pos.y - camera.position.y) > 2.5) continue;
+    const v = new THREE.Vector3().subVectors(sw.pos, eye);
+    const d = v.length();
+    if (d > 1.6) continue;
+    v.normalize();
+    if (v.dot(fwd) < 0.6) continue;
+    candidates.push({ type:'switch', obj:sw, dist:d });
+  }
+  // Cameras (must be crouched and within 2.0m)
+  for (const cam of cameras){
+    if (!cam.on) continue;
+    const v = new THREE.Vector3().subVectors(cam.basePos, eye);
+    const d = v.length();
+    if (d > 2.2) continue;
+    v.normalize();
+    if (v.dot(fwd) < 0.55) continue;
+    candidates.push({ type:'camera', obj:cam, dist:d });
+  }
+  // Intel
+  for (const id of intelDocs){
+    if (id.taken) continue;
+    const v = new THREE.Vector3().subVectors(id.pos, eye);
+    const d = v.length();
+    if (d > 1.4) continue;
+    v.normalize();
+    if (v.dot(fwd) < 0.55) continue;
+    candidates.push({ type:'intel', obj:id, dist:d });
+  }
+  // Vault
+  for (const it of interactables){
+    if (it.type === 'vault'){
+      const v = new THREE.Vector3().subVectors(it.pos, eye);
+      const d = v.length();
+      if (d > 2.0) continue;
+      v.normalize();
+      if (v.dot(fwd) < 0.55) continue;
+      candidates.push({ type:'vault', obj:it, dist:d });
+    }
+  }
+  candidates.sort((a,b)=>a.dist-b.dist);
+  return candidates[0] || null;
+}
+
+function tryInteract(){
+  if (!currentInteract) return;
+  const c = currentInteract;
+  if (c.type === 'switch'){
+    // toggle corridor lamps on this floor
+    const sw = c.obj;
+    sw.on = !sw.on;
+    sw.led.material.color.setHex(sw.on ? 0x44ff66 : 0x661010);
+    for (const L of lampLights){
+      // toggle only ceiling lamps (intensity > 1.0) on this floor
+      if (L.intensity >= 1.4 && Math.abs(L.pos.y - (sw.floor*FLOOR_HEIGHT + wallH - 0.25)) < 0.3){
+        L.on = sw.on;
+        L.light.intensity = sw.on ? L.baseI : 0;
+        if (L.bulb) L.bulb.material.color.setHex(sw.on ? L.color : 0x111111);
+      }
+    }
+    Audio.uiClick();
+    showRadio('Lights ' + (sw.on?'on':'off') + '.');
+  } else if (c.type === 'camera'){
+    if (!player.crouching) {
+      showRadio('Crouch to disable camera.');
+      return;
+    }
+    c.obj.on = false;
+    c.obj.lens.material.emissive.setHex(0x101010);
+    if (c.obj.coneMesh) c.obj.coneMesh.visible = false;
+    Audio.blip(440, 0.06, 0.18);
+    Audio.blip(220, 0.10, 0.16);
+    player.score += 100;
+    showRadio('Camera disabled.');
+  } else if (c.type === 'intel'){
+    const id = c.obj;
+    id.taken = true;
+    id.mesh.visible = false;
+    player.intel++;
+    player.score += 250;
+    Audio.pickup();
+    openIntelPanel(id.title, id.body);
+    showRadio('Intel acquired.');
+  } else if (c.type === 'vault'){
+    if (!player.detected){
+      doWin();
+    }
+  }
+}
+
+function openIntelPanel(t, b){
+  intelEl.style.display='block';
+  intelTitleEl.textContent = t;
+  intelBodyEl.textContent = b;
+  intelPanelOpen = true;
+}
+function closeIntelPanel(){
+  intelEl.style.display='none';
+  intelPanelOpen = false;
+}
+
+function tryTakedown(){
+  if (!player.alive) return;
+  // Find nearest guard within 1.6m, in front of camera, and behind their facing
+  const eye = camera.position;
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
+  let best = null, bestD = 1.7;
+  for (const g of guards){
+    if (g.ko) continue;
+    if (Math.abs(g.group.position.y - player.pos.y) > 1.5) continue;
+    const v = new THREE.Vector3().subVectors(g.group.position, eye);
+    v.y = 0;
+    const d = v.length();
+    if (d > bestD) continue;
+    v.normalize();
+    if (v.dot(new THREE.Vector3(fwd.x, 0, fwd.z).normalize()) < 0.55) continue;
+    // Player must be behind the guard (their facing dot to player < -0.2)
+    const guardFwd = new THREE.Vector3(Math.sin(g.yaw), 0, Math.cos(g.yaw)).normalize();
+    const guardToPlayer = new THREE.Vector3(eye.x - g.group.position.x, 0, eye.z - g.group.position.z).normalize();
+    if (guardFwd.dot(guardToPlayer) > -0.1) continue;
+    if (d < bestD){ best = g; bestD = d; }
+  }
+  if (best){
+    knockOutGuard(best);
+  }
+}
+
+function knockOutGuard(g){
+  g.ko = true;
+  g.state = 'KO';
+  g.cone.visible = false;
+  g.glyphMat.opacity = 0;
+  // tip body over: rotate group around X axis a little, lower y
+  g.body.rotation.x = Math.PI/2;
+  g.head.position.set(0, 0.4, -0.6);
+  g.cap.position.set(0, 0.45, -0.7);
+  Audio.takedownThump();
+  player.score += 300;
+  showRadio('Guard down.');
+}
+
+/* ---------- DETECTION ---------- */
+function isPlayerSeenByGuard(g){
+  if (g.ko) return false;
+  const eye = camera.position;
+  const guardEye = g.group.position.clone(); guardEye.y += 1.55;
+  const toPlayer = new THREE.Vector3().subVectors(eye, guardEye);
+  const dist = toPlayer.length();
+  if (dist > g.visionRange) return false;
+  toPlayer.normalize();
+  // guard facing
+  const fwd = new THREE.Vector3(Math.sin(g.yaw), 0, Math.cos(g.yaw)).normalize();
+  // dot only on XZ
+  const flatTo = new THREE.Vector3(toPlayer.x, 0, toPlayer.z).normalize();
+  const dot = fwd.dot(flatTo);
+  if (dot < Math.cos(g.visionAngle)) return false;
+  // visibility-based: low light = need to be closer
+  const visScale = 0.3 + player.visibility * 0.7;
+  if (dist > g.visionRange * visScale) return false;
+  // line of sight
+  if (!lineOfSightClear(guardEye, eye)) return false;
+  return true;
+}
+function isPlayerSeenByCamera(c){
+  if (!c.on) return false;
+  const eye = camera.position;
+  const camPos = c.basePos.clone();
+  const toP = new THREE.Vector3().subVectors(eye, camPos);
+  const dist = toP.length();
+  if (dist > c.range) return false;
+  toP.normalize();
+  // camera direction is its current world direction (point along -Z then yawed)
+  const fwd = new THREE.Vector3(Math.sin(c.yaw + c.baseYaw), 0, Math.cos(c.yaw + c.baseYaw)).normalize();
+  const flat = new THREE.Vector3(toP.x, 0, toP.z).normalize();
+  if (fwd.dot(flat) < Math.cos(c.cone)) return false;
+  const visScale = 0.4 + player.visibility * 0.6;
+  if (dist > c.range * visScale) return false;
+  if (!lineOfSightClear(camPos, eye)) return false;
+  return true;
+}
+
+/* ---------- GUARD AI UPDATE ---------- */
+function updateGuard(g, dt){
+  if (g.ko) return;
+  // Determine target & speed based on state
+  let speed = g.speed;
+  let nextTarget = null;
+  if (g.state === 'PATROL'){
+    const cell = g.pathCells[g.pathIndex];
+    nextTarget = cellToWorld(cell.i, cell.j, g.floor);
+  } else if (g.state === 'SUSPICIOUS'){
+    speed = g.speed * 1.4;
+    nextTarget = g.target ? g.target.clone() : null;
+  } else if (g.state === 'ALERT'){
+    speed = g.chaseSpeed;
+    nextTarget = camera.position.clone();
+  }
+
+  if (nextTarget){
+    nextTarget.y = g.group.position.y;
+    const dir = new THREE.Vector3().subVectors(nextTarget, g.group.position);
+    const d = dir.length();
+    if (d < 0.5){
+      if (g.state === 'PATROL'){
+        g.pathIndex = (g.pathIndex + 1) % g.pathCells.length;
+        // pause briefly: not modeled separately, ok
+      } else if (g.state === 'SUSPICIOUS'){
+        // arrived at suspicious spot; look around then return to patrol
+        g.suspicion -= 0.4 * dt;
+        if (g.suspicion < 0.05){
+          g.state = 'PATROL';
+          g.target = null;
+          g.glyphMat.opacity = 0;
+        }
+      } else if (g.state === 'ALERT'){
+        // close enough — instant detection
+        triggerDetection();
+      }
+    } else {
+      dir.normalize();
+      g.yawTarget = Math.atan2(dir.x, dir.z);
+      // smoothly turn
+      let dy = g.yawTarget - g.yaw;
+      while (dy > Math.PI) dy -= Math.PI*2;
+      while (dy < -Math.PI) dy += Math.PI*2;
+      g.yaw += Math.max(-3*dt, Math.min(3*dt, dy));
+      // move
+      const move = new THREE.Vector3(Math.sin(g.yaw), 0, Math.cos(g.yaw)).multiplyScalar(speed*dt);
+      const np = g.group.position.clone().add(move);
+      // basic collision: avoid walls (push back)
+      let blocked = false;
+      for (const c of colliders){
+        if (c.type === 'wall'){
+          if (np.x > c.min.x-0.3 && np.x < c.max.x+0.3 && np.z > c.min.z-0.3 && np.z < c.max.z+0.3 &&
+              c.min.y < g.group.position.y + 1.5 && c.max.y > g.group.position.y){
+            blocked = true; break;
+          }
+        }
+      }
+      if (!blocked){
+        g.group.position.copy(np);
+      } else {
+        // tweak path: skip forward
+        if (g.state === 'PATROL') g.pathIndex = (g.pathIndex+1)%g.pathCells.length;
+      }
+    }
+  }
+  g.group.rotation.y = g.yaw;
+
+  // Vision check
+  const sees = isPlayerSeenByGuard(g);
+  if (sees){
+    g.suspicion += dt * 0.9;
+    if (g.suspicion > 1) g.suspicion = 1;
+    g.target = camera.position.clone();
+    if (g.suspicion >= 1){
+      g.state = 'ALERT';
+      g.glyphMat.color.setHex(0xff3030);
+      g.glyphMat.opacity = 1;
+      if (Date.now() - g.lastChatter > 1800){
+        showRadio(['Intruder!','Hostile spotted!','Got eyes on target!'][Math.floor(Math.random()*3)]);
+        Audio.radioStatic();
+        g.lastChatter = Date.now();
+      }
+    } else {
+      g.state = 'SUSPICIOUS';
+      g.glyphMat.color.setHex(0xffd000);
+      g.glyphMat.opacity = 0.8;
+      if (Date.now() - g.lastChatter > 2200){
+        showRadio(['What was that?','Hello?','Movement…','Did you see something?'][Math.floor(Math.random()*4)]);
+        Audio.radioStatic();
+        g.lastChatter = Date.now();
+      }
+    }
+  } else {
+    if (g.state === 'ALERT'){
+      // continue toward last seen pos, but downgrade slowly
+      g.suspicion -= dt * 0.12;
+      if (g.suspicion < 0.4){ g.state = 'SUSPICIOUS'; g.glyphMat.color.setHex(0xffd000); g.glyphMat.opacity = 0.6; }
+    } else if (g.state === 'SUSPICIOUS'){
+      g.suspicion -= dt * 0.18;
+      if (g.suspicion < 0.05){
+        g.state = 'PATROL';
+        g.glyphMat.opacity = 0;
+        g.target = null;
+      }
+    }
+  }
+
+  // Periodic chatter while patrolling
+  if (g.state === 'PATROL' && Date.now() - g.lastChatter > 18000 + Math.random()*6000){
+    showRadio(['All clear up here.','Nothing on this floor.','Quiet shift.','Coffee\'s gone cold again.'][Math.floor(Math.random()*4)]);
+    Audio.radioStatic();
+    g.lastChatter = Date.now();
+  }
+
+  // Noise reactivity: if player just made loud sound nearby, become suspicious
+  if (player.noiseLevel > 0.55){
+    const dx = camera.position.x - g.group.position.x;
+    const dz = camera.position.z - g.group.position.z;
+    const dy = camera.position.y - g.group.position.y;
+    const distFlat = Math.sqrt(dx*dx + dz*dz);
+    if (Math.abs(dy) < 1.6 && distFlat < 8.5 * player.noiseLevel){
+      if (g.state === 'PATROL'){
+        g.state = 'SUSPICIOUS';
+        g.suspicion = Math.max(g.suspicion, 0.45);
+        g.target = camera.position.clone();
+        g.glyphMat.color.setHex(0xffd000);
+        g.glyphMat.opacity = 0.8;
+        if (Date.now() - g.lastChatter > 2500){
+          showRadio('Did you hear that?');
+          Audio.radioStatic();
+          g.lastChatter = Date.now();
+        }
+      }
+    }
+  }
+}
+
+/* ---------- DETECTION TRIGGER ---------- */
+const alertEl = document.getElementById('alert');
+const flashEl = document.getElementById('flash');
+let alarmActive = false;
+function triggerDetection(){
+  if (player.detected || !player.alive) return;
+  player.detected = true;
+  alertEl.classList.add('on');
+  flashEl.style.background = 'rgba(255,40,40,0.45)';
+  Audio.alarmKlaxon();
+  Audio.setTension(1.0);
+  alarmActive = true;
+  setTimeout(()=>{ flashEl.style.background='rgba(255,40,40,0)'; }, 350);
+  setTimeout(()=>{ doFail(); }, 1400);
+}
+
+function doFail(){
+  player.alive = false;
+  document.exitPointerLock();
+  document.getElementById('title').textContent = 'DETECTED';
+  document.getElementById('lead').textContent = 'The alarm has been raised. Mission compromised.';
+  document.getElementById('subtitle').textContent = 'Score: ' + Math.floor(player.score) + '   |   Click RETRY to infiltrate again.';
+  document.getElementById('playBtn').textContent = 'RETRY';
+  document.getElementById('screen').classList.remove('hide');
+}
+function doWin(){
+  player.alive = false;
+  document.exitPointerLock();
+  const mult = 1 + player.intel * 0.5;
+  player.score = Math.floor(player.score * mult + 1500);
+  document.getElementById('title').textContent = 'VAULT BREACHED';
+  document.getElementById('lead').textContent = 'Mission complete. Intel multiplier: x' + mult.toFixed(1);
+  document.getElementById('subtitle').textContent = 'Final Score: ' + player.score + '   |   Click PLAY for another run.';
+  document.getElementById('playBtn').textContent = 'PLAY AGAIN';
+  document.getElementById('screen').classList.remove('hide');
+}
+
+/* ---------- RADIO / SUBTITLES ---------- */
+const radioEl = document.getElementById('radio');
+let radioTimer = null;
+function showRadio(text){
+  radioEl.textContent = text;
+  radioEl.classList.add('show');
+  clearTimeout(radioTimer);
+  radioTimer = setTimeout(()=>{ radioEl.classList.remove('show'); }, 2400);
+}
+
+/* ---------- HUD UPDATE ---------- */
+const visBar = document.querySelector('#visBar > i');
+const visVal = document.getElementById('visVal');
+const noiseBar = document.querySelector('#noiseBar > i');
+const noiseVal = document.getElementById('noiseVal');
+const stateVal = document.getElementById('stateVal');
+const floorVal = document.getElementById('floorVal');
+const intelVal = document.getElementById('intelVal');
+const stanceVal = document.getElementById('stanceVal');
+const scoreVal  = document.getElementById('scoreVal');
+
+/* ---------- MAIN LOOP ---------- */
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now - last)/1000); last = now;
+
+  if (player.alive){
+    updatePlayer(dt);
+    for (const g of guards) updateGuard(g, dt);
+    updateCameras(dt);
+    updateLamps(dt);
+    updateHUD(dt);
+  }
+
+  // smoothly rotate vault wheel
+  for (const it of interactables){
+    if (it.wheel) it.wheel.rotation.z += dt * 0.35;
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+/* ---------- PLAYER UPDATE ---------- */
+const fwdVec = new THREE.Vector3();
+const rightVec = new THREE.Vector3();
+function updatePlayer(dt){
+  // Smooth camera quaternion based on yaw/pitch + lean
+  // target lean
+  player.targetLean = (keys['KeyQ']?-1:0) + (keys['KeyE']?1:0);
+  player.lean += (player.targetLean - player.lean) * Math.min(1, dt*8);
+  // smooth crouch height
+  const targetEyeH = player.crouching ? player.crouchH : player.height;
+  player.curEyeH += (targetEyeH - player.curEyeH) * Math.min(1, dt*10);
+
+  // Crouch toggle (hold)
+  player.crouching = !!keys['ControlLeft'] || !!keys['ControlRight'];
+  player.sprinting = !!keys['ShiftLeft'] || !!keys['ShiftRight'];
+
+  // Movement
+  const wishX = (keys['KeyD']?1:0) - (keys['KeyA']?1:0);
+  const wishZ = (keys['KeyW']?1:0) - (keys['KeyS']?1:0);
+  let speed = 3.0;
+  if (player.crouching) speed = 1.5;
+  else if (player.sprinting && wishZ > 0) speed = 5.5;
+
+  // Build movement dir from yaw
+  fwdVec.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+  rightVec.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+  const mv = new THREE.Vector3();
+  mv.addScaledVector(fwdVec, wishZ);
+  mv.addScaledVector(rightVec, wishX);
+  if (mv.lengthSq() > 0) mv.normalize();
+  mv.multiplyScalar(speed * dt);
+
+  // Apply gravity / jump
+  player.vel.y -= 9.8 * dt;
+  if (keys['Space'] && player.onGround){
+    player.vel.y = 4.5;
+    player.onGround = false;
+  }
+
+  // Tentative new pos
+  const np = player.pos.clone();
+  np.x += mv.x;
+  np.z += mv.z;
+  np.y += player.vel.y * dt;
+
+  // collide horizontally first
+  const slid = collideAndSlide(np);
+  // stairs
+  applyStairs(slid);
+
+  // floor check: snap to floor of current floor based on position
+  // figure floor index from y
+  const fIndex = Math.max(0, Math.min(FLOORS-1, Math.round(slid.y / FLOOR_HEIGHT)));
+  const floorY = fIndex * FLOOR_HEIGHT;
+  if (slid.y < floorY){
+    slid.y = floorY;
+    player.vel.y = 0;
+    player.onGround = true;
+  } else if (Math.abs(slid.y - floorY) < 0.01){
+    player.onGround = true;
+  } else {
+    player.onGround = false;
+  }
+
+  player.pos.copy(slid);
+
+  // camera position with lean offset
+  const eyeBase = new THREE.Vector3(player.pos.x, player.pos.y + player.curEyeH, player.pos.z);
+  const leanOffset = rightVec.clone().multiplyScalar(player.lean * 0.42);
+  eyeBase.add(leanOffset);
+  // small height drop on lean
+  eyeBase.y -= Math.abs(player.lean) * 0.10;
+  camera.position.copy(eyeBase);
+
+  // camera orientation
+  const euler = new THREE.Euler(player.pitch, player.yaw, player.lean * -0.20, 'YXZ');
+  camera.quaternion.setFromEuler(euler);
+
+  // Footstep noise
+  const moving = (mv.lengthSq() > 0.000001);
+  if (moving && player.onGround){
+    // compute current cell to find surface
+    const i = Math.floor((player.pos.x + HALF) / CELL);
+    const j = Math.floor((player.pos.z + HALF) / CELL);
+    const surf = (i>=0 && i<GRID && j>=0 && j<GRID) ? surfaceGrid[fIndex][i*GRID+j] : 0;
+    const surface = surf===1 ? 'tile' : 'carpet';
+    let loud = player.sprinting && !player.crouching;
+    let noise = player.crouching ? 0.10 : 0.30;
+    if (player.sprinting) noise = 0.85;
+    if (surface==='tile' && !player.crouching) noise = Math.min(1.0, noise * 1.4);
+    if (loud) noise = Math.max(noise, 0.65);
+    player.noiseLevel = noise;
+    Audio.footstep(loud, surface);
+  } else {
+    player.noiseLevel *= Math.pow(0.001, dt); // decay
+  }
+
+  // visibility
+  player.visibility = computeVisibility();
+
+  // tension based on visibility + nearest guard suspicion
+  let nearestSusp = 0;
+  for (const g of guards){
+    if (g.ko) continue;
+    const d2 = (g.group.position.x - player.pos.x)**2 + (g.group.position.z - player.pos.z)**2;
+    if (d2 < 100){
+      nearestSusp = Math.max(nearestSusp, g.suspicion * (1 - Math.sqrt(d2)/10));
+    }
+  }
+  Audio.setTension(Math.max(player.visibility * 0.6, nearestSusp));
+
+  // detection check via guards & cameras
+  for (const g of guards){
+    if (isPlayerSeenByGuard(g) && g.suspicion >= 0.99){ /* will trigger inside guard logic */ }
+  }
+  for (const cam of cameras){
+    if (isPlayerSeenByCamera(cam)){
+      cam.lens.material.emissive.setHex(0xff8000);
+      // small ramp
+      cam.alertT = (cam.alertT || 0) + dt;
+      if (cam.alertT > 0.7){
+        triggerDetection();
+      }
+    } else {
+      cam.alertT = (cam.alertT || 0) * 0.85;
+      cam.lens.material.emissive.setHex(0xff2020);
+    }
+  }
+
+  // Find interactables
+  currentInteract = findInteract();
+  promptEl.style.display = currentInteract ? 'block' : 'none';
+  if (currentInteract){
+    const types = { switch:'TOGGLE LIGHTS', camera:'DISABLE CAMERA', intel:'TAKE INTEL', vault:'OPEN VAULT' };
+    promptEl.textContent = '[F] ' + types[currentInteract.type];
+  }
+}
+
+function updateCameras(dt){
+  for (const cam of cameras){
+    if (!cam.on) {
+      if (cam.coneMesh) cam.coneMesh.visible = false;
+      continue;
+    }
+    cam.t += dt;
+    cam.yaw = Math.sin(cam.t * 0.6) * 0.7; // sweep
+    // rotate group
+    cam.group.rotation.y = cam.yaw + cam.baseYaw;
+    if (cam.coneMesh){
+      cam.coneMesh.position.copy(cam.basePos);
+      cam.coneMesh.quaternion.setFromEuler(new THREE.Euler(Math.PI/2 - 0.4, cam.yaw + cam.baseYaw, 0, 'YXZ'));
+      // place cone forward of camera
+      const fwd = new THREE.Vector3(Math.sin(cam.yaw + cam.baseYaw), -0.35, Math.cos(cam.yaw + cam.baseYaw)).normalize();
+      cam.coneMesh.position.add(fwd.multiplyScalar(cam.range/2));
+      cam.coneMesh.visible = conesVisible;
+    }
+  }
+}
+function updateLamps(dt){
+  // subtle screen flicker
+  for (const L of lampLights){
+    if (L.screen && L.on){
+      L.light.intensity = L.baseI * (0.85 + 0.3*Math.sin(performance.now()*0.011 + L.pos.x*0.5));
+    }
+  }
+}
+
+function updateHUD(dt){
+  const visPct = Math.min(100, Math.floor(player.visibility * 100));
+  visBar.style.width = visPct + '%';
+  visVal.textContent = visPct + '%';
+  document.getElementById('visBar').classList.toggle('alarm', player.detected);
+
+  const noisePct = Math.min(100, Math.floor(player.noiseLevel * 100));
+  noiseBar.style.width = noisePct + '%';
+  noiseVal.textContent = noisePct + '%';
+
+  let st = 'CLEAR'; let stColor = '#9ff';
+  let maxSusp = 0;
+  for (const g of guards){
+    if (g.ko) continue;
+    if (g.suspicion > maxSusp) maxSusp = g.suspicion;
+  }
+  if (player.detected){ st = 'DETECTED'; stColor = '#f55'; }
+  else if (maxSusp > 0.6){ st = 'SUSPICIOUS'; stColor = '#fc4'; }
+  else if (maxSusp > 0.1){ st = 'CAUTION'; stColor = '#ff9'; }
+  stateVal.textContent = st;
+  stateVal.style.color = stColor;
+
+  const fIndex = Math.max(0, Math.min(FLOORS-1, Math.round(player.pos.y / FLOOR_HEIGHT)));
+  floorVal.textContent = (fIndex+1);
+  intelVal.textContent = player.intel + ' / 3';
+
+  stanceVal.textContent = player.crouching ? 'CROUCH' : (player.sprinting ? 'SPRINT' : 'STAND');
+  scoreVal.textContent = Math.floor(player.score);
+}
+
+/* ---------- START ---------- */
+const screenEl = document.getElementById('screen');
+const playBtn = document.getElementById('playBtn');
+playBtn.addEventListener('click', () => {
+  Audio.ensure();
+  Audio.uiClick();
+  resetIfNeeded();
+  screenEl.classList.add('hide');
+  // request pointer lock
+  setTimeout(()=> renderer.domElement.requestPointerLock(), 50);
+});
+
+function resetIfNeeded(){
+  if (player.alive) return; // first time, alive=true
+  // re-init player & guards & doors / intel
+  player.alive = true;
+  player.detected = false;
+  player.intel = 0;
+  player.score = 0;
+  alertEl.classList.remove('on');
+  alarmActive = false;
+  // reset intel docs
+  for (const d of intelDocs){ d.taken = false; d.mesh.visible = true; }
+  // reset cameras
+  for (const c of cameras){ c.on = true; c.lens.material.emissive.setHex(0xff2020); if (c.coneMesh) c.coneMesh.visible = conesVisible; }
+  // reset lights
+  for (const L of lampLights){ L.on = true; L.light.intensity = L.baseI; if (L.bulb) L.bulb.material.color.setHex(L.color); }
+  for (const sw of switchObjs){ sw.on = true; sw.led.material.color.setHex(0x44ff66); }
+  // reset guards
+  for (const g of guards){
+    g.ko = false; g.state = 'PATROL'; g.suspicion = 0; g.target = null;
+    g.cone.visible = conesVisible;
+    g.glyphMat.opacity = 0;
+    g.body.rotation.x = 0;
+    g.head.position.set(0, 1.55, 0);
+    g.cap.position.set(0, 1.72, 0);
+    const start = g.pathCells[0];
+    const w = cellToWorld(start.i, start.j, g.floor);
+    g.group.position.set(w.x, g.floor*FLOOR_HEIGHT, w.z);
+    g.pathIndex = 0;
+  }
+  // reset player position
+  const startCell = { i: GRID-3, j: GRID-3 };
+  const w = cellToWorld(startCell.i, startCell.j, 0);
+  player.pos.set(w.x, 0, w.z);
+  player.vel.set(0,0,0);
+  player.yaw = 0; player.pitch = 0; player.lean = 0;
+}
+
+/* Begin loop immediately so visuals load */
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>

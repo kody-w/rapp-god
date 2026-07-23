@@ -1,0 +1,118 @@
+name: Rappterpedia Heartbeat
+
+on:
+  schedule:
+    # Every 2 hours — Dream Catcher fleet produces deltas, merges at frame boundary
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      ticks:
+        description: 'Ticks per stream (each tick = 1 article + 1 thread + 1 review)'
+        required: false
+        default: '3'
+      dry_run:
+        description: 'Dry run (no commits)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Dream Catcher: each worker produces an isolated delta ──
+  # Streams never modify shared state. They produce deltas.
+  # Deltas merge deterministically at frame boundaries.
+  # (frame, utc, author, title) = composite PK = collision-free.
+
+  get-frame:
+    runs-on: ubuntu-latest
+    outputs:
+      frame: ${{ steps.frame.outputs.frame }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: frame
+        run: |
+          if [ -f rappterpedia/rappterpedia_state.json ]; then
+            FRAME=$(python3 -c "import json; print(json.load(open('rappterpedia/rappterpedia_state.json')).get('tick_count',0)+1)")
+          else
+            FRAME=1
+          fi
+          echo "frame=$FRAME" >> $GITHUB_OUTPUT
+          echo "Frame: $FRAME"
+
+  fleet:
+    needs: get-frame
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        stream: [alpha, bravo, charlie, delta, echo]
+      max-parallel: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: "Stream ${{ matrix.stream }}: produce delta"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FRAME="${{ needs.get-frame.outputs.frame }}"
+          TICKS="${{ github.event.inputs.ticks || '3' }}"
+          echo "Stream ${{ matrix.stream }}: producing delta for frame ${FRAME}, ${TICKS} ticks"
+          python rappterpedia/dream_catcher.py produce \
+            --stream "${{ matrix.stream }}" \
+            --frame "$FRAME" \
+            --ticks "$TICKS"
+
+      - name: Upload delta artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: delta-${{ matrix.stream }}
+          path: rappterpedia/stream_deltas/
+
+  # ── Dream Catcher Merge: additive, deterministic, collision-free ──
+  merge:
+    needs: [get-frame, fleet]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.dry_run != 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download all delta artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: delta-output
+          pattern: delta-*
+
+      - name: Collect deltas into stream_deltas/
+        run: |
+          mkdir -p rappterpedia/stream_deltas
+          find delta-output -name "*.json" -exec cp {} rappterpedia/stream_deltas/ \;
+          echo "Deltas collected:"
+          ls -la rappterpedia/stream_deltas/
+
+      - name: "Dream Catcher merge (frame ${{ needs.get-frame.outputs.frame }})"
+        run: |
+          python rappterpedia/dream_catcher.py merge --frame "${{ needs.get-frame.outputs.frame }}"
+
+      - name: "Refill bare articles"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FRAME="${{ needs.get-frame.outputs.frame }}"
+          python rappterpedia/dream_catcher.py refill --frame "$FRAME" --batch 5
+
+      - name: Commit merged content
+        run: |
+          git config user.name "Dream Catcher Fleet"
+          git config user.email "dream-catcher@users.noreply.github.com"
+          git add rappterpedia/ state/
+          git diff --cached --quiet || git commit -m "Dream Catcher frame ${{ needs.get-frame.outputs.frame }}: fleet content merge [skip ci]"
+          git push

@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WowMon Deckbuilder - Roguelike Card Crawler</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d0d1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;user-select:none}
+canvas{display:block;cursor:pointer}
+.ov{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100}
+.ov h1{font-size:2.6rem;color:#ff8844;text-shadow:0 0 20px rgba(255,136,68,.4);margin-bottom:8px}
+.ov h2{font-size:1.2rem;color:#999;margin-bottom:24px;font-weight:normal}
+.btn{background:linear-gradient(135deg,#2a1a0e,#3a2a1e);border:2px solid #aa6633;color:#ffcc88;padding:12px 32px;margin:6px;font-size:1rem;border-radius:8px;cursor:pointer;transition:all .3s;min-width:180px}
+.btn:hover{background:linear-gradient(135deg,#4a3a1e,#5a4a2e);border-color:#ffaa44;transform:scale(1.05)}
+.diff-row{display:flex;gap:10px;margin:16px 0}
+.db{padding:8px 20px;border:2px solid #555;background:rgba(40,30,20,.8);color:#ccc;border-radius:6px;cursor:pointer;transition:all .3s}
+.db:hover,.db.s{border-color:#ff8844;color:#ff8844}
+</style>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+<meta name="rappterzoo:author" content="agent">
+<meta name="rappterzoo:author-type" content="agent">
+<meta name="rappterzoo:category" content="games_puzzles">
+<meta name="rappterzoo:tags" content="canvas,game,audio,arena,action">
+<meta name="rappterzoo:type" content="game">
+<meta name="rappterzoo:complexity" content="advanced">
+<meta name="rappterzoo:created" content="2025-12-27">
+<meta name="rappterzoo:generation" content="1">
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const C=document.getElementById('c'),X=C.getContext('2d');
+let W,H;function resize(){W=C.width=innerWidth;H=C.height=innerHeight}
+addEventListener('resize',resize);resize();
+
+/* ===== AUDIO ===== */
+class SFX{
+  constructor(){this.c=null;this.ok=false}
+  init(){if(this.ok)return;try{this.c=new(AudioContext||webkitAudioContext)();this.ok=true}catch(e){}}
+  t(tp,f,d,v){if(!this.c)return;const o=this.c.createOscillator(),g=this.c.createGain();
+    o.type=tp;o.frequency.value=f;g.gain.setValueAtTime(v||.1,this.c.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,this.c.currentTime+d);o.connect(g).connect(this.c.destination);o.start();o.stop(this.c.currentTime+d)}
+  step(){this.t('sine',300,.1,.08);this.t('triangle',400,.08,.05)}
+  fight(){this.t('sawtooth',200,.2,.15);this.t('square',250,.15,.1)}
+  heal(){this.t('sine',500,.3,.1);setTimeout(()=>this.t('sine',700,.2,.08),100)}
+  gold(){this.t('triangle',800,.1,.1);setTimeout(()=>this.t('triangle',1000,.08,.08),50)}
+  door(){this.t('sine',400,.2,.1);this.t('triangle',500,.15,.08)}
+  win(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>this.t('triangle',f,.3,.1),i*120))}
+  lose(){[400,350,300,200].forEach((f,i)=>setTimeout(()=>this.t('sine',f,.4,.08),i*180))}
+  click(){this.t('triangle',600,.06,.08)}
+  boss(){this.t('sawtooth',80,.5,.2);setTimeout(()=>this.t('square',100,.3,.15),200)}
+  trap(){this.t('square',200,.15,.12);this.t('sawtooth',150,.2,.1)}
+}
+const sfx=new SFX();
+
+/* ===== PARTICLES ===== */
+const pts=[];
+function emit(x,y,col,n,sp){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=(sp||100)*(.3+Math.random()*.7);
+  pts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-30,col,l:.6+Math.random()*.6,ml:.6+Math.random()*.6,sz:2+Math.random()*3})}}
+
+/* ===== SHAKE ===== */
+let skA=0,skD=0;function shake(a,d){skA=a;skD=d}
+
+/* ===== MAP GENERATION ===== */
+const ROOM_TYPES=['fight','fight','fight','elite','shop','rest','treasure','trap','event','boss'];
+function genMap(floor){
+  const rooms=[];const cols=3+Math.min(floor,4);
+  for(let row=0;row<5;row++){
+    const rowRooms=[];
+    for(let col=0;col<cols;col++){
+      if(row===4&&col===Math.floor(cols/2)){rowRooms.push({type:'boss',cleared:false,x:0,y:0})}
+      else if(row===0){rowRooms.push({type:'fight',cleared:false,x:0,y:0})}
+      else{
+        const pool=row<3?['fight','fight','fight','elite','treasure','event','trap']:['fight','elite','shop','rest'];
+        rowRooms.push({type:pool[~~(Math.random()*pool.length)],cleared:false,x:0,y:0});
+      }
+    }
+    rooms.push(rowRooms);
+  }
+  return rooms;
+}
+
+/* ===== CARDS ===== */
+const DECK_CARDS=[
+  {name:'Slash',type:'atk',val:6,cost:1,desc:'Basic attack',rar:'starter'},
+  {name:'Block',type:'def',val:5,cost:1,desc:'Gain block',rar:'starter'},
+  {name:'Heavy Blow',type:'atk',val:12,cost:2,desc:'Strong hit',rar:'common'},
+  {name:'Iron Wall',type:'def',val:10,cost:2,desc:'Solid defense',rar:'common'},
+  {name:'Quick Strike',type:'atk',val:4,cost:0,desc:'Free attack',rar:'common'},
+  {name:'Cleave',type:'atk',val:8,cost:1,desc:'Area slash',rar:'common'},
+  {name:'Fortify',type:'def',val:8,cost:1,desc:'Strong guard',rar:'common'},
+  {name:'Bandage',type:'heal',val:6,cost:1,desc:'Heal self',rar:'common'},
+  {name:'Power Strike',type:'atk',val:18,cost:3,desc:'Devastating',rar:'rare'},
+  {name:'Shield Bash',type:'atk_def',val:6,cost:2,desc:'Hit+Block',rar:'rare'},
+  {name:'Vampiric',type:'atk_heal',val:8,cost:2,desc:'Hit+Heal',rar:'rare'},
+  {name:'Whirlwind',type:'atk',val:10,cost:2,desc:'Hit all',rar:'rare'},
+  {name:'Second Wind',type:'heal',val:12,cost:2,desc:'Big heal',rar:'rare'},
+  {name:'Berserk',type:'buff',val:3,cost:1,desc:'+3 str turn',rar:'rare'},
+  {name:'Execute',type:'atk',val:30,cost:4,desc:'Massive hit',rar:'epic'},
+  {name:'Mirror Guard',type:'def',val:15,cost:2,desc:'Reflect dmg',rar:'epic'},
+  {name:'Full Restore',type:'heal',val:20,cost:3,desc:'Full heal',rar:'epic'},
+];
+
+/* ===== ENEMIES ===== */
+const ENEMY_POOL=[
+  {name:'Slime',hp:15,atk:4,gold:8},{name:'Rat',hp:12,atk:5,gold:6},
+  {name:'Skeleton',hp:20,atk:6,gold:10},{name:'Goblin',hp:18,atk:7,gold:12},
+  {name:'Bat Swarm',hp:14,atk:8,gold:9},{name:'Zombie',hp:25,atk:5,gold:11},
+];
+const ELITE_POOL=[
+  {name:'Dark Knight',hp:40,atk:10,gold:25},{name:'Necromancer',hp:35,atk:12,gold:30},
+  {name:'Golem',hp:50,atk:8,gold:28},
+];
+const BOSS_POOL=[
+  {name:'Dragon',hp:80,atk:14,gold:50},{name:'Lich King',hp:70,atk:16,gold:60},
+  {name:'Demon Lord',hp:90,atk:12,gold:55},
+];
+
+/* ===== GAME STATE ===== */
+const G={
+  scr:'menu',diff:'normal',dm:1,
+  hp:50,mhp:50,gold:0,floor:1,
+  energy:3,maxE:3,block:0,str:0,
+  deck:[],hand:[],disc:[],draw:[],
+  map:null,mapRow:0,mapCol:-1,
+  en:null,enBlock:0,enIntent:null,
+  turn:'player',cmb:0,mcmb:0,
+  hov:-1,mx:0,my:0,
+  toasts:[],floats:[],
+  ehit:0,phit:0,
+  rewards:null,shopItems:null,
+  hi:[],sfxOn:true,phase:'map',
+  totalKills:0,floorsCleared:0,
+};
+
+function save(){localStorage.setItem('wowmon_deck_v1',JSON.stringify({hi:G.hi,sfxOn:G.sfxOn}))}
+function load(){try{const d=JSON.parse(localStorage.getItem('wowmon_deck_v1'));if(d){G.hi=d.hi||[];G.sfxOn=d.sfxOn!==false}}catch(e){}}
+
+/* ===== DECK OPS ===== */
+function initDeck(){
+  G.deck=[];
+  for(let i=0;i<4;i++)G.deck.push({...DECK_CARDS[0],id:Math.random()});
+  for(let i=0;i<4;i++)G.deck.push({...DECK_CARDS[1],id:Math.random()});
+  G.deck.push({...DECK_CARDS[4],id:Math.random()});
+  G.deck.push({...DECK_CARDS[7],id:Math.random()});
+}
+function shuffleDraw(){
+  G.draw=[...G.deck];for(let i=G.draw.length-1;i>0;i--){const j=~~(Math.random()*(i+1));[G.draw[i],G.draw[j]]=[G.draw[j],G.draw[i]]}G.disc=[];
+}
+function drawCards(n){
+  for(let i=0;i<n;i++){
+    if(!G.draw.length){if(!G.disc.length)break;G.draw=[...G.disc];G.disc=[];
+      for(let j=G.draw.length-1;j>0;j--){const k=~~(Math.random()*(j+1));[G.draw[j],G.draw[k]]=[G.draw[k],G.draw[j]]}}
+    if(G.draw.length)G.hand.push(G.draw.pop());
+  }
+}
+
+/* ===== CARD LAYOUT ===== */
+function cardR(i){
+  const n=G.hand.length,cw=Math.min(120,(W-40)/Math.max(n,1)-8),ch=cw*1.5;
+  const tw=n*(cw+6),sx=(W-tw)/2,by=H-ch-15;
+  return{x:sx+i*(cw+6),y:i===G.hov?by-25:by,w:cw,h:ch}
+}
+
+/* ===== COMBAT ===== */
+function spawnEnemy(type){
+  let pool=type==='boss'?BOSS_POOL:type==='elite'?ELITE_POOL:ENEMY_POOL;
+  const t=pool[~~(Math.random()*pool.length)];
+  const s=1+(G.floor-1)*.2*G.dm;
+  G.en={...t,hp:~~(t.hp*s),mhp:~~(t.hp*s),atk:~~(t.atk*s),gold:~~(t.gold*s),type};
+  G.enBlock=0;G.enIntent=genIntent();
+  if(type==='boss'&&G.sfxOn)sfx.boss();
+}
+
+function genIntent(){
+  return Math.random()<.6?{type:'atk',val:G.en.atk+~~(Math.random()*4)}:{type:'def',val:5+~~(Math.random()*5)};
+}
+
+function playCard(i){
+  if(G.turn!=='player'||i<0||i>=G.hand.length)return;
+  const c=G.hand[i];if(c.cost>G.energy)return;
+  G.energy-=c.cost;G.hand.splice(i,1);G.hov=-1;if(G.sfxOn)sfx.click();
+  const str=G.str;
+  if(c.type==='atk'||c.type==='atk_def'||c.type==='atk_heal'){
+    let d=c.val+str;if(G.enBlock>0){const sb=Math.min(d,G.enBlock);G.enBlock-=sb;d-=sb}
+    if(G.en){G.en.hp=Math.max(0,G.en.hp-d);G.ehit=.25;shake(4,.12);
+      emit(W/2,H*.3,'#f44',10,120);addFloat(W/2,H*.25,'-'+d,'#f44');if(G.sfxOn)sfx.fight()}
+    G.cmb++;G.mcmb=Math.max(G.mcmb,G.cmb);
+  }
+  if(c.type==='def'||c.type==='atk_def'){G.block+=c.val;addFloat(W*.25,H*.6,'+'+c.val+' Blk','#48f')}
+  if(c.type==='heal'||c.type==='atk_heal'){const h=Math.min(c.val,G.mhp-G.hp);G.hp+=h;addFloat(W*.25,H*.55,'+'+h,'#4f8');if(G.sfxOn)sfx.heal()}
+  if(c.type==='buff'){G.str+=c.val;addFloat(W*.25,H*.5,'+'+c.val+' STR','#fa0')}
+  G.disc.push(c);
+  if(G.en&&G.en.hp<=0)enemyDead();
+}
+
+function endTurn(){
+  if(G.turn!=='player')return;G.turn='enemy';G.cmb=0;setTimeout(enemyTurn,500);
+}
+
+function enemyTurn(){
+  if(!G.en||G.en.hp<=0)return;
+  const intent=G.enIntent;
+  if(intent.type==='atk'){
+    let d=intent.val;if(G.block>0){const sb=Math.min(d,G.block);G.block-=sb;d-=sb;if(sb>0)addFloat(W*.25,H*.55,'Blk -'+sb,'#48f')}
+    G.hp=Math.max(0,G.hp-d);addFloat(W*.25,H*.6,'-'+d,'#f44');emit(W*.25,H*.6,'#f44',10,100);shake(5,.15);G.phit=.25;if(G.sfxOn)sfx.fight();
+  }else{G.enBlock+=intent.val;addFloat(W/2,H*.35,'+'+intent.val+' Blk','#48f')}
+  if(G.hp<=0){gameOver();return}
+  G.enIntent=genIntent();
+  setTimeout(()=>{G.turn='player';G.energy=G.maxE;G.block=0;G.str=0;drawCards(5-G.hand.length)},300);
+}
+
+function enemyDead(){
+  G.totalKills++;const g=G.en.gold;G.gold+=g;if(G.sfxOn)sfx.gold();
+  addToast(G.en.name+' defeated! +'+g+'g');emit(W/2,H*.3,'#fa0',20,150);
+  G.turn='reward';setTimeout(showReward,600);
+}
+
+function showReward(){
+  const pool=DECK_CARDS.filter(c=>{if(G.floor<3)return c.rar==='common';if(G.floor<5)return c.rar!=='epic';return true});
+  const opts=[];while(opts.length<3){const c=pool[~~(Math.random()*pool.length)];if(!opts.find(o=>o.name===c.name))opts.push({...c,id:Math.random()})}
+  G.rewards=opts;
+}
+
+function pickReward(i){
+  if(i>=0&&G.rewards)G.deck.push(G.rewards[i]);
+  G.rewards=null;G.phase='map';
+}
+
+/* ===== MAP NAVIGATION ===== */
+function enterRoom(row,col){
+  if(row!==G.mapRow)return;
+  const room=G.map[row][col];if(room.cleared)return;
+  G.mapCol=col;room.cleared=true;if(G.sfxOn)sfx.door();
+
+  switch(room.type){
+    case'fight':case'elite':case'boss':
+      G.phase='combat';spawnEnemy(room.type);G.hand=[];G.block=0;G.str=0;shuffleDraw();G.energy=G.maxE;G.turn='player';drawCards(5);break;
+    case'shop':G.phase='shop';genShop();break;
+    case'rest':G.hp=Math.min(G.mhp,G.hp+~~(G.mhp*.3));addToast('Rested! +'+~~(G.mhp*.3)+' HP');if(G.sfxOn)sfx.heal();G.mapRow++;break;
+    case'treasure':G.gold+=20+~~(Math.random()*15);addToast('Found treasure!');if(G.sfxOn)sfx.gold();G.mapRow++;break;
+    case'trap':const d=3+~~(Math.random()*5);G.hp=Math.max(1,G.hp-d);addToast('Trap! -'+d+' HP');if(G.sfxOn)sfx.trap();G.mapRow++;break;
+    case'event':G.hp=Math.min(G.mhp,G.hp+5);G.gold+=10;addToast('Strange encounter: +5HP +10g');G.mapRow++;break;
+  }
+  if(G.mapRow>=5){G.floor++;G.floorsCleared++;if(G.floor>5){victory();return}G.map=genMap(G.floor);G.mapRow=0;G.mapCol=-1;addToast('Floor '+G.floor+'!')}
+}
+
+function genShop(){
+  const pool=DECK_CARDS.filter(c=>c.rar!=='starter');
+  const items=[];
+  for(let i=0;i<3;i++){const c=pool[~~(Math.random()*pool.length)];
+    items.push({...c,id:Math.random(),price:c.rar==='epic'?40:c.rar==='rare'?25:15})}
+  items.push({name:'Max HP +10',type:'upgrade',price:30,desc:'+10 max HP'});
+  G.shopItems=items;
+}
+
+function buyItem(i){
+  if(!G.shopItems||i>=G.shopItems.length)return;
+  const item=G.shopItems[i];if(G.gold<item.price)return;
+  G.gold-=item.price;if(G.sfxOn)sfx.gold();
+  if(item.type==='upgrade'){G.mhp+=10;G.hp+=10}
+  else G.deck.push(item);
+  G.shopItems.splice(i,1);addToast('Bought '+item.name);
+}
+
+function leaveShop(){G.shopItems=null;G.phase='map';G.mapRow++}
+
+/* ===== GAME FLOW ===== */
+function newRun(){
+  rmOv();G.scr='play';G.hp=50;G.mhp=50;G.gold=0;G.floor=1;G.energy=3;G.maxE=3;
+  G.totalKills=0;G.floorsCleared=0;G.mcmb=0;G.phase='map';G.toasts=[];G.floats=[];pts.length=0;
+  initDeck();G.map=genMap(1);G.mapRow=0;G.mapCol=-1;
+}
+function gameOver(){
+  G.scr='dead';G.hi.push({sc:G.gold+G.totalKills*10+G.floorsCleared*50,dt:new Date().toISOString().split('T')[0],df:G.diff});
+  G.hi.sort((a,b)=>b.sc-a.sc);G.hi=G.hi.slice(0,10);save();if(G.sfxOn)sfx.lose();showOv();
+}
+function victory(){
+  G.scr='win';const sc=G.gold+G.totalKills*10+G.floorsCleared*50+G.hp*5+G.mcmb*20;
+  G.hi.push({sc,dt:new Date().toISOString().split('T')[0],df:G.diff});
+  G.hi.sort((a,b)=>b.sc-a.sc);G.hi=G.hi.slice(0,10);save();if(G.sfxOn)sfx.win();showOv();
+}
+
+/* ===== UI ===== */
+function addToast(t){G.toasts.push({t,tm:2})}
+function addFloat(x,y,t,c){G.floats.push({x,y,t,c,l:1,ml:1})}
+function rr(x,y,w,h,r){X.beginPath();X.moveTo(x+r,y);X.lineTo(x+w-r,y);X.quadraticCurveTo(x+w,y,x+w,y+r);X.lineTo(x+w,y+h-r);X.quadraticCurveTo(x+w,y+h,x+w-r,y+h);X.lineTo(x+r,y+h);X.quadraticCurveTo(x,y+h,x,y+h-r);X.lineTo(x,y+r);X.quadraticCurveTo(x,y,x+r,y);X.closePath()}
+
+function rmOv(){const e=document.querySelector('.ov');if(e)e.remove()}
+function showOv(){
+  rmOv();const d=document.createElement('div');d.className='ov';
+  if(G.scr==='menu'){
+    d.innerHTML='<h1>WowMon Deckbuilder</h1><h2>Roguelike Card Crawler</h2>'+
+      '<div class="diff-row"><button class="db '+(G.diff==='easy'?'s':'')+'" onclick="G.diff=\'easy\';G.dm=.7;sfx.init();sfx.click();showOv()">Easy</button>'+
+      '<button class="db '+(G.diff==='normal'?'s':'')+'" onclick="G.diff=\'normal\';G.dm=1;sfx.init();sfx.click();showOv()">Normal</button>'+
+      '<button class="db '+(G.diff==='hard'?'s':'')+'" onclick="G.diff=\'hard\';G.dm=1.5;sfx.init();sfx.click();showOv()">Hard</button></div>'+
+      '<button class="btn" onclick="sfx.init();sfx.click();newRun()">Start Crawl</button>'+
+      '<div style="margin-top:20px;max-width:280px"><h3 style="color:#ff8844;margin-bottom:8px">High Scores</h3>'+
+      (G.hi.length?G.hi.slice(0,5).map((s,i)=>'<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #222"><span style="color:#888">#'+(i+1)+'</span><span style="color:#fa0">'+s.sc+'</span><span style="color:#666">'+s.df+'</span></div>').join(''):'<div style="color:#666">None</div>')+
+      '</div><div style="margin-top:16px;color:#666;font-size:.8rem">Click cards or 1-5 | SPACE=End Turn | ESC=Pause | R=Restart</div>';
+  }else if(G.scr==='dead'){
+    d.innerHTML='<h1 style="color:#f44">FALLEN</h1><h2>Floor '+G.floor+', '+G.totalKills+' kills</h2>'+
+      '<div style="color:#fa0;font-size:1.5rem;margin:16px">Score: '+(G.gold+G.totalKills*10+G.floorsCleared*50)+'</div>'+
+      '<button class="btn" onclick="sfx.init();newRun()">Try Again [R]</button><button class="btn" onclick="G.scr=\'menu\';showOv()">Menu</button>';
+  }else{
+    d.innerHTML='<h1 style="color:#4f8">VICTORY!</h1><h2>5 floors cleared!</h2>'+
+      '<div style="color:#fa0;font-size:1.8rem;margin:16px">Score: '+(G.gold+G.totalKills*10+G.floorsCleared*50+G.hp*5+G.mcmb*20)+'</div>'+
+      '<div style="color:#aaa"><div>Kills: '+G.totalKills+'</div><div>Gold: '+G.gold+'</div><div>HP: '+G.hp+'/'+G.mhp+'</div></div>'+
+      '<button class="btn" onclick="sfx.init();newRun()">Again [R]</button><button class="btn" onclick="G.scr=\'menu\';showOv()">Menu</button>';
+  }
+  document.body.appendChild(d);
+}
+
+/* ===== DRAWING ===== */
+function drawCardUI(c,x,y,w,h,hov){
+  const ok=c.cost<=G.energy,rc=c.rar==='epic'?'#a4f':c.rar==='rare'?'#48f':c.rar==='common'?'#aaa':'#886';
+  X.save();if(hov){X.shadowColor=rc;X.shadowBlur=12}
+  const gr=X.createLinearGradient(x,y,x,y+h);gr.addColorStop(0,ok?'#1a1a2a':'#1a1010');gr.addColorStop(1,ok?'#0a0a1a':'#0a0505');
+  X.fillStyle=gr;rr(x,y,w,h,6);X.fill();X.strokeStyle=hov?rc:(ok?'#444':'#332');X.lineWidth=hov?2:1;X.stroke();X.restore();
+  // Cost
+  X.fillStyle='#224';X.beginPath();X.arc(x+12,y+12,9,0,Math.PI*2);X.fill();
+  X.fillStyle='#adf';X.font='bold '+~~(w*.1)+'px mono';X.textAlign='center';X.fillText(c.cost,x+12,y+16);
+  // Name
+  X.fillStyle=rc;X.font='bold '+~~(w*.09)+'px sans-serif';X.fillText(c.name,x+w/2,y+30,w-10);
+  // Type icon
+  const tc=c.type.includes('atk')?'#f64':c.type.includes('def')?'#48f':c.type.includes('heal')?'#4f8':'#fa0';
+  X.fillStyle=tc;X.font=~~(w*.08)+'px sans-serif';
+  const label=c.type==='atk'?'ATK '+c.val:c.type==='def'?'BLK '+c.val:c.type==='heal'?'HEAL '+c.val:c.type==='atk_def'?'ATK/BLK '+c.val:c.type==='atk_heal'?'ATK/HL '+c.val:'BUFF +'+c.val;
+  X.fillText(label,x+w/2,y+h*.55);
+  // Desc
+  X.fillStyle='#888';X.font=~~(w*.07)+'px sans-serif';X.fillText(c.desc,x+w/2,y+h-10,w-8);X.textAlign='left';
+}
+
+function drawMap(){
+  X.fillStyle='#0d0d1a';X.fillRect(0,0,W,H);
+  X.fillStyle='#ff8844';X.font='bold 20px sans-serif';X.textAlign='center';
+  X.fillText('Floor '+G.floor+' - Map',W/2,30);
+  X.fillStyle='#888';X.font='12px sans-serif';X.fillText('Gold: '+G.gold+' | HP: '+G.hp+'/'+G.mhp+' | Deck: '+G.deck.length,W/2,50);
+  if(!G.map)return;
+  const cols=G.map[0].length;const rw=60,rh=40,gx=20,gy=20;
+  const tw=cols*(rw+gx);const startX=(W-tw)/2;const startY=80;
+  const ICONS={fight:'[F]',elite:'[E]',boss:'[B]',shop:'[$]',rest:'[R]',treasure:'[T]',trap:'[!]',event:'[?]'};
+  const COLS_T={fight:'#aaa',elite:'#fa0',boss:'#f44',shop:'#4f8',rest:'#48f',treasure:'#fc0',trap:'#f66',event:'#a8f'};
+  for(let row=0;row<G.map.length;row++){
+    for(let col=0;col<G.map[row].length;col++){
+      const room=G.map[row][col];
+      const rx=startX+col*(rw+gx);const ry=startY+row*(rh+gy);
+      room.x=rx;room.y=ry;
+      const active=row===G.mapRow&&!room.cleared;
+      X.fillStyle=room.cleared?'rgba(40,40,40,.5)':active?'rgba(60,40,20,.8)':'rgba(30,30,40,.5)';
+      rr(rx,ry,rw,rh,4);X.fill();
+      X.strokeStyle=active?'#ff8844':(room.cleared?'#333':'#555');X.lineWidth=active?2:1;rr(rx,ry,rw,rh,4);X.stroke();
+      X.fillStyle=room.cleared?'#555':COLS_T[room.type];X.font='bold 12px sans-serif';X.textAlign='center';
+      X.fillText(ICONS[room.type]||'[?]',rx+rw/2,ry+rh/2+4);
+    }
+  }
+  // Legend
+  X.font='10px sans-serif';X.fillStyle='#666';X.textAlign='left';
+  X.fillText('[F]=Fight [E]=Elite [B]=Boss [$]=Shop [R]=Rest [T]=Treasure [!]=Trap [?]=Event',20,H-20);
+}
+
+function drawCombat(){
+  X.fillStyle='#0d0d1a';X.fillRect(0,0,W,H);
+  // HUD
+  X.fillStyle='rgba(10,10,20,.9)';X.fillRect(0,0,W,45);
+  X.fillStyle='#aaa';X.font='11px sans-serif';X.textAlign='left';X.fillText('HP',10,16);
+  X.fillStyle='#222';rr(28,6,100,14,3);X.fill();
+  const hp=G.hp/G.mhp;X.fillStyle=hp>.5?'#4c4':hp>.25?'#cc4':'#c44';rr(28,6,100*hp,14,3);X.fill();
+  X.fillStyle='#fff';X.font='bold 10px sans-serif';X.textAlign='center';X.fillText(G.hp+'/'+G.mhp,78,17);
+  X.textAlign='left';X.fillStyle='#48f';X.font='11px sans-serif';X.fillText('Blk: '+G.block,140,16);
+  X.fillStyle='#fa0';X.fillText('E: '+G.energy+'/'+G.maxE,140,34);X.fillStyle='#fc0';X.fillText('Gold: '+G.gold,220,16);
+  X.fillStyle='#666';X.fillText('Floor '+G.floor,220,34);
+  X.textAlign='right';X.fillStyle='#888';X.fillText('Draw: '+G.draw.length+' Disc: '+G.disc.length,W-10,16);
+  // Enemy
+  if(G.en){
+    const ex=W/2,ey=H*.28;
+    if(G.ehit>0)X.globalAlpha=.5+Math.sin(G.ehit*30)*.5;
+    X.fillStyle=G.en.type==='boss'?'#a22':G.en.type==='elite'?'#a62':'#666';
+    const sz=G.en.type==='boss'?50:35;
+    X.beginPath();X.arc(ex,ey,sz,0,Math.PI*2);X.fill();
+    X.strokeStyle='#fff';X.lineWidth=1;X.stroke();X.globalAlpha=1;
+    // Eyes
+    X.fillStyle='#ff0';X.beginPath();X.arc(ex-10,ey-5,4,0,Math.PI*2);X.arc(ex+10,ey-5,4,0,Math.PI*2);X.fill();
+    X.fillStyle='#000';X.beginPath();X.arc(ex-9,ey-4,2,0,Math.PI*2);X.arc(ex+9,ey-4,2,0,Math.PI*2);X.fill();
+    // HP bar
+    const bw=100,bx=ex-bw/2,by=ey-sz-18;
+    X.fillStyle='#222';rr(bx,by,bw,8,2);X.fill();
+    X.fillStyle=G.en.hp/G.en.mhp>.5?'#4c4':'#c44';rr(bx,by,bw*(G.en.hp/G.en.mhp),8,2);X.fill();
+    X.fillStyle='#fff';X.font='9px sans-serif';X.textAlign='center';X.fillText(G.en.hp+'/'+G.en.mhp,ex,by-3);
+    X.fillStyle='#ddd';X.font='bold 13px sans-serif';X.fillText(G.en.name,ex,by-16);
+    if(G.enBlock>0){X.fillStyle='#48f';X.font='10px sans-serif';X.fillText('Blk: '+G.enBlock,ex,ey+sz+15)}
+    // Intent
+    if(G.enIntent){X.fillStyle=G.enIntent.type==='atk'?'#f66':'#68f';X.font='11px sans-serif';
+      X.fillText(G.enIntent.type==='atk'?'Intent: ATK '+G.enIntent.val:'Intent: DEF '+G.enIntent.val,ex,ey+sz+30)}
+  }
+  // Hand
+  if(G.turn==='player')for(let i=0;i<G.hand.length;i++){const r=cardR(i);drawCardUI(G.hand[i],r.x,r.y,r.w,r.h,i===G.hov)}
+  // End turn
+  if(G.turn==='player'){const bx=W-120,by=H-180;X.fillStyle='#2a1a0e';rr(bx,by,100,35,5);X.fill();X.strokeStyle='#a63';rr(bx,by,100,35,5);X.stroke();
+    X.fillStyle='#fc8';X.font='13px sans-serif';X.textAlign='center';X.fillText('End Turn',bx+50,by+22);X.fillStyle='#886';X.font='9px sans-serif';X.fillText('[SPACE]',bx+50,by+33)}
+  // Floats
+  X.textAlign='center';G.floats.forEach(f=>{const p=1-f.l/f.ml;X.globalAlpha=Math.max(0,f.l/f.ml);X.fillStyle=f.c;X.font='bold 16px sans-serif';X.fillText(f.t,f.x,f.y-p*35);X.globalAlpha=1});
+  pts.forEach(p=>{const a=Math.max(0,p.l/p.ml);X.globalAlpha=a;X.fillStyle=p.col;X.beginPath();X.arc(p.x,p.y,p.sz*a,0,Math.PI*2);X.fill();X.globalAlpha=1});
+  if(G.turn==='enemy'){X.fillStyle='rgba(0,0,0,.4)';X.fillRect(0,H/2-15,W,30);X.fillStyle='#f44';X.font='bold 16px sans-serif';X.textAlign='center';X.fillText('ENEMY TURN',W/2,H/2+5)}
+}
+
+function drawRewards(){
+  X.fillStyle='rgba(0,0,0,.7)';X.fillRect(0,0,W,H);
+  X.fillStyle='#fa0';X.font='bold 22px sans-serif';X.textAlign='center';X.fillText('CHOOSE A REWARD',W/2,H*.18);
+  X.fillStyle='#888';X.font='12px sans-serif';X.fillText('Click to add to deck, or skip',W/2,H*.23);
+  const cw=120,ch=180,tw=3*cw+40,sx=(W-tw)/2,y=H/2-ch/2;
+  G.rewards.forEach((c,i)=>{const x=sx+i*(cw+20);const h=G.mx>=x&&G.mx<=x+cw&&G.my>=y&&G.my<=y+ch;drawCardUI(c,x,h?y-8:y,cw,ch,h)});
+  // Skip button
+  const skipX=W/2-40,skipY=H/2+ch/2+20;
+  X.fillStyle='#333';rr(skipX,skipY,80,30,4);X.fill();X.strokeStyle='#666';rr(skipX,skipY,80,30,4);X.stroke();
+  X.fillStyle='#aaa';X.font='12px sans-serif';X.fillText('Skip',W/2,skipY+20);
+}
+
+function drawShop(){
+  X.fillStyle='#0d0d1a';X.fillRect(0,0,W,H);
+  X.fillStyle='#4f8';X.font='bold 22px sans-serif';X.textAlign='center';X.fillText('SHOP',W/2,30);
+  X.fillStyle='#fc0';X.font='14px sans-serif';X.fillText('Gold: '+G.gold,W/2,50);
+  if(!G.shopItems)return;
+  const cw=120,ch=160,tw=G.shopItems.length*(cw+15),sx=(W-tw)/2,y=H/2-ch/2-20;
+  G.shopItems.forEach((item,i)=>{
+    const x=sx+i*(cw+15);const h=G.mx>=x&&G.mx<=x+cw&&G.my>=y&&G.my<=y+ch;
+    X.fillStyle=h?'#1a2a1a':'#111';rr(x,y,cw,ch,6);X.fill();
+    X.strokeStyle=G.gold>=item.price?'#4f8':'#633';rr(x,y,cw,ch,6);X.stroke();
+    X.fillStyle='#ddd';X.font='bold 11px sans-serif';X.fillText(item.name,x+cw/2,y+25);
+    X.fillStyle='#888';X.font='10px sans-serif';X.fillText(item.desc||'',x+cw/2,y+45);
+    X.fillStyle='#fc0';X.font='bold 14px sans-serif';X.fillText(item.price+'g',x+cw/2,y+ch-15);
+  });
+  // Leave
+  const lx=W/2-40,ly=H/2+ch/2+20;
+  X.fillStyle='#222';rr(lx,ly,80,30,4);X.fill();X.strokeStyle='#666';rr(lx,ly,80,30,4);X.stroke();
+  X.fillStyle='#aaa';X.font='12px sans-serif';X.fillText('Leave',W/2,ly+20);
+}
+
+/* ===== INPUT ===== */
+addEventListener('keydown',e=>{
+  if(e.key==='Escape'){}
+  if((e.key==='r'||e.key==='R')&&(G.scr==='dead'||G.scr==='win'))newRun();
+  if(G.phase==='combat'&&G.turn==='player'){const n=parseInt(e.key);if(n>=1&&n<=G.hand.length)playCard(n-1)}
+  if(e.key===' '&&G.phase==='combat'&&G.turn==='player')endTurn();
+});
+
+C.addEventListener('mousemove',e=>{G.mx=e.clientX;G.my=e.clientY;
+  if(G.phase==='combat'&&G.turn==='player'){G.hov=-1;for(let i=G.hand.length-1;i>=0;i--){const r=cardR(i);if(G.mx>=r.x&&G.mx<=r.x+r.w&&G.my>=r.y&&G.my<=r.y+r.h){G.hov=i;break}}}
+});
+
+C.addEventListener('click',e=>{sfx.init();G.mx=e.clientX;G.my=e.clientY;
+  if(G.phase==='map'&&G.map){
+    for(let col=0;col<G.map[G.mapRow].length;col++){const r=G.map[G.mapRow][col];if(G.mx>=r.x&&G.mx<=r.x+60&&G.my>=r.y&&G.my<=r.y+40){enterRoom(G.mapRow,col);return}}
+  }
+  if(G.phase==='combat'&&G.turn==='player'){
+    for(let i=G.hand.length-1;i>=0;i--){const r=cardR(i);if(G.mx>=r.x&&G.mx<=r.x+r.w&&G.my>=r.y&&G.my<=r.y+r.h){playCard(i);return}}
+    const bx=W-120,by=H-180;if(G.mx>=bx&&G.mx<=bx+100&&G.my>=by&&G.my<=by+35){endTurn();return}
+  }
+  if(G.phase==='combat'&&G.turn==='reward'&&G.rewards){
+    const cw=120,ch=180,tw=3*cw+40,sx=(W-tw)/2,y=H/2-ch/2;
+    for(let i=0;i<3;i++){const x=sx+i*(cw+20);if(G.mx>=x&&G.mx<=x+cw&&G.my>=y&&G.my<=y+ch){pickReward(i);G.mapRow++;return}}
+    const skipX=W/2-40,skipY=H/2+ch/2+20;if(G.mx>=skipX&&G.mx<=skipX+80&&G.my>=skipY&&G.my<=skipY+30){pickReward(-1);G.mapRow++;return}
+  }
+  if(G.phase==='shop'&&G.shopItems){
+    const cw=120,ch=160,tw=G.shopItems.length*(cw+15),sx=(W-tw)/2,y=H/2-ch/2-20;
+    for(let i=0;i<G.shopItems.length;i++){const x=sx+i*(cw+15);if(G.mx>=x&&G.mx<=x+cw&&G.my>=y&&G.my<=y+ch){buyItem(i);return}}
+    const lx=W/2-40,ly=H/2+ch/2+20;if(G.mx>=lx&&G.mx<=lx+80&&G.my>=ly&&G.my<=ly+30){leaveShop();return}
+  }
+});
+C.addEventListener('touchstart',e=>{e.preventDefault();sfx.init();const t=e.touches[0];G.mx=t.clientX;G.my=t.clientY;C.dispatchEvent(new MouseEvent('click',{clientX:t.clientX,clientY:t.clientY}))},{passive:false});
+
+/* ===== LOOP ===== */
+let lt=0;
+function loop(t){
+  const dt=Math.min((t-lt)/1000,.05);lt=t;
+  // Update
+  for(let i=pts.length-1;i>=0;i--){const p=pts[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=80*dt;p.l-=dt;if(p.l<=0)pts.splice(i,1)}
+  for(let i=G.floats.length-1;i>=0;i--){G.floats[i].l-=dt;if(G.floats[i].l<=0)G.floats.splice(i,1)}
+  for(let i=G.toasts.length-1;i>=0;i--){G.toasts[i].tm-=dt;if(G.toasts[i].tm<=0)G.toasts.splice(i,1)}
+  if(G.ehit>0)G.ehit-=dt;if(G.phit>0)G.phit-=dt;
+  if(skD>0)skD-=dt;
+  // Draw
+  X.save();if(skD>0)X.translate((Math.random()-.5)*skA*2,(Math.random()-.5)*skA*2);
+  if(G.scr==='play'){
+    if(G.phase==='map')drawMap();
+    else if(G.phase==='combat'){drawCombat();if(G.turn==='reward'&&G.rewards)drawRewards()}
+    else if(G.phase==='shop')drawShop();
+  }
+  X.restore();
+  // Toasts
+  G.toasts.forEach((ts,i)=>{const a=Math.min(1,ts.tm);X.globalAlpha=a;X.fillStyle='rgba(20,15,10,.95)';
+    const tw=X.measureText(ts.t).width+30;rr((W-tw)/2,55+i*35,tw,26,5);X.fill();X.strokeStyle='#fa0';rr((W-tw)/2,55+i*35,tw,26,5);X.stroke();
+    X.fillStyle='#fc8';X.font='bold 12px sans-serif';X.textAlign='center';X.fillText(ts.t,W/2,72+i*35);X.globalAlpha=1});
+  requestAnimationFrame(loop);
+}
+
+load();showOv();requestAnimationFrame(loop);
+</script>
+</body>
+</html>

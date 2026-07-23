@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Degradation Simulator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a12; overflow: hidden; font-family: 'Courier New', monospace; }
+        canvas { display: block; }
+        #ui {
+            position: fixed; top: 0; left: 0; right: 0; pointer-events: none;
+            z-index: 10; padding: 10px 20px;
+            display: flex; justify-content: space-between; align-items: flex-start;
+        }
+        .hud-box {
+            pointer-events: auto;
+            background: rgba(10,10,20,0.85); border: 1px solid rgba(80,120,180,0.3);
+            border-radius: 8px; padding: 10px 16px; backdrop-filter: blur(4px);
+        }
+        .hud-label { font-size: 9px; color: rgba(100,140,200,0.6); text-transform: uppercase; letter-spacing: 2px; }
+        .hud-value { font-size: 20px; color: #80c0ff; }
+        .hud-row { display: flex; gap: 24px; }
+        .bar-wrap { width: 110px; height: 6px; background: rgba(40,60,80,0.5); border-radius: 3px; margin-top: 3px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        .bar-signal { background: linear-gradient(90deg, #ff4040, #40ff80); }
+        .bar-entropy { background: linear-gradient(90deg, #4040ff, #ff40ff); }
+        #menu-overlay, #gameover-overlay, #pause-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(5,5,10,0.95); z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .overlay-title {
+            font-size: 36px; color: #80c0ff; margin-bottom: 8px;
+            text-shadow: 0 0 20px rgba(80,140,255,0.4);
+        }
+        .overlay-sub { font-size: 13px; color: rgba(100,140,200,0.5); margin-bottom: 30px; letter-spacing: 3px; }
+        .menu-btn {
+            display: block; width: 240px; padding: 12px; margin: 6px;
+            background: rgba(40,60,100,0.3); border: 1px solid rgba(80,120,180,0.3);
+            color: #80b0e0; font-size: 14px; font-family: inherit; cursor: pointer;
+            border-radius: 8px; transition: all 0.2s; text-align: center;
+        }
+        .menu-btn:hover { background: rgba(60,90,140,0.4); border-color: rgba(100,160,220,0.5); }
+        .stat-row { display: flex; justify-content: space-between; width: 280px; padding: 4px 0; color: #80b0d0; font-size: 13px; border-bottom: 1px solid rgba(80,120,180,0.1); }
+        .stat-val { color: #80c0ff; }
+        .hidden { display: none !important; }
+        #diff-select { display: flex; gap: 8px; margin: 8px 0 20px; }
+        .diff-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid rgba(80,120,180,0.3); background: rgba(20,30,50,0.5); color: #80b0d0; cursor: pointer; font-family: inherit; font-size: 12px; }
+        .diff-btn.sel { border-color: #4080ff; background: rgba(40,60,120,0.5); }
+        #toolbar {
+            position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 6px; z-index: 10; pointer-events: auto;
+        }
+        .tool-btn {
+            padding: 10px 16px; border-radius: 6px; border: 1px solid rgba(80,120,180,0.3);
+            background: rgba(15,20,35,0.85); color: #80b0d0; cursor: pointer;
+            font-family: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+            transition: all 0.2s; position: relative;
+        }
+        .tool-btn.active { border-color: #4080ff; background: rgba(30,50,100,0.6); box-shadow: 0 0 10px rgba(60,100,200,0.2); }
+        .tool-cd { position: absolute; top: -8px; right: 2px; font-size: 9px; color: #ff6060; }
+        #wave-display { position: fixed; top: 50%; right: 16px; transform: translateY(-50%); z-index: 10; pointer-events: none; text-align: center; }
+        .wave-label { font-size: 10px; color: rgba(100,140,200,0.4); letter-spacing: 2px; }
+        .wave-num { font-size: 24px; color: #80c0ff; }
+    </style>
+    <!-- ╔══════════════════════════════════════════════════════════════════╗
+         ║  leviGOLD ∞ — UNIVERSAL ENHANCEMENT LAYER (v2)                   ║
+         ║  Performance + cinematic polish + UX upgrades.                   ║
+         ║                                                                  ║
+         ║  v2: Auto-detects cinematic vs utility apps via                  ║
+         ║  rappterzoo:experience meta tag. Vignette + film grain only      ║
+         ║  apply to mood-piece apps where they enhance the experience.     ║
+         ║  Utility apps (sims, calculators, tools) get only the perf       ║
+         ║  + UX upgrades — no visual interference. Less is more.           ║
+         ╚══════════════════════════════════════════════════════════════════╝ -->
+    <style id="levigold-enhancement-css">
+    body { opacity: 0; animation: levigold-fadein 0.6s ease forwards; }
+    @keyframes levigold-fadein { to { opacity: 1; } }
+    canvas { will-change: transform; transform: translateZ(0); }
+    .modal-overlay, .panel, .stats-box, .menu, .hud, .dialog { contain: layout style; }
+    @media (hover: none) and (pointer: coarse){
+      * { -webkit-tap-highlight-color: transparent; }
+      body { -webkit-overflow-scrolling: touch; touch-action: manipulation; }
+    }
+    /* Cinematic overlays — only applied when body has class .levigold-cinematic */
+    body.levigold-cinematic::after {
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:9997;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+      mix-blend-mode: multiply;
+    }
+    body.levigold-cinematic::before {
+      content:''; position:fixed; inset:-50%; pointer-events:none; z-index:9996;
+      background-image:
+        repeating-radial-gradient(circle at 17% 31%, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px),
+        repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.015) 0 1px, transparent 1px 5px);
+      opacity:.5; mix-blend-mode:overlay;
+      animation: levigold-grain 1.4s steps(6) infinite;
+    }
+    @keyframes levigold-grain {
+      0% { transform: translate(0, 0); }   17% { transform: translate(-1%, 1%); }
+      33% { transform: translate(1%, -1%); } 50% { transform: translate(-2%, 0); }
+      67% { transform: translate(0, -2%); }  83% { transform: translate(2%, 1%); }
+      100% { transform: translate(0, 0); }
+    }
+    /* FPS HUD — hidden by default, summoned with F8 */
+    #levigold-fps-hud {
+      position: fixed; bottom: 6px; left: 6px; z-index: 99998;
+      font: 10px ui-monospace, Consolas, monospace; color: #ffd700;
+      background: rgba(0, 0, 0, 0.55); padding: 3px 7px;
+      border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 4px;
+      letter-spacing: .5px; pointer-events: auto; cursor: pointer;
+      opacity: 0; transition: opacity .3s; backdrop-filter: blur(4px);
+      display: none;
+    }
+    #levigold-fps-hud.visible { display: block; opacity: 0.7; }
+    /* Audio gate stays the same */
+    #levigold-audio-gate {
+      position: fixed; inset: 0; z-index: 99999; display: none;
+      background: radial-gradient(ellipse at center, rgba(20,15,30,0.92), rgba(0,0,0,0.95));
+      align-items: center; justify-content: center; flex-direction: column;
+      cursor: pointer; color: #ffd700; font-family: ui-monospace, monospace;
+      letter-spacing: 3px; backdrop-filter: blur(6px);
+    }
+    #levigold-audio-gate.show { display: flex; }
+    #levigold-audio-gate .pulse {
+      width: 80px; height: 80px; border: 2px solid rgba(255,215,0,0.6);
+      border-radius: 50%; margin-bottom: 24px;
+      animation: levigold-pulse 1.6s ease-in-out infinite;
+    }
+    #levigold-audio-gate h2 { font-size: 18px; margin: 0 0 8px; font-weight: normal; letter-spacing: 4px; }
+    #levigold-audio-gate p { font-size: 11px; color: rgba(255,215,0,0.55); margin: 0; }
+    @keyframes levigold-pulse {
+      0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,215,0,0.4); }
+      50% { transform: scale(1.1); box-shadow: 0 0 30px 10px rgba(255,215,0,0); }
+    }
+    </style>
+    <script>
+    (function leviGOLDEnhancement(){
+      if (window.LEVIGOLD && window.LEVIGOLD.installed) return;
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      const tier = (isMobile || cores < 4 || mem < 4) ? 'mobile' :
+                   (cores >= 8 && mem >= 8) ? 'high' : 'medium';
+      const PIXEL_CAP = tier === 'mobile' ? 1.25 : tier === 'medium' ? 1.5 : 1.75;
+      window.LEVIGOLD = {
+        installed: true, tier, isMobile, cores, mem, pixelCap: PIXEL_CAP,
+        renderers: new Set(), fpsHistory: [], lastTune: 0,
+        targetFPS: 55, lowFPS: 40, highFPS: 58
+      };
+
+      // ── Cinematic detection: opt-in via experience meta tag ──────────
+      function detectCinematic() {
+        const expMeta = document.querySelector('meta[name="rappterzoo:experience"]');
+        if (!expMeta) return false;
+        const exp = (expMeta.getAttribute('content') || '').toLowerCase();
+        // Cinematic experiences benefit from vignette+grain.
+        // Utility apps (mastery, flow on tools) don't.
+        // Heuristic: only enable if the experience is mood-driven AND
+        // the app type is 'visual' (not 'interactive'/'game'/'interface').
+        const typeMeta = document.querySelector('meta[name="rappterzoo:type"]');
+        const type = (typeMeta && typeMeta.getAttribute('content') || '').toLowerCase();
+        const cinematicTypes = ['visual'];
+        const cinematicExperiences = ['melancholy','wonder','hypnosis','dread','flow','tension','discovery','mastery'];
+        return cinematicTypes.includes(type) && cinematicExperiences.includes(exp);
+      }
+      const isCinematic = detectCinematic();
+      window.LEVIGOLD.cinematic = isCinematic;
+      const onApply = () => {
+        if (isCinematic) document.body.classList.add('levigold-cinematic');
+      };
+      if (document.body) onApply();
+      else document.addEventListener('DOMContentLoaded', onApply, {once:true});
+
+      // ── THREE renderer monkey-patch ───────────────────────────────────
+      function patchTHREE(){
+        if (typeof THREE === 'undefined' || !THREE.WebGLRenderer || THREE.__leviGOLD) return false;
+        THREE.__leviGOLD = true;
+        const _Renderer = THREE.WebGLRenderer;
+        THREE.WebGLRenderer = function PatchedRenderer(params){
+          params = params || {};
+          if (!('powerPreference' in params)) params.powerPreference = 'high-performance';
+          if (!('antialias' in params)) params.antialias = (tier !== 'mobile');
+          const r = new _Renderer(params);
+          if (THREE.ACESFilmicToneMapping !== undefined) r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.0;
+          if ('outputEncoding' in r && THREE.sRGBEncoding !== undefined) r.outputEncoding = THREE.sRGBEncoding;
+          else if ('outputColorSpace' in r && THREE.SRGBColorSpace !== undefined) r.outputColorSpace = THREE.SRGBColorSpace;
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_CAP));
+          window.LEVIGOLD.renderers.add(r);
+          return r;
+        };
+        THREE.WebGLRenderer.prototype = _Renderer.prototype;
+        Object.setPrototypeOf(THREE.WebGLRenderer, _Renderer);
+        return true;
+      }
+      if (!patchTHREE()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (patchTHREE() || ++tries > 50) clearInterval(iv); }, 100);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        window.LEVIGOLD.paused = document.hidden;
+        if (!document.hidden) window.LEVIGOLD.fpsHistory.length = 0;
+      });
+
+      // ── FPS auto-tuner (HUD hidden until F8) ──────────────────────────
+      let frames = 0, t0 = performance.now(), fps = 60;
+      let hud = null;
+      function ensureHud(){
+        if (hud) return;
+        hud = document.createElement('div');
+        hud.id = 'levigold-fps-hud';
+        hud.title = 'leviGOLD perf — F8 to toggle, click to dismiss';
+        hud.textContent = '✦ GOLD';
+        hud.onclick = () => { hud.classList.remove('visible'); };
+        document.body.appendChild(hud);
+      }
+      function tick(){
+        frames++;
+        const now = performance.now();
+        if (now - t0 >= 500){
+          fps = Math.round(frames * 1000 / (now - t0));
+          frames = 0; t0 = now;
+          window.LEVIGOLD.fpsHistory.push(fps);
+          if (window.LEVIGOLD.fpsHistory.length > 20) window.LEVIGOLD.fpsHistory.shift();
+          if (hud && hud.classList.contains('visible')) hud.textContent = '✦ GOLD ' + fps + 'fps · ' + tier + ' · ' + window.LEVIGOLD.pixelCap.toFixed(2);
+          if (now - window.LEVIGOLD.lastTune > 5000 && window.LEVIGOLD.fpsHistory.length >= 6){
+            const avg = window.LEVIGOLD.fpsHistory.slice(-6).reduce((a,b)=>a+b,0) / 6;
+            if (avg < window.LEVIGOLD.lowFPS && window.LEVIGOLD.pixelCap > 0.6){
+              window.LEVIGOLD.pixelCap = Math.max(0.6, window.LEVIGOLD.pixelCap - 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            } else if (avg > window.LEVIGOLD.highFPS && window.LEVIGOLD.pixelCap < PIXEL_CAP){
+              window.LEVIGOLD.pixelCap = Math.min(PIXEL_CAP, window.LEVIGOLD.pixelCap + 0.25);
+              window.LEVIGOLD.renderers.forEach(r => { try { r.setPixelRatio(Math.min(window.devicePixelRatio||1, window.LEVIGOLD.pixelCap)); } catch(e){} });
+              window.LEVIGOLD.lastTune = now;
+            }
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      const onReady = () => { ensureHud(); requestAnimationFrame(tick); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, {once:true});
+      else onReady();
+
+      // F8 toggles HUD visibility
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') { e.preventDefault(); if (hud) hud.classList.toggle('visible'); }
+      });
+
+      // ── Save throttling ────────────────────────────────────────────────
+      const _set = Storage.prototype.setItem;
+      const pendingSaves = new Map();
+      Storage.prototype.setItem = function(key, val){
+        if (typeof val === 'string' && val.length > 50000 && /save|world|galaxy|state/i.test(key)){
+          if (pendingSaves.has(key)) clearTimeout(pendingSaves.get(key));
+          pendingSaves.set(key, setTimeout(() => {
+            try { _set.call(this, key, val); } catch(e){}
+            pendingSaves.delete(key);
+          }, 800));
+          return;
+        }
+        return _set.call(this, key, val);
+      }.bind(localStorage);
+
+      // ── Audio gesture auto-overlay ─────────────────────────────────────
+      const _AC = window.AudioContext || window.webkitAudioContext;
+      if (_AC) {
+        const _orig = _AC;
+        function PatchedAC(){
+          const ctx = new _orig(...arguments);
+          if (ctx.state === 'suspended') {
+            const gate = document.createElement('div');
+            gate.id = 'levigold-audio-gate';
+            gate.classList.add('show');
+            gate.innerHTML = '<div class="pulse"></div><h2>CLICK TO BEGIN</h2><p>audio engine — headphones recommended</p>';
+            const arm = () => {
+              ctx.resume().catch(()=>{});
+              gate.classList.remove('show');
+              setTimeout(() => gate.remove(), 300);
+            };
+            gate.addEventListener('click', arm);
+            window.addEventListener('click', arm, { once: true });
+            const append = () => { if (document.body) document.body.appendChild(gate); };
+            if (document.body) append(); else document.addEventListener('DOMContentLoaded', append, { once: true });
+          }
+          return ctx;
+        }
+        PatchedAC.prototype = _orig.prototype;
+        Object.setPrototypeOf(PatchedAC, _orig);
+        window.AudioContext = PatchedAC;
+        if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      }
+
+      // ── Ensure mobile viewport meta if missing ─────────────────────────
+      const onDom = () => {
+        if (!document.querySelector('meta[name="viewport"]')){
+          const m = document.createElement('meta');
+          m.name = 'viewport';
+          m.content = 'width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover';
+          document.head.appendChild(m);
+        }
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onDom, {once:true});
+      else onDom();
+
+      console.log('[leviGOLD ∞ v2] active —', tier, 'cap', PIXEL_CAP, '· cinematic:', isCinematic);
+    })();
+    </script>
+
+
+<meta name="rappterzoo:author" content="agent">
+<meta name="rappterzoo:author-type" content="agent">
+<meta name="rappterzoo:category" content="games_puzzles">
+<meta name="rappterzoo:tags" content="canvas,svg,animation,game,generative,particles">
+<meta name="rappterzoo:type" content="game">
+<meta name="rappterzoo:complexity" content="intermediate">
+<meta name="rappterzoo:created" content="2025-12-27">
+<meta name="rappterzoo:generation" content="1">
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+    <div class="hud-box hidden" id="hud-left">
+        <div class="hud-row">
+            <div><div class="hud-label">Integrity</div><div class="hud-value" id="score-val">0</div></div>
+            <div><div class="hud-label">Combo</div><div class="hud-value" id="combo-val">x1</div></div>
+        </div>
+    </div>
+    <div class="hud-box hidden" id="hud-right">
+        <div><div class="hud-label">Signal Strength</div><div class="bar-wrap"><div class="bar-fill bar-signal" id="signal-bar" style="width:100%"></div></div></div>
+        <div style="margin-top:6px"><div class="hud-label">Entropy Level</div><div class="bar-wrap"><div class="bar-fill bar-entropy" id="entropy-bar" style="width:0%"></div></div></div>
+    </div>
+</div>
+<div id="wave-display" class="hidden"><div class="wave-label">CYCLE</div><div class="wave-num" id="cycle-num">1</div></div>
+<div id="toolbar" class="hidden">
+    <button class="tool-btn active" data-tool="draw">Draw Barrier</button>
+    <button class="tool-btn" data-tool="amplify">Amplify<span class="tool-cd" id="amp-cd"></span></button>
+    <button class="tool-btn" data-tool="purge">Purge<span class="tool-cd" id="purge-cd"></span></button>
+    <button class="tool-btn" data-tool="repair">Repair<span class="tool-cd" id="repair-cd"></span></button>
+</div>
+<div id="menu-overlay">
+    <div class="overlay-title">Signal Degradation</div>
+    <div class="overlay-sub">DEFEND THE SIGNAL FROM ENTROPY</div>
+    <div id="diff-select">
+        <button class="diff-btn" data-diff="easy">Clean</button>
+        <button class="diff-btn sel" data-diff="normal">Noisy</button>
+        <button class="diff-btn" data-diff="hard">Corrupted</button>
+    </div>
+    <button class="menu-btn" id="start-btn">Initialize Signal</button>
+    <button class="menu-btn" id="help-btn">Protocol Guide</button>
+    <div id="hs-display" style="margin-top:16px;color:rgba(100,140,200,0.5);font-size:12px"></div>
+</div>
+<div id="gameover-overlay" class="hidden">
+    <div class="overlay-title" id="go-title">Signal Lost</div>
+    <div class="overlay-sub" id="go-sub"></div>
+    <div id="go-stats" style="margin-bottom:16px"></div>
+    <button class="menu-btn" id="retry-btn">Retry</button>
+    <button class="menu-btn" id="back-btn">Main Menu</button>
+</div>
+<div id="pause-overlay" class="hidden">
+    <div class="overlay-title">Paused</div>
+    <div class="overlay-sub">SIGNAL FROZEN</div>
+    <button class="menu-btn" id="resume-btn">Resume</button>
+    <button class="menu-btn" id="quit-btn">Quit</button>
+</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+resize(); window.addEventListener('resize', resize);
+
+// Audio
+let audioCtx = null;
+function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+function snd(type, freq, dur, vol) {
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type = type; o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    g.gain.setValueAtTime(vol || 0.12, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+}
+function sfxDraw() { snd('sine', 300 + Math.random() * 200, 0.1); }
+function sfxBlock() { snd('triangle', 600, 0.15); snd('sine', 800, 0.1); }
+function sfxHit() { snd('sawtooth', 100, 0.15); snd('square', 60, 0.1); }
+function sfxAmplify() { snd('sine', 440, 0.3); snd('sine', 660, 0.2); snd('sine', 880, 0.15); }
+function sfxPurge() { snd('sawtooth', 200, 0.2); snd('square', 300, 0.15); snd('sawtooth', 500, 0.1); }
+function sfxRepair() { snd('sine', 550, 0.3); snd('triangle', 700, 0.2); }
+function sfxDeath() { snd('sawtooth', 120, 0.5); snd('square', 80, 0.7); }
+function sfxWave() { snd('sine', 440, 0.15); snd('sine', 550, 0.12); snd('sine', 660, 0.1); }
+function sfxCombo() { snd('sine', 880, 0.1); snd('triangle', 1100, 0.1); }
+function sfxBoss() { snd('square', 60, 0.7); snd('sawtooth', 40, 0.9); }
+function sfxWin() { for (let i = 0; i < 5; i++) setTimeout(() => snd('sine', 400 + i * 100, 0.3), i * 120); }
+function sfxMenu() { snd('sine', 400, 0.1); }
+function sfxTowerHit() { snd('sawtooth', 150, 0.2); snd('square', 100, 0.15); }
+
+const ST = { MENU: 0, PLAY: 1, PAUSE: 2, OVER: 3 };
+let state = ST.MENU;
+let diff = 'normal';
+const dMult = { easy: 0.6, normal: 1.0, hard: 1.5 };
+
+let score = 0, combo = 1, comboTimer = 0, maxCombo = 1;
+let signalStrength = 100, entropyLevel = 0;
+let cycle = 1, cycleTimer = 0, spawnTimer = 0;
+let bossAlive = false, bossesKilled = 0;
+let glitchesBlocked = 0, towersLost = 0, barriersDrawn = 0;
+let shakeX = 0, shakeY = 0, shakeDec = 0;
+let selectedTool = 'draw';
+let ampCD = 0, purgeCD = 0, repairCD = 0;
+let ampActive = false, ampTimer = 0;
+let time = 0, lastTime = 0;
+
+// Drawing
+let isDrawing = false;
+let currentPath = [];
+
+// Entities
+let towers = [], glitches = [], barriers = [], particles = [], texts = [];
+let noiseField = [];
+
+const TOWER_TYPES = [
+    { name: 'Relay', color: '#40a0ff', radius: 30, hp: 5, signal: 10, pulseRate: 2 },
+    { name: 'Amplifier', color: '#40ffa0', radius: 25, hp: 3, signal: 15, pulseRate: 3 },
+    { name: 'Core', color: '#ffc040', radius: 40, hp: 8, signal: 25, pulseRate: 1.5 },
+];
+
+const GLITCH_TYPES = [
+    { name: 'Static', speed: 1.2, hp: 1, dmg: 1, size: 8, color: '#603060', score: 5 },
+    { name: 'Jitter', speed: 1.8, hp: 1, dmg: 1, size: 6, color: '#604040', score: 8 },
+    { name: 'Dropout', speed: 0.7, hp: 3, dmg: 2, size: 14, color: '#404060', score: 15 },
+    { name: 'Corruption', speed: 1.0, hp: 2, dmg: 2, size: 10, color: '#503050', score: 12 },
+    { name: 'Bit Rot', speed: 0.5, hp: 4, dmg: 3, size: 16, color: '#403040', score: 20 },
+    { name: 'Entropy Beast', speed: 0.4, hp: 15, dmg: 5, size: 35, color: '#200020', score: 100, boss: true },
+];
+
+class Tower {
+    constructor(x, y, type) {
+        this.x = x; this.y = y; this.type = type;
+        this.hp = type.hp; this.maxHp = type.hp;
+        this.phase = Math.random() * Math.PI * 2;
+        this.pulsePhase = 0;
+    }
+    update(dt) {
+        this.phase += dt * 2;
+        this.pulsePhase += dt * this.type.pulseRate;
+    }
+    draw() {
+        const pulse = 1 + Math.sin(this.pulsePhase) * 0.15;
+        const r = this.type.radius * pulse;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        // Signal ring
+        ctx.strokeStyle = this.type.color;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.3 + Math.sin(this.pulsePhase) * 0.15;
+        ctx.beginPath(); ctx.arc(0, 0, r * 2, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 0.15;
+        ctx.beginPath(); ctx.arc(0, 0, r * 3, 0, Math.PI * 2); ctx.stroke();
+        // Body
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = this.type.color;
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = this.type.color;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2); ctx.fill();
+        // Inner
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2); ctx.fill();
+        // HP bar
+        ctx.globalAlpha = 1;
+        if (this.hp < this.maxHp) {
+            const bw = 30;
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(-bw/2, -r - 12, bw, 4);
+            ctx.fillStyle = this.hp > this.maxHp * 0.3 ? '#40ff80' : '#ff4040';
+            ctx.fillRect(-bw/2, -r - 12, bw * (this.hp / this.maxHp), 4);
+        }
+        ctx.restore();
+    }
+}
+
+class Glitch {
+    constructor(type, x, y) {
+        this.type = type;
+        this.x = x; this.y = y;
+        this.hp = type.hp * dMult[diff];
+        this.maxHp = this.hp;
+        this.speed = type.speed * dMult[diff];
+        this.target = null;
+        this.phase = Math.random() * Math.PI * 2;
+        this.dead = false;
+        this.attackTimer = 0;
+    }
+    findTarget() {
+        if (towers.length === 0) return;
+        let closest = null, closestDist = Infinity;
+        towers.forEach(t => {
+            const d = Math.hypot(t.x - this.x, t.y - this.y);
+            if (d < closestDist) { closestDist = d; closest = t; }
+        });
+        this.target = closest;
+    }
+    update(dt) {
+        if (this.dead) return;
+        this.phase += dt * 4;
+        if (!this.target || !towers.includes(this.target)) this.findTarget();
+        if (!this.target) return;
+        const dx = this.target.x - this.x;
+        const dy = this.target.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > this.type.size + this.target.type.radius * 0.5) {
+            this.x += (dx / dist) * this.speed * dt * 60;
+            this.y += (dy / dist) * this.speed * dt * 60;
+            // Jitter effect
+            if (this.type.name === 'Jitter') {
+                this.x += (Math.random() - 0.5) * 3;
+                this.y += (Math.random() - 0.5) * 3;
+            }
+        } else {
+            this.attackTimer += dt;
+            if (this.attackTimer > 0.8) {
+                this.attackTimer = 0;
+                this.target.hp -= this.type.dmg;
+                sfxTowerHit();
+                shakeX = (Math.random() - 0.5) * 5;
+                shakeY = (Math.random() - 0.5) * 5;
+                shakeDec = 0.25;
+                spawnP(this.target.x, this.target.y, '#ff4040', 4);
+                if (this.target.hp <= 0) {
+                    towersLost++;
+                    signalStrength -= this.target.type.signal;
+                    spawnP(this.target.x, this.target.y, this.target.type.color, 15);
+                    spawnText(this.target.x, this.target.y, 'TOWER LOST', '#ff4040');
+                    towers.splice(towers.indexOf(this.target), 1);
+                    this.target = null;
+                }
+            }
+        }
+        // Check barrier collision
+        barriers.forEach((b, bi) => {
+            if (b.points.length < 2) return;
+            for (let i = 0; i < b.points.length - 1; i++) {
+                const p1 = b.points[i], p2 = b.points[i + 1];
+                const d = distToSegment(this.x, this.y, p1.x, p1.y, p2.x, p2.y);
+                if (d < this.type.size + 5) {
+                    this.hp -= (ampActive ? 2 : 1);
+                    b.hits++;
+                    b.life -= 0.1;
+                    spawnP(this.x, this.y, '#4080ff', 3);
+                    sfxBlock();
+                    shakeX = (Math.random() - 0.5) * 3;
+                    shakeY = (Math.random() - 0.5) * 3;
+                    shakeDec = 0.15;
+                    // Push back
+                    if (this.target) {
+                        const pdx = this.x - this.target.x;
+                        const pdy = this.y - this.target.y;
+                        const pdist = Math.hypot(pdx, pdy) || 1;
+                        this.x += (pdx / pdist) * 15;
+                        this.y += (pdy / pdist) * 15;
+                    }
+                    break;
+                }
+            }
+        });
+    }
+    draw() {
+        if (this.dead) return;
+        const s = this.type.size;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.shadowColor = this.type.color;
+        ctx.shadowBlur = 8;
+        if (this.type.boss) {
+            // Boss: complex glitch shape
+            ctx.fillStyle = this.type.color;
+            ctx.beginPath();
+            for (let i = 0; i < 12; i++) {
+                const a = (i / 12) * Math.PI * 2 + this.phase * 0.15;
+                const r = s * (0.7 + Math.sin(a * 5 + this.phase) * 0.3);
+                i === 0 ? ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+            }
+            ctx.closePath(); ctx.fill();
+            // Boss eyes
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ff0060';
+            ctx.beginPath(); ctx.arc(-8, -4, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(8, -4, 4, 0, Math.PI * 2); ctx.fill();
+        } else {
+            // Regular glitch: pixelated square pattern
+            ctx.globalAlpha = 0.7;
+            ctx.fillStyle = this.type.color;
+            const sz = s * 2;
+            for (let dx = -sz/2; dx < sz/2; dx += 4) {
+                for (let dy = -sz/2; dy < sz/2; dy += 4) {
+                    if (Math.random() < 0.6) {
+                        ctx.fillRect(dx, dy, 3, 3);
+                    }
+                }
+            }
+            ctx.globalAlpha = 1;
+        }
+        // HP bar
+        ctx.shadowBlur = 0;
+        const bw = s * 2;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(-bw/2, -s - 8, bw, 3);
+        ctx.fillStyle = '#ff4060';
+        ctx.fillRect(-bw/2, -s - 8, bw * (this.hp / this.maxHp), 3);
+        ctx.restore();
+    }
+}
+
+class Barrier {
+    constructor(points) {
+        this.points = points.map(p => ({...p}));
+        this.life = 1; this.hits = 0; this.phase = 0;
+    }
+    update(dt) {
+        this.phase += dt;
+        this.life -= dt * 0.03; // Barriers decay naturally
+    }
+    draw() {
+        if (this.points.length < 2) return;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(60,140,255,' + (this.life * 0.6) + ')';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#4080ff';
+        ctx.shadowBlur = 10 * this.life;
+        ctx.beginPath();
+        ctx.moveTo(this.points[0].x, this.points[0].y);
+        for (let i = 1; i < this.points.length; i++) {
+            ctx.lineTo(this.points[i].x, this.points[i].y);
+        }
+        ctx.stroke();
+        // Sparks along barrier
+        if (this.hits > 0) {
+            for (let i = 0; i < this.points.length; i += 3) {
+                const p = this.points[i];
+                ctx.fillStyle = 'rgba(100,180,255,' + (this.life * 0.3) + ')';
+                ctx.beginPath();
+                ctx.arc(p.x + Math.sin(this.phase * 5 + i) * 3, p.y + Math.cos(this.phase * 4 + i) * 3, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.restore();
+    }
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function spawnP(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+        particles.push({
+            x, y, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
+            size: 1.5 + Math.random() * 2, life: 1, color, decay: 0.02 + Math.random() * 0.02
+        });
+    }
+}
+function spawnText(x, y, text, color) {
+    texts.push({ x, y, text, color, life: 1, vy: -1.5 });
+}
+
+// Initialize noise field
+function initNoise() {
+    noiseField = [];
+    for (let i = 0; i < 100; i++) {
+        noiseField.push({ x: Math.random() * W, y: Math.random() * H, size: 1 + Math.random() * 2, phase: Math.random() * Math.PI * 2 });
+    }
+}
+
+// Input
+const keys = {};
+const mouse = { x: W/2, y: H/2 };
+
+window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === 'Escape') {
+        if (state === ST.PLAY) { state = ST.PAUSE; document.getElementById('pause-overlay').classList.remove('hidden'); sfxMenu(); }
+        else if (state === ST.PAUSE) resumeGame();
+    }
+    if (e.key === 'r' || e.key === 'R') { if (state === ST.OVER) startGame(); }
+    if (state === ST.PLAY) {
+        if (e.key === '1') selectTool('draw');
+        if (e.key === '2') selectTool('amplify');
+        if (e.key === '3') selectTool('purge');
+        if (e.key === '4') selectTool('repair');
+    }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; if (isDrawing) currentPath.push({x: e.clientX, y: e.clientY}); });
+canvas.addEventListener('mousedown', e => {
+    initAudio();
+    if (state !== ST.PLAY) return;
+    if (selectedTool === 'draw') {
+        isDrawing = true;
+        currentPath = [{x: e.clientX, y: e.clientY}];
+    } else {
+        handleToolClick(e.clientX, e.clientY);
+    }
+});
+canvas.addEventListener('mouseup', () => {
+    if (isDrawing && currentPath.length > 3) {
+        barriers.push(new Barrier(currentPath));
+        barriersDrawn++;
+        sfxDraw();
+    }
+    isDrawing = false; currentPath = [];
+});
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault(); initAudio();
+    if (state !== ST.PLAY) return;
+    const t = e.touches[0];
+    mouse.x = t.clientX; mouse.y = t.clientY;
+    if (selectedTool === 'draw') {
+        isDrawing = true;
+        currentPath = [{x: t.clientX, y: t.clientY}];
+    } else {
+        handleToolClick(t.clientX, t.clientY);
+    }
+});
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    mouse.x = t.clientX; mouse.y = t.clientY;
+    if (isDrawing) currentPath.push({x: t.clientX, y: t.clientY});
+});
+canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    if (isDrawing && currentPath.length > 3) {
+        barriers.push(new Barrier(currentPath));
+        barriersDrawn++;
+        sfxDraw();
+    }
+    isDrawing = false; currentPath = [];
+});
+
+function handleToolClick(x, y) {
+    if (selectedTool === 'amplify' && ampCD <= 0) {
+        ampActive = true; ampTimer = 5; ampCD = 12;
+        sfxAmplify();
+        spawnP(x, y, '#40ffa0', 15);
+        spawnText(x, y, 'AMPLIFIED!', '#40ffa0');
+    } else if (selectedTool === 'purge' && purgeCD <= 0) {
+        purgeCD = 10;
+        sfxPurge();
+        glitches.forEach(g => {
+            const d = Math.hypot(g.x - x, g.y - y);
+            if (d < 150) {
+                g.hp -= 4;
+                spawnP(g.x, g.y, '#ff8040', 6);
+            }
+        });
+        spawnP(x, y, '#ff6030', 20);
+        shakeX = (Math.random() - 0.5) * 8;
+        shakeY = (Math.random() - 0.5) * 8;
+        shakeDec = 0.3;
+    } else if (selectedTool === 'repair' && repairCD <= 0) {
+        repairCD = 15;
+        sfxRepair();
+        towers.forEach(t => {
+            const d = Math.hypot(t.x - x, t.y - y);
+            if (d < 100) {
+                t.hp = Math.min(t.maxHp, t.hp + 2);
+                spawnP(t.x, t.y, '#40ff80', 8);
+                spawnText(t.x, t.y - 20, 'REPAIRED', '#40ff80');
+            }
+        });
+    }
+}
+
+function selectTool(tool) {
+    selectedTool = tool;
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+}
+
+// UI wiring
+document.querySelectorAll('.tool-btn').forEach(b => b.addEventListener('click', () => { selectTool(b.dataset.tool); sfxMenu(); }));
+document.querySelectorAll('.diff-btn').forEach(b => b.addEventListener('click', () => {
+    diff = b.dataset.diff;
+    document.querySelectorAll('.diff-btn').forEach(d => d.classList.toggle('sel', d === b));
+    sfxMenu();
+}));
+document.getElementById('start-btn').addEventListener('click', () => { initAudio(); startGame(); });
+document.getElementById('help-btn').addEventListener('click', () => {
+    initAudio(); sfxMenu();
+    alert('SIGNAL DEGRADATION SIMULATOR\n\nDraw barriers (1) between glitches and your signal towers. Barriers block and damage approaching entropy.\n\nAmplify (2): Doubles barrier damage for 5s.\nPurge (3): AOE damage blast.\nRepair (4): Heal nearby towers.\n\nSignal strength drops when towers fall. Entropy rises over time.\n\nSurvive 20 cycles to achieve Signal Mastery.\n\nKeys: 1-4 tools, ESC pause, R restart.');
+});
+document.getElementById('retry-btn').addEventListener('click', startGame);
+document.getElementById('back-btn').addEventListener('click', () => {
+    state = ST.MENU;
+    document.getElementById('gameover-overlay').classList.add('hidden');
+    document.getElementById('menu-overlay').classList.remove('hidden');
+});
+document.getElementById('resume-btn').addEventListener('click', resumeGame);
+document.getElementById('quit-btn').addEventListener('click', () => {
+    state = ST.MENU;
+    document.getElementById('pause-overlay').classList.add('hidden');
+    document.getElementById('menu-overlay').classList.remove('hidden');
+    showHUD(false);
+});
+
+function resumeGame() { state = ST.PLAY; document.getElementById('pause-overlay').classList.add('hidden'); lastTime = performance.now(); }
+function showHUD(show) {
+    const m = show ? 'remove' : 'add';
+    ['hud-left', 'hud-right', 'toolbar', 'wave-display'].forEach(id => document.getElementById(id).classList[m]('hidden'));
+}
+
+function loadHS() { try { return JSON.parse(localStorage.getItem('signal-deg-scores')) || []; } catch { return []; } }
+function saveHS(s) {
+    const hs = loadHS();
+    hs.push({ score: s, diff, date: new Date().toISOString() });
+    hs.sort((a, b) => b.score - a.score);
+    localStorage.setItem('signal-deg-scores', JSON.stringify(hs.slice(0, 10)));
+}
+function displayHS() {
+    const hs = loadHS();
+    document.getElementById('hs-display').textContent = hs.length ? 'Best: ' + hs[0].score + ' (' + hs[0].diff + ')' : 'No scores yet';
+}
+
+function placeTowers() {
+    towers = [];
+    // Place towers in a pattern
+    const cx = W / 2, cy = H / 2;
+    towers.push(new Tower(cx, cy, TOWER_TYPES[2])); // Core in center
+    const radius = 150;
+    for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        towers.push(new Tower(cx + Math.cos(a) * radius, cy + Math.sin(a) * radius, TOWER_TYPES[0]));
+    }
+    for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + Math.PI / 6;
+        towers.push(new Tower(cx + Math.cos(a) * radius * 1.8, cy + Math.sin(a) * radius * 1.8, TOWER_TYPES[1]));
+    }
+}
+
+function startGame() {
+    initAudio();
+    state = ST.PLAY;
+    score = 0; combo = 1; comboTimer = 0; maxCombo = 1;
+    signalStrength = 100; entropyLevel = 0;
+    cycle = 1; cycleTimer = 0; spawnTimer = 0;
+    bossAlive = false; bossesKilled = 0;
+    glitchesBlocked = 0; towersLost = 0; barriersDrawn = 0;
+    ampCD = 0; purgeCD = 0; repairCD = 0;
+    ampActive = false; ampTimer = 0;
+    glitches = []; barriers = []; particles = []; texts = [];
+    selectedTool = 'draw';
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === 'draw'));
+    placeTowers();
+    initNoise();
+    document.getElementById('menu-overlay').classList.add('hidden');
+    document.getElementById('gameover-overlay').classList.add('hidden');
+    document.getElementById('pause-overlay').classList.add('hidden');
+    showHUD(true);
+    lastTime = performance.now();
+}
+
+function gameOver(ending) {
+    state = ST.OVER;
+    showHUD(false);
+    saveHS(score);
+    const titles = { lost: 'Signal Lost', entropy: 'Total Entropy', victory: 'Signal Mastery!' };
+    const subs = { lost: 'All towers have fallen...', entropy: 'Entropy consumed everything...', victory: 'You maintained perfect signal integrity!' };
+    document.getElementById('go-title').textContent = titles[ending] || 'Signal Lost';
+    document.getElementById('go-sub').textContent = subs[ending] || '';
+    const el = document.getElementById('go-stats');
+    el.innerHTML = '';
+    [['Integrity Score', score], ['Max Combo', 'x' + maxCombo.toFixed(1)], ['Barriers Drawn', barriersDrawn],
+     ['Glitches Blocked', glitchesBlocked], ['Towers Lost', towersLost], ['Cycles Survived', cycle],
+     ['Bosses Defeated', bossesKilled], ['Difficulty', diff.charAt(0).toUpperCase() + diff.slice(1)]
+    ].forEach(([l, v]) => {
+        const r = document.createElement('div');
+        r.className = 'stat-row';
+        r.innerHTML = '<span>' + l + '</span><span class="stat-val">' + v + '</span>';
+        el.appendChild(r);
+    });
+    document.getElementById('gameover-overlay').classList.remove('hidden');
+    ending === 'victory' ? sfxWin() : sfxDeath();
+}
+
+function spawnGlitch() {
+    if (towers.length === 0) return;
+    const side = Math.random();
+    let x, y;
+    if (side < 0.25) { x = -20; y = Math.random() * H; }
+    else if (side < 0.5) { x = W + 20; y = Math.random() * H; }
+    else if (side < 0.75) { x = Math.random() * W; y = -20; }
+    else { x = Math.random() * W; y = H + 20; }
+    const avail = GLITCH_TYPES.filter(t => !t.boss);
+    const maxIdx = Math.min(avail.length, 1 + Math.floor(cycle / 3));
+    glitches.push(new Glitch(avail[Math.floor(Math.random() * maxIdx)], x, y));
+}
+
+function spawnBoss() {
+    const bt = GLITCH_TYPES.find(t => t.boss);
+    const x = Math.random() < 0.5 ? -40 : W + 40;
+    glitches.push(new Glitch(bt, x, H / 2));
+    bossAlive = true;
+    sfxBoss();
+    spawnText(W / 2, H / 2, 'ENTROPY BEAST!', '#ff0060');
+}
+
+// Background
+const bgDots = [];
+for (let i = 0; i < 200; i++) bgDots.push({ x: Math.random() * 2000, y: Math.random() * 2000, s: Math.random() * 1.5, p: Math.random() * Math.PI * 2 });
+
+function drawBg() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    const ef = entropyLevel / 100;
+    g.addColorStop(0, 'hsl(' + (220 + ef * 40) + ', 15%, ' + (4 + ef * 3) + '%)');
+    g.addColorStop(1, 'hsl(' + (240 + ef * 20) + ', 10%, ' + (2 + ef * 2) + '%)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // Grid
+    ctx.strokeStyle = 'rgba(60,80,120,' + (0.08 - ef * 0.05) + ')';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    // Stars/dots
+    bgDots.forEach(d => {
+        d.p += 0.008;
+        ctx.fillStyle = 'rgba(80,120,180,' + (0.2 + Math.sin(d.p) * 0.15) + ')';
+        ctx.fillRect(d.x % W, d.y % H, d.s, d.s);
+    });
+    // Noise field
+    if (entropyLevel > 20) {
+        noiseField.forEach(n => {
+            n.x += Math.sin(time + n.phase) * 0.5;
+            n.y += Math.cos(time * 0.7 + n.phase) * 0.5;
+            n.x = ((n.x % W) + W) % W;
+            n.y = ((n.y % H) + H) % H;
+            ctx.fillStyle = 'rgba(100,60,120,' + (ef * 0.3) + ')';
+            ctx.fillRect(n.x, n.y, n.size, n.size);
+        });
+    }
+}
+
+function drawDrawingPath() {
+    if (!isDrawing || currentPath.length < 2) return;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(60,140,255,0.7)';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#4080ff';
+    ctx.shadowBlur = 8;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    ctx.moveTo(currentPath[0].x, currentPath[0].y);
+    for (let i = 1; i < currentPath.length; i++) ctx.lineTo(currentPath[i].x, currentPath[i].y);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawCursor() {
+    if (state !== ST.PLAY || selectedTool === 'draw') return;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(80,140,220,0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    const r = selectedTool === 'purge' ? 150 : selectedTool === 'repair' ? 100 : 30;
+    ctx.beginPath(); ctx.arc(mouse.x, mouse.y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+}
+
+function updateHUD() {
+    document.getElementById('score-val').textContent = score;
+    document.getElementById('combo-val').textContent = 'x' + combo.toFixed(1);
+    document.getElementById('signal-bar').style.width = Math.max(0, signalStrength) + '%';
+    document.getElementById('entropy-bar').style.width = entropyLevel + '%';
+    document.getElementById('cycle-num').textContent = cycle;
+    document.getElementById('amp-cd').textContent = ampCD > 0 ? Math.ceil(ampCD) + 's' : '';
+    document.getElementById('purge-cd').textContent = purgeCD > 0 ? Math.ceil(purgeCD) + 's' : '';
+    document.getElementById('repair-cd').textContent = repairCD > 0 ? Math.ceil(repairCD) + 's' : '';
+}
+
+function update(dt) {
+    time += dt;
+    // Entropy rises
+    entropyLevel = Math.min(100, entropyLevel + dt * 0.5 * dMult[diff]);
+    // Signal strength from towers
+    const totalSignal = towers.reduce((s, t) => s + t.type.signal, 0);
+    signalStrength = Math.min(100, Math.max(0, totalSignal * (100 / (TOWER_TYPES[2].signal + 4 * TOWER_TYPES[0].signal + 3 * TOWER_TYPES[1].signal))));
+    // Combo decay
+    if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) { combo = 1; } }
+    // Cooldowns
+    if (ampCD > 0) ampCD -= dt;
+    if (purgeCD > 0) purgeCD -= dt;
+    if (repairCD > 0) repairCD -= dt;
+    if (ampActive) { ampTimer -= dt; if (ampTimer <= 0) ampActive = false; }
+    // Shake
+    if (shakeDec > 0) { shakeDec -= dt; shakeX *= 0.9; shakeY *= 0.9; } else { shakeX = 0; shakeY = 0; }
+    // Wave
+    cycleTimer += dt;
+    if (cycleTimer > 12 + cycle * 1.5) {
+        cycle++;
+        cycleTimer = 0;
+        if (cycle % 5 === 0) spawnBoss();
+        sfxWave();
+        spawnText(W / 2, H / 2, 'CYCLE ' + cycle, '#80c0ff');
+        // Bonus score for surviving
+        const bonus = 50 * cycle;
+        score += bonus;
+        spawnText(W / 2, H / 2 + 30, '+' + bonus + ' INTEGRITY', '#40ffa0');
+    }
+    spawnTimer += dt;
+    const rate = Math.max(0.8, 3 - cycle * 0.15);
+    if (spawnTimer > rate && glitches.length < 8 + cycle * 2) {
+        spawnTimer = 0;
+        const cnt = 1 + Math.floor(cycle / 3);
+        for (let i = 0; i < cnt; i++) spawnGlitch();
+    }
+    // Update entities
+    towers.forEach(t => t.update(dt));
+    glitches.forEach(g => g.update(dt));
+    barriers.forEach(b => b.update(dt));
+    // Remove dead barriers
+    barriers = barriers.filter(b => b.life > 0);
+    // Remove dead glitches
+    glitches = glitches.filter(g => {
+        if (g.hp <= 0 && !g.dead) {
+            g.dead = true;
+            glitchesBlocked++;
+            const pts = Math.floor(g.type.score * combo);
+            score += pts;
+            combo = Math.min(8, combo + 0.3);
+            comboTimer = 3;
+            maxCombo = Math.max(maxCombo, combo);
+            if (combo >= 2.5) sfxCombo();
+            spawnP(g.x, g.y, '#ff60a0', 10);
+            spawnText(g.x, g.y, '+' + pts, '#ff80c0');
+            if (g.type.boss) {
+                bossAlive = false;
+                bossesKilled++;
+                score += 300;
+                entropyLevel = Math.max(0, entropyLevel - 20);
+                spawnText(g.x, g.y - 25, 'BOSS PURGED! +300', '#ffc040');
+            }
+            return false;
+        }
+        return !g.dead;
+    });
+    // Particles
+    particles = particles.filter(p => { p.x += p.vx; p.y += p.vy; p.life -= p.decay; return p.life > 0; });
+    texts = texts.filter(t => { t.y += t.vy; t.life -= 0.02; return t.life > 0; });
+    // Game over checks
+    if (towers.length === 0) gameOver('lost');
+    if (entropyLevel >= 100) gameOver('entropy');
+    if (cycle >= 20 && glitches.length === 0 && !bossAlive) gameOver('victory');
+}
+
+function render() {
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+    drawBg();
+    // Barriers
+    barriers.forEach(b => b.draw());
+    // Towers
+    towers.forEach(t => t.draw());
+    // Glitches
+    glitches.forEach(g => g.draw());
+    // Drawing path
+    drawDrawingPath();
+    // Amplify indicator
+    if (ampActive) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(60,255,160,0.15)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 4]);
+        ctx.strokeRect(10, 10, W - 20, H - 20);
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
+    // Particles
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+    });
+    ctx.globalAlpha = 1;
+    // Texts
+    texts.forEach(t => {
+        ctx.globalAlpha = t.life;
+        ctx.fillStyle = t.color;
+        ctx.font = '14px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText(t.text, t.x, t.y);
+    });
+    ctx.globalAlpha = 1;
+    drawCursor();
+    ctx.restore();
+    updateHUD();
+}
+
+function loop(now) {
+    requestAnimationFrame(loop);
+    if (!lastTime) lastTime = now;
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+    if (state === ST.PLAY) { update(dt); render(); }
+    else if (state === ST.MENU) { time += dt; drawBg(); }
+    else if (state === ST.PAUSE) { render(); ctx.fillStyle = 'rgba(5,5,10,0.3)'; ctx.fillRect(0, 0, W, H); }
+}
+
+displayHS();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

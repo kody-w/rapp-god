@@ -1,0 +1,583 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Voltaic · Learn with Kody</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cellipse cx='16' cy='17' rx='8' ry='10' fill='%238a7bff'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#e8f4ff; --dim:#8fa8c8; --edge:rgba(120,180,255,.16);
+    --glass:rgba(10,16,30,.62); --accent:#57e6ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#04060e;overflow:hidden;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink)}
+  #stage{position:fixed;inset:0;display:block}
+  /* ── overlay chrome ─────────────────────────────────────────── */
+  #hud{position:fixed;top:16px;left:16px;z-index:5;max-width:min(92vw,420px);
+    pointer-events:none}
+  .card{background:var(--glass);border:1px solid var(--edge);border-radius:14px;
+    padding:12px 14px;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+    box-shadow:0 8px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(160,210,255,.08)}
+  .name{font-size:20px;font-weight:700;letter-spacing:.02em;
+    background:linear-gradient(92deg,#bff4ff,#7db8ff 40%,#c79bff);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 0 26px rgba(90,200,255,.25)}
+  .meta{display:flex;gap:8px;align-items:center;margin-top:5px;flex-wrap:wrap;font-size:11.5px}
+  .pill{padding:2px 8px;border-radius:999px;border:1px solid var(--edge);
+    color:var(--dim);letter-spacing:.06em;text-transform:uppercase;font-size:10px}
+  .idtag{color:var(--accent);letter-spacing:.12em}
+  .rar{font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:10.5px}
+  .cap{margin-top:8px;font-size:11px;line-height:1.5;color:var(--dim)}
+  .cap b{color:#bcd6ff;font-weight:600}
+  /* ── controls ───────────────────────────────────────────────── */
+  #bar{position:fixed;top:16px;right:16px;z-index:6;display:flex;gap:8px;flex-wrap:wrap;
+    justify-content:flex-end;max-width:min(92vw,520px)}
+  button, .filebtn{pointer-events:auto;cursor:pointer;font:inherit;font-size:12.5px;
+    color:var(--ink);background:rgba(16,24,44,.7);border:1px solid var(--edge);
+    border-radius:11px;padding:9px 13px;letter-spacing:.02em;transition:.16s;
+    backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+  button:hover,.filebtn:hover{border-color:rgba(120,200,255,.5);
+    background:rgba(28,44,78,.8);box-shadow:0 0 22px rgba(80,190,255,.22);transform:translateY(-1px)}
+  button:active{transform:translateY(0)}
+  .primary{border-color:rgba(120,200,255,.45);
+    background:linear-gradient(180deg,rgba(40,90,150,.55),rgba(20,40,80,.6));
+    box-shadow:0 0 18px rgba(80,190,255,.18)}
+  input[type=file]{display:none}
+  /* ── dna panel ──────────────────────────────────────────────── */
+  #dna{position:fixed;left:16px;bottom:16px;z-index:5;max-width:min(92vw,420px);
+    pointer-events:auto}
+  details{background:var(--glass);border:1px solid var(--edge);border-radius:12px;
+    backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);overflow:hidden}
+  summary{cursor:pointer;list-style:none;padding:9px 13px;font-size:11.5px;
+    color:var(--dim);letter-spacing:.05em;user-select:none}
+  summary::-webkit-details-marker{display:none}
+  summary b{color:#bcd6ff}
+  pre{margin:0;padding:0 13px 12px;font-size:10.5px;line-height:1.5;color:#a9c6ea;
+    max-height:min(46vh,340px);overflow:auto;white-space:pre-wrap;word-break:break-word}
+  /* ── load dialog ────────────────────────────────────────────── */
+  #load{position:fixed;inset:0;z-index:20;display:none;place-items:center;
+    background:rgba(3,6,14,.7);backdrop-filter:blur(4px)}
+  #load.on{display:grid}
+  .modal{width:min(92vw,560px);background:#0a1122;border:1px solid var(--edge);
+    border-radius:16px;padding:18px;box-shadow:0 20px 80px rgba(0,0,0,.7)}
+  .modal h3{margin:0 0 4px;font-size:15px;color:#cfe4ff}
+  .modal p{margin:0 0 10px;font-size:11.5px;color:var(--dim);line-height:1.5}
+  textarea{width:100%;height:120px;resize:vertical;background:#050a16;color:#9fc2ea;
+    border:1px solid var(--edge);border-radius:10px;padding:10px;font:inherit;font-size:11px}
+  .row{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;flex-wrap:wrap}
+  #err{color:#ff8aa0;font-size:11px;margin-top:8px;min-height:14px}
+  @media (max-width:560px){ .name{font-size:17px} #hud{max-width:74vw} }
+</style>
+
+<canvas id="stage"></canvas>
+
+<div id="hud">
+  <div class="card">
+    <div class="name" id="uiName">Voltaic</div>
+    <div class="meta">
+      <span class="idtag" id="uiId">············</span>
+      <span class="rar" id="uiRar">—</span>
+      <span class="pill" id="uiDesig">VLT-····</span>
+    </div>
+    <div class="cap">A <b>plasma core</b> wreathed in <b>fractal lightning</b> — bolts
+      re-strike on a stochastic timer, jittering every frame; the core throbs to
+      <b>motion.pulse</b> and arcs reach with <b>motion.reach</b>. Minted from a live rappter genome.</div>
+  </div>
+</div>
+
+<div id="bar">
+  <button class="primary" id="btnNew">✦ New Voltaic</button>
+  <button id="btnSave">🥚 Save .egg</button>
+  <button id="btnLoad">Load .egg</button>
+</div>
+
+<div id="dna">
+  <details>
+    <summary>⚡ <b>genome</b> — the DNA (click to inspect)</summary>
+    <pre id="uiJson"></pre>
+  </details>
+</div>
+
+<div id="load">
+  <div class="modal">
+    <h3>Load a .egg</h3>
+    <p>Paste an egg string, or choose a <code>.egg</code> file. It is unpacked and rendered exactly.</p>
+    <textarea id="eggText" spellcheck="false" placeholder="paste .egg base64 here…"></textarea>
+    <div id="err"></div>
+    <div class="row">
+      <label class="filebtn">📁 Choose file<input type="file" id="eggFile" accept=".egg,text/plain"></label>
+      <button id="btnCancel">Cancel</button>
+      <button class="primary" id="btnRender">Render</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   FAUNA-EGG CORE — verified byte-exact against openrappter-vui / genome.js.
+   Embed VERBATIM in each demo. Do NOT edit: genomeId must stay reproducible
+   or the .egg will not load in rapp·go. (Verified: genomeId of the reference
+   egg === "fb18657910a5", and re-encode reproduces the original bytes.)
+   ══════════════════════════════════════════════════════════════════════════ */
+const EGG = (() => {
+  const b64enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const b64dec = s => { s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); };
+  async function sha256hex(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  function canonical(v){
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v!==null&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  async function genomeId(genome){ return (await sha256hex(canonical(genome))).slice(0,12); }
+  // xmur3 → mulberry32 deterministic PRNG (byte-identical to genome.js mkRng)
+  function mkRng(seed){ let h=1779033703^seed.length; for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),3432918353);h=h<<13|h>>>19;} h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); let s=(h^=h>>>16)>>>0; return function(){s+=0x6D2B79F5;let t=Math.imul(s^s>>>15,1|s);t=(t+Math.imul(t^t>>>7,61|t))^t;return((t^t>>>14)>>>0)/4294967296;}; }
+  // geohash encode (precision 6) so each egg carries a plausible born.coord
+  function geohash(lat,lng,precision=6){ const B='0123456789bcdefghjkmnpqrstuvwxyz'; let even=true,hash='',bits=0,hc=0; const la=[-90,90],lo=[-180,180]; while(hash.length<precision){ if(even){const m=(lo[0]+lo[1])/2; if(lng>m){hc=(hc<<1)|1;lo[0]=m;}else{hc<<=1;lo[1]=m;}} else {const m=(la[0]+la[1])/2; if(lat>m){hc=(hc<<1)|1;la[0]=m;}else{hc<<=1;la[1]=m;}} even=!even; if(++bits===5){hash+=B[hc];bits=0;hc=0;} } return hash; }
+
+  // Pack a genome into a canonical .egg payload (matches openrappter-vui exactly).
+  async function pack(genome, meta={}){
+    const id = await genomeId(genome);
+    const rng = mkRng(id);
+    const payload = {
+      genome, id,
+      born: meta.born || { coord: geohash((rng()*140)-70, (rng()*360)-180), t: 0 },
+      title: meta.title || 'a rappter',
+      rarity: meta.rarity || 'uncommon',
+      source: meta.source || 'learnwithkody-fauna'
+    };
+    return { egg: b64enc(JSON.stringify(payload)), id, payload };
+  }
+  function unpack(b64){ return JSON.parse(b64dec(b64.trim())); }
+  function download(b64, id){ const a=document.createElement('a'); a.href='data:application/octet-stream;base64,'+btoa(b64); /* raw text egg */ a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(b64); a.download=`rappter-${String(id).slice(0,8)}.egg`; document.body.appendChild(a); a.click(); a.remove(); }
+  return { b64enc, b64dec, genomeId, mkRng, geohash, pack, unpack, download };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   VOLTAIC — an electric arc-raptor. Model = plasma core + procedural fractal
+   lightning tendrils (count from form.segments). Animation = stochastic strikes,
+   per-frame crackle jitter, pulse-driven core throb, reach-driven arc length.
+   ══════════════════════════════════════════════════════════════════════════ */
+(() => {
+  const TAU = Math.PI*2;
+  const cv = document.getElementById('stage');
+  const ctx = cv.getContext('2d', { alpha:false });
+  const clamp = (v,a,b)=>v<a?a:v>b?b:v;
+
+  // ── color helpers ──────────────────────────────────────────────────────
+  function hslToHex(h,s,l){
+    s/=100; l/=100;
+    const k=n=>(n+h/30)%12, a=s*Math.min(l,1-l);
+    const f=n=>{const c=l-a*Math.max(-1,Math.min(k(n)-3,9-k(n),1));
+      return Math.round(255*c).toString(16).padStart(2,'0');};
+    return '#'+f(0)+f(8)+f(4);
+  }
+  function hexRGB(hex){ const n=parseInt(hex.slice(1),16);
+    return [n>>16&255, n>>8&255, n&255]; }
+  function rgba(hex,a){ const [r,g,b]=hexRGB(hex); return `rgba(${r},${g},${b},${a})`; }
+
+  // Electric palette: biased cyan → violet, with a near-white hot core + spark.
+  function electricPalette(r){
+    const cyan   = 184 + r()*30;   // 184–214
+    const violet = 252 + r()*46;   // 252–298
+    return [
+      hslToHex(cyan-8, 92, 90),    // 0 core  (white-cyan hot)
+      hslToHex(cyan,  100, 66),    // 1 boltA (cyan)
+      hslToHex(violet, 96, 70),    // 2 boltB (violet)
+      hslToHex(violet-12, 82, 46), // 3 aura  (deep violet)
+      hslToHex(cyan+6,100, 82)     // 4 spark
+    ];
+  }
+
+  // ── genome minting ─────────────────────────────────────────────────────
+  const pick = (r,a)=>a[Math.floor(r()*a.length)];
+  function randomGenome(){
+    const seed = Math.random().toString(36).slice(2)+Date.now().toString(36);
+    const r = EGG.mkRng(seed);
+    const form = {
+      role:'form', k:40,
+      shape: pick(r,['star','star','star','ring']),      // arc-raptor reads as a star-burst
+      limbs: Math.floor(r()*5),                          // 0–4 grounding arc-legs
+      segments: 3 + Math.floor(r()*10),                  // 3–12 primary tendrils
+      symmetry: r()<0.5 ? 'radial' : 'bilateral',
+      body_r: 0.22 + r()*0.16,                           // 0.22–0.38
+      limb_len: 0.20 + r()*0.40,
+      /* Voltaic extensions (hash into the id — still a valid egg) */
+      branch: 1 + Math.floor(r()*3),                     // fractal branch depth 1–3
+      jag: 0.30 + r()*0.45                               // path roughness
+    };
+    const surface = {
+      role:'surface', k:60,
+      palette: electricPalette(r),
+      pattern:'glow',
+      glow: 0.62 + r()*0.38,
+      opacity: 0.85 + r()*0.15
+    };
+    const motion = {
+      role:'motion', k:50,
+      breathe: 0.30 + r()*0.55,
+      drift:   r()*0.55,
+      pulse:   0.50 + r()*0.50,
+      reach:   0.42 + r()*0.58,
+      strike:  0.30 + r()*0.60                           // ext: re-strike frequency
+    };
+    return { layers:[form,surface,motion], compose:{ windows:[[0,1,2]], loop:true } };
+  }
+
+  // Rarity derived from the genome so it is reproducible for a given egg.
+  function rarityFor(g){
+    const f=g.layers[0], m=g.layers[2];
+    const s = (f.segments-3)/9*0.40 + m.reach*0.28 + m.pulse*0.14
+            + (f.branch-1)/2*0.10 + (f.symmetry==='radial'?0.08:0);
+    return s<0.34?'common': s<0.58?'uncommon': s<0.76?'rare': s<0.90?'epic':'legendary';
+  }
+
+  // ── procedural lightning (midpoint-displacement fractal + branch tree) ──
+  function genBolt(sx,sy,ex,ey, rough, rng, gens, branchLevels){
+    let segs=[[sx,sy,ex,ey]];
+    let offset=Math.hypot(ex-sx,ey-sy)*rough;
+    const children=[];
+    for(let gI=0; gI<gens; gI++){
+      const nxt=[];
+      for(const s of segs){
+        const x1=s[0],y1=s[1],x2=s[2],y2=s[3];
+        const mx=(x1+x2)/2, my=(y1+y2)/2;
+        let nx=-(y2-y1), ny=(x2-x1); const L=Math.hypot(nx,ny)||1;
+        const d=(rng()*2-1)*offset;
+        const px=mx+nx/L*d, py=my+ny/L*d;
+        nxt.push([x1,y1,px,py]); nxt.push([px,py,x2,y2]);
+        if(branchLevels>0 && gI>=1 && rng()<0.24){
+          const dx=px-x1, dy=py-y1;
+          const ang=Math.atan2(dy,dx)+(rng()*2-1)*0.95;
+          const bl=Math.hypot(dx,dy)*(1.1+rng()*1.1);
+          const bx=px+Math.cos(ang)*bl, by=py+Math.sin(ang)*bl;
+          children.push(genBolt(px,py,bx,by, rough*1.05, rng, Math.max(2,gens-2), branchLevels-1));
+        }
+      }
+      segs=nxt; offset/=2;
+    }
+    const pts=[[sx,sy]];
+    for(const s of segs) pts.push([s[2],s[3]]);
+    return { pts, children };
+  }
+
+  // ── world state ────────────────────────────────────────────────────────
+  let W=0,H=0,DPR=1, cx=0,cy=0, R=1, coreR=1, boltLen=1;
+  let genome=null, surf=null, mot=null, bolts=[], sparks=[], dust=[];
+  let flash=0, rotation=0, lastT=0;
+
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio||1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.max(1,Math.floor(W*DPR));
+    cv.height= Math.max(1,Math.floor(H*DPR));
+    cv.style.width=W+'px'; cv.style.height=H+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    layout();
+  }
+  function layout(){
+    cx = W*0.5; cy = H*0.52;
+    R = Math.min(W,H)*0.5;
+    if(genome){
+      const f=genome.layers[0];
+      coreR  = f.body_r * R * 0.62;
+      boltLen= R * (0.42 + mot.reach*0.52);
+      buildBolts();
+    }
+  }
+
+  // Build the tendril set from the genome (radial burst or bilateral "wings")
+  // plus a few grounding arc-legs from form.limbs.
+  function buildBolts(){
+    const f=genome.layers[0];
+    bolts=[];
+    const n=f.segments;
+    for(let i=0;i<n;i++){
+      let ang;
+      if(f.symmetry==='radial'){
+        ang = i/n*TAU - Math.PI/2;
+      } else {
+        // two fanned wings, biased upward/outward
+        const half=Math.ceil(n/2);
+        const side=(i%2===0)?-1:1;
+        const t=(Math.floor(i/2)/Math.max(1,half-1))-0.5;   // -0.5..0.5
+        ang = side>0 ? (t*1.5) : (Math.PI - t*1.5);
+        ang -= Math.PI/2;
+      }
+      bolts.push(makeBolt(ang, 0.78+Math.random()*0.35, false, f));
+    }
+    // grounding legs — anchored downward, thicker, slower strikes
+    const legs=f.limbs;
+    for(let i=0;i<legs;i++){
+      const spread=(legs<=1)?0:((i/(legs-1))-0.5);
+      const ang = Math.PI/2 + spread*1.15;                   // pointing down
+      bolts.push(makeBolt(ang, f.limb_len*0.9+0.25, true, f));
+    }
+    const now=performance.now()/1000;
+    for(const b of bolts) strike(b, now, true);
+  }
+  function makeBolt(angle, lenF, isLeg, f){
+    return {
+      angle, lenF: clamp(lenF,0.25,1.25), isLeg,
+      rough: (f.jag*(isLeg?0.7:1)) * 0.85,
+      col: (Math.random()<0.5)? 1:2,      // palette index (boltA/boltB)
+      tree:null, life:1, nextStrike:0
+    };
+  }
+
+  function strike(b, now, immediate){
+    const wob = 1 + (Math.random()*2-1)*0.10;
+    const len = boltLen * b.lenF * (b.isLeg?0.6:1) * wob;
+    const sx=cx+Math.cos(b.angle)*coreR*0.85;
+    const sy=cy+Math.sin(b.angle)*coreR*0.85;
+    const ex=cx+Math.cos(b.angle)*(coreR+len);
+    const ey=cy+Math.sin(b.angle)*(coreR+len);
+    const f=genome.layers[0];
+    const rng=Math.random;
+    b.tree = genBolt(sx,sy,ex,ey, b.rough, rng, b.isLeg?4:5, b.isLeg?1:f.branch);
+    b.life = 1;
+    // stochastic re-strike; higher motion.strike → shorter interval
+    const base = (b.isLeg?1.9:1.05) * (1.25 - mot.strike*0.85);
+    b.nextStrike = now + base*(0.45+Math.random()*0.9);
+    // spark burst at the tip
+    if(!immediate){
+      const bn = b.isLeg?2:4;
+      for(let k=0;k<bn;k++){
+        sparks.push({ x:ex, y:ey, vx:Math.cos(b.angle)*(20+Math.random()*70)+(Math.random()*40-20),
+          vy:Math.sin(b.angle)*(20+Math.random()*70)+(Math.random()*40-20),
+          life:1, r:1+Math.random()*1.8 });
+      }
+      if(!b.isLeg && Math.random()<0.14) flash = Math.min(1, flash+0.5); // rare big-strike bloom
+    }
+  }
+
+  // ── rendering ──────────────────────────────────────────────────────────
+  function drawTreeStroke(node, jit, width, style){
+    ctx.strokeStyle=style; ctx.lineWidth=width;
+    (function walk(nd,w){
+      const p=nd.pts;
+      ctx.beginPath();
+      ctx.moveTo(p[0][0], p[0][1]);
+      for(let i=1;i<p.length;i++){
+        const last=(i===p.length-1);
+        const jx=last?0:(Math.random()*2-1)*jit;
+        const jy=last?0:(Math.random()*2-1)*jit;
+        ctx.lineTo(p[i][0]+jx, p[i][1]+jy);
+      }
+      ctx.stroke();
+      for(const c of nd.children) walk(c, w*0.8);
+    })(node,width);
+  }
+
+  function drawBolt(b){
+    if(!b.tree) return;
+    const P=surf.palette;
+    const col = P[b.col];
+    const a = (0.20 + 0.80*b.life) * surf.opacity;
+    const jit = (b.isLeg?0.6:1.4) * (0.6 + (1-b.life)*1.6);
+    // wide soft halo
+    ctx.shadowColor=col; ctx.shadowBlur = (b.isLeg?10:16) + surf.glow*22;
+    drawTreeStroke(b.tree, jit, (b.isLeg?4.2:3.0), rgba(col, a*0.32));
+    // mid glow
+    ctx.shadowBlur = (b.isLeg?6:9) + surf.glow*12;
+    drawTreeStroke(b.tree, jit, (b.isLeg?2.2:1.7), rgba(col, a*0.65));
+    // hot white core of the bolt
+    ctx.shadowBlur = 5;
+    drawTreeStroke(b.tree, jit*0.6, (b.isLeg?1.1:0.9), rgba(P[0], a));
+    ctx.shadowBlur=0;
+  }
+
+  function drawCore(throb){
+    const P=surf.palette;
+    const cr = coreR*(1 + mot.pulse*0.16*throb);
+    // outer charged aura (breathes)
+    const auraR = coreR*(2.6 + mot.breathe*1.4) * (1+0.06*throb);
+    let g = ctx.createRadialGradient(cx,cy,coreR*0.2, cx,cy,auraR);
+    g.addColorStop(0, rgba(P[3], 0.42*surf.opacity));
+    g.addColorStop(0.5, rgba(P[3], 0.12*surf.opacity));
+    g.addColorStop(1, rgba(P[3], 0));
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,auraR,0,TAU); ctx.fill();
+    // plasma body
+    g = ctx.createRadialGradient(cx,cy,0, cx,cy,cr*1.35);
+    g.addColorStop(0, rgba(P[0], 1));
+    g.addColorStop(0.28, rgba(P[1], 0.92));
+    g.addColorStop(0.62, rgba(P[2], 0.6));
+    g.addColorStop(1, rgba(P[2], 0));
+    ctx.shadowColor=P[1]; ctx.shadowBlur=30+surf.glow*40;
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,cr*1.35,0,TAU); ctx.fill();
+    // white-hot heart
+    g = ctx.createRadialGradient(cx,cy,0, cx,cy,cr*0.6);
+    g.addColorStop(0,'rgba(255,255,255,'+(0.85+0.12*throb)+')');
+    g.addColorStop(1, rgba(P[0],0));
+    ctx.shadowBlur=18; ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(cx,cy,cr*0.6,0,TAU); ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  function drawSparks(dt){
+    const P=surf.palette;
+    for(let i=sparks.length-1;i>=0;i--){
+      const s=sparks[i];
+      s.life-=dt*1.6; if(s.life<=0){ sparks.splice(i,1); continue; }
+      s.x+=s.vx*dt; s.y+=s.vy*dt; s.vy+=40*dt; s.vx*=0.98;
+      ctx.fillStyle=rgba(P[4], s.life*0.9);
+      ctx.beginPath(); ctx.arc(s.x,s.y, s.r*(0.4+s.life), 0, TAU); ctx.fill();
+    }
+    if(sparks.length>420) sparks.splice(0, sparks.length-420);
+  }
+
+  function drawDust(){
+    const P=surf.palette;
+    for(const d of dust){
+      d.x+=d.vx; d.y+=d.vy;
+      if(d.x<-10)d.x=W+10; if(d.x>W+10)d.x=-10;
+      if(d.y<-10)d.y=H+10; if(d.y>H+10)d.y=-10;
+      ctx.fillStyle=rgba(P[1], d.a);
+      ctx.fillRect(d.x, d.y, d.s, d.s);
+    }
+  }
+  function seedDust(){
+    dust=[];
+    const n=Math.round((W*H)/26000);
+    for(let i=0;i<n;i++) dust.push({
+      x:Math.random()*W, y:Math.random()*H,
+      vx:(Math.random()*2-1)*0.12, vy:(Math.random()*2-1)*0.12,
+      s:Math.random()<0.85?1:2, a:0.04+Math.random()*0.10 });
+  }
+
+  // ── main loop ──────────────────────────────────────────────────────────
+  function frame(tms){
+    const t=tms/1000;
+    const dt=Math.min(0.05, (t-lastT)||0.016); lastT=t;
+    if(genome){
+      rotation += mot.drift*dt*0.25;
+      const throb = Math.sin(t*(1.1+mot.breathe*2.2))*0.5+0.5;
+
+      // fade buffer → glowing trails
+      ctx.globalCompositeOperation='source-over';
+      ctx.fillStyle='rgba(4,6,14,0.26)';
+      ctx.fillRect(0,0,W,H);
+
+      // slow parallax dust (subtractive-lite, drawn dim under additive)
+      ctx.globalCompositeOperation='lighter';
+      drawDust();
+
+      // rotate the whole organism slowly around its core
+      ctx.save();
+      ctx.translate(cx,cy); ctx.rotate(Math.sin(rotation)*0.12*mot.drift+rotation*0.15); ctx.translate(-cx,-cy);
+
+      // strikes + tendrils
+      const now=t;
+      for(const b of bolts){
+        if(now>=b.nextStrike) strike(b, now, false);
+        else b.life = Math.max(0, b.life - dt*(b.isLeg?1.1:1.9));
+        drawBolt(b);
+      }
+      drawCore(throb);
+      ctx.restore();
+
+      drawSparks(dt);
+
+      // rare full-frame bloom on a big strike
+      if(flash>0.001){
+        ctx.fillStyle=rgba(surf.palette[1], flash*0.10);
+        ctx.fillRect(0,0,W,H);
+        flash*=0.86;
+      }
+      ctx.globalCompositeOperation='source-over';
+
+      window.FAUNA.frame++;
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ── adopt a creature (from a fresh genome or a loaded egg) ──────────────
+  let currentGenome=null, currentId='', currentEggB64='', currentPayload=null;
+
+  function adopt(payload, eggB64){
+    currentPayload=payload;
+    currentGenome=payload.genome;
+    currentId=payload.id;
+    currentEggB64=eggB64;
+    genome=payload.genome;
+    surf = genome.layers[1];
+    mot  = genome.layers[2];
+    sparks.length=0;
+    layout();
+    paintHUD();
+  }
+
+  async function mintFresh(){
+    const g=randomGenome();
+    const rarity=rarityFor(g);
+    const { egg, id, payload } = await EGG.pack(g,
+      { title:'Voltaic', rarity, source:'learnwithkody-fauna' });
+    adopt(payload, egg);
+    return id;
+  }
+
+  async function loadEggStr(b64){
+    const payload = EGG.unpack(b64);                 // throws on bad input
+    if(!payload || !payload.genome || !Array.isArray(payload.genome.layers))
+      throw new Error('not a rappter egg');
+    // re-derive id to confirm integrity; keep the exact loaded string for round-trip
+    const rid = await EGG.genomeId(payload.genome);
+    payload.id = rid;
+    adopt(payload, b64.trim());
+    return rid;
+  }
+
+  // ── HUD paint (no innerHTML with dynamic text) ──────────────────────────
+  const $=id=>document.getElementById(id);
+  function paintHUD(){
+    $('uiName').textContent = currentPayload.title || 'Voltaic';
+    $('uiId').textContent   = currentId;
+    const rar=(currentPayload.rarity||'uncommon');
+    const rEl=$('uiRar'); rEl.textContent=rar;
+    const rc={common:'#9fb6cf',uncommon:'#7fe0b0',rare:'#57c8ff',epic:'#c79bff',legendary:'#ffcf6b'}[rar]||'#9fb6cf';
+    rEl.style.color=rc; rEl.style.textShadow='0 0 12px '+rc+'66';
+    $('uiDesig').textContent = 'VLT-'+currentId.slice(0,4).toUpperCase();
+    $('uiJson').textContent = JSON.stringify(currentGenome, null, 2);
+  }
+
+  // ── controls ────────────────────────────────────────────────────────────
+  $('btnNew').addEventListener('click', ()=>{ mintFresh(); });
+  $('btnSave').addEventListener('click', ()=>{
+    if(currentEggB64) EGG.download(currentEggB64, currentId);
+  });
+  const loadEl=$('load');
+  $('btnLoad').addEventListener('click', ()=>{ $('err').textContent=''; loadEl.classList.add('on'); $('eggText').focus(); });
+  $('btnCancel').addEventListener('click', ()=>loadEl.classList.remove('on'));
+  loadEl.addEventListener('click', e=>{ if(e.target===loadEl) loadEl.classList.remove('on'); });
+  $('eggFile').addEventListener('change', e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const fr=new FileReader();
+    fr.onload=()=>{ $('eggText').value=String(fr.result||'').trim(); };
+    fr.readAsText(file);
+  });
+  $('btnRender').addEventListener('click', async ()=>{
+    const v=$('eggText').value.trim();
+    if(!v){ $('err').textContent='Paste an egg or choose a file first.'; return; }
+    try{ await loadEggStr(v); loadEl.classList.remove('on'); $('eggText').value=''; }
+    catch(err){ $('err').textContent='Could not load: '+(err.message||err); }
+  });
+
+  window.addEventListener('resize', resize);
+
+  // ── boot ─────────────────────────────────────────────────────────────────
+  window.FAUNA = {
+    title:'Voltaic',
+    get genome(){ return currentGenome; },
+    get id(){ return currentId; },
+    get eggB64(){ return currentEggB64; },
+    newCreature: async()=> await mintFresh(),
+    loadEgg: async(b64)=> await loadEggStr(b64),
+    frame: 0
+  };
+
+  (async()=>{
+    resize(); seedDust();
+    await mintFresh();          // first creature before FAUNA is "live"
+    lastT=performance.now()/1000;
+    requestAnimationFrame(frame);
+  })();
+})();
+</script>
