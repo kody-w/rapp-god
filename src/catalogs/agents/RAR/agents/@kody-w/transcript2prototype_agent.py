@@ -3139,18 +3139,18 @@ class Transcript2PrototypeAgent(BasicAgent):
                                                      "Name') - topics, actions, workflows, "
                                                      "Dataverse/connector wiring - filled with "
                                                      "this prototype's content. When omitted "
-                                                     "the AIBAST mcs_solution packager builds "
+                                                     "the the work distro mcs_solution packager builds "
                                                      "the solution natively (the default).")},
                     "packager_path": {"type": "string",
                                       "description": ("deploy: dir containing wrapper_generator/"
-                                                      "solution_packager.py (the AIBAST "
+                                                      "solution_packager.py (the the work distro "
                                                       "utility). Default discovery: T2P_PACKAGER "
                                                       "env, then the known repo locations. "
                                                       "'off' disables it (skeleton fallback).")},
                     "publisher": {"type": "string",
                                   "description": ("deploy: solution publisher display "
                                                   "name (default: Microsoft Research "
-                                                  "and Development, the AIBAST library "
+                                                  "and Development, the the work distro library "
                                                   "publisher - NEVER the pattern HPA's)")},
                     "publisher_prefix": {"type": "string",
                                          "description": ("deploy: schema customization "
@@ -5739,7 +5739,7 @@ code {{ background: #EBF3FC; color: #0F6CBD; padding: 1px 7px; border-radius: 4p
     # OUR publisher - never the pattern HPA's (theirs is e.g. PowerCAT).
     # Overridable per deploy via publisher= / publisher_prefix=.
     DEFAULT_PUBLISHER = {
-        # the AIBAST library's established publisher (the same identity as
+        # the the work distro library's established publisher (the same identity as
         # MSFTAIBASMultiAgentCopilot) - never the pattern HPA's
         "unique": "Microsoft_Research_and_Development",
         "display": "Microsoft Research and Development",
@@ -6050,15 +6050,17 @@ code {{ background: #EBF3FC; color: #0F6CBD; padding: 1px 7px; border-radius: 4p
             return None
 
     def _load_packager(self, kwargs):
-        """The AIBAST mcs_solution packager as a library - THE canonical
+        """The the work distro mcs_solution packager as a library - THE canonical
         solution builder (SolutionSpec -> SolutionPackager.package()).
         Discovery: packager_path= > T2P_PACKAGER env > the known repo
         locations. Returns the module or None (callers fall back)."""
         cands = [kwargs.get("packager_path"), os.environ.get("T2P_PACKAGER"),
-                 os.path.expanduser(
-                     "~/MSFTAIBASTRAPP/AIBAST-RAPP/mcs_pipeline/scripts"),
-                 os.path.expanduser(
-                     "~/MSFTAIBASTRAPP/AIBAST-RAPP/AIBAST_RAPP/scripts")]
+                 *[os.path.expanduser(p) for p in
+                   os.environ.get("T2P_PACKAGER_PATHS", "").split(os.pathsep) if p]]
+        # The packager fallback locations used to be hardcoded work-checkout
+        # paths. This repo is public, so they now come from $T2P_PACKAGER_PATHS
+        # (os.pathsep-separated). $T2P_PACKAGER above still takes precedence;
+        # behaviour is unchanged once either is exported.
         if any(str(c).lower() == "off" for c in cands if c):
             return None   # explicit opt-out (tests / skeleton runs)
         for c in cands:
@@ -6472,7 +6474,7 @@ code {{ background: #EBF3FC; color: #0F6CBD; padding: 1px 7px; border-radius: 4p
             except Exception as exc:  # noqa: BLE001
                 borrowed = {"pattern": pattern, "error": str(exc)[:200],
                             "fallback": "packager/skeleton"}
-        # 2. DEFAULT: the AIBAST mcs_solution packager - the canonical
+        # 2. DEFAULT: the the work distro mcs_solution packager - the canonical
         #    utility - builds the solution natively; our capability topics
         #    are injected on top
         if zip_bytes is None:
@@ -6500,13 +6502,13 @@ code {{ background: #EBF3FC; color: #0F6CBD; padding: 1px 7px; border-radius: 4p
                     zip_bytes = self._inject_capability_topics(
                         zip_bytes, a["capabilities"])
                     zip_bytes = self._patch_bot_configuration(zip_bytes)
-                    borrowed = {"builder": "aibast_mcs_solution_packager",
+                    borrowed = {"builder": "work_distro_mcs_solution_packager",
                                 "publisher": pub["display"], "fresh": display,
                                 "capability_topics": [c["name"]
                                                       for c in a["capabilities"]]}
                 except Exception as exc:  # noqa: BLE001
                     zip_bytes = None
-                    borrowed = {"builder": "aibast_mcs_solution_packager",
+                    borrowed = {"builder": "work_distro_mcs_solution_packager",
                                 "error": str(exc)[:200],
                                 "fallback": "skeleton"}
         # 3. last resort: the generic skeleton rebrand
