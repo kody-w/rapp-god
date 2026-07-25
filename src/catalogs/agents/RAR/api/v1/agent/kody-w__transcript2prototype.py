@@ -146,7 +146,7 @@ DEFAULT_CAP_LEXICON = (
     "intake", "walkthrough", "adoption", "guided", "document", "tracking",
 )
 
-# speaker labels like "Maria (Ops Lead):" / "Kunal:" at the start of a line -
+# speaker labels like "Maria (Ops Lead):" / "Priya:" at the start of a line -
 # 1-3 capitalized words + optional (role). A sentence that happens to contain
 # a colon ("Pricing optimization never happens: we ...") does NOT match.
 _SPEAKER_RE = re.compile(
@@ -2571,16 +2571,16 @@ function thSkip() { thPaused = true; clearTimeout(thTimer); var b = document.get
 // the journal also refreshes live so a reopened theater has the latest run
 // (refreshArtifacts swaps it below)
 
-// ── click-through tutorial: the Kunal proposal-generation demo ──
+// ── click-through tutorial: the Priya proposal-generation demo ──
 var TOUR = [
   { t: 'Welcome - the proposal generation walkthrough', target: null,
-    x: 'This short tour trains you on the whole loop using Kunal\'s use case: start from the Proposal Generation template, have the brainstem make sure it also generates PDF proposals, then build, test, and deploy to Copilot Studio. Next walks you through; "Do this step" runs each step for real; Skip any time.' },
+    x: 'This short tour trains you on the whole loop using Priya\'s use case: start from the Proposal Generation template, have the brainstem make sure it also generates PDF proposals, then build, test, and deploy to Copilot Studio. Next walks you through; "Do this step" runs each step for real; Skip any time.' },
   { t: '1. Start from the template', target: '#tpl-select',
     x: 'Instead of pasting a transcript, pick "Proposal Generation Stack" from this dropdown. The pipeline snaps the prototype to it: capabilities, demo script and agent plan come from the template.',
     payload: ['The user picked the template "proposal_generation_stack" from the library dropdown. Run Transcript2Prototype action=template op=use template_id=proposal_generation_stack right away. Then say what was created and that the tour continues with the feedback step.',
               'Start a prototype from the Proposal Generation Stack template.'] },
   { t: '2. Ask for what is missing - in plain language', target: '#fb-input',
-    x: 'Kunal also needs the agent to actually generate PDF proposals. Just ask for it here - the brainstem mutates the prototype: a new capability is added, the demo regenerates and the agents rebuild, live.',
+    x: 'Priya also needs the agent to actually generate PDF proposals. Just ask for it here - the brainstem mutates the prototype: a new capability is added, the demo regenerates and the agents rebuild, live.',
     payload: ['Make sure this prototype ALSO generates PDF proposals and outputs them for the user, alongside its default capabilities. Add that capability (with synthetic records that simulate the PDFs) and confirm what changed.',
               'Make sure it also generates PDF proposals for the user.'] },
   { t: '3. Build the agents', target: '.step-btn[data-key="build"]',
