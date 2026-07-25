@@ -1,3 +1,5 @@
+import pathlib
+import sys
 """No customer/engagement names appear in committed Bible content.
 
 The PII scan covers all committed files EXCEPT:
@@ -13,16 +15,13 @@ from .conftest import REPO_ROOT, iter_committed_files
 
 # Case-insensitive substrings. Words like "MSC" need word-boundary handling
 # because they can appear inside unrelated identifiers; we treat MSC separately.
-BANNED_PATTERNS = [
-    re.compile(r"marriott", re.IGNORECASE),
-    re.compile(r"fujifilm", re.IGNORECASE),
-    re.compile(r"sonosite", re.IGNORECASE),
-    re.compile(r"bchydro", re.IGNORECASE),
-    re.compile(r"bc.?hydro", re.IGNORECASE),
-    re.compile(r"unilever", re.IGNORECASE),
-    re.compile(r"manpowergroup", re.IGNORECASE),
-    re.compile(r"\bMSC\b"),
-]
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
+from pii_terms import load_patterns  # noqa: E402
+
+# NOTE: if the roster is unconfigured this RAISES rather than yielding an
+# empty banned-list. An empty list would make this test pass vacuously --
+# reporting "no PII" precisely when it is checking for nothing.
+BANNED_PATTERNS = load_patterns()
 
 # Files that legitimately contain the banned patterns *as patterns* for
 # filtering or testing purposes. These are infrastructure, not content.

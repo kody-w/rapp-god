@@ -18,13 +18,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Mirrored from sanitize_pii but evaluated locally to be safe.
-PII_PATTERNS = [
-    re.compile(p, re.IGNORECASE)
-    for p in [
-        r"marriott", r"fujifilm", r"sonosite", r"bchydro", r"bc.?hydro",
-        r"unilever", r"manpowergroup",
-    ]
-] + [re.compile(r"\bMSC\b")]
+from pii_terms import load_patterns  # roster is injected, never committed
+
+# The roster used to be a literal list of real customer names right here,
+# in a PUBLIC repo -- the denylist was itself the disclosure. See pii_terms.
+PII_PATTERNS = load_patterns()
 
 
 def sanitize(text: str) -> str:

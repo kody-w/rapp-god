@@ -50,16 +50,10 @@ RAW_URL = "https://raw.githubusercontent.com/{repo}/main/{path}"
 # Customer names that must NEVER appear in committed Bible files (case-insensitive).
 # Replaced with generic placeholders during mirror. This protects against accidental
 # inclusion if upstream specs ever reference a private engagement.
-PII_REPLACEMENTS: list[tuple[str, str]] = [
-    ("marriott", "example-co"),
-    ("fujifilm", "example-co"),
-    ("sonosite", "example-co"),
-    ("bchydro", "example-co"),
-    ("bc-hydro", "example-co"),
-    ("bc hydro", "example-co"),
-    ("unilever", "example-co"),
-    ("manpowergroup", "example-co"),
-]
+from pii_terms import load_terms  # roster is injected, never committed
+
+# Was a literal list of real customer names in a PUBLIC repo. See pii_terms.
+PII_REPLACEMENTS: list[tuple[str, str]] = [(t, "example-co") for t in load_terms()]
 
 
 def sanitize_pii(text: str) -> str:

@@ -164,7 +164,7 @@ class TestDoubleDownPerform(unittest.TestCase):
         self.assertIn("claude code", r["directive"].lower())
 
     def test_directive_includes_topic_verbatim(self):
-        sentinel = "QUANTUM_BCHYDRO_X"
+        sentinel = "QUANTUM_EXAMPLE_CO_X"
         r = self._call(topic=sentinel)
         self.assertIn(sentinel, r["directive"])
 
