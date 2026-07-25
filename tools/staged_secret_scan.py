@@ -204,8 +204,40 @@ def main() -> int:
     args = parser.parse_args()
     data, report = generate(args.allowlist.resolve())
     if args.check:
-        if not args.report.exists() or args.report.read_bytes() != data:
-            raise SystemExit("staged secret report differs")
+        if not args.report.exists():
+            raise SystemExit("staged secret report missing")
+        if args.report.read_bytes() != data:
+            # The byte comparison is deliberate: the committed report is a
+            # reviewed artifact, so it must be regenerated as an ACT, not
+            # drift into agreement. But "report differs" alone tells a
+            # reviewer nothing, and a message you cannot act on trains people
+            # to regenerate blindly -- which silently discards exactly the
+            # security delta this exists to surface. So say WHAT moved.
+            try:
+                prev = json.loads(args.report.read_text())
+            except Exception:
+                prev = {}
+            security = [
+                k for k in ("findings", "unallowlisted_findings",
+                            "allowlisted_findings", "archive_scan",
+                            "binary_scan")
+                if prev.get(k) != report.get(k)
+            ]
+            volume = [
+                k for k in ("paths_scanned", "self_excluded_path", "schema")
+                if prev.get(k) != report.get(k)
+            ]
+            detail = []
+            if security:
+                detail.append("SECURITY-RELEVANT: " + ", ".join(security))
+            if volume:
+                detail.append("volume/shape only: " + ", ".join(volume))
+            raise SystemExit(
+                "staged secret report differs — "
+                + " | ".join(detail or ["no field-level diff; byte drift only"])
+                + "\n  regenerate with: python3 tools/staged_secret_scan.py"
+                + "\n  REVIEW FIRST if any SECURITY-RELEVANT field is listed."
+            )
     else:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_bytes(data)
