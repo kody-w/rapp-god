@@ -664,11 +664,25 @@ class IntegrityChecker:
         registry = load_json("registry.json")
         assert registry["schema"] == "rapp-god-registry/1.0"
         assert registry["summary"]["parts"] == 60
-        assert registry["summary"]["versions"] == 265
-        assert registry["summary"]["physical_frames"] == 265
-        assert registry["summary"]["tombstones"] == 1
         assert len(registry["parts"]) == 60
-        assert len(registry["physical_frames"]) == 265
+        # The observatory is append-only and god-build captures new frames on a
+        # schedule, so a frozen frame count went stale every six hours and was
+        # never the actual guarantee. What must hold is that every generated
+        # artifact agrees on one count, that the count never falls below the
+        # imported baseline, and that no published frame is ever dropped.
+        frames = int(registry["summary"]["physical_frames"])
+        baseline_frames = {
+            str(row["path"])
+            for row in baseline["immutable_existing_paths"]
+            if str(row["path"]).startswith("versions/")
+        }
+        assert registry["summary"]["versions"] == frames
+        assert len(registry["physical_frames"]) == frames
+        assert frames >= len(baseline_frames)
+        assert baseline_frames <= {
+            str(frame["path"]) for frame in registry["physical_frames"]
+        }
+        assert registry["summary"]["tombstones"] == 1
         assert len(registry["version_tombstones"]) == 1
         assert registry["authority"]["kernel_lts"]["commit"] == assimilation.GRAIL_COMMIT
         assert registry["authority"]["installer_main"]["status"] == "observe-only"
@@ -690,7 +704,7 @@ class IntegrityChecker:
                 for source in part["sources"]
             )
         status = load_json("api/v1/status.json")
-        assert status["physical_frames"] == {"count": 265, "standalone": 0}
+        assert status["physical_frames"] == {"count": frames, "standalone": 0}
         assert len(status["version_tombstones"]) == 1
         for name in ("brainstem.py", "basic_agent.py", "VERSION"):
             part = next(item for item in status["parts"] if item["name"] == name)
@@ -728,9 +742,9 @@ class IntegrityChecker:
             assert hashlib.sha256(historical.read_bytes()).hexdigest() == artifact["sha256"]
         observatory = load_json("provenance/observatory-history.json")
         assert observatory["explicit_tombstones"] == 1
-        assert observatory["current_part_versions"] == 265
-        assert observatory["current_indexed_frames"] == 265
-        assert observatory["physical_frames"] == 265
+        assert observatory["current_part_versions"] == frames
+        assert observatory["current_indexed_frames"] == frames
+        assert observatory["physical_frames"] == frames
         assert observatory["physical_orphans"] == 0
         assert observatory["standalone_physical_frames"] == 0
         assert observatory["raw_url_policy"]["transport_immutable"] is False

@@ -164,9 +164,11 @@ disclosure control, not cryptographic erasure.
   releases across 41 repositories and all 50 supplied asset URLs, SHA-256
   digests, and sizes (1,204,660,676 logical bytes). Assets remain external;
   four oversized ez-rapp AppImages are never Git blobs.
-* The observatory currently has 60 parts, 265 part-version records and
-  hash-verified physical frames, zero standalone frames, and one explicit
-  no-payload tombstone. There are zero unexplained physical orphans.
+* The observatory is append-only and `god-build` captures new frames on a
+  schedule, so these counts grow and are read from `registry.json` rather than
+  frozen in the checkers. At this commit it has 60 parts, 267 part-version
+  records and hash-verified physical frames, zero standalone frames, and one
+  explicit no-payload tombstone. There are zero unexplained physical orphans.
 * `catalog/components.jsonl` includes lifecycle, authority/currentness,
   compatibility, ownership, publish status, and a synthetic immutable grail.
 * Semantic catalogs cover protocol families, AST-derived agent identities and
@@ -205,8 +207,9 @@ This is a frozen assimilation pass, not a floating subtree checkout.
 10. Run `python3 -m unittest tests.test_assimilation tests.test_compat -v`.
 11. Regenerate the legacy observatory only through `build_god.py`; never
    hand-edit `registry.json`. `build_god.py` rewrites `registry.json` and
-   `api/v1/status.json`, which are digest-bound native closure records, so the
-   `god-build` workflow rebinds the native closure, staging plan, staged secret
+   `api/v1/status.json`, which are digest-bound native closure records, and new
+   frames change the observatory reconciliation, so the `god-build` workflow
+   rebinds the native closure, observatory history, staging plan, staged secret
    scan, and generated manifest in that order and fails closed if the rebuilt
    tree does not close.
 
