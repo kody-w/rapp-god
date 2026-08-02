@@ -23,13 +23,19 @@ ROOT = Path(__file__).resolve().parents[1]
 CAPTURE_NAMES = re.compile(r"(^|/)(snapshot-\d{10,}\.html|.*-session-capture\..*|har-.*\.har|.*\.har)$", re.I)
 CRED_NAMES = re.compile(r"(^|/)(\.env(\.[\w-]+)?|[\w.-]*\.copilot_token|[\w.-]*\.pem|[\w.-]*_token|secrets?\.(json|ya?ml|txt))$", re.I)
 ALLOW = re.compile(r"(\.env\.(example|sample|template)|local\.settings\.json\.(example|sample))$", re.I)
+# Declared scratch output in .gitignore. hatch.sh builds a venv here, so it
+# legitimately contains vendored CA bundles; none of it is publication surface.
+SCRATCH = {".git", ".hatch", ".rapp-god-input", "__pycache__", ".pytest_cache"}
 
 def scan():
     bad = []
     for p in ROOT.rglob("*"):
-        if not p.is_file() or ".git/" in str(p):
+        if not p.is_file():
             continue
-        rel = str(p.relative_to(ROOT))
+        rel_path = p.relative_to(ROOT)
+        if SCRATCH.intersection(rel_path.parts):
+            continue
+        rel = str(rel_path)
         if ALLOW.search(rel):
             continue
         if CAPTURE_NAMES.search(rel):

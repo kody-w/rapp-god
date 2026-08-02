@@ -18,10 +18,20 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools import assimilation  # noqa: E402
+from tools import security_redactions  # noqa: E402
 
 
 ROOT = assimilation.ROOT
-EXCLUDED_TARGET_PARTS = {".git", ".rapp-god-input", "__pycache__", ".pytest_cache"}
+# .hatch and .rapp-god-input are declared scratch output in .gitignore. They
+# must never reach the publication index -- force staging a hatched venv would
+# carry vendored CA bundles and wheels into a public tree.
+EXCLUDED_TARGET_PARTS = {
+    ".git",
+    ".hatch",
+    ".rapp-god-input",
+    "__pycache__",
+    ".pytest_cache",
+}
 
 
 def logical_path(value: str) -> str:
@@ -45,12 +55,29 @@ def imported_expectations():
     for row in rows:
         if not row.get("destination"):
             continue
+        disposition = row.get("disposition")
+        # A security remediation publishes different bytes than the upstream
+        # capture. The upstream source_blob stays untouched so the pinned tree
+        # proof still verifies, so the index must be held to published_blob.
+        if disposition == security_redactions.REMOVED:
+            continue
+        if disposition in (
+            security_redactions.REDACTED,
+            security_redactions.TARGET_AUTHORED,
+        ):
+            mode = str(row["published_mode"])
+            blob = str(row["published_blob"])
+            origin = disposition
+        else:
+            mode = str(row["source_mode"])
+            blob = str(row["source_blob"])
+            origin = "imported-ledger"
         path = logical_path(str(row["destination"]))
         expected[path] = {
-            "mode": str(row["source_mode"]),
-            "blob": str(row["source_blob"]),
+            "mode": mode,
+            "blob": blob,
             "access_path": ROOT / str(row["destination"]),
-            "origin": "imported-ledger",
+            "origin": origin,
         }
     return expected
 
@@ -141,11 +168,21 @@ def check_index(expected) -> None:
         if actual[path] != (expected[path]["mode"], expected[path]["blob"])
     )
     if missing or extra or mismatched:
-        raise RuntimeError(
-            "index closure differs: missing={} extra={} mismatched={}".format(
-                len(missing), len(extra), len(mismatched)
-            )
-        )
+        # Counts alone cannot tell a regeneration from a leak reappearing.
+        # Index paths are already public, so name them.
+        detail = []
+        for label, paths in (
+            ("missing", missing),
+            ("extra", extra),
+            ("mismatched", mismatched),
+        ):
+            if not paths:
+                continue
+            shown = ", ".join(paths[:10])
+            if len(paths) > 10:
+                shown += ", ... and {} more".format(len(paths) - 10)
+            detail.append("{}={} [{}]".format(label, len(paths), shown))
+        raise RuntimeError("index closure differs: " + "; ".join(detail))
     print("Index closure verified for {} materialized paths.".format(len(expected)))
 
 

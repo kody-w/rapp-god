@@ -91,7 +91,8 @@ origin and alias.
 Each external component root is produced with `git archive HEAD | tar -xf`.
 No `.git` directory is copied. Regular bytes, executable modes, and symlink
 targets are checked against the source Git blob IDs and SHA-256 ledger. No
-authored adapter or index is placed inside an imported root.
+authored adapter or index is placed inside an imported root, with one reviewed
+exception recorded below.
 
 The orphan `rappterbook-agent/openclaw` gitlink is recorded at its exact object
 ID in `provenance/external-pins.json`; it has no `.gitmodules`, receives no
@@ -101,6 +102,40 @@ Nested imported `.github/workflows/` files are preserved as inert source
 artifacts because they are below component roots. Only workflows directly in
 the monorepo root `.github/workflows/` are active.
 
+## Security remediation boundary
+
+Exactness is not absolute. The 2026-07-23 import carried a re-leaked (already
+revoked) Azure key, two captured authenticated Microsoft 365 sessions, and
+customer names and private rosters into this public repository. Commits
+`93344d02`, `0d2d9b6b`, `68a5ec17`, `5ae06fc2`, and `5a16d4c6` changed or
+deleted those published bytes.
+
+A redaction is not a re-import, and it is never laundered into the upstream
+provenance. `source_blob`, `source_path`, and `source_mode` continue to
+describe exactly what upstream published, because `check_assimilation` rebuilds
+each pinned upstream tree OID from those fields; rewriting them to the redacted
+bytes would forge that proof and claim upstream shipped a key it never shipped.
+What changes is the disposition, plus explicit `published_*` fields recording
+what this repository actually serves:
+
+| Disposition | Count | Meaning |
+|---|---|---|
+| `redacted-security-boundary` | 31 | Upstream pin retained; different bytes served |
+| `removed-security-boundary` | 3 | Upstream pin retained; nothing served |
+| `target-authored-remediation` | 1 | Target-authored file inside an imported root |
+
+`docs/components/RAPP-Bible/scripts/pii_terms.py` is the reviewed exception to
+the no-authored-files-inside-an-imported-root rule. The published denylist it
+replaces was itself the disclosure; terms are now injected at run time and
+never committed. It claims no upstream source and never contributes to a tree
+proof.
+
+`tools/security_redactions.py --check` holds this scope in both directions: a
+later pass cannot quietly redact one more file, nor quietly restore a leaked
+one. Rotation of the exposed credential remains an owner action. History is not
+rewritten, so the pre-remediation bytes remain reachable in Git history; this is
+disclosure control, not cryptographic erasure.
+
 ## Provenance and catalogs
 
 * `provenance/repositories.jsonl` has one decision for every public repository.
@@ -109,6 +144,8 @@ the monorepo root `.github/workflows/` are active.
 * `provenance/files.jsonl` maps every selected external tree entry, plus the
   separate LTS alias. 716 denied entries are represented only by opaque
   ordinals and a withheld disposition—never sensitive paths, names, or hashes.
+  35 further entries carry a security remediation disposition and explicit
+  `published_*` fields; their upstream pins are unchanged.
 * `provenance/archive-members.jsonl` accounts for 3,086 members discovered by
   signature in 100 top-level and two nested ZIP/TAR containers, including
   EPUB/VSIX shapes and the separate grail. The proof records 26,388,889
@@ -162,9 +199,16 @@ This is a frozen assimilation pass, not a floating subtree checkout.
 7. Regenerate namespaced ref/release metadata with
    `python3 tools/ref_inventory.py --evidence-dir <provenance-results>`.
 8. Review component licensing and authority effects.
-9. Run `python3 -m unittest tests.test_assimilation tests.test_compat -v`.
-10. Regenerate the legacy observatory only through `build_god.py`; never
-   hand-edit `registry.json`.
+9. If a security remediation changed published bytes, record it with
+   `python3 tools/security_redactions.py --apply` before regenerating anything
+   that digests the ledger. Never edit `source_blob` to match a redaction.
+10. Run `python3 -m unittest tests.test_assimilation tests.test_compat -v`.
+11. Regenerate the legacy observatory only through `build_god.py`; never
+   hand-edit `registry.json`. `build_god.py` rewrites `registry.json` and
+   `api/v1/status.json`, which are digest-bound native closure records, so the
+   `god-build` workflow rebinds the native closure, staging plan, staged secret
+   scan, and generated manifest in that order and fails closed if the rebuilt
+   tree does not close.
 
 An upstream repository update therefore creates a new reviewed assimilation
 event. It does not mutate the historical source assignment silently.

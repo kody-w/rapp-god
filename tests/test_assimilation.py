@@ -1,6 +1,7 @@
 import unittest
 
 from tools.check_assimilation import IntegrityChecker
+from tools import security_redactions
 
 
 class AssimilationIntegrityTests(unittest.TestCase):
@@ -18,7 +19,22 @@ class AssimilationIntegrityTests(unittest.TestCase):
 
     def test_every_destination_hash_mode_and_tree(self):
         validated = self.checker.check_destinations_hashes_modes_and_trees()
-        self.assertEqual(validated, 41512)
+        # 41512 upstream destinations, less the 3 whose bytes are deliberately
+        # not served after the security remediation, plus the 1 target-authored
+        # remediation file that replaced a published denylist.
+        self.assertEqual(validated, 41510)
+
+    def test_security_remediation_scope_is_reviewed_and_honest(self):
+        security_redactions.check(self.checker.mappings)
+        self.assertEqual(len(self.checker.redacted_mappings), 31)
+        self.assertEqual(len(self.checker.removed_mappings), 3)
+        self.assertEqual(len(self.checker.target_authored_mappings), 1)
+        # A redaction must never be laundered into the upstream provenance:
+        # the pinned tree proof is rebuilt from source_blob, so it has to keep
+        # describing the bytes upstream actually published.
+        for row in self.checker.redacted_mappings + self.checker.removed_mappings:
+            self.assertTrue(row["source_blob"])
+            self.assertNotEqual(row.get("published_blob"), row["source_blob"])
 
     def test_immutable_grail_metadata_and_hashes(self):
         self.checker.check_grail()

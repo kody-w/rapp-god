@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools import assimilation  # noqa: E402
+from tools import security_redactions  # noqa: E402
 
 
 GITHUB_BLOB_LIMIT = 100_000_000
@@ -128,8 +129,31 @@ class IntegrityChecker:
         self.repositories = load_jsonl("provenance/repositories.jsonl")
         self.lock = load_json("provenance/sources.lock.json")
         self.mappings = load_jsonl("provenance/files.jsonl")
+        # A target-authored remediation file is not an upstream capture, so it
+        # must not inflate the external census, the pinned byte totals, or the
+        # tree proofs. It is accounted for separately below.
+        self.target_authored_mappings = [
+            row
+            for row in self.mappings
+            if row.get("disposition") == security_redactions.TARGET_AUTHORED
+        ]
+        self.redacted_mappings = [
+            row
+            for row in self.mappings
+            if row.get("disposition") == security_redactions.REDACTED
+        ]
+        self.removed_mappings = [
+            row
+            for row in self.mappings
+            if row.get("disposition") == security_redactions.REMOVED
+        ]
+        external_mappings = [
+            row
+            for row in self.mappings
+            if row.get("disposition") != security_redactions.TARGET_AUTHORED
+        ]
         self.selected_mappings = [
-            row for row in self.mappings if not bool(row.get("authority_alias"))
+            row for row in external_mappings if not bool(row.get("authority_alias"))
         ]
         self.withheld_mappings = [
             row
@@ -137,7 +161,7 @@ class IntegrityChecker:
             if row.get("disposition") == "withheld-private-boundary"
         ]
         self.materialized_mappings = [
-            row for row in self.mappings if row.get("destination")
+            row for row in external_mappings if row.get("destination")
         ]
         self.grail_mappings = [
             row for row in self.mappings if bool(row.get("authority_alias"))
@@ -230,7 +254,23 @@ class IntegrityChecker:
 
     def check_mapping_totals(self) -> None:
         assert len(self.selected_mappings) == assimilation.EXTERNAL_FILE_COUNT
-        assert len(self.mappings) == assimilation.EXTERNAL_FILE_COUNT + assimilation.GRAIL_FILE_COUNT
+        assert len(self.mappings) == (
+            assimilation.EXTERNAL_FILE_COUNT
+            + assimilation.GRAIL_FILE_COUNT
+            + len(self.target_authored_mappings)
+        )
+        # The reviewed security remediation scope is fixed. A later pass cannot
+        # quietly redact one more file, nor quietly restore a leaked one.
+        assert len(self.redacted_mappings) == 31
+        assert len(self.removed_mappings) == 3
+        assert len(self.target_authored_mappings) == 1
+        for row in self.redacted_mappings:
+            assert row["source_blob"] and row["published_blob"]
+            assert row["published_blob"] != row["source_blob"]
+        for row in self.removed_mappings:
+            assert row["source_blob"] and row["published_blob"] is None
+        for row in self.target_authored_mappings:
+            assert row["source_blob"] is None and row["published_blob"]
         assert len(self.withheld_mappings) == 716
         assert all(
             set(row)
@@ -344,12 +384,59 @@ class IntegrityChecker:
         )
         assert grail["lifecycle"] == "immutable-lts"
 
+    def _check_published_bytes(self, row, data=None) -> None:
+        """Hold a remediated destination to the bytes actually served."""
+        destination = Path(str(row["destination"]))
+        path = ROOT / destination
+        assert os.path.lexists(str(path)), destination
+        mode = str(row["published_mode"])
+        info = os.lstat(str(path))
+        if mode == "120000":
+            assert stat.S_ISLNK(info.st_mode), destination
+        else:
+            assert stat.S_ISREG(info.st_mode), destination
+            executable = bool(info.st_mode & stat.S_IXUSR)
+            assert executable == (mode == "100755"), destination
+        if data is None:
+            data = assimilation.file_bytes(path, mode)
+        assert len(data) == row["published_size"], destination
+        assert hashlib.sha256(data).hexdigest() == row["published_sha256"], destination
+        assert git_blob_id(data) == row["published_blob"], destination
+
+    def _remediation_root(self, destination: str) -> str:
+        """Resolve the component root that owns a target-authored file."""
+        roots = [
+            str(source["destination"])
+            for source in self.lock["sources"]
+            if source.get("destination")
+        ]
+        roots.append(assimilation.GRAIL_DESTINATION)
+        candidates = [root for root in roots if destination.startswith(root + "/")]
+        assert candidates, destination
+        return max(candidates, key=len)
+
     def check_destinations_hashes_modes_and_trees(self) -> int:
         tree_groups: Dict[Tuple[str, str, str], List[Dict[str, object]]] = {}
         expected_by_root: Dict[str, set] = {}
         validated = 0
         for row in self.mappings:
             if row.get("record_kind") == "withheld-source-entry":
+                continue
+            disposition = row.get("disposition")
+            # A target-authored remediation file has no upstream capture, so it
+            # must never feed a pinned upstream tree proof. It still has to be
+            # accounted for inside its component root, or the root walk below
+            # would report it as an unexplained extra file.
+            if disposition == security_redactions.TARGET_AUTHORED:
+                destination = Path(str(row["destination"]))
+                assert row["source_blob"] is None, destination
+                assert row["source_tree"] is None, destination
+                self._check_published_bytes(row)
+                root = self._remediation_root(str(row["destination"]))
+                expected_by_root.setdefault(root, set()).add(
+                    unicodedata.normalize("NFC", str(destination.relative_to(root)))
+                )
+                validated += 1
                 continue
             group = (
                 str(row["source_repository"]),
@@ -365,6 +452,14 @@ class IntegrityChecker:
             destination = Path(str(row["destination"]))
             assert not destination.is_absolute() and ".." not in destination.parts
             path = ROOT / destination
+            # A removed remediation keeps its upstream provenance -- the pinned
+            # tree above is still proved from source_blob -- but this public
+            # repository deliberately serves nothing at that destination.
+            if disposition == security_redactions.REMOVED:
+                assert not os.path.lexists(str(path)), destination
+                assert row["published_blob"] is None, destination
+                assert row["source_blob"], destination
+                continue
             assert os.path.lexists(str(path)), destination
             mode = str(row["source_mode"])
             info = os.lstat(str(path))
@@ -375,28 +470,35 @@ class IntegrityChecker:
                 executable = bool(info.st_mode & stat.S_IXUSR)
                 assert executable == (mode == "100755"), destination
             data = assimilation.file_bytes(path, mode)
-            raw_matches = (
-                len(data) == row["size"]
-                and hashlib.sha256(data).hexdigest() == row["sha256"]
-                and git_blob_id(data) == row["source_blob"]
-            )
-            if not raw_matches:
-                assert mode != "120000", destination
-                attributes = checkout_attributes(destination)
-                assert attributes.get("filter") in {"unspecified", "unset"}, destination
-                assert attributes.get("working-tree-encoding") == "unspecified", destination
-                assert (
-                    attributes.get("text") in {"set", "auto"}
-                    or attributes.get("eol") in {"lf", "crlf"}
-                ), destination
-                canonical = subprocess.run(
-                    ["git", "-C", str(ROOT), "cat-file", "blob", row["source_blob"]],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                ).stdout
-                assert len(canonical) == row["size"], destination
-                assert hashlib.sha256(canonical).hexdigest() == row["sha256"], destination
-                assert clean_checkout_blob(destination, data) == row["source_blob"], destination
+            # A redaction publishes different bytes on purpose. Hold it to
+            # published_*, and prove it really is not the upstream bytes.
+            if disposition == security_redactions.REDACTED:
+                assert row["source_blob"], destination
+                assert row["published_blob"] != row["source_blob"], destination
+                self._check_published_bytes(row, data=data)
+            else:
+                raw_matches = (
+                    len(data) == row["size"]
+                    and hashlib.sha256(data).hexdigest() == row["sha256"]
+                    and git_blob_id(data) == row["source_blob"]
+                )
+                if not raw_matches:
+                    assert mode != "120000", destination
+                    attributes = checkout_attributes(destination)
+                    assert attributes.get("filter") in {"unspecified", "unset"}, destination
+                    assert attributes.get("working-tree-encoding") == "unspecified", destination
+                    assert (
+                        attributes.get("text") in {"set", "auto"}
+                        or attributes.get("eol") in {"lf", "crlf"}
+                    ), destination
+                    canonical = subprocess.run(
+                        ["git", "-C", str(ROOT), "cat-file", "blob", row["source_blob"]],
+                        check=True,
+                        stdout=subprocess.PIPE,
+                    ).stdout
+                    assert len(canonical) == row["size"], destination
+                    assert hashlib.sha256(canonical).hexdigest() == row["sha256"], destination
+                    assert clean_checkout_blob(destination, data) == row["source_blob"], destination
             validated += 1
             # The lock supplies the exact component root, including multi-level product layouts.
             source = next(
